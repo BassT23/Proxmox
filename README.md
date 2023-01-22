@@ -5,6 +5,22 @@ Features:
 - Exit tracking, so you can send additional commands for Finish or Failure 
 - Logging
 
+**Installation:**
+
+As root on Proxmox Host Terminal:
+```
+apt install github
+```
+```
+git clone https://github.com/BassT23/LXC-Update
+```
+```
+cp ./LXC-Update/update /usr/local/bin
+```
+```
+update
+```
+
 **ToDo:**
 
 - [ ] make it workable for Cluster
