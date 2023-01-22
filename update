@@ -91,7 +91,7 @@ for CONTAINER in $CONTAINERS; do
       UPDATE_CONTAINER $CONTAINER
   fi
 done
-#wait
+sleep 5
 rm -rf temp
 clear
 HEADER_INFO
