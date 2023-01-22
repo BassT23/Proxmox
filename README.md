@@ -1,6 +1,13 @@
-More Infos come soon, ...
+**Proxmox LXC Update Script**
 
-Credits:
-Uruk
-sshanee
-amhehu
+*More Infos come soon, ...*
+
+**ToDo:**
+
+[ ] make it workable for Cluster
+
+**Credits:**
+
+- Uruk
+- sshanee
+- amhehu
