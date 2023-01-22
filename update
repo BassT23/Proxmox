@@ -72,7 +72,7 @@ function EXIT() {
 # Exit Code
   trap EXIT EXIT
 
-#Start script
+#Start Update
 export TERM=xterm-256color
 clear
 HEADER_INFO
