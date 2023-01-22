@@ -25,6 +25,9 @@ CM='\xE2\x9C\x94\033'
 GN=$(echo "\033[1;92m")
 CL=$(echo "\033[m")
 
+#Check Hosts
+HOSTS=$(grep name /etc/corosync/corosync.conf | head -n -1 | cut -c11-)
+
 #Container Update
 function UPDATE_CONTAINER() {
   CONTAINER=$1
