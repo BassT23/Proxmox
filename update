@@ -25,9 +25,6 @@ CM='\xE2\x9C\x94\033'
 GN=$(echo "\033[1;92m")
 CL=$(echo "\033[m")
 
-#List Containers
-CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
-
 #Container Update
 function UPDATE_CONTAINER() {
   CONTAINER=$1
