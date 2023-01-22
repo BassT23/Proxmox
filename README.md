@@ -8,6 +8,7 @@ Features:
 **ToDo:**
 
 [ ] make it workable for Cluster
+[ ] implement extra updates for specific Containers
 
 **Credits:**
 
