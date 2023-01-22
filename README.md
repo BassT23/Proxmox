@@ -4,7 +4,7 @@ Features:
 - Update all LXC Container on an Proxmox Host
 - Exit tracking, so you can send additional commands for Finish or Failure 
 - Logging
-- 
+
 **Installation:**
 
 As root on Proxmox Host Terminal:
