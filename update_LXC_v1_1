@@ -1,7 +1,11 @@
 #!/bin/bash
 
-# Version: 1.1
+# Version: 1.3
 # coded by Uruk and Basst
+
+#Variable / Function
+
+LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 
 #Header
 function HEADER_INFO {
@@ -30,7 +34,7 @@ function UPDATE_CONTAINER() {
   clear
   HEADER_INFO
   NAME=`pct exec $CONTAINER hostname`
-  echo -e "\n${BL}[Info]${GN} Updating ${BL}$CONTAINER${CL} : ${GN}$NAME${CL} \n"
+  echo -e "\n${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL} \n"
   pct config $CONTAINER > temp
   os=`awk '/^ostype/' temp | cut -d' ' -f2`
   if [ "$os" == "alpine" ]; then
@@ -45,6 +49,26 @@ function UPDATE_CONTAINER() {
         pct exec $CONTAINER -- bash -c "yum -y update"
   fi
 }
+
+# Logging
+touch $LOG_FILE
+exec &> >(tee "$LOG_FILE")
+
+# Error/Exit
+set -e
+function EXIT() {
+  EXIT_CODE=$?
+  # Update Finish
+  if [[ "$EXIT_CODE" = "0" ]]; then
+    printf "\n${GN} Finished, All Containers Updated. ${CL} \n\n"
+  # Update Error
+  else
+    printf "\n${RD}Error during Update --- Exit Code: $EXIT_CODE ${CL}\n\n"
+  fi
+}
+
+# Exit Code
+  trap EXIT EXIT
 
 #Start script
 export TERM=xterm-256color
@@ -67,8 +91,9 @@ for CONTAINER in $CONTAINERS; do
       UPDATE_CONTAINER $CONTAINER
   fi
 done
-wait
+#wait
 rm -rf temp
 clear
 HEADER_INFO
-echo -e "${GN} Finished, All Containers Updated. ${CL} \n"
+
+exit 0
