@@ -3,31 +3,25 @@
 
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 
+#General
+VERSION=2.0.1
+
 #Header Cluster Mode
-function HEADER_INFO_CLUSTER {
+function HEADER_INFO {
   cat <<'EOF'
    __  __          __      __          __   _  ________
-  / / / /___  ____/ /___ _/ /____     / /  | |/ / ____/      by Uruk and BassT23
- / / / / __ \/ __  / __ `/ __/ _ \   / /   |   / /
-/ /_/ / /_/ / /_/ / /_/ / /_/  __/  / /___/   / /___            Cluster  Mode
-\____/ .___/\____/\____/\__/\___/  /_____/_/|_\____/      --- Version 2.0.0 beta ---
+  / / / /___  ____/ /___ _/ /____     / /  | |/ / ____/
+ / / / / __ \/ __  / __ `/ __/ _ \   / /   |   / /             from
+/ /_/ / /_/ / /_/ / /_/ / /_/  __/  / /___/   / /___     BassT23 and Uruk
+\____/ .___/\____/\____/\__/\___/  /_____/_/|_\____/
     /_/
-           https://github.com/BassT23/LXC-Update
+          https://github.com/BassT23/LXC-Update
 EOF
+echo
+echo -e "*** Version: $VERSION ***" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
+echo -e "*** Mode: $MODE ***\n" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
 }
 
-#Header Host Mode
-function HEADER_INFO {
-  cat <<"EOF"
-   __  __          __      __          __   _  ________
-  / / / /___  ____/ /___ _/ /____     / /  | |/ / ____/      by Uruk and BassT23
- / / / / __ \/ __  / __ `/ __/ _ \   / /   |   / /
-/ /_/ / /_/ / /_/ / /_/ / /_/  __/  / /___/   / /___               Host Mode
-\____/ .___/\____/\____/\__/\___/  /_____/_/|_\____/      --- Version 2.0.0 beta ---
-    /_/
-           https://github.com/BassT23/LXC-Update
-EOF
-}
 #Colors
 YW='\033[33m'
 BL='\033[36m'
@@ -36,7 +30,7 @@ CM='\xE2\x9C\x94\033'
 GN='\033[1;92m'
 CL='\033[m'
 
-# Update with Extras
+#Update with Extras
 while getopts 12xh opt 2>/dev/null
 do
   case $opt in
@@ -54,7 +48,7 @@ done
 
 #Check Cluster Mode
 if [ -f "/etc/corosync/corosync.conf" ]; then
-HOSTS=$(grep ring0_addr /etc/corosync/corosync.conf | cut -c17-)
+  HOSTS=$(grep ring0_addr /etc/corosync/corosync.conf | cut -c17-)
 fi
 
 #Host Update
@@ -112,15 +106,17 @@ function CONTAINER_UPDATE_START() {
 }
 
 # Logging
+if [[ "$RICM" != "1" ]]; then
+  touch $LOG_FILE
+  exec &> >(tee "$LOG_FILE")
+fi
 function CLEAN_LOGFILE() {
-  cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee $LOG_FILE | less $LOG_FILE
-  tail -n +3 $LOG_FILE > tmp.log && mv tmp.log $LOG_FILE
+  if [[ "$RICM" != "1" ]]; then
+    tail -n +3 $LOG_FILE > tmp.log && mv tmp.log $LOG_FILE
+    cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee $LOG_FILE
+    chmod 640 $LOG_FILE
+  fi
 }
-### NOT WORKING IN CLUSTER MODE
-#if [[ "$RICM" != "1" ]]; then
-#  touch $LOG_FILE
-#  exec &> >(tee "$LOG_FILE")
-#fi
 
 # Error/Exit
 set -e
@@ -129,15 +125,11 @@ function EXIT() {
   # Update Finish
   if [[ "$EXIT_CODE" = "0" ]]; then
     printf "\n${GN}Finished, All Containers Updated.${CL}\n\n"
-#    if [[ "$RICM" != "1" ]]; then
-#      CLEAN_LOGFILE
-#    fi
+    CLEAN_LOGFILE
   # Update Error
   else
     printf "\n${RD}Error during Update --- Exit Code: $EXIT_CODE ${CL}\n\n"
-#    if [[ "$RICM" != "1" ]]; then
-#      CLEAN_LOGFILE
-#    fi
+    CLEAN_LOGFILE
   fi
 }
 
@@ -149,12 +141,14 @@ fi
 #Update Start
 export TERM=xterm-256color
 if [[ -f "/etc/corosync/corosync.conf" && "$HOST_MODE" != "1" ]]; then
+  MODE=" Cluster"
   clear
   echo -e "\n"
-  HEADER_INFO_CLUSTER
+  HEADER_INFO
   HOST_UPDATE_START
 else
   if [[ "$RICM" != "1" ]]; then
+    MODE="  Host  "
     clear
     echo -e "\n"
     HEADER_INFO
