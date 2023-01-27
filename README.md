@@ -23,7 +23,7 @@ update
 
 **ToDo:**
 
-- [ ] make it workable for Cluster
+- [x] make it workable for Cluster (v2.0.0)
 - [ ] implement extra updates for specific Containers
 
 **Credits:**
