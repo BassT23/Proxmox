@@ -1,9 +1,11 @@
 **Proxmox LXC Update Script**
 
 Features:
-- Update all LXC Container on an Proxmox Host
+- Update all LXC Container on an Proxmox Host / or hole Cluster
 - Exit tracking, so you can send additional commands for Finish or Failure 
 - Logging
+
+Info can found with "update -h"
 
 **Installation:**
 
