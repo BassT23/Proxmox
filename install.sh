@@ -3,8 +3,8 @@
 #git clone https://github.com/BassT23/LXC-Update
 cp ./update /usr/local/bin
 chmod 750 /usr/local/bin/update
-if [ -f "~/Proxmox-Update/exit/error.sh" ]; then
-  mkdir ~/Proxmox-Update/
-  mkdir ~/Proxmox-Update/exit
+if [ -f "root/Proxmox-Update/exit/error.sh" ]; then
+  mkdir root/Proxmox-Update/
+  mkdir root/Proxmox-Update/exit
 fi
-cp ./exit/*.* ~/Proxmox-Update/exit
+cp ./exit/*.* root/Proxmox-Update/exit
