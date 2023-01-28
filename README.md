@@ -46,10 +46,3 @@ update
 
 - [x] make it workable for Cluster
 - [ ] implement extra updates for specific Containers
-
-**Credits:**
-
-https://forum.proxmox.com/
-- Uruk
-- sshanee
-- amhehu
