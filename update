@@ -19,10 +19,10 @@ function HEADER_INFO {
     /_/
           https://github.com/BassT23/LXC-Update
 EOF
-echo
-echo -e "*** Version:  $VERSION  ***" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
-echo -e "*** Mode: $MODE ***" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
-echo
+  echo
+  echo -e "*** Version:  $VERSION  ***" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
+  echo -e "*** Mode: $MODE ***" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
+  echo
 }
 
 #Colors
@@ -78,16 +78,15 @@ function UPDATE_CONTAINER() {
   if [ "$os" == "alpine" ]; then
         pct exec $CONTAINER -- bash -c "apk upgrade"
   elif [ "$os" == "ubuntu" ] || [ "$os" == "debian" ] || [ "$os" == "devuan" ]; then
-#        pct exec $CONTAINER -- bash -c "apt-get update && apt-get dist-upgrade -y && apt-get clean && apt-get --purge autoremove -y"
-        pct exec $CONTAINER -- bash -c "echo -e --- APT UPDATE --- && apt-get update"
-        echo
+        pct exec $CONTAINER -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
         pct exec $CONTAINER -- bash -c "echo -e --- APT UPGRADE --- && DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
-        pct exec $CONTAINER -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y"
-        echo
+        pct exec $CONTAINER -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
         pct exec $CONTAINER -- bash -c "echo -e --- APT CLEANING --- && apt-get autoremove -y"
         pct exec $CONTAINER -- bash -c "apt-get --purge autoremove -y"
   elif [ "$os" == "fedora" ]; then
-        pct exec $CONTAINER -- bash -c "dnf -y update && dnf -y upgrade && dnf -y --purge autoremove"
+        pct exec $CONTAINER -- bash -c "echo -e --- DNF UPDATE --- && dnf -y update && echo"
+        pct exec $CONTAINER -- bash -c "echo -e --- DNF UPGRATE --- && dnf -y upgrade && echo"
+        pct exec $CONTAINER -- bash -c "echo -e --- DNF CLEANING --- && dnf -y --purge autoremove"
   elif [ "$os" == "archlinux" ]; then
         pct exec $CONTAINER -- bash -c "pacman -Syyu --noconfirm"
   else
@@ -136,10 +135,12 @@ function EXIT() {
   if [[ "$EXIT_CODE" = "0" ]]; then
     printf "\n${GN}Finished, All Containers Updated.${CL}\n\n"
     CLEAN_LOGFILE
+    ~/Proxmox-Update/exit/passed.sh
   # Update Error
   else
     printf "\n${RD}Error during Update --- Exit Code: $EXIT_CODE ${CL}\n\n"
     CLEAN_LOGFILE
+    ~/Proxmox-Update/exit/error.sh
   fi
 }
 
