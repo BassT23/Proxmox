@@ -4,10 +4,12 @@
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 
 #General
-VERSION=2.0.1
+VERSION=2.1
 
 #Header Cluster Mode
 function HEADER_INFO {
+  clear
+  echo -e "\n"
   cat <<'EOF'
    __  __          __      __          __   _  ________
   / / / /___  ____/ /___ _/ /____     / /  | |/ / ____/
@@ -18,8 +20,9 @@ function HEADER_INFO {
           https://github.com/BassT23/LXC-Update
 EOF
 echo
-echo -e "*** Version: $VERSION ***" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
-echo -e "*** Mode: $MODE ***\n" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
+echo -e "*** Version:  $VERSION  ***" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
+echo -e "*** Mode: $MODE ***" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
+echo
 }
 
 #Colors
@@ -75,7 +78,14 @@ function UPDATE_CONTAINER() {
   if [ "$os" == "alpine" ]; then
         pct exec $CONTAINER -- bash -c "apk upgrade"
   elif [ "$os" == "ubuntu" ] || [ "$os" == "debian" ] || [ "$os" == "devuan" ]; then
-        pct exec $CONTAINER -- bash -c "apt-get update && apt-get dist-upgrade -y && apt-get clean && apt-get --purge autoremove -y"
+#        pct exec $CONTAINER -- bash -c "apt-get update && apt-get dist-upgrade -y && apt-get clean && apt-get --purge autoremove -y"
+        pct exec $CONTAINER -- bash -c "echo -e --- APT UPDATE --- && apt-get update"
+        echo
+        pct exec $CONTAINER -- bash -c "echo -e --- APT UPGRADE --- && DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
+        pct exec $CONTAINER -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y"
+        echo
+        pct exec $CONTAINER -- bash -c "echo -e --- APT CLEANING --- && apt-get autoremove -y"
+        pct exec $CONTAINER -- bash -c "apt-get --purge autoremove -y"
   elif [ "$os" == "fedora" ]; then
         pct exec $CONTAINER -- bash -c "dnf -y update && dnf -y upgrade && dnf -y --purge autoremove"
   elif [ "$os" == "archlinux" ]; then
@@ -142,15 +152,11 @@ fi
 export TERM=xterm-256color
 if [[ -f "/etc/corosync/corosync.conf" && "$HOST_MODE" != "1" ]]; then
   MODE=" Cluster"
-  clear
-  echo -e "\n"
   HEADER_INFO
   HOST_UPDATE_START
 else
   if [[ "$RICM" != "1" ]]; then
     MODE="  Host  "
-    clear
-    echo -e "\n"
     HEADER_INFO
   fi
   CONTAINER_UPDATE_START
