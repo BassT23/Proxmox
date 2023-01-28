@@ -37,6 +37,10 @@ chmod +x ./install.sh
 ```
 ./install.sh
 ```
+first run:
+```
+update
+```
 
 **ToDo:**
 
