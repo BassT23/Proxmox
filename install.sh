@@ -1,4 +1,3 @@
-  GNU nano 5.4                                /root/LXC-Update/install.sh                                          
 #!/bin/bash
 #apt-get install github -y
 #git clone https://github.com/BassT23/LXC-Update
