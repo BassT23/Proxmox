@@ -135,12 +135,12 @@ function EXIT() {
   if [[ "$EXIT_CODE" = "0" ]]; then
     printf "\n${GN}Finished, All Containers Updated.${CL}\n\n"
     CLEAN_LOGFILE
-    ~/Proxmox-Update/exit/passed.sh
+#    ~/Proxmox-Update/exit/passed.sh
   # Update Error
   else
     printf "\n${RD}Error during Update --- Exit Code: $EXIT_CODE ${CL}\n\n"
     CLEAN_LOGFILE
-    ~/Proxmox-Update/exit/error.sh
+#    ~/Proxmox-Update/exit/error.sh
   fi
 }
 
