@@ -32,6 +32,9 @@ git clone https://github.com/BassT23/LXC-Update
 cd ./LXC-Update
 ```
 ```
+chmod +x ./install.sh
+```
+```
 ./install.sh
 ```
 
