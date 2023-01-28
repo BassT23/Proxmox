@@ -7,7 +7,7 @@ Features:
 - Exit tracking, so you can send additional commands for Finish or Failure 
 - Logging
 
-Info can found with "update -h"
+Info can be found with `update -h`
 
 **Installation:**
 
@@ -19,10 +19,10 @@ apt install github
 git clone https://github.com/BassT23/LXC-Update
 ```
 ```
-cp ./LXC-Update/update /usr/local/bin
+cd ./LXC-Update
 ```
 ```
-update
+./install.sh
 ```
 
 **ToDo:**
