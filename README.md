@@ -19,6 +19,7 @@
 
 Features:
 - Update all LXC Container on an Proxmox Host / or hole Cluster
+- Update the Host itself
 - Exit tracking, so you can send additional commands for Finish or Failure 
 - Logging
 
