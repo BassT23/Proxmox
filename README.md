@@ -1,3 +1,6 @@
+[![Github All Releases](https://img.shields.io/github/downloads/BassT23/LXC-Update/total.svg)]()
+
+
 **Proxmox LXC Update Script**
 
 Features:
