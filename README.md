@@ -27,7 +27,7 @@ cd ./LXC-Update
 
 **ToDo:**
 
-- [x] make it workable for Cluster (v2.0.0)
+- [x] make it workable for Cluster
 - [ ] implement extra updates for specific Containers
 
 **Credits:**
