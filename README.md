@@ -23,7 +23,7 @@ Info can be found with `update -h`
 
 As root on Proxmox Host Terminal:
 ```
-apt install github
+apt install git
 ```
 ```
 git clone https://github.com/BassT23/LXC-Update
