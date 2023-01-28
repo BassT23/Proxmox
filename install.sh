@@ -8,3 +8,4 @@ if [ ! -d "/root/Proxmox-Update/exit" ]; then
   mkdir /root/Proxmox-Update/exit
 fi
 cp ./exit/*.* /root/Proxmox-Update/exit/
+chmod +x /root/Proxmox-Update/exit/*.*
