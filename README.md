@@ -61,6 +61,6 @@ ToDo:
 
 Changelog:
 ==========
-**v2.3**
+**v2.3** (29.01.2023)
 
-Update script itself
+- Update script itself with `update -u`
