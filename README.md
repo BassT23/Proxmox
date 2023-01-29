@@ -40,7 +40,7 @@ apt install git
 git clone https://github.com/BassT23/Proxmox /root/Proxmox-Update
 ```
 ```
-cd ./Proxmox-Update
+cd /root/Proxmox-Update
 ```
 ```
 chmod +x ./install.sh
