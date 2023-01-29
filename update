@@ -4,13 +4,13 @@
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 
 #General
-VERSION=2.2
+VERSION=2.3
 
 #Header Cluster Mode
 function HEADER_INFO {
   clear
-  echo -e "\n"
-  echo -e "https://github.com/BassT23/LXC-Update" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
+  echo -e "\n \
+    https://github.com/BassT23/LXC-Update"
   cat <<'EOF'
      ____
     / __ \_________  _  ______ ___  ____  _  __
@@ -24,10 +24,9 @@ function HEADER_INFO {
     \____/ .___/\____/\____/\__/\___/
         /_/
 EOF
-  echo
-  echo -e "*** Version:  $VERSION  ***" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
-  echo -e "*** Mode: $MODE ***" | sed  -e :a -e "s/^.\{1,$(tput cols)\}$/ & /;ta" | tr -d '\n' | head -c $(tput cols)
-  echo
+  echo -e "\n \
+           *** Version:  $VERSION  *** \n \
+           *** Mode: $MODE ***"
 }
 
 #Colors
@@ -39,20 +38,40 @@ GN='\033[1;92m'
 CL='\033[m'
 
 #Update with Extras
-while getopts 12xh opt 2>/dev/null
+while getopts 12xuh opt 2>/dev/null
 do
   case $opt in
     1) HOST_MODE=1;;
     2) CLUSTER_MODE=1;;
     x) RICM=1;; # Run In Cluster Mode
+    u) UPDATE=1;;
     h) echo -e "\nOptions: \
-                 \n-1   Host Mode\
-                 \n-2   Cluster Mode\n"
+                \n======== \
+                \n-1   Host Mode\
+                \n-2   Cluster Mode\
+                \n-u   Update Proxmox Script\n"
        exit 1;;
     ?) echo -e "Wrong option! (-h for Help)"
        exit 1
   esac
 done
+
+#Update Proxmox Script
+if [[ "$UPDATE" == "1" ]]; then
+  MODE="  Update"
+  HEADER_INFO
+  echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}Script${CL}\n"
+  if [ -d "/root/LXC-Update" ]; then
+    rm -R /root/LXC-Update
+  fi
+  git clone https://github.com/BassT23/LXC-Update /root/LXC-Update
+  cd /root/LXC-Update
+  chmod +x ./install.sh
+  ./install.sh
+  rm -R /root/LXC-Update
+  printf "\n${GN}Proxmox Update Script - Updated${CL}\n\n"
+  exit 0
+fi
 
 #Check Cluster Mode
 if [ -f "/etc/corosync/corosync.conf" ]; then
