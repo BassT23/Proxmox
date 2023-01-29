@@ -62,7 +62,7 @@ Changelog:
 ==========
 **v2.4** (29.01.2023)
 
-- Visual and Name chanhes
+- Visual and Name changes
 
 **v2.3** (29.01.2023)
 
