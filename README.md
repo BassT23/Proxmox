@@ -17,8 +17,7 @@ Proxmox-Updater
 ===============
 
 Features:
-- Update all LXC Container on an Proxmox Host / or hole Cluster
-- Update the Host itself
+- Update Proxmox (the Host / all Cluster Hosts / all included LXC's)
 - Exit tracking, so you can send additional commands for Finish or Failure 
 - Logging
 
