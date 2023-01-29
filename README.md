@@ -37,10 +37,10 @@ As root on Proxmox Host Terminal:
 apt install git
 ```
 ```
-git clone https://github.com/BassT23/LXC-Update
+git clone https://github.com/BassT23/Proxmox /root/Proxmox-Update
 ```
 ```
-cd ./LXC-Update
+cd ./Proxmox-Update
 ```
 ```
 chmod +x ./install.sh
