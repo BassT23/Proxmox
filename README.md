@@ -15,7 +15,6 @@
 
 Proxmox Update Script
 =====================
-[![Github All Releases](https://img.shields.io/github/downloads/BassT23/LXC-Update/total.svg)]()
 
 Features:
 - Update all LXC Container on an Proxmox Host / or hole Cluster
