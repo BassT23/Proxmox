@@ -4,17 +4,17 @@
    / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/
   / ____/ /  / /_/ />  </ / / / / / /_/ />  <
  /_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|
-       __  __          __      __
-      / / / /___  ____/ /___ _/ /____
-     / / / / __ \/ __  / __ `/ __/ _ \
-    / /_/ / /_/ / /_/ / /_/ / /_/  __/
-    \____/ .___/\____/\____/\__/\___/
-        /_/
+      __  __          __      __
+     / / / /___  ____/ /___ _/ /____  ____
+    / / / / __ \/ __  / __ `/ __/ _ \/ __/
+   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
+   \____/ .___/\____/\____/\__/\___/_/
+       /_/
 ```
 
 
-Proxmox Update Script
-=====================
+Proxmox-Updater
+===============
 
 Features:
 - Update all LXC Container on an Proxmox Host / or hole Cluster
@@ -37,10 +37,10 @@ As root on Proxmox Host Terminal:
 apt install git
 ```
 ```
-git clone https://github.com/BassT23/Proxmox /root/Proxmox-Update
+git clone https://github.com/BassT23/Proxmox /root/Proxmox-Updater
 ```
 ```
-cd /root/Proxmox-Update
+cd /root/Proxmox-Updater
 ```
 ```
 chmod +x ./install.sh
@@ -61,6 +61,10 @@ ToDo:
 
 Changelog:
 ==========
+**v2.4** (29.01.2023)
+
+- Visual and Name chanhes
+
 **v2.3** (29.01.2023)
 
 - Update script itself with `update -u`
