@@ -60,6 +60,10 @@ ToDo:
 
 Changelog:
 ==========
+**v2.5** (xx.xx.2023)
+
+- added "Headless Mode" as option with `update -3` otherwise runs in "Interactive Mode"
+
 **v2.4** (29.01.2023)
 
 - Visual and Name changes
