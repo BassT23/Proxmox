@@ -13,8 +13,8 @@
 ```
 
 
-**Proxmox Update Script**
-=============================
+Proxmox Update Script
+=====================
 [![Github All Releases](https://img.shields.io/github/downloads/BassT23/LXC-Update/total.svg)]()
 
 Features:
@@ -25,12 +25,14 @@ Features:
 
 Info can be found with `update -h`
 
-**Update the script:**
 
+**Update the script:**
+======================
 `update -u`
 
-**Installation:**
 
+**Installation:**
+=================
 As root on Proxmox Host Terminal:
 ```
 apt install git
@@ -52,7 +54,14 @@ first run:
 update
 ```
 
-**ToDo:**
-
+ToDo:
+=====
 - [x] make it workable for Cluster
 - [ ] implement extra updates for specific Containers
+
+
+Changelog:
+==========
+**v2.3**
+
+Update script itself
