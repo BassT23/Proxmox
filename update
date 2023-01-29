@@ -4,25 +4,25 @@
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 
 #General
-VERSION=2.3.1
+VERSION=2.4
 
 #Header Cluster Mode
 function HEADER_INFO {
   clear
   echo -e "\n \
-    https://github.com/BassT23/LXC-Update"
+    https://github.com/BassT23/Proxmox"
   cat <<'EOF'
      ____
     / __ \_________  _  ______ ___  ____  _  __
    / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/
   / ____/ /  / /_/ />  </ / / / / / /_/ />  <
  /_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|
-       __  __          __      __
-      / / / /___  ____/ /___ _/ /____
-     / / / / __ \/ __  / __ `/ __/ _ \
-    / /_/ / /_/ / /_/ / /_/ / /_/  __/
-    \____/ .___/\____/\____/\__/\___/
-        /_/
+      __  __          __      __
+     / / / /___  ____/ /___ _/ /____  ____
+    / / / / __ \/ __  / __ `/ __/ _ \/ __/
+   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
+   \____/ .___/\____/\____/\__/\___/_/
+       /_/
 EOF
   echo -e "\n \
            *** Version:  $VERSION  *** \n \
@@ -49,7 +49,7 @@ do
                 \n======== \
                 \n-1   Host Mode\
                 \n-2   Cluster Mode\
-                \n-u   Update Proxmox Script\n"
+                \n-u   Update Proxmox-Updater\n"
        exit 1;;
     ?) echo -e "Wrong option! (-h for Help)"
        exit 1
@@ -61,15 +61,15 @@ if [[ "$UPDATE" == "1" ]]; then
   MODE="  Update"
   HEADER_INFO
   echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}Script${CL}\n"
-  if [ -d "/root/Proxmox-Update" ]; then
-    rm -R /root/Proxmox-Update
+  if [ -d "/root/Proxmox-Updater" ]; then
+    rm -R /root/Proxmox-Updater
   fi
-  git clone https://github.com/BassT23/Proxmox /root/Proxmox-Update
-  cd /root/Proxmox-Update
+  git clone https://github.com/BassT23/Proxmox /root/Proxmox-Updater
+  cd /root/Proxmox-Updater
   chmod +x ./install.sh
   ./install.sh
-  rm -R /root/Proxmox-Update
-  printf "\n${GN}Proxmox Update Script - Updated${CL}\n\n"
+  rm -R /root/Proxmox-Updater
+  printf "\n${GN}Proxmox-Updater - Updated${CL}\n\n"
   exit 0
 fi
 
