@@ -25,6 +25,10 @@ Features:
 
 Info can be found with `update -h`
 
+**Update the script:**
+
+`update -u`
+
 **Installation:**
 
 As root on Proxmox Host Terminal:
