@@ -4,7 +4,7 @@
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 
 #General
-VERSION=2.3
+VERSION=2.3.1
 
 #Header Cluster Mode
 function HEADER_INFO {
@@ -38,7 +38,7 @@ GN='\033[1;92m'
 CL='\033[m'
 
 #Update with Extras
-while getopts 12xuh opt 2>/dev/null
+while getopts 12xhu opt 2>/dev/null
 do
   case $opt in
     1) HOST_MODE=1;;
@@ -61,14 +61,14 @@ if [[ "$UPDATE" == "1" ]]; then
   MODE="  Update"
   HEADER_INFO
   echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}Script${CL}\n"
-  if [ -d "/root/LXC-Update" ]; then
-    rm -R /root/LXC-Update
+  if [ -d "/root/Proxmox-Update" ]; then
+    rm -R /root/Proxmox-Update
   fi
-  git clone https://github.com/BassT23/LXC-Update /root/LXC-Update
-  cd /root/LXC-Update
+  git clone https://github.com/BassT23/Proxmox /root/Proxmox-Update
+  cd /root/Proxmox-Update
   chmod +x ./install.sh
   ./install.sh
-  rm -R /root/LXC-Update
+  rm -R /root/Proxmox-Update
   printf "\n${GN}Proxmox Update Script - Updated${CL}\n\n"
   exit 0
 fi
@@ -151,7 +151,7 @@ if [[ "$RICM" != "1" ]]; then
 fi
 function CLEAN_LOGFILE() {
   if [[ "$RICM" != "1" ]]; then
-    tail -n +3 $LOG_FILE > tmp.log && mv tmp.log $LOG_FILE
+    tail -n +2 $LOG_FILE > tmp.log && mv tmp.log $LOG_FILE
     cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee $LOG_FILE
     chmod 640 $LOG_FILE
   fi
@@ -165,12 +165,12 @@ function EXIT() {
   if [[ "$EXIT_CODE" = "0" ]]; then
     printf "\n${GN}Finished, All Containers Updated.${CL}\n\n"
     CLEAN_LOGFILE
-    /root/Proxmox-Update/exit/passed.sh
+    /root/Proxmox-Update-Scripts/exit/passed.sh
   # Update Error
   else
     printf "\n${RD}Error during Update --- Exit Code: $EXIT_CODE ${CL}\n\n"
     CLEAN_LOGFILE
-    /root/Proxmox-Update/exit/error.sh
+    /root/Proxmox-Update-Scripts/exit/error.sh
   fi
 }
 
