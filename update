@@ -4,7 +4,7 @@
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 
 #General
-VERSION=2.4
+VERSION=2.5
 
 #Header Cluster Mode
 function HEADER_INFO {
@@ -27,6 +27,11 @@ EOF
   echo -e "\n \
            *** Version:  $VERSION  *** \n \
            *** Mode: $MODE ***"
+  if [[ "$HEADLESS" == "1" ]]; then
+    echo -e "            ***    Headless    ***"
+  else
+    echo -e "            ***  Interactive   ***"
+  fi
 }
 
 #Colors
@@ -38,17 +43,19 @@ GN='\033[1;92m'
 CL='\033[m'
 
 #Update with Extras
-while getopts 12xhu opt 2>/dev/null
+while getopts 123xhu opt 2>/dev/null
 do
   case $opt in
     1) HOST_MODE=1;;
     2) CLUSTER_MODE=1;;
+    3) HEADLESS=1;;
     x) RICM=1;; # Run In Cluster Mode
     u) UPDATE=1;;
     h) echo -e "\nOptions: \
                 \n======== \
-                \n-1   Host Mode\
-                \n-2   Cluster Mode\
+                \n-1   Host Mode \
+                \n-2   Cluster Mode \
+                \n-3   Headless
                 \n-u   Update Proxmox-Updater\n"
        exit 1;;
     ?) echo -e "Wrong option! (-h for Help)"
@@ -103,8 +110,13 @@ function UPDATE_CONTAINER() {
         pct exec $CONTAINER -- bash -c "apk upgrade"
   elif [ "$os" == "ubuntu" ] || [ "$os" == "debian" ] || [ "$os" == "devuan" ]; then
         pct exec $CONTAINER -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
-        pct exec $CONTAINER -- bash -c "echo -e --- APT UPGRADE --- && DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
-        pct exec $CONTAINER -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
+        if [[ "$HEADLESS" == "1" ]]; then
+          pct exec $CONTAINER -- bash -c "echo -e --- APT UPGRADE --- && DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
+          pct exec $CONTAINER -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
+        else
+          pct exec $CONTAINER -- bash -c "echo -e --- APT UPGRADE --- && apt-get dist-upgrade -y"
+          pct exec $CONTAINER -- bash -c "apt-get full-upgrade -y && echo"
+        fi
         pct exec $CONTAINER -- bash -c "echo -e --- APT CLEANING --- && apt-get autoremove -y"
         pct exec $CONTAINER -- bash -c "apt-get --purge autoremove -y"
   elif [ "$os" == "fedora" ]; then
@@ -140,7 +152,11 @@ function CONTAINER_UPDATE_START() {
 
 UPDATE_HOST_ITSELF() {
   echo -e "\n--- APT UPDATE ---" && apt-get update
-  echo -e "\n--- APT UPGRADE ---" && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+  if [[ "$HEADLESS" == "1" ]]; then
+    echo -e "\n--- APT UPGRADE ---" && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+  else
+    echo -e "\n--- APT UPGRADE ---" && apt-get upgrade -y
+  fi
   echo -e "\n--- APT CLEANING ---" && apt-get autoremove -y
 }
 
