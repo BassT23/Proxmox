@@ -104,7 +104,7 @@ function HOST_UPDATE_START() {
 function UPDATE_CONTAINER() {
   CONTAINER=$1
   NAME=`pct exec $CONTAINER hostname`
-  echo -e "\n${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL} \n"
+  echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL} \n"
   pct config "$CONTAINER" > temp
   os=`awk '/^ostype/' temp | cut -d' ' -f2`
   if [ "$os" == "alpine" ]; then
@@ -113,11 +113,11 @@ function UPDATE_CONTAINER() {
         pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
         if [[ "$HEADLESS" == "1" ]]; then
           pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
-          pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
+          pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y"
           pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y && echo"
         else
           pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && apt-get dist-upgrade -y"
-          pct exec "$CONTAINER" -- bash -c "apt-get full-upgrade -y && echo"
+          pct exec "$CONTAINER" -- bash -c "apt-get full-upgrade -y"
           pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y && echo"
         fi
         pct exec $CONTAINER -- bash -c "echo -e --- APT CLEANING --- && apt-get --purge autoremove -y"
@@ -125,7 +125,7 @@ function UPDATE_CONTAINER() {
   elif [ "$os" == "fedora" ]; then
         pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE --- && dnf -y update && echo"
         pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPGRATE --- && dnf -y upgrade && echo"
-        pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && dnf -y --purge autoremove"
+        pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && dnf -y --purge autoremove && echo"
   elif [ "$os" == "archlinux" ]; then
         pct exec $CONTAINER -- bash -c "echo -e --- PACMAN UPDATE --- && pacman -Syyu --noconfirm && echo"
   else
@@ -160,7 +160,7 @@ UPDATE_HOST_ITSELF() {
   else
     echo -e "\n--- APT UPGRADE ---" && apt-get upgrade -y
   fi
-  echo -e "\n--- APT CLEANING ---" && apt-get autoremove -y
+  echo -e "\n--- APT CLEANING ---" && apt-get autoremove -y && echo
 }
 
 # Logging
