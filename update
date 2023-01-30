@@ -119,7 +119,7 @@ function UPDATE_CONTAINER() {
           pct exec $CONTAINER -- bash -c "apt-get full-upgrade -y && echo"
         fi
         pct exec $CONTAINER -- bash -c "echo -e --- APT CLEANING --- && apt-get --purge autoremove -y"
-        pct exec $CONTAINER -- bash -c "apt-get autoremove -y && echo"
+        pct exec $CONTAINER -- bash -c "apt-get --purge autoremove -y && echo"
   elif [ "$os" == "fedora" ]; then
         pct exec $CONTAINER -- bash -c "echo -e --- DNF UPDATE --- && dnf -y update && echo"
         pct exec $CONTAINER -- bash -c "echo -e --- DNF UPGRATE --- && dnf -y upgrade && echo"
