@@ -4,7 +4,7 @@
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 
 #General
-VERSION=2.5
+VERSION=2.5.1
 
 #Header Cluster Mode
 function HEADER_INFO {
@@ -90,13 +90,13 @@ fi
 function UPDATE_HOST() {
   HOST=$1
   echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL} | ${GN}$HOST${CL}"
-  ssh $HOST 'bash -s' < $0 -- -1x
+  ssh "$HOST" 'bash -s' < "$0" -- -1x
 }
 
 #Host Update Start
 function HOST_UPDATE_START() {
   for HOST in $HOSTS; do
-    UPDATE_HOST $HOST
+    UPDATE_HOST "$HOST"
   done
 }
 
@@ -105,25 +105,26 @@ function UPDATE_CONTAINER() {
   CONTAINER=$1
   NAME=`pct exec $CONTAINER hostname`
   echo -e "\n${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL} \n"
-  pct config $CONTAINER > temp
+  pct config "$CONTAINER" > temp
   os=`awk '/^ostype/' temp | cut -d' ' -f2`
   if [ "$os" == "alpine" ]; then
-        pct exec $CONTAINER -- bash -c "echo -e --- APT UPDATE --- && apk -U upgrade && echo"
+        pct exec "$CONTAINER" -- bash -c "echo -e --- APK UPDATE --- && apk -U upgrade && echo"
   elif [ "$os" == "ubuntu" ] || [ "$os" == "debian" ] || [ "$os" == "devuan" ]; then
-        pct exec $CONTAINER -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
+        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
         if [[ "$HEADLESS" == "1" ]]; then
-          pct exec $CONTAINER -- bash -c "echo -e --- APT UPGRADE --- && DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
-          pct exec $CONTAINER -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
+          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
+          pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
         else
-          pct exec $CONTAINER -- bash -c "echo -e --- APT UPGRADE --- && apt-get dist-upgrade -y"
-          pct exec $CONTAINER -- bash -c "apt-get full-upgrade -y && echo"
+          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && apt-get upgrade -V -y && echo"
+#          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && apt-get dist-upgrade -y"
+#          pct exec "$CONTAINER" -- bash -c "apt-get full-upgrade -y && echo"
         fi
         pct exec $CONTAINER -- bash -c "echo -e --- APT CLEANING --- && apt-get --purge autoremove -y"
-        pct exec $CONTAINER -- bash -c "apt-get --purge autoremove -y && echo"
+        pct exec $CONTAINER -- bash -c "apt-get autoremove -y && echo"
   elif [ "$os" == "fedora" ]; then
-        pct exec $CONTAINER -- bash -c "echo -e --- DNF UPDATE --- && dnf -y update && echo"
-        pct exec $CONTAINER -- bash -c "echo -e --- DNF UPGRATE --- && dnf -y upgrade && echo"
-        pct exec $CONTAINER -- bash -c "echo -e --- DNF CLEANING --- && dnf -y --purge autoremove"
+        pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE --- && dnf -y update && echo"
+        pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPGRATE --- && dnf -y upgrade && echo"
+        pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && dnf -y --purge autoremove"
   elif [ "$os" == "archlinux" ]; then
         pct exec $CONTAINER -- bash -c "echo -e --- PACMAN UPDATE --- && pacman -Syyu --noconfirm && echo"
   else
@@ -135,17 +136,17 @@ function UPDATE_CONTAINER() {
 function CONTAINER_UPDATE_START() {
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   for CONTAINER in $CONTAINERS; do
-    status=$(pct status $CONTAINER)
+    status=$(pct status "$CONTAINER")
     if [ "$status" == "status: stopped" ]; then
       echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL} \n"
-      pct start $CONTAINER
+      pct start "$CONTAINER"
       echo -e "${BL}[Info]${GN} Waiting For${BL} $CONTAINER${CL}${GN} To Start ${CL}"
       sleep 5
-      UPDATE_CONTAINER $CONTAINER
+      UPDATE_CONTAINER "$CONTAINER"
       echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL} \n"
-      pct shutdown $CONTAINER &
+      pct shutdown "$CONTAINER" &
     elif [ "$status" == "status: running" ]; then
-      UPDATE_CONTAINER $CONTAINER
+      UPDATE_CONTAINER "$CONTAINER"
     fi
   done
   rm -rf temp
@@ -163,14 +164,14 @@ UPDATE_HOST_ITSELF() {
 
 # Logging
 if [[ "$RICM" != "1" ]]; then
-  touch $LOG_FILE
+  touch "$LOG_FILE"
   exec &> >(tee "$LOG_FILE")
 fi
 function CLEAN_LOGFILE() {
   if [[ "$RICM" != "1" ]]; then
-    tail -n +2 $LOG_FILE > tmp.log && mv tmp.log $LOG_FILE
-    cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee $LOG_FILE
-    chmod 640 $LOG_FILE
+    tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
+    cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE"
+    chmod 640 "$LOG_FILE"
   fi
 }
 
