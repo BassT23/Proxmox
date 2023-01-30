@@ -55,7 +55,7 @@ do
                 \n======== \
                 \n-1   Host Mode \
                 \n-2   Cluster Mode \
-                \n-3   Headless
+                \n-3   Headless \
                 \n-u   Update Proxmox-Updater\n"
        exit 1;;
     ?) echo -e "Wrong option! (-h for Help)"
