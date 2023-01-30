@@ -61,7 +61,7 @@ ToDo:
 
 Credits
 =======
-@Uruk - for help with the code
+[@Uruk](https://github.com/Uruknara) - for help with the code
 
 Changelog:
 ==========
