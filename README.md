@@ -57,12 +57,16 @@ ToDo:
 - [x] make it workable for Cluster
 - [ ] implement extra updates for specific Containers
 
+Credits
+=======
+@Uruk - for help with the code
 
 Changelog:
 ==========
-**v2.5.1** (30.01.2023)
+**v2.6** (30.01.2023)
 
-- Fix promt of update and display name of node in cluster
+- Fix promt of update
+- Add Apt update depencies
 
 **v2.5** (30.01.2023)
 
