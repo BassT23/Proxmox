@@ -56,6 +56,8 @@ ToDo:
 =====
 - [x] make it workable for Cluster
 - [ ] implement extra updates for specific Containers
+- [ ] make installation more simple
+- [ ] Fix dpkg --configure -a on interactive mode
 
 Credits
 =======
