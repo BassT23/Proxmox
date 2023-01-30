@@ -17,7 +17,7 @@ Proxmox-Updater
 ===============
 
 Features:
-- Update Proxmox (the Host / all Cluster Hosts / all included LXC's)
+- Update Proxmox (the Host / all Cluster Nodes / all included LXC's)
 - Exit tracking, so you can send additional commands for Finish or Failure 
 - Logging
 
@@ -60,6 +60,10 @@ ToDo:
 
 Changelog:
 ==========
+**v2.5.1** (30.01.2023)
+
+- Fix promt of update and display name of node in cluster
+
 **v2.5** (30.01.2023)
 
 - added "Headless Mode" as option with `update -3` otherwise runs in "Interactive Mode"
