@@ -141,7 +141,7 @@ function CONTAINER_UPDATE_START() {
     if [ "$status" == "status: stopped" ]; then
       echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL} \n"
       pct start "$CONTAINER"
-      echo -e "${BL}[Info]${GN} Waiting For${BL} $CONTAINER${CL}${GN} To Start ${CL}"
+      echo -e "${BL}[Info]${GN} Waiting For${BL} $CONTAINER${CL}${GN} To Start ${CL}\n"
       sleep 5
       UPDATE_CONTAINER "$CONTAINER"
       echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL} \n"
