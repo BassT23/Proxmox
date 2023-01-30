@@ -82,13 +82,14 @@ fi
 
 #Check Cluster Mode
 if [ -f "/etc/corosync/corosync.conf" ]; then
+  NAME=$(grep name /etc/corosync/corosync.conf | head -n 1 | cut -c11-)
   HOSTS=$(grep ring0_addr /etc/corosync/corosync.conf | cut -c17-)
 fi
 
 #Host Update
 function UPDATE_HOST() {
   HOST=$1
-  echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOST${CL}"
+  echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$NAME${CL} | ${GN}$HOST${CL}"
   ssh $HOST 'bash -s' < $0 -- -1x
 }
 
