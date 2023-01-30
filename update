@@ -107,7 +107,7 @@ function UPDATE_CONTAINER() {
   pct config $CONTAINER > temp
   os=`awk '/^ostype/' temp | cut -d' ' -f2`
   if [ "$os" == "alpine" ]; then
-        pct exec $CONTAINER -- bash -c "apk upgrade"
+        pct exec $CONTAINER -- bash -c "echo -e --- APT UPDATE --- && apk -U upgrade && echo"
   elif [ "$os" == "ubuntu" ] || [ "$os" == "debian" ] || [ "$os" == "devuan" ]; then
         pct exec $CONTAINER -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
         if [[ "$HEADLESS" == "1" ]]; then
@@ -117,16 +117,16 @@ function UPDATE_CONTAINER() {
           pct exec $CONTAINER -- bash -c "echo -e --- APT UPGRADE --- && apt-get dist-upgrade -y"
           pct exec $CONTAINER -- bash -c "apt-get full-upgrade -y && echo"
         fi
-        pct exec $CONTAINER -- bash -c "echo -e --- APT CLEANING --- && apt-get autoremove -y"
-        pct exec $CONTAINER -- bash -c "apt-get --purge autoremove -y"
+        pct exec $CONTAINER -- bash -c "echo -e --- APT CLEANING --- && apt-get --purge autoremove -y"
+        pct exec $CONTAINER -- bash -c "apt-get autoremove -y && echo"
   elif [ "$os" == "fedora" ]; then
         pct exec $CONTAINER -- bash -c "echo -e --- DNF UPDATE --- && dnf -y update && echo"
         pct exec $CONTAINER -- bash -c "echo -e --- DNF UPGRATE --- && dnf -y upgrade && echo"
         pct exec $CONTAINER -- bash -c "echo -e --- DNF CLEANING --- && dnf -y --purge autoremove"
   elif [ "$os" == "archlinux" ]; then
-        pct exec $CONTAINER -- bash -c "pacman -Syyu --noconfirm"
+        pct exec $CONTAINER -- bash -c "echo -e --- PACMAN UPDATE --- && pacman -Syyu --noconfirm && echo"
   else
-        pct exec $CONTAINER -- bash -c "yum -y update"
+        pct exec $CONTAINER -- bash -c "echo -e --- YUM UPDATE --- && yum -y update && echo"
   fi
 }
 
@@ -138,7 +138,7 @@ function CONTAINER_UPDATE_START() {
     if [ "$status" == "status: stopped" ]; then
       echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL} \n"
       pct start $CONTAINER
-      echo -e "${BL}[Info]${GN} Waiting For${BL} $CONTAINER${CL}${GN} To Start ${CL} \n"
+      echo -e "${BL}[Info]${GN} Waiting For${BL} $CONTAINER${CL}${GN} To Start ${CL}"
       sleep 5
       UPDATE_CONTAINER $CONTAINER
       echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL} \n"
@@ -179,7 +179,7 @@ function EXIT() {
   EXIT_CODE=$?
   # Update Finish
   if [[ "$EXIT_CODE" = "0" ]]; then
-    printf "\n${GN}Finished, All Containers Updated.${CL}\n\n"
+    printf "${GN}Finished, All Containers Updated.${CL}\n\n"
     CLEAN_LOGFILE
     /root/Proxmox-Update-Scripts/exit/passed.sh
   # Update Error
