@@ -82,14 +82,14 @@ fi
 
 #Check Cluster Mode
 if [ -f "/etc/corosync/corosync.conf" ]; then
-  HOSTNAME=$(grep name /etc/corosync/corosync.conf | head -n 1 | cut -c11-)
+#  HOSTNAME=$(grep name /etc/corosync/corosync.conf | head -n 1 | cut -c11-)
   HOSTS=$(grep ring0_addr /etc/corosync/corosync.conf | cut -c17-)
 fi
 
 #Host Update
 function UPDATE_HOST() {
   HOST=$1
-  echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL} | ${GN}$HOST${CL}"
+  echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOST${CL}"
   ssh "$HOST" 'bash -s' < "$0" -- -1x
 }
 
@@ -115,9 +115,8 @@ function UPDATE_CONTAINER() {
           pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
           pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
         else
-          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && apt-get upgrade -V -y && echo"
-#          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && apt-get dist-upgrade -y"
-#          pct exec "$CONTAINER" -- bash -c "apt-get full-upgrade -y && echo"
+          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && apt-get dist-upgrade -y"
+          pct exec "$CONTAINER" -- bash -c "apt-get full-upgrade -y && echo"
         fi
         pct exec $CONTAINER -- bash -c "echo -e --- APT CLEANING --- && apt-get --purge autoremove -y"
         pct exec $CONTAINER -- bash -c "apt-get autoremove -y && echo"
