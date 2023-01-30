@@ -65,8 +65,9 @@ Changelog:
 ==========
 **v2.6** (30.01.2023)
 
+- Cleanup overall code
 - Fix promt of update
-- Add Apt update depencies
+- Add updating package that been kept back
 
 **v2.5** (30.01.2023)
 
