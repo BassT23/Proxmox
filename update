@@ -4,7 +4,7 @@
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 
 #General
-VERSION=2.6.1
+VERSION=2.7
 
 #Header Cluster Mode
 function HEADER_INFO {
