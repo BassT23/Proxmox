@@ -66,10 +66,10 @@ Credits:
 Changelog:
 ==========
 
-**v2.7**
+**v2.7** (not released now)
 
-- fine tuning
 - add root check
+- Cleanup overall code
 
 **v2.6** (30.01.2023)
 
