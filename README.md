@@ -59,8 +59,8 @@ ToDo:
 - [ ] make installation more simple
 - [ ] Fix dpkg --configure -a on interactive mode
 
-Credits
-=======
+Credits:
+========
 [@Uruk](https://github.com/Uruknara) - for help with the code
 
 Changelog:
