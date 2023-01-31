@@ -65,6 +65,12 @@ Credits:
 
 Changelog:
 ==========
+
+**v2.7**
+
+- fine tuning
+- add root check
+
 **v2.6** (30.01.2023)
 
 - Cleanup overall code
