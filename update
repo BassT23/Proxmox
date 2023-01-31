@@ -191,7 +191,7 @@ fi
 function CLEAN_LOGFILE() {
   if [[ "$RICM" != "1" ]]; then
     tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
-    cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee $LOG_FILE
+    cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE"
     chmod 640 "$LOG_FILE"
   fi
 }
