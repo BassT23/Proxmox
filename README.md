@@ -18,7 +18,7 @@ Proxmox-Updater
 
 Features:
 - Update Proxmox (the Host / all Cluster Nodes / all included LXC's)
-- Exit tracking, so you can send additional commands for Finish or Failure 
+- Exit tracking, so you can send additional commands for Finish or Failure
 - Logging
 
 Info can be found with `update -h`
@@ -65,6 +65,12 @@ Credits:
 
 Changelog:
 ==========
+
+**v2.7** (not released now)
+
+- add root check
+- Cleanup overall code
+
 **v2.6** (30.01.2023)
 
 - Cleanup overall code
