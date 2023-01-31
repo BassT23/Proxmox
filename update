@@ -113,7 +113,7 @@ function UPDATE_CONTAINER() {
         if [[ "$HEADLESS" == "1" ]]; then
           pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
           pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y"
-          pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y && echo"
+          pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y && echo"
         else
           pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && apt-get dist-upgrade -y"
           pct exec "$CONTAINER" -- bash -c "apt-get full-upgrade -y"
