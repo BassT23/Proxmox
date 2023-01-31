@@ -173,7 +173,7 @@ function CONTAINER_UPDATE_START() {
   rm -rf temp
 }
 
-UPDATE_HOST_ITSELF() {
+function UPDATE_HOST_ITSELF() {
   echo -e "\n--- APT UPDATE ---" && apt-get update
   if [[ "$HEADLESS" == "1" ]]; then
     echo -e "\n--- APT UPGRADE ---" && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
