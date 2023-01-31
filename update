@@ -111,13 +111,13 @@ function UPDATE_CONTAINER() {
   elif [ "$os" == "ubuntu" ] || [ "$os" == "debian" ] || [ "$os" == "devuan" ]; then
         pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
         if [[ "$HEADLESS" == "1" ]]; then
-          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
-          pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y"
-          pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y && echo"
+          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
+                                            apt-get DEBIAN_FRONTEND=noninteractive -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y \
+                                            apt-get DEBIAN_FRONTEND=noninteractive full-upgrade -y && echo"
         else
-          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && apt-get dist-upgrade -y"
-          pct exec "$CONTAINER" -- bash -c "apt-get full-upgrade -y"
-          pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y && echo"
+          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
+                                            apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && \
+                                            apt-get full-upgrade -y && echo"
         fi
         pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && apt-get --purge autoremove -y"
         pct exec "$CONTAINER" -- bash -c "apt-get autoremove -y && echo"
