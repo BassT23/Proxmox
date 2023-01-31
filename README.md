@@ -20,6 +20,7 @@ Features:
 - Update Proxmox (the Host / all Cluster Nodes / all included LXC's)
 - Exit tracking, so you can send additional commands for Finish or Failure
 - Logging
+- Normal run is "Interactive" / Headless Mode can be run with `update -3`
 
 Info can be found with `update -h`
 
