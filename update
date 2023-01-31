@@ -231,7 +231,7 @@ else
     HEADER_INFO
   fi
     if [[ "$RICM" != "1" ]]; then
-      echo -e "\n ${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
+      echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
     fi
   UPDATE_HOST_ITSELF
   CONTAINER_UPDATE_START
