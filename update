@@ -133,12 +133,12 @@ function UPDATE_CONTAINER() {
         pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
         if [[ "$HEADLESS" == "1" ]]; then
           pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
-					    apt-get DEBIAN_FRONTEND=noninteractive -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y \
-					    apt-get DEBIAN_FRONTEND=noninteractive full-upgrade -y && echo"
+                                            apt-get DEBIAN_FRONTEND=noninteractive -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y \
+                                            apt-get DEBIAN_FRONTEND=noninteractive full-upgrade -y && echo"
         else
           pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
-					    apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && \
-					    apt-get full-upgrade -y && echo"
+                                            apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && \
+                                            apt-get full-upgrade -y && echo"
         fi
         pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && apt-get --purge autoremove -y"
         pct exec "$CONTAINER" -- bash -c "apt-get autoremove -y && echo"
@@ -151,6 +151,7 @@ function UPDATE_CONTAINER() {
   else
         pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE --- && yum -y update && echo"
   fi
+  rm temp
 }
 
 #Container Update Start
@@ -230,7 +231,7 @@ else
     HEADER_INFO
   fi
     if [[ "$RICM" != "1" ]]; then
-      echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
+      echo -e "\n ${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
     fi
   UPDATE_HOST_ITSELF
   CONTAINER_UPDATE_START
