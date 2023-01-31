@@ -67,7 +67,7 @@ Credits:
 Changelog:
 ==========
 
-**v2.7** (not released now)
+**v2.7** (31.01.2023)
 
 - add root check
 - Cleanup overall code
