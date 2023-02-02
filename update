@@ -4,7 +4,7 @@
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 
 #General
-VERSION=2.7
+VERSION=2.7.1
 
 #Header Cluster Mode
 function HEADER_INFO {
@@ -110,7 +110,11 @@ fi
 function UPDATE_HOST() {
   HOST=$1
   echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOST${CL}"
-  ssh "$HOST" 'bash -s' < "$0" -- -2x
+  if [[ "$HEADLESS" == "1" ]]; then
+    ssh "$HOST" 'bash -s' < "$0" -- -23x
+  else
+    ssh "$HOST" 'bash -s' < "$0" -- -2x
+  fi
 }
 
 #Host Update Start
@@ -132,12 +136,12 @@ function UPDATE_CONTAINER() {
   elif [ "$os" == "ubuntu" ] || [ "$os" == "debian" ] || [ "$os" == "devuan" ]; then
         pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
         if [[ "$HEADLESS" == "1" ]]; then
-          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
-                                            apt-get DEBIAN_FRONTEND=noninteractive -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y \
-                                            apt-get DEBIAN_FRONTEND=noninteractive full-upgrade -y && echo"
+          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE HEADLESS --- && \
+                                            DEBIAN_FRONTEND=noninteractive -o APT::Get::Always-Include-Phased-Updates=true apt-get dist-upgrade -y \
+                                            DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
         else
           pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
-                                            apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && \
+                                            -o APT::Get::Always-Include-Phased-Updates=true apt-get dist-upgrade -y -n && \
                                             apt-get full-upgrade -y && echo"
         fi
         pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && apt-get --purge autoremove -y"
@@ -177,7 +181,7 @@ function CONTAINER_UPDATE_START() {
 function UPDATE_HOST_ITSELF() {
   echo -e "\n--- APT UPDATE ---" && apt-get update
   if [[ "$HEADLESS" == "1" ]]; then
-    echo -e "\n--- APT UPGRADE ---" && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+    echo -e "\n--- APT UPGRADE HEADLESS ---" && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
   else
     echo -e "\n--- APT UPGRADE ---" && apt-get upgrade -y
   fi
