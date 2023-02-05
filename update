@@ -137,11 +137,11 @@ function UPDATE_CONTAINER() {
         pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
         if [[ "$HEADLESS" == "1" ]]; then
           pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE HEADLESS --- && \
-                                            DEBIAN_FRONTEND=noninteractive -o APT::Get::Always-Include-Phased-Updates=true apt-get dist-upgrade -y \
+                                            DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && \
                                             DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
         else
           pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
-                                            -o APT::Get::Always-Include-Phased-Updates=true apt-get dist-upgrade -y -n && \
+                                            apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y -n && \
                                             apt-get full-upgrade -y && echo"
         fi
         pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && apt-get --purge autoremove -y"
