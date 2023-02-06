@@ -67,6 +67,10 @@ Credits:
 Changelog:
 ==========
 
+**v2.7.1** (06.02.2023)
+
+- small fixes
+
 **v2.7** (31.01.2023)
 
 - add root check
