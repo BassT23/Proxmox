@@ -141,7 +141,7 @@ function UPDATE_CONTAINER() {
                                             DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
         else
           pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
-                                            apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y -n && \
+                                            apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && \
                                             apt-get full-upgrade -y && echo"
         fi
         pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && apt-get --purge autoremove -y"
