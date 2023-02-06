@@ -30,7 +30,7 @@ EOF
   if [[ "$HEADLESS" == "1" ]]; then
     echo -e "            ***    Headless    ***"
   else
-  	if [[ "$UPDATE" != "1" ]]; then
+    if [[ "$UPDATE" != "1" ]]; then
     echo -e "            ***  Interactive   ***"
     fi
   fi
