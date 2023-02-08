@@ -1,12 +1,18 @@
 #!/bin/bash
+
 #Variable / Function
-
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
+VERSION=2.8
 
-#General
-VERSION=2.7.2
+#Colors
+YW='\033[33m'
+BL='\033[36m'
+RD='\033[01;31m'
+CM='\xE2\x9C\x94\033'
+GN='\033[1;92m'
+CL='\033[m'
 
-#Header Cluster Mode
+#Header
 function HEADER_INFO {
   clear
   echo -e "\n \
@@ -27,23 +33,15 @@ EOF
   echo -e "\n \
            *** Version:  $VERSION  *** \n \
            *** Mode: $MODE ***"
-  if [[ "$HEADLESS" == "1" ]]; then
+  if [[ $HEADLESS == "1" ]]; then
     echo -e "            ***    Headless    ***"
   else
-    if [[ "$UPDATE" != "1" ]]; then
+    if [[ $UPDATE != "1" ]]; then
     echo -e "            ***  Interactive   ***"
     fi
   fi
   CHECK_ROOT
 }
-
-#Colors
-YW='\033[33m'
-BL='\033[36m'
-RD='\033[01;31m'
-CM='\xE2\x9C\x94\033'
-GN='\033[1;92m'
-CL='\033[m'
 
 #Update Options
 while getopts 123xhu opt 2>/dev/null
@@ -68,7 +66,7 @@ done
 
 #Check root
 function CHECK_ROOT() {
-  if [[ "$RICM" != "1" ]]; then
+  if [[ $RICM != "1" ]]; then
     if [[ $EUID -eq 0 ]];then
       echo -e "\n--- You are root ---"
     else
@@ -87,32 +85,36 @@ function CHECK_ROOT() {
 }
 
 #Update Proxmox-Updater
-if [[ "$UPDATE" == "1" ]]; then
-  MODE="  Update"
+if [[ $UPDATE == "1" ]]; then
+  MODE="Update"
   HEADER_INFO
-  echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}Script${CL}\n"
+  echo -e "\n${BL}[Info]${GN} Updating script...\n"
+  # Delete old version if it exists
   if [ -d "/root/Proxmox-Updater" ]; then
-    rm -R /root/Proxmox-Updater
+    rm -rf /root/Proxmox-Updater
   fi
+  # Cloning the new version
   git clone https://github.com/BassT23/Proxmox /root/Proxmox-Updater
+  # Execution of the installation script
   cd /root/Proxmox-Updater
   chmod +x ./install.sh
   ./install.sh
-  rm -R /root/Proxmox-Updater
-  echo -e "\n${GN}Proxmox-Updater - Updated${CL}\n"
+  # Deleting the new cloned version
+  rm -rf /root/Proxmox-Updater
+  echo -e "\n${GN}Proxmox-Updater updated successfully.${CL}\n"
   exit 0
 fi
 
 #Check Cluster Mode
 if [ -f "/etc/corosync/corosync.conf" ]; then
-  HOSTS=$(grep ring0_addr /etc/corosync/corosync.conf | cut -c17-)
+  HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
 fi
 
 #Host Update
 function UPDATE_HOST() {
   HOST=$1
   echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOST${CL}"
-  if [[ "$HEADLESS" == "1" ]]; then
+  if [[ $HEADLESS == "1" ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- -23x
   else
     ssh "$HOST" 'bash -s' < "$0" -- -2x
@@ -133,47 +135,51 @@ function UPDATE_CONTAINER() {
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   pct config "$CONTAINER" > temp
   os=$(awk '/^ostype/' temp | cut -d' ' -f2)
-  if [ "$os" == "alpine" ]; then
-        pct exec "$CONTAINER" -- bash -c "echo -e --- APK UPDATE --- && apk -U upgrade && echo"
-  elif [ "$os" == "ubuntu" ] || [ "$os" == "debian" ] || [ "$os" == "devuan" ]; then
-        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
-        if [[ "$HEADLESS" == "1" ]]; then
-          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE HEADLESS --- && \
-                                            DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && \
-                                            DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
-        else
-          pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
-                                            apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && \
-                                            apt-get full-upgrade -y && echo"
-        fi
-        pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && apt-get --purge autoremove -y"
-        pct exec "$CONTAINER" -- bash -c "apt-get autoremove -y && echo"
-  elif [ "$os" == "fedora" ]; then
-        pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE --- && dnf -y update && echo"
-        pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPGRATE --- && dnf -y upgrade && echo"
-        pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && dnf -y --purge autoremove && echo"
-  elif [ "$os" == "archlinux" ]; then
-        pct exec "$CONTAINER" -- bash -c "echo -e --- PACMAN UPDATE --- && pacman -Syyu --noconfirm && echo"
-  else
-        pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE --- && yum -y update && echo"
-  fi
-  rm temp
+  case "$os" in
+    "ubuntu" | "debian" | "devuan")
+      pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
+      if [[ $HEADLESS == "1" ]]; then
+        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE HEADLESS --- && \
+                                          DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && \
+                                          DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
+      else
+        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
+                                          apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && \
+                                          apt-get full-upgrade -y && echo"
+      fi
+      pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && \
+                                          apt-get --purge autoremove -y && echo";;
+    "fedora")
+      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE --- && dnf -y update && echo"
+      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPGRATE --- && dnf -y upgrade && echo"
+      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && dnf -y --purge autoremove && echo";;
+    "archlinux")
+      pct exec "$CONTAINER" -- bash -c "echo -e --- PACMAN UPDATE --- && pacman -Syyu --noconfirm && echo";;
+    "alpine")
+      pct exec "$CONTAINER" -- ash -c "echo -e --- APK UPDATE --- && apk -U upgrade && echo";;
+    *)
+      pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE --- && yum -y update && echo";;
+  esac
 }
 
 #Container Update Start
 function CONTAINER_UPDATE_START() {
+  # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
+  # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     status=$(pct status "$CONTAINER")
-    if [ "$status" == "status: stopped" ]; then
+    if [[ $status == "status: stopped" ]]; then
       echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
+      # Start the container
       pct start "$CONTAINER"
       echo -e "${BL}[Info]${GN} Waiting For${BL} $CONTAINER${CL}${GN} To Start ${CL}\n"
       sleep 5
       UPDATE_CONTAINER "$CONTAINER"
       echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
+      # Stop the container
       pct shutdown "$CONTAINER" &
-    elif [ "$status" == "status: running" ]; then
+    elif [[ $status == "status: running" ]]; then
       UPDATE_CONTAINER "$CONTAINER"
     fi
   done
@@ -182,21 +188,24 @@ function CONTAINER_UPDATE_START() {
 
 function UPDATE_HOST_ITSELF() {
   echo -e "\n--- APT UPDATE ---" && apt-get update
-  if [[ "$HEADLESS" == "1" ]]; then
-    echo -e "\n--- APT UPGRADE HEADLESS ---" && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+  if [[ $HEADLESS == "1" ]]; then
+    echo -e "\n--- APT UPGRADE HEADLESS ---" && \
+            DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
   else
-    echo -e "\n--- APT UPGRADE ---" && apt-get upgrade -y
+    echo -e "\n--- APT UPGRADE ---" && \
+            apt-get upgrade -y
   fi
-  echo -e "\n--- APT CLEANING ---" && apt-get autoremove -y && echo
+  echo -e "\n--- APT CLEANING ---" && \
+          apt-get --purge autoremove -y && echo
 }
 
 # Logging
-if [[ "$RICM" != "1" ]]; then
+if [[ $RICM != "1" ]]; then
   touch "$LOG_FILE"
   exec &> >(tee "$LOG_FILE")
 fi
 function CLEAN_LOGFILE() {
-  if [[ "$RICM" != "1" ]]; then
+  if [[ $RICM != "1" ]]; then
     tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
     cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE"
     chmod 640 "$LOG_FILE"
@@ -208,7 +217,7 @@ set -e
 function EXIT() {
   EXIT_CODE=$?
   # Update Finish
-  if [[ "$EXIT_CODE" = "0" ]]; then
+  if [[ $EXIT_CODE = "0" ]]; then
     echo -e "${GN}Finished, All Containers Updated.${CL}\n"
     CLEAN_LOGFILE
     /root/Proxmox-Update-Scripts/exit/passed.sh
@@ -221,22 +230,22 @@ function EXIT() {
 }
 
 # Exit Code
-if [[ "$RICM" != "1" ]]; then
+if [[ $RICM != "1" ]]; then
   trap EXIT EXIT
 fi
 
 #Update Start
 export TERM=xterm-256color
-if [[ -f "/etc/corosync/corosync.conf" && "$HOST_MODE" != "1" ]]; then
-  MODE=" Cluster"
+if [[ -f /etc/corosync/corosync.conf && $HOST_MODE != "1" ]]; then
+  MODE=" Cluster "
   HEADER_INFO
   HOST_UPDATE_START
 else
-  if [[ "$RICM" != "1" ]]; then
+  if [[ $RICM != "1" ]]; then
     MODE="  Host  "
     HEADER_INFO
   fi
-    if [[ "$RICM" != "1" ]]; then
+    if [[ $RICM != "1" ]]; then
       echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
     fi
   UPDATE_HOST_ITSELF
