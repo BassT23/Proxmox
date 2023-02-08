@@ -86,9 +86,9 @@ function CHECK_ROOT() {
 
 #Update Proxmox-Updater
 if [[ $UPDATE == "1" ]]; then
-  MODE="Update"
+  MODE=" Update "
   HEADER_INFO
-  echo -e "\n${BL}[Info]${GN} Updating script...\n"
+  echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
   # Delete old version if it exists
   if [ -d "/root/Proxmox-Updater" ]; then
     rm -rf /root/Proxmox-Updater
@@ -223,7 +223,7 @@ function EXIT() {
     /root/Proxmox-Update-Scripts/exit/passed.sh
   # Update Error
   else
-    echo -e "${RD}Error during Update --- Exit Code: $EXIT_CODE ${CL}\n"
+    echo -e "${RD}Error during Update --- Exit Code: $EXIT_CODE${CL}\n"
     CLEAN_LOGFILE
     /root/Proxmox-Update-Scripts/exit/error.sh
   fi
@@ -237,7 +237,7 @@ fi
 #Update Start
 export TERM=xterm-256color
 if [[ -f /etc/corosync/corosync.conf && $HOST_MODE != "1" ]]; then
-  MODE=" Cluster "
+  MODE=" Cluster"
   HEADER_INFO
   HOST_UPDATE_START
 else
