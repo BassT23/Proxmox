@@ -44,6 +44,11 @@ function INSTALL(){
     curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
     curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
     chmod +x /root/Proxmox-Update-Scripts/exit/*.*
+#Check if git is installed?
+    read -p "For further updates, you need git installed?\nShould I install this for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      apt-get install git -y
+    fi
 }
 
 function UNINSTALL(){
@@ -67,11 +72,6 @@ else
       fi
     else
       INSTALL
-      #Check if git is installed?
-      read -p "For further updates, you need git installed?\nShould I install this for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
-      if [[ $REPLY =~ ^[Yy]$ ]]; then
-        apt-get install git -y
-      fi
     fi
 fi
 exit 0
