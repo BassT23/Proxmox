@@ -60,14 +60,18 @@ if [[ $UNINSTALL == 1 ]]; then
     UNINSTALL
 else
     if [ -f "/usr/local/bin/update" ]; then
-      echo -e "\nProxmox-Updater is already installed\nPlease use 'update -u' to Update the Updater\n"
+      echo -e "\nProxmox-Updater is already installed\n"
       read -p "Should I update for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         update -u
       fi
     else
       INSTALL
-      #Install git for further updates?
+      #Check if git is installed?
+      read -p "For further updates, you need git installed?\nShould I install this for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+        apt-get install git -y
+      fi
     fi
 fi
 exit 0
