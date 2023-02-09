@@ -34,23 +34,7 @@ Info can be found with `update -h`
 =================
 As root on Proxmox Host Terminal:
 ```
-apt install git
-```
-```
-git clone https://github.com/BassT23/Proxmox /root/Proxmox-Updater
-```
-```
-cd /root/Proxmox-Updater
-```
-```
-chmod +x ./install.sh
-```
-```
-./install.sh
-```
-first run:
-```
-update
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/install.sh)
 ```
 
 ToDo:
