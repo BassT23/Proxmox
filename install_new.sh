@@ -11,6 +11,11 @@ function install(){
     chmod +x /root/Proxmox-Update-Scripts/exit/*.*
 }
 
+function uninstall(){
+    rm /usr/local/bin/update
+    rm -r /root/Proxmox-Update-Scripts
+}
+
 # Error/Exit
 set -e
 function EXIT() {
