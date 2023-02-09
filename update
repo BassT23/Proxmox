@@ -66,7 +66,7 @@ done
 
 #Check root
 function CHECK_ROOT() {
-  if [[ $RICM != "1" && $EUID -ne "0" ]]; then
+  if [[ $RICM != "1" && $EUID -ne 0 ]]; then
       echo -e >&2 "${RD}--- Please run this as root ---${CL}";
       exit
   fi
