@@ -67,6 +67,10 @@ Credits:
 Changelog:
 ==========
 
+**v2.8** (09.02.2023)
+
+- Cleanup overall code
+
 **v2.7.1** (06.02.2023)
 
 - small fixes
