@@ -115,8 +115,18 @@ function install {
         if [ "$_silent" = false ]; then echo -e "${RED}Updater already installed${REG}"; fi
         exit 2
     else
-     if
-      if [ "$_silent" = false ]; then checkSupported; fi
+        git clone https://github.com/BassT23/Proxmox /root/Proxmox-Updater
+        cd /root/Proxmox-Updater
+        cp ./update /usr/local/bin
+        chmod 750 /usr/local/bin/update
+        if [ ! -d "/root/Proxmox-Update-Scripts/exit" ]; then
+          mkdir /root/Proxmox-Update-Scripts/
+          mkdir /root/Proxmox-Update-Scripts/exit
+        fi
+        cp ./exit/*.* /root/Proxmox-Update-Scripts/exit/
+        chmod +x /root/Proxmox-Update-Scripts/exit/*.*
+#     if
+#      if [ "$_silent" = false ]; then checkSupported; fi
 
 #        if [ "$_silent" = false ]; then echo -e "${CHECKMARK} Backing up template file"; fi
 #        cp $TEMPLATE_FILE $TEMPLATE_FILE.bak
@@ -127,59 +137,48 @@ function install {
 #            curl -s $BASE_URL/PVEDiscordDark/sass/PVEDiscordDark.css > /usr/share/pve-manager/css/dd_style.css
 #        else
 #            cp "$OFFLINEDIR/PVEDiscordDark/sass/PVEDiscordDark.css" /usr/share/pve-manager/css/dd_style.css
-        fi
+#        fi
 
-        if [ "$_silent" = false ]; then echo -e "${CHECKMARK} Downloading patcher"; fi
-        if [ "$OFFLINE" = false ]; then
-            curl -s $BASE_URL/PVEDiscordDark/js/PVEDiscordDark.js > /usr/share/pve-manager/js/dd_patcher.js
-        else
-            cp "$OFFLINEDIR/PVEDiscordDark/js/PVEDiscordDark.js" /usr/share/pve-manager/js/dd_patcher.js
-        fi
+#        if [ "$_silent" = false ]; then echo -e "${CHECKMARK} Downloading patcher"; fi
+#        if [ "$OFFLINE" = false ]; then
+#            curl -s $BASE_URL/PVEDiscordDark/js/PVEDiscordDark.js > /usr/share/pve-manager/js/dd_patcher.js
+#        else
+#            cp "$OFFLINEDIR/PVEDiscordDark/js/PVEDiscordDark.js" /usr/share/pve-manager/js/dd_patcher.js
+#        fi
 
-        if [ "$_silent" = false ]; then echo -e "${CHECKMARK} Applying changes to template file"; fi
-        if !(grep -Fq "<link rel='stylesheet' type='text/css' href='/pve2/css/dd_style.css'>" $TEMPLATE_FILE); then
-            echo "<link rel='stylesheet' type='text/css' href='/pve2/css/dd_style.css'>" >> $TEMPLATE_FILE
-        fi
-        if !(grep -Fq "<script type='text/javascript' src='/pve2/js/dd_patcher.js'></script>" $TEMPLATE_FILE); then
-            echo "<script type='text/javascript' src='/pve2/js/dd_patcher.js'></script>" >> $TEMPLATE_FILE
-        fi
+#        if [ "$_silent" = false ]; then echo -e "${CHECKMARK} Applying changes to template file"; fi
+#        if !(grep -Fq "<link rel='stylesheet' type='text/css' href='/pve2/css/dd_style.css'>" $TEMPLATE_FILE); then
+#            echo "<link rel='stylesheet' type='text/css' href='/pve2/css/dd_style.css'>" >> $TEMPLATE_FILE
+#        fi
+#        if !(grep -Fq "<script type='text/javascript' src='/pve2/js/dd_patcher.js'></script>" $TEMPLATE_FILE); then
+#            echo "<script type='text/javascript' src='/pve2/js/dd_patcher.js'></script>" >> $TEMPLATE_FILE
+#        fi
 
-        if [ "$OFFLINE" = false ]; then
-            local IMAGELIST=$(curl -f -s "$BASE_URL/meta/imagelist")
-        else
-            local IMAGELIST=$(cat "$OFFLINEDIR/meta/imagelist")
-        fi
+#        if [ "$OFFLINE" = false ]; then
+#            local IMAGELIST=$(curl -f -s "$BASE_URL/meta/imagelist")
+#        else
+#            local IMAGELIST=$(cat "$OFFLINEDIR/meta/imagelist")
+#        fi
 
-        local IMAGELISTARR=($(echo "$IMAGELIST" | tr ',' '\n'))
-        if [ "$_silent" = false ]; then echo -e "Downloading images (0/${#IMAGELISTARR[@]})"; fi
-        ITER=0
-        for image in "${IMAGELISTARR[@]}"
-        do
-                if [ "$OFFLINE" = false ]; then
-                    curl -s $BASE_URL/PVEDiscordDark/images/$image > /usr/share/pve-manager/images/$image
-                else
-                    cp "$OFFLINEDIR/PVEDiscordDark/images/$image" /usr/share/pve-manager/images/$image
-                fi
-                ((ITER++))
-                if [ "$_silent" = false ]; then echo -e "\e[1A\e[KDownloading images ($ITER/${#IMAGELISTARR[@]})"; fi
-        done
-        if [ "$_silent" = false ]; then echo -e "\e[1A\e[K${CHECKMARK} Downloading images (${#IMAGELISTARR[@]}/${#IMAGELISTARR[@]})"; fi
-        
-        if [ "$_silent" = false ]; then echo -e "Updater installed."; fi
-        if [ "$_noexit" = false ]; then exit 0; fi
-    fi
-}
+#        local IMAGELISTARR=($(echo "$IMAGELIST" | tr ',' '\n'))
+#        if [ "$_silent" = false ]; then echo -e "Downloading images (0/${#IMAGELISTARR[@]})"; fi
+#        ITER=0
+#        for image in "${IMAGELISTARR[@]}"
+#        do
+#                if [ "$OFFLINE" = false ]; then
+#                    curl -s $BASE_URL/PVEDiscordDark/images/$image > /usr/share/pve-manager/images/$image
+#                else
+#                    cp "$OFFLINEDIR/PVEDiscordDark/images/$image" /usr/share/pve-manager/images/$image
+#                fi
+#                ((ITER++))
+#                if [ "$_silent" = false ]; then echo -e "\e[1A\e[KDownloading images ($ITER/${#IMAGELISTARR[@]})"; fi
+#        done
+#        if [ "$_silent" = false ]; then echo -e "\e[1A\e[K${CHECKMARK} Downloading images (${#IMAGELISTARR[@]}/${#IMAGELISTARR[@]})"; fi
 
-cp ./update /usr/local/bin
-chmod 750 /usr/local/bin/update
-if [ ! -d "/root/Proxmox-Update-Scripts/exit" ]; then
-  mkdir /root/Proxmox-Update-Scripts/
-  mkdir /root/Proxmox-Update-Scripts/exit
-fi
-cp ./exit/*.* /root/Proxmox-Update-Scripts/exit/
-chmod +x /root/Proxmox-Update-Scripts/exit/*.*
-
-
+#        if [ "$_silent" = false ]; then echo -e "Updater installed."; fi
+#        if [ "$_noexit" = false ]; then exit 0; fi
+#    fi
+#}
 
 function uninstall {
     if ! isInstalled; then
