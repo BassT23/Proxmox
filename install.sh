@@ -4,7 +4,7 @@
 #bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/install.sh)
 
 #Variable / Function
-VERSION=1.0
+VERSION=1.1
 
 #Colors
 YW='\033[33m'
@@ -53,18 +53,21 @@ function UNINSTALL(){
 
 #Error/Exit
 set -e
-function EXIT() {
-  EXIT_CODE=$?
-}
 
 #Install
+CHECK_ROOT
 if [[ $UNINSTALL == 1 ]]; then
     UNINSTALL
 else
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "\nProxmox-Updater is already installed\nPlease use 'update -u' to Update the Updater\n"
+      read -p "Should I update for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+        update -u
+      fi
     else
       INSTALL
+      #Install git for further updates?
     fi
 fi
 exit 0
