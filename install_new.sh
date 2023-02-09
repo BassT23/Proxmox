@@ -112,7 +112,8 @@ function install {
         if [ "$_silent" = false ]; then echo -e "${RED}Updater already installed${REG}"; fi
         exit 2
     else
-        if [ "$_silent" = false ]; then checkSupported; fi
+      if
+	if [ "$_silent" = false ]; then checkSupported; fi
 
 #        if [ "$_silent" = false ]; then echo -e "${CHECKMARK} Backing up template file"; fi
 #        cp $TEMPLATE_FILE $TEMPLATE_FILE.bak
