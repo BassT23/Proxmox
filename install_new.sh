@@ -2,6 +2,8 @@
 # https://github.com/BassT23/Proxmox
 
 # bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/install.sh) install
+# bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop-install/install_new.sh) install
+
 
 umask 022
 
@@ -14,7 +16,8 @@ REG='\033[0m'
 CHECKMARK='\033[0;32m\xE2\x9C\x94\033[0m'
 
 REPO=${REPO:-"BassT23/Proxmox"}
-DEFAULT_TAG="main"
+#DEFAULT_TAG="main"
+DEFAULT_TAG="develop-install"
 TAG=${TAG:-$DEFAULT_TAG}
 BASE_URL="https://raw.githubusercontent.com/$REPO/$TAG"
 
@@ -30,10 +33,10 @@ fi
 #    exit 1;
 #}
 
-hash curl 2>/dev/null || {
-  echo -e >&2 "${BRED}cURL is required but missing from your system${REG}";
-  exit 1;
-}
+#hash curl 2>/dev/null || {
+#  echo -e >&2 "${BRED}cURL is required but missing from your system${REG}";
+#  exit 1;
+#}
 
 #PVEVersion=$(pveversion --verbose | grep pve-manager | cut -c 14- | cut -c -6) # Below pveversion pre-run check
 #PVEVersionMajor=$(echo $PVEVersion | cut -d'-' -f1)
@@ -112,8 +115,8 @@ function install {
         if [ "$_silent" = false ]; then echo -e "${RED}Updater already installed${REG}"; fi
         exit 2
     else
-      if
-	if [ "$_silent" = false ]; then checkSupported; fi
+     if
+      if [ "$_silent" = false ]; then checkSupported; fi
 
 #        if [ "$_silent" = false ]; then echo -e "${CHECKMARK} Backing up template file"; fi
 #        cp $TEMPLATE_FILE $TEMPLATE_FILE.bak
@@ -161,7 +164,7 @@ function install {
                 if [ "$_silent" = false ]; then echo -e "\e[1A\e[KDownloading images ($ITER/${#IMAGELISTARR[@]})"; fi
         done
         if [ "$_silent" = false ]; then echo -e "\e[1A\e[K${CHECKMARK} Downloading images (${#IMAGELISTARR[@]}/${#IMAGELISTARR[@]})"; fi
-
+        
         if [ "$_silent" = false ]; then echo -e "Updater installed."; fi
         if [ "$_noexit" = false ]; then exit 0; fi
     fi
