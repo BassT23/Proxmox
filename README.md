@@ -49,6 +49,10 @@ Credits:
 Changelog:
 ==========
 
+**v3.0** (10.02.2023)
+
+- Implement single install url
+
 **v2.8** (09.02.2023)
 
 - Cleanup overall code
