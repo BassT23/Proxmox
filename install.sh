@@ -1,16 +1,26 @@
 #!/bin/bash
-# https://github.com/BassT23/Proxmox
+#https://github.com/BassT23/Proxmox
 
-# bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop-install/install_new.sh) install
+#bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/install.sh)
 
-if [[ $EUID -ne 0 ]]; then
-    echo -e >&2 "${BRED}Root privileges are required to perform this operation${REG}";
-    exit 1
-fi
+#Variable / Function
+VERSION=1.0
 
-#hash curl 2>/dev/null || {
-#    echo -e >&2 "${BRED}cURL is required but missing from your system${REG}";
-#    exit 1;
+#Colors
+YW='\033[33m'
+BL='\033[36m'
+RD='\033[01;31m'
+CM='\xE2\x9C\x94\033'
+GN='\033[1;92m'
+CL='\033[m'
+
+#Check root
+function CHECK_ROOT() {
+  if [[ $RICM != "1" && $EUID -ne 0 ]]; then
+      echo -e >&2 "${RD}--- Please run this as root ---${CL}";
+      exit
+  fi
+}
 
 while getopts iuh opt 2>/dev/null
 do
@@ -21,9 +31,9 @@ do
                 \n======== \
                 \n-i   Install (Automatic - No need to set) \
                 \n-u   Uninstall\n"
-       exit 1;;
+       exit;;
     ?) echo -e "Wrong option! (-h for Help)"
-       exit 1
+       exit
   esac
 done
 
@@ -41,17 +51,18 @@ function UNINSTALL(){
     rm -r /root/Proxmox-Update-Scripts
 }
 
-# Error/Exit
+#Error/Exit
 set -e
 function EXIT() {
   EXIT_CODE=$?
 }
 
+#Install
 if [[ $UNINSTALL == 1 ]]; then
     UNINSTALL
 else
     if [ -f "/usr/local/bin/update" ]; then
-      echo "Proxmox-Updater is already installed"
+      echo -e "\nProxmox-Updater is already installed\nPlease use 'update -u' to Update the Updater\n"
     else
       INSTALL
     fi
