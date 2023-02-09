@@ -260,5 +260,3 @@ parse_cli()
 }
 
 parse_cli "$@"
-
-exit 0
