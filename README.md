@@ -37,11 +37,6 @@ As root on Proxmox Host Terminal:
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
 ```
 
-ToDo:
-=====
-- [ ] implement extra updates for specific Containers
-- [ ] Fix dpkg --configure -a on interactive mode
-
 Credits:
 ========
 [@Uruk](https://github.com/Uruknara) - for help with the code
