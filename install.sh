@@ -4,7 +4,7 @@
 #bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/install.sh)
 
 #Variable / Function
-VERSION=1.1
+VERSION=1.2
 
 #Colors
 YW='\033[33m'
@@ -44,11 +44,17 @@ function INSTALL(){
     curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
     curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
     chmod +x /root/Proxmox-Update-Scripts/exit/*.*
-#Check if git is installed?
-    read -p "For further updates, you need git installed?\nShould I install this for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-      apt-get install git -y
-    fi
+    #Check if git is installed?
+    hash git 2>/dev/null || {
+        echo -e "\nFor further updates, you need git installed."
+        read -p "Should I install this for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+          apt-get install git -y
+        else
+          echo -e "\nBye\n"
+          exit
+        fi
+    }
 }
 
 function UNINSTALL(){
@@ -65,10 +71,13 @@ if [[ $UNINSTALL == 1 ]]; then
     UNINSTALL
 else
     if [ -f "/usr/local/bin/update" ]; then
-      echo -e "\nProxmox-Updater is already installed\n"
+      echo -e "\nProxmox-Updater is already installed"
       read -p "Should I update for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         update -u
+      else
+        echo -e "\nBye\n"
+        exit
       fi
     else
       INSTALL
