@@ -206,19 +206,7 @@ if [[ $UPDATE == "1" ]]; then
   MODE=" Update "
   HEADER_INFO
   echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
-  # Delete old version if it exists
-  if [ -d "/root/Proxmox-Updater" ]; then
-    rm -rf /root/Proxmox-Updater
-  fi
-  # Cloning the new version
-  git clone https://github.com/BassT23/Proxmox /root/Proxmox-Updater
-  # Execution of the installation script
-  cd /root/Proxmox-Updater
-  chmod +x ./install.sh
-  ./install.sh
-  # Deleting the new cloned version
-  rm -rf /root/Proxmox-Updater
-  echo -e "\n${GN}Proxmox-Updater updated successfully.${CL}\n"
+  bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
   exit 0
 fi
 
