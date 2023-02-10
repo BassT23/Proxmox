@@ -132,10 +132,10 @@ function UNINSTALL(){
     if [ -f "/usr/local/bin/update" ]; then
       rm /usr/local/bin/update
       rm -r /root/Proxmox-Update-Scripts
+      echo -e "${GN}Proxmox-Updater removed${CL}\n"
     else
       echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
     fi
-    echo -e "${GN}Proxmox-Updater removed${CL}\n"
 }
 
 #Error/Exit
