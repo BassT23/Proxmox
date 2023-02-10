@@ -1,9 +1,9 @@
 #!/bin/bash
 
-#bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
+#bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
 
 #Variable / Function
-VERSION=1.3
+VERSION=1.5
 
 #Colors
 YW='\033[33m'
@@ -44,39 +44,81 @@ function CHECK_ROOT() {
   fi
 }
 
-while getopts iuh opt 2>/dev/null
-do
-  case $opt in
-    i) INSTALL=1;;
-    u) UNINSTALL=1;;
-    h) echo -e "\nOptions: \
-                \n======== \
-                \n-i   Install (Automatic - No need to set) \
-                \n-u   Uninstall\n"
-       exit;;
-    ?) echo -e "Wrong option! (-h for Help)"
-       exit
-  esac
-done
+function USAGE {
+    if [ "$_silent" = false ]; then
+        echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
+        echo -e "Manages the Proxmox Updater."
+        echo -e "  -h --help            Show this help"
+        echo -e "  -s --silent          Silent mode\n"
+        echo -e "Commands:"
+        echo -e "  status               Check current installation status (returns 0 if installed, and 1 if not installed)"
+        echo -e "  install              Install Proxmox Updater"
+        echo -e "  uninstall            Uninstall Proxmox Updater"
+        echo -e "  update               Update Proxmox Updater (runs uninstall, then install)\n"
+    #    echo -e "  utility-update       Update this utility\n" (to be implemented)
+        echo -e "Exit status:"
+        echo -e "  0                    OK"
+        echo -e "  1                    Failure"
+        echo -e "  2                    Already installed, OR not installed (when using install/uninstall commands)\n"
+        echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>"
+    fi
+}
+
+function isInstalled {
+    if [ -f "/usr/local/bin/update" ]; then
+        true
+    else
+        false
+    fi
+}
+
+function STATUS {
+    if [ "$_silent" = false ]; then
+        echo -e "Proxmox-Updater"
+        if isInstalled; then
+            echo -e "Status: ${GRN}present${REG}\n"
+        else
+            echo -e "Status: ${RED}not present${REG}\n"
+        fi
+#        echo -e "  CSS:         $(sha256sum /usr/share/pve-manager/css/dd_style.css 2>/dev/null  || echo N/A)"
+#        echo -e "  JS:          $(sha256sum /usr/share/pve-manager/js/dd_patcher.js 2>/dev/null  || echo N/A)\n"
+#        echo -e "PVE"
+#        echo -e "  Version:     $PVEVersion (major $PVEVersionMajor)\n"
+#        echo -e "Utility hash:  $(sha256sum $SCRIPTPATH 2>/dev/null  || echo N/A)"
+#        echo -e "Offline mode:  $OFFLINE"
+    fi
+    if isInstalled; then exit 0; else exit 1; fi
+}
 
 function INSTALL(){
-    mkdir -p /root/Proxmox-Update-Scripts/exit
-    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update > /usr/local/bin/update
-    chmod 750 /usr/local/bin/update
-    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
-    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
-    chmod +x /root/Proxmox-Update-Scripts/exit/*.*
-    #Check if git is installed?
-    hash git 2>/dev/null || {
-        echo -e "\nFor further updates, you need git installed."
-        read -p "Should I install this for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-          apt-get update && apt-get install git -y
-        else
-          echo -e "\nBye\n"
-          exit
-        fi
-    }
+    if [ -f "/usr/local/bin/update" ]; then
+      echo -e "\nProxmox-Updater is already installed."
+      read -p "Should I update for you? Type [Y/y] for yes - enything else will exit " -n 1 -r
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+        update -u
+      else
+        echo -e "\nBye\n"
+        exit 0
+      fi
+    else
+      mkdir -p /root/Proxmox-Update-Scripts/exit
+      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update > /usr/local/bin/update
+      chmod 750 /usr/local/bin/update
+      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
+      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
+      chmod +x /root/Proxmox-Update-Scripts/exit/*.*
+      #Check if git is installed?
+      hash git 2>/dev/null || {
+          echo -e "\nFor further updates, you need git installed."
+          read -p "Should I install this for you? Type [Y/y] for yes - enything else will exit " -n 1 -r
+          if [[ $REPLY =~ ^[Yy]$ ]]; then
+            apt-get update && apt-get install git -y
+          else
+            echo -e "\nBye\n"
+            exit 0
+          fi
+      }
+    fi
 }
 
 function UNINSTALL(){
@@ -98,22 +140,62 @@ function EXIT() {
   fi
 }
 
+_silent=false
+_command=false
+
 #Install
 HEADER_INFO
-if [[ $UNINSTALL == 1 ]]; then
-    UNINSTALL
-else
-    if [ -f "/usr/local/bin/update" ]; then
-      echo -e "\nProxmox-Updater is already installed."
-      read -p "Should I update for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
-      if [[ $REPLY =~ ^[Yy]$ ]]; then
-        update -u
-      else
-        echo -e "\nBye\n"
-        exit
-      fi
-    else
-      INSTALL
-    fi
-fi
-exit 0
+
+parse_cli()
+{
+	while test $# -gt -0
+	do
+		_key="$1"
+		case "$_key" in
+			-h|--help)
+				USAGE
+				exit 0
+				;;
+            -s|--silent)
+                _silent=true
+                ;;
+            status)
+                if [ "$_command" = false ]; then
+                    _command=true
+                    STATUS
+                fi
+                ;;
+            install)
+                if [ "$_command" = false ]; then
+                    _command=true
+                    INSTALL
+                    exit 0
+                fi
+                ;;
+            uninstall)
+                if [ "$_command" = false ]; then
+                    _command=true
+                    UNINSTALL
+                    exit 0
+                fi
+                ;;
+            update)
+                if [ "$_command" = false ]; then
+                    _command=true
+                    _noexit=true
+#                    uninstall
+                    INSTALL
+                    exit 0
+                fi
+                ;;
+	     *)
+				echo -e "${BRED}Error: Got an unexpected argument \"$_key\"${REG}\n"; 
+                USAGE;
+                exit 1;
+				;;
+		esac
+		shift
+	done
+}
+
+parse_cli "$@"
