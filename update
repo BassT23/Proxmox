@@ -2,7 +2,7 @@
 
 #Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION=3.1
+VERSION=3.0
 
 #Colors
 BL='\033[36m'
