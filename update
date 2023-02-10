@@ -72,27 +72,6 @@ function CHECK_ROOT() {
   fi
 }
 
-#Update Proxmox-Updater
-if [[ $UPDATE == "1" ]]; then
-  MODE=" Update "
-  HEADER_INFO
-  echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
-  # Delete old version if it exists
-  if [ -d "/root/Proxmox-Updater" ]; then
-    rm -rf /root/Proxmox-Updater
-  fi
-  # Cloning the new version
-  git clone https://github.com/BassT23/Proxmox /root/Proxmox-Updater
-  # Execution of the installation script
-  cd /root/Proxmox-Updater
-  chmod +x ./install.sh
-  ./install.sh
-  # Deleting the new cloned version
-  rm -rf /root/Proxmox-Updater
-  echo -e "\n${GN}Proxmox-Updater updated successfully.${CL}\n"
-  exit 0
-fi
-
 #Check Cluster Mode
 if [ -f "/etc/corosync/corosync.conf" ]; then
   HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
@@ -220,6 +199,27 @@ function EXIT() {
 # Exit Code
 if [[ $RICM != "1" ]]; then
   trap EXIT EXIT
+fi
+
+#Update Proxmox-Updater
+if [[ $UPDATE == "1" ]]; then
+  MODE=" Update "
+  HEADER_INFO
+  echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
+  # Delete old version if it exists
+  if [ -d "/root/Proxmox-Updater" ]; then
+    rm -rf /root/Proxmox-Updater
+  fi
+  # Cloning the new version
+  git clone https://github.com/BassT23/Proxmox /root/Proxmox-Updater
+  # Execution of the installation script
+  cd /root/Proxmox-Updater
+  chmod +x ./install.sh
+  ./install.sh
+  # Deleting the new cloned version
+  rm -rf /root/Proxmox-Updater
+  echo -e "\n${GN}Proxmox-Updater updated successfully.${CL}\n"
+  exit 0
 fi
 
 #Update Start
