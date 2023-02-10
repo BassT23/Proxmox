@@ -76,9 +76,9 @@ function STATUS {
     if [ "$_silent" = false ]; then
         echo -e "Proxmox-Updater"
         if isInstalled; then
-            echo -e "Status: ${GRN}present${REG}\n"
+            echo -e "Status: ${GN}present${CL}\n"
         else
-            echo -e "Status: ${RED}not present${REG}\n"
+            echo -e "Status: ${RD}not present${CL}\n"
         fi
 #        echo -e "  CSS:         $(sha256sum /usr/share/pve-manager/css/dd_style.css 2>/dev/null  || echo N/A)"
 #        echo -e "  JS:          $(sha256sum /usr/share/pve-manager/js/dd_patcher.js 2>/dev/null  || echo N/A)\n"
@@ -92,7 +92,7 @@ function STATUS {
 
 function INSTALL(){
     if [ -f "/usr/local/bin/update" ]; then
-      echo -e "\nProxmox-Updater is already installed."
+      echo -e "\n${RD}Proxmox-Updater is already installed.${CL}"
       read -p "Should I update for you? Type [Y/y] for yes - enything else will exit " -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         update -u
@@ -107,24 +107,14 @@ function INSTALL(){
       curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
       curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
       chmod +x /root/Proxmox-Update-Scripts/exit/*.*
-      #Check if git is installed?
-      hash git 2>/dev/null || {
-          echo -e "\nFor further updates, you need git installed."
-          read -p "Should I install this for you? Type [Y/y] for yes - enything else will exit " -n 1 -r
-          if [[ $REPLY =~ ^[Yy]$ ]]; then
-            apt-get update && apt-get install git -y
-          else
-            echo -e "\nBye\n"
-            exit 0
-          fi
-      }
+      echo -e "\n${GN}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
     fi
 }
 
 function UNINSTALL(){
     rm /usr/local/bin/update
     rm -r /root/Proxmox-Update-Scripts
-    echo -e "\nUpdater uninstalled\n"
+    echo -e "\n${GN}Updater uninstalled${CL}\n"
 }
 
 #Error/Exit
@@ -132,10 +122,7 @@ set -e
 function EXIT() {
   EXIT_CODE=$?
   # Install Finish
-  if [[ $EXIT_CODE = "0" ]]; then
-    echo -e "${GN}Finished. Use Updater with 'update'.${CL}\n"
-  # Install Error
-  else
+  if [[ $EXIT_CODE != "0" ]]; then
     echo -e "${RD}Error during install --- Exit Code: $EXIT_CODE${CL}\n"
   fi
 }
@@ -189,7 +176,7 @@ parse_cli()
                 fi
                 ;;
 	     *)
-				echo -e "${BRED}Error: Got an unexpected argument \"$_key\"${REG}\n"; 
+				echo -e "${RD}Error: Got an unexpected argument \"$_key\"${CL}\n"; 
                 USAGE;
                 exit 1;
 				;;
