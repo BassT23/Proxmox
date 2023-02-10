@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/install.sh)
+#bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 
 #Variable / Function
 VERSION=1.3
