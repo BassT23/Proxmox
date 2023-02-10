@@ -3,7 +3,7 @@
 #bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
 
 #Variable / Function
-VERSION=1.5
+VERSION=1.6
 
 #Colors
 YW='\033[33m'
@@ -47,14 +47,14 @@ function CHECK_ROOT() {
 function USAGE {
     if [ "$_silent" = false ]; then
         echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
-        echo -e "Manages the Proxmox Updater."
+        echo -e "Manages the Proxmox-Updater."
         echo -e "  -h --help            Show this help"
         echo -e "  -s --silent          Silent mode\n"
         echo -e "Commands:"
         echo -e "  status               Check current installation status (returns 0 if installed, and 1 if not installed)"
-        echo -e "  install              Install Proxmox Updater"
-        echo -e "  uninstall            Uninstall Proxmox Updater"
-        echo -e "  update               Update Proxmox Updater (runs uninstall, then install)\n"
+        echo -e "  install              Install Proxmox-Updater"
+        echo -e "  uninstall            Uninstall Proxmox-Updater"
+        echo -e "  update               Update Proxmox-Updater\n"
     #    echo -e "  utility-update       Update this utility\n" (to be implemented)
         echo -e "Exit status:"
         echo -e "  0                    OK"
@@ -91,11 +91,12 @@ function STATUS {
 }
 
 function INSTALL(){
+    echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
-      echo -e "\n${RD}Proxmox-Updater is already installed.${CL}"
+      echo -e "${RD}Proxmox-Updater is already installed.${CL}"
       read -p "Should I update for you? Type [Y/y] for yes - enything else will exit " -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
-        update -u
+        bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
       else
         echo -e "\nBye\n"
         exit 0
@@ -111,10 +112,30 @@ function INSTALL(){
     fi
 }
 
+function UPDATE(){
+#  MODE=" Update "
+#  HEADER_INFO
+    if [ -f "/usr/local/bin/update" ]; then
+      echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
+      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update > /usr/local/bin/update
+      # Check if files are modified by user
+#      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
+#      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
+      echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
+    else
+      echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
+    fi
+}
+
 function UNINSTALL(){
-    rm /usr/local/bin/update
-    rm -r /root/Proxmox-Update-Scripts
-    echo -e "\n${GN}Updater uninstalled${CL}\n"
+    echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
+    if [ -f "/usr/local/bin/update" ]; then
+      rm /usr/local/bin/update
+      rm -r /root/Proxmox-Update-Scripts
+    else
+      echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
+    fi
+    echo -e "${GN}Proxmox-Updater removed${CL}\n"
 }
 
 #Error/Exit
@@ -169,9 +190,8 @@ parse_cli()
             update)
                 if [ "$_command" = false ]; then
                     _command=true
-                    _noexit=true
-#                    uninstall
-                    INSTALL
+#                    _noexit=true
+                    UPDATE
                     exit 0
                 fi
                 ;;
