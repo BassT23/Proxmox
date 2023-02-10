@@ -1,0 +1,37 @@
+Changelog:
+==========
+
+**v3.0** (10.02.2023)
+
+- Implement single install url
+
+**v2.8** (09.02.2023)
+
+- Cleanup overall code
+
+**v2.7.1** (06.02.2023)
+
+- small fixes
+
+**v2.7** (31.01.2023)
+
+- add root check
+- Cleanup overall code
+
+**v2.6** (30.01.2023)
+
+- Cleanup overall code
+- Fix promt of update
+- Add updating package that been kept back
+
+**v2.5** (30.01.2023)
+
+- added "Headless Mode" as option with `update -3` otherwise runs in "Interactive Mode"
+
+**v2.4** (29.01.2023)
+
+- Visual and Name changes
+
+**v2.3** (29.01.2023)
+
+- Update script itself with `update -u`

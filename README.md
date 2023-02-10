@@ -34,66 +34,14 @@ Info can be found with `update -h`
 =================
 As root on Proxmox Host Terminal:
 ```
-apt install git
-```
-```
-git clone https://github.com/BassT23/Proxmox /root/Proxmox-Updater
-```
-```
-cd /root/Proxmox-Updater
-```
-```
-chmod +x ./install.sh
-```
-```
-./install.sh
-```
-first run:
-```
-update
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
 ```
 
 ToDo:
 =====
-- [x] make it workable for Cluster
 - [ ] implement extra updates for specific Containers
-- [ ] make installation more simple
 - [ ] Fix dpkg --configure -a on interactive mode
 
 Credits:
 ========
 [@Uruk](https://github.com/Uruknara) - for help with the code
-
-Changelog:
-==========
-
-**v2.8** (09.02.2023)
-
-- Cleanup overall code
-
-**v2.7.1** (06.02.2023)
-
-- small fixes
-
-**v2.7** (31.01.2023)
-
-- add root check
-- Cleanup overall code
-
-**v2.6** (30.01.2023)
-
-- Cleanup overall code
-- Fix promt of update
-- Add updating package that been kept back
-
-**v2.5** (30.01.2023)
-
-- added "Headless Mode" as option with `update -3` otherwise runs in "Interactive Mode"
-
-**v2.4** (29.01.2023)
-
-- Visual and Name changes
-
-**v2.3** (29.01.2023)
-
-- Update script itself with `update -u`
