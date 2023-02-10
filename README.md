@@ -12,8 +12,7 @@
        /_/
 ```
 
-
-Proxmox-Updater 
+Proxmox-Updater
 ===============
 
 Features:
@@ -24,24 +23,18 @@ Features:
 
 Info can be found with `update -h`
 
-
 **Update the script:**
 ======================
 `update -u`
 
-
 **Installation:**
 =================
 As root on Proxmox Host Terminal:
+``` 
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install 
 ```
-bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
-```
+Info can be found with `-h` by replacing install argument
 
-ToDo:
-=====
-- [ ] implement extra updates for specific Containers
-- [ ] Fix dpkg --configure -a on interactive mode
-
-Credits:
+**Credits:**
 ========
 [@Uruk](https://github.com/Uruknara) - for help with the code
