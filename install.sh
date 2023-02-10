@@ -1,10 +1,9 @@
 #!/bin/bash
-#https://github.com/BassT23/Proxmox
 
 #bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/install.sh)
 
 #Variable / Function
-VERSION=1.2
+VERSION=1.3
 
 #Colors
 YW='\033[33m'
@@ -13,6 +12,29 @@ RD='\033[01;31m'
 CM='\xE2\x9C\x94\033'
 GN='\033[1;92m'
 CL='\033[m'
+
+#Header
+function HEADER_INFO {
+  clear
+  echo -e "\n \
+      https://github.com/BassT23/Proxmox"
+  cat <<'EOF'
+     ____
+    / __ \_________  _  ______ ___  ____  _  __
+   / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/
+  / ____/ /  / /_/ />  </ / / / / / /_/ />  <
+ /_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|
+      __  __          __      __
+     / / / /___  ____/ /___ _/ /____  ____
+    / / / / __ \/ __  / __ `/ __/ _ \/ __/
+   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
+   \____/ .___/\____/\____/\__/\___/_/
+       /_/
+EOF
+  echo -e "\n \
+      *** Installer Version :  $VERSION  *** \n"
+  CHECK_ROOT
+}
 
 #Check root
 function CHECK_ROOT() {
@@ -49,7 +71,7 @@ function INSTALL(){
         echo -e "\nFor further updates, you need git installed."
         read -p "Should I install this for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-          apt-get install git -y
+          apt-get update && apt-get install git -y
         else
           echo -e "\nBye\n"
           exit
@@ -60,18 +82,29 @@ function INSTALL(){
 function UNINSTALL(){
     rm /usr/local/bin/update
     rm -r /root/Proxmox-Update-Scripts
+    echo -e "\nUpdater uninstalled\n"
 }
 
 #Error/Exit
 set -e
+function EXIT() {
+  EXIT_CODE=$?
+  # Install Finish
+  if [[ $EXIT_CODE = "0" ]]; then
+    echo -e "${GN}Finished. Use Updater with 'update'.${CL}\n"
+  # Install Error
+  else
+    echo -e "${RD}Error during install --- Exit Code: $EXIT_CODE${CL}\n"
+  fi
+}
 
 #Install
-CHECK_ROOT
+HEADER_INFO
 if [[ $UNINSTALL == 1 ]]; then
     UNINSTALL
 else
     if [ -f "/usr/local/bin/update" ]; then
-      echo -e "\nProxmox-Updater is already installed"
+      echo -e "\nProxmox-Updater is already installed."
       read -p "Should I update for you? Type [Y/y] for yes - enything else will exit" -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         update -u
