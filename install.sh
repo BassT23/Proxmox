@@ -3,13 +3,11 @@
 #bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
 
 #Variable / Function
-VERSION=1.6
+VERSION=1.0
 
 #Colors
-YW='\033[33m'
 BL='\033[36m'
 RD='\033[01;31m'
-CM='\xE2\x9C\x94\033'
 GN='\033[1;92m'
 CL='\033[m'
 
@@ -40,7 +38,7 @@ EOF
 function CHECK_ROOT() {
   if [[ $RICM != "1" && $EUID -ne 0 ]]; then
       echo -e >&2 "${RD}--- Please run this as root ---${CL}";
-      exit
+      exit 1
   fi
 }
 
@@ -80,12 +78,6 @@ function STATUS {
         else
             echo -e "Status: ${RD}not present${CL}\n"
         fi
-#        echo -e "  CSS:         $(sha256sum /usr/share/pve-manager/css/dd_style.css 2>/dev/null  || echo N/A)"
-#        echo -e "  JS:          $(sha256sum /usr/share/pve-manager/js/dd_patcher.js 2>/dev/null  || echo N/A)\n"
-#        echo -e "PVE"
-#        echo -e "  Version:     $PVEVersion (major $PVEVersionMajor)\n"
-#        echo -e "Utility hash:  $(sha256sum $SCRIPTPATH 2>/dev/null  || echo N/A)"
-#        echo -e "Offline mode:  $OFFLINE"
     fi
     if isInstalled; then exit 0; else exit 1; fi
 }
@@ -108,13 +100,11 @@ function INSTALL(){
       curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
       curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
       chmod +x /root/Proxmox-Update-Scripts/exit/*.*
-      echo -e "\n${GN}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
+      echo -e "${BL}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
     fi
 }
 
 function UPDATE(){
-#  MODE=" Update "
-#  HEADER_INFO
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
       curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update > /usr/local/bin/update
@@ -123,7 +113,14 @@ function UPDATE(){
 #      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
       echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
     else
-      echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
+      echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}"
+      read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+        bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
+      else
+        echo -e "\n\nBye\n"
+        exit 0
+      fi
     fi
 }
 
@@ -132,7 +129,7 @@ function UNINSTALL(){
     if [ -f "/usr/local/bin/update" ]; then
       rm /usr/local/bin/update
       rm -r /root/Proxmox-Update-Scripts
-      echo -e "${GN}Proxmox-Updater removed${CL}\n"
+      echo -e "${BL}Proxmox-Updater removed${CL}\n"
     else
       echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
     fi
@@ -147,6 +144,9 @@ function EXIT() {
     echo -e "${RD}Error during install --- Exit Code: $EXIT_CODE${CL}\n"
   fi
 }
+
+# Exit Code
+trap EXIT EXIT
 
 _silent=false
 _command=false
