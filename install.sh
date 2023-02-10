@@ -85,7 +85,7 @@ function STATUS {
 function INSTALL(){
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
-      echo -e "${RD}Proxmox-Updater is already installed.${CL}"
+      echo -e "${RD}Proxmox-Updater is already installed.${CL}\n"
       read -p "Should I update for you? Type [Y/y] for yes - enything else will exit " -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
@@ -113,12 +113,12 @@ function UPDATE(){
 #      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
       echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
     else
-      echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}"
+      echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}\n"
       read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
       else
-        echo -e "\n\nBye\n"
+        -e "\n\nBye\n"
         exit 0
       fi
     fi
