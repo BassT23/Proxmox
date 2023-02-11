@@ -271,7 +271,7 @@ parse_cli()
           exit 0
         fi
         ;;
-      update)
+      -up)
         if [ "$_command" = false ]; then
           _command=true
           UPDATE
