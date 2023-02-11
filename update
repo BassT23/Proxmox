@@ -47,13 +47,13 @@ function CHECK_ROOT() {
   fi
 }
 
-function USAGE {
+function USAGE() {
   if [ "$HEADLESS" != true ]; then
       echo -e "\nUsage: $0 [OPTIONS...] {COMMAND}\n"
       echo -e "Manages the Proxmox-Updater."
       echo -e "  -h --help            Show this help"
-      echo -e "  -s --silent          Silent / Headless Mode\n"
-      echo -e "  -up                  Update Proxmox-Updater"
+      echo -e "  -s --silent          Silent / Headless Mode"
+      echo -e "  -up                  Update Proxmox-Updater\n"
       echo -e "Commands:"
       echo -e "  host                 Host-Mode"
       echo -e "  cluster              Cluster-Mode"
