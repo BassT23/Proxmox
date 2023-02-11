@@ -20,13 +20,13 @@ Features:
 - Update Proxmox (the Host / all Cluster Nodes / all included LXC's)
 - Exit tracking, so you can send additional commands for Finish or Failure
 - Logging
-- Normal run is "Interactive" / Headless Mode can be run with `update -3`
+- Normal run is "Interactive" / Headless Mode can be run with `update -s`
 
 Info can be found with `update -h`
 
 **Update the script:**
 ======================
-`update -u`
+`update -up`
 
 **Installation:**
 =================
@@ -34,7 +34,6 @@ As root on Proxmox Host Terminal:
 ``` 
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install 
 ```
-Info can be found with `-h` by replacing install argument
 
 **Credits:**
 ========
