@@ -53,10 +53,10 @@ function USAGE {
       echo -e "Manages the Proxmox-Updater."
       echo -e "  -h --help            Show this help"
       echo -e "  -s --silent          Silent / Headless Mode\n"
+      echo -e "  -up                  Update Proxmox-Updater"
       echo -e "Commands:"
       echo -e "  host                 Host-Mode"
       echo -e "  cluster              Cluster-Mode"
-      echo -e "  update               Update Proxmox-Updater"
       echo -e "  uninstall            Uninstall Proxmox-Updater\n"
       echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
   fi
