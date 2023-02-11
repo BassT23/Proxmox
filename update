@@ -31,7 +31,7 @@ EOF
   echo -e "\n \
            *** Version:  $VERSION  *** \n \
            *** Mode: $MODE ***"
-  if [[ "$HEADLESS" == true ]]; then
+  if [[ $HEADLESS == true ]]; then
     echo -e "            ***    Headless    ***"
   else
     echo -e "            ***  Interactive   ***"
@@ -40,15 +40,15 @@ EOF
 }
 
 # Check root
-function CHECK_ROOT() {
-  if [[ "$RICM" != true && $EUID -ne 0 ]]; then
+function CHECK_ROOT {
+  if [[ $RICM != true || $EUID -ne 0 ]]; then
       echo -e "\n ${RD}--- Please run this as root ---${CL}\n"
       exit 2
   fi
 }
 
-function USAGE() {
-  if [ "$HEADLESS" != true ]; then
+function USAGE {
+  if [[ $HEADLESS != true ]]; then
       echo -e "\nUsage: $0 [OPTIONS...] {COMMAND}\n"
       echo -e "Manages the Proxmox-Updater."
       echo -e "  -h --help            Show this help"
@@ -62,12 +62,12 @@ function USAGE() {
   fi
 }
 
-function UPDATE(){
+function UPDATE {
   bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
   exit 2
 }
 
-function UNINSTALL(){
+function UNINSTALL {
   echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
   echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
   read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r
@@ -79,10 +79,10 @@ function UNINSTALL(){
 }
 
 # Host Update
-function UPDATE_HOST() {
+function UPDATE_HOST {
   HOST=$1
   echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOST${CL}"
-  if [[ "$HEADLESS" == true ]]; then
+  if [[ $HEADLESS == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
   else
     ssh "$HOST" 'bash -s' < "$0" -- "-c host"
@@ -90,14 +90,14 @@ function UPDATE_HOST() {
 }
 
 # Host Update Start
-function HOST_UPDATE_START() {
+function HOST_UPDATE_START {
   for HOST in $HOSTS; do
     UPDATE_HOST "$HOST"
   done
 }
 
 # Container Update
-function UPDATE_CONTAINER() {
+function UPDATE_CONTAINER {
   CONTAINER=$1
   NAME=$(pct exec "$CONTAINER" hostname)
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
@@ -106,7 +106,7 @@ function UPDATE_CONTAINER() {
   case "$os" in
     "ubuntu" | "debian" | "devuan")
       pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && apt-get update && echo"
-      if [[ "$HEADLESS" == true ]]; then
+      if [[ $HEADLESS == true ]]; then
         pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE HEADLESS --- && \
                                           DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && \
                                           DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y && echo"
@@ -116,28 +116,33 @@ function UPDATE_CONTAINER() {
                                           apt-get full-upgrade -y && echo"
       fi
       pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && \
-                                          apt-get --purge autoremove -y && echo";;
+                                          apt-get --purge autoremove -y && echo" 
+      ;;
     "fedora")
       pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE --- && dnf -y update && echo"
       pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPGRATE --- && dnf -y upgrade && echo"
-      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && dnf -y --purge autoremove && echo";;
+      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && dnf -y --purge autoremove && echo" 
+      ;;
     "archlinux")
-      pct exec "$CONTAINER" -- bash -c "echo -e --- PACMAN UPDATE --- && pacman -Syyu --noconfirm && echo";;
+      pct exec "$CONTAINER" -- bash -c "echo -e --- PACMAN UPDATE --- && pacman -Syyu --noconfirm && echo" 
+      ;;
     "alpine")
-      pct exec "$CONTAINER" -- ash -c "echo -e --- APK UPDATE --- && apk -U upgrade && echo";;
+      pct exec "$CONTAINER" -- ash -c "echo -e --- APK UPDATE --- && apk -U upgrade && echo" 
+      ;;
     *)
-      pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE --- && yum -y update && echo";;
+      pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE --- && yum -y update && echo" 
+      ;;  
   esac
 }
 
 # Container Update Start
-function CONTAINER_UPDATE_START() {
+function CONTAINER_UPDATE_START {
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     status=$(pct status "$CONTAINER")
-    if [[ $status == "status: stopped" ]]; then
+    if [[ $status == status: stopped ]]; then
       echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
       # Start the container
       pct start "$CONTAINER"
@@ -147,16 +152,16 @@ function CONTAINER_UPDATE_START() {
       echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
       # Stop the container
       pct shutdown "$CONTAINER" &
-    elif [[ $status == "status: running" ]]; then
+    elif [[ $status == status: running ]]; then
       UPDATE_CONTAINER "$CONTAINER"
     fi
   done
   rm -rf temp
 }
 
-function UPDATE_HOST_ITSELF() {
+function UPDATE_HOST_ITSELF {
   echo -e "\n--- APT UPDATE ---" && apt-get update
-  if [[ "$HEADLESS" == true ]]; then
+  if [[ $HEADLESS == true ]]; then
     echo -e "\n--- APT UPGRADE HEADLESS ---" && \
             DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
   else
@@ -168,26 +173,26 @@ function UPDATE_HOST_ITSELF() {
 }
 
 # Logging
-if [[ "$RICM" != true ]]; then
+if [[ $RICM != true ]]; then
   touch "$LOG_FILE"
   exec &> >(tee "$LOG_FILE")
 fi
-function CLEAN_LOGFILE() {
-  if [[ "$RICM" != true ]]; then
+function CLEAN_LOGFILE {
+  if [[ $RICM != true ]]; then
     tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
     cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE"
     chmod 640 "$LOG_FILE"
-    if [ -f "./tmp.log" ]; then
-      rm ./tmp.log
+    if [[ -f ./tmp.log ]]; then
+      rm -rf ./tmp.log
     fi
   fi
 }
 
-function EXIT() {
+function EXIT {
   EXIT_CODE=$?
   # Exit direct
   if [[ $EXIT_CODE == 2 ]]; then
-#    CLEAN_LOGFILE
+  # CLEAN_LOGFILE
     exit
   # Update Finish
   elif [[ $EXIT_CODE == 0 ]]; then
@@ -198,19 +203,18 @@ function EXIT() {
     echo -e "${RD}Error during Update --- Exit Code: $EXIT_CODE${CL}\n"
     /root/Proxmox-Update-Scripts/exit/error.sh
   fi
-#  CLEAN_LOGFILE
 }
 
 # Exit Code
 set -e
-if [[ "$RICM" != true ]]; then
+if [[ $RICM != true ]]; then
   trap EXIT EXIT
 fi
 
 _command=false
 
 # Check Cluster Mode
-if [ -f "/etc/corosync/corosync.conf" ]; then
+if [[ -f /etc/corosync/corosync.conf ]]; then
   HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
 fi
 
@@ -221,8 +225,7 @@ export TERM=xterm-256color
 #  ssh "$HOST" 'bash -s' < "$0" -- -c host
 #fi
 
-parse_cli()
-{
+parse_cli { 
   while test $# -gt -0
   do
     _key="$1"
@@ -243,13 +246,13 @@ parse_cli()
 #        echo "test"
 #        ;;
       host)
-        if [ "$_command" = false ]; then
+        if [[ $_command = false ]]; then
           _command=true
-          if [[ "$RICM" != true ]]; then
+          if [[ $RICM != true ]]; then
             MODE="  Host  "
             HEADER_INFO
           fi
-            if [[ "$RICM" != true ]]; then
+            if [[ $RICM != true ]]; then
             echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
             fi
           UPDATE_HOST_ITSELF
@@ -257,7 +260,7 @@ parse_cli()
         fi
         ;;
       cluster)
-        if [ "$_command" = false ]; then
+        if [[ $_command = false ]]; then
           _command=true
           MODE=" Cluster"
           HEADER_INFO
@@ -265,14 +268,14 @@ parse_cli()
         fi
         ;;
       uninstall)
-        if [ "$_command" = false ]; then
+        if [[ $_command = false ]]; then
           _command=true
           UNINSTALL
           exit 0
         fi
         ;;
       -up)
-        if [ "$_command" = false ]; then
+        if [[ $_command = false ]]; then
           _command=true
           UPDATE
           exit 0
@@ -293,7 +296,7 @@ if [[ -f /etc/corosync/corosync.conf ]]; then
   HOST_UPDATE_START
   exit 0
 else
-  if [[ "$RICM" != true ]]; then
+  if [[ $RICM != true ]]; then
     MODE="  Host  "
     HEADER_INFO
     echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
