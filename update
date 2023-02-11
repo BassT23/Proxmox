@@ -2,7 +2,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION=3.1
+VERSION=3.2
 
 # Colors
 BL='\033[36m'
@@ -237,6 +237,11 @@ parse_cli()
       -c)
         RICM=true
         ;;
+#      --default)
+#        DEFAULT=YES
+#        shift # past argument
+#        echo "test"
+#        ;;
       host)
         if [ "$_command" = false ]; then
           _command=true
@@ -254,11 +259,9 @@ parse_cli()
       cluster)
         if [ "$_command" = false ]; then
           _command=true
-          if [[ -f /etc/corosync/corosync.conf && $HOST_MODE != "1" ]]; then
-            MODE=" Cluster"
-            HEADER_INFO
-            HOST_UPDATE_START
-          fi
+          MODE=" Cluster"
+          HEADER_INFO
+          HOST_UPDATE_START
         fi
         ;;
       uninstall)
@@ -283,5 +286,21 @@ parse_cli()
     esac
     shift
   done
+export TERM=xterm-256color
+if [[ -f /etc/corosync/corosync.conf ]]; then
+  MODE=" Cluster"
+  HEADER_INFO
+  HOST_UPDATE_START
+  exit 0
+else
+  if [[ "$RICM" != true ]]; then
+    MODE="  Host  "
+    HEADER_INFO
+    echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
+  fi
+  UPDATE_HOST_ITSELF
+  CONTAINER_UPDATE_START
+  exit 0
+fi
 }
 parse_cli "$@"
