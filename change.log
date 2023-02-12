@@ -1,6 +1,11 @@
 Changelog:
 ==========
 
+**v3.1** (12.02.2023)
+
+- Add better usage
+- Cleanup overall code
+
 **v3.0** (10.02.2023)
 
 - Implement single install url
