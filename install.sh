@@ -101,7 +101,7 @@ function INSTALL {
 function UPDATE {
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
-      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update > /usr/local/bin/update
+      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update.sh > /usr/local/bin/update
       # Check if files are modified by user
 #      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
 #      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
