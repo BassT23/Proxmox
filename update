@@ -2,7 +2,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION=3.2
+VERSION=3.5
 
 # Colors
 BL='\033[36m'
@@ -136,7 +136,7 @@ function UPDATE_CONTAINER {
     *)
       pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE ---" && \
                                         yum -y update && echo
-      ;;  
+      ;;
   esac
 }
 
@@ -147,7 +147,7 @@ function CONTAINER_UPDATE_START {
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     status=$(pct status "$CONTAINER")
-    if [[ $status == status: stopped ]]; then
+    if [[ $status == "status: stopped" ]]; then
       echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
       # Start the container
       pct start "$CONTAINER"
@@ -157,7 +157,7 @@ function CONTAINER_UPDATE_START {
       echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
       # Stop the container
       pct shutdown "$CONTAINER" &
-    elif [[ $status == status: running ]]; then
+    elif [[ $status == "status: running" ]]; then
       UPDATE_CONTAINER "$CONTAINER"
     fi
   done
@@ -230,7 +230,8 @@ export TERM=xterm-256color
 #  ssh "$HOST" 'bash -s' < "$0" -- -c host
 #fi
 
-parse_cli { 
+parse_cli()
+{
   while test $# -gt -0
   do
     _key="$1"
