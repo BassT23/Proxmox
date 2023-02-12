@@ -1,7 +1,5 @@
 #!/bin/bash
 
-#bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
-
 #Variable / Function
 VERSION=1.1.1
 
