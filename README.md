@@ -28,6 +28,12 @@ Info can be found with `update -h`
 ======================
 `update -up`
 
+If update run into issue, pls remove first with:
+``` 
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) uninstall
+```
+and install new
+
 **Installation:**
 =================
 As root on Proxmox Host Terminal:
