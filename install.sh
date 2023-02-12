@@ -1,9 +1,7 @@
 #!/bin/bash
 
-#bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
-
 #Variable / Function
-VERSION=1.0
+VERSION=1.1
 
 #Colors
 BL='\033[36m'
@@ -30,35 +28,31 @@ function HEADER_INFO {
        /_/
 EOF
   echo -e "\n \
-      *** Installer Version :  $VERSION  *** \n"
+      *** Install and/or Update *** \n \
+      ***    Version :   $VERSION    *** \n"
   CHECK_ROOT
 }
 
 #Check root
-function CHECK_ROOT() {
-  if [[ $RICM != "1" && $EUID -ne 0 ]]; then
+function CHECK_ROOT {
+  if [[ $EUID -ne 0 ]]; then
       echo -e >&2 "${RD}--- Please run this as root ---${CL}";
       exit 1
   fi
 }
 
 function USAGE {
-    if [ "$_silent" = false ]; then
+    if [[ $SILENT != true ]]; then
         echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
         echo -e "Manages the Proxmox-Updater."
         echo -e "  -h --help            Show this help"
         echo -e "  -s --silent          Silent mode\n"
         echo -e "Commands:"
-        echo -e "  status               Check current installation status (returns 0 if installed, and 1 if not installed)"
+        echo -e "  status               Check current installation status"
         echo -e "  install              Install Proxmox-Updater"
         echo -e "  uninstall            Uninstall Proxmox-Updater"
         echo -e "  update               Update Proxmox-Updater\n"
-    #    echo -e "  utility-update       Update this utility\n" (to be implemented)
-        echo -e "Exit status:"
-        echo -e "  0                    OK"
-        echo -e "  1                    Failure"
-        echo -e "  2                    Already installed, OR not installed (when using install/uninstall commands)\n"
-        echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>"
+        echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
     fi
 }
 
@@ -71,7 +65,7 @@ function isInstalled {
 }
 
 function STATUS {
-    if [ "$_silent" = false ]; then
+    if [[ $SILENT != true ]]; then
         echo -e "Proxmox-Updater"
         if isInstalled; then
             echo -e "Status: ${GN}present${CL}\n"
@@ -82,10 +76,10 @@ function STATUS {
     if isInstalled; then exit 0; else exit 1; fi
 }
 
-function INSTALL(){
+function INSTALL {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
-      echo -e "${RD}Proxmox-Updater is already installed.${CL}\n"
+      echo -e "${RD}Proxmox-Updater is already installed.${CL}"
       read -p "Should I update for you? Type [Y/y] for yes - enything else will exit " -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
@@ -95,7 +89,7 @@ function INSTALL(){
       fi
     else
       mkdir -p /root/Proxmox-Update-Scripts/exit
-      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update > /usr/local/bin/update
+      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update.sh > /usr/local/bin/update
       chmod 750 /usr/local/bin/update
       curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
       curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
@@ -104,7 +98,7 @@ function INSTALL(){
     fi
 }
 
-function UPDATE(){
+function UPDATE {
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
       curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update > /usr/local/bin/update
@@ -113,18 +107,18 @@ function UPDATE(){
 #      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
       echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
     else
-      echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}\n"
+      echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}"
       read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
       else
-        -e "\n\nBye\n"
+        echo -e "\n\nBye\n"
         exit 0
       fi
     fi
 }
 
-function UNINSTALL(){
+function UNINSTALL {
     echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
       rm /usr/local/bin/update
@@ -137,7 +131,7 @@ function UNINSTALL(){
 
 #Error/Exit
 set -e
-function EXIT() {
+function EXIT {
   EXIT_CODE=$?
   # Install Finish
   if [[ $EXIT_CODE != "0" ]]; then
@@ -148,61 +142,52 @@ function EXIT() {
 # Exit Code
 trap EXIT EXIT
 
-_silent=false
-_command=false
-
 #Install
 HEADER_INFO
-
 parse_cli()
 {
-	while test $# -gt -0
-	do
-		_key="$1"
-		case "$_key" in
-			-h|--help)
-				USAGE
-				exit 0
-				;;
-            -s|--silent)
-                _silent=true
-                ;;
-            status)
-                if [ "$_command" = false ]; then
-                    _command=true
-                    STATUS
-                fi
-                ;;
-            install)
-                if [ "$_command" = false ]; then
-                    _command=true
-                    INSTALL
-                    exit 0
-                fi
-                ;;
-            uninstall)
-                if [ "$_command" = false ]; then
-                    _command=true
-                    UNINSTALL
-                    exit 0
-                fi
-                ;;
-            update)
-                if [ "$_command" = false ]; then
-                    _command=true
-#                    _noexit=true
-                    UPDATE
-                    exit 0
-                fi
-                ;;
-	     *)
-				echo -e "${RD}Error: Got an unexpected argument \"$_key\"${CL}\n"; 
-                USAGE;
-                exit 1;
-				;;
-		esac
-		shift
-	done
+  while test $# -gt -0
+  do
+    _key="$1"
+    case "$_key" in
+      -h|--help)
+        USAGE
+        exit 0
+        ;;
+      -s|--silent)
+        SILENT=true
+        ;;
+      status)
+        STATUS
+        exit 0
+        ;;
+      install)
+        COMMAND=true
+        INSTALL
+        exit 0
+        ;;
+      uninstall)
+        COMMAND=true
+        UNINSTALL
+        exit 0
+        ;;
+      update)
+        COMMAND=true
+        UPDATE
+        exit 0
+        ;;
+      *)
+        echo -e "${RD}Error: Got an unexpected argument \"$_key\"${CL}\n";
+        USAGE;
+        exit 1;
+        ;;
+    esac
+    shift
+  done
 }
-
 parse_cli "$@"
+
+# Run without commands
+if [[ $COMMAND != true ]]; then
+  INSTALL
+fi
