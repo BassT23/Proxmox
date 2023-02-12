@@ -2,7 +2,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION=3.5
+VERSION=3.6
 
 # Colors
 BL='\033[36m'
@@ -197,26 +197,29 @@ function EXIT {
   EXIT_CODE=$?
   # Exit direct
   if [[ $EXIT_CODE == 2 ]]; then
-  # CLEAN_LOGFILE
+#    CLEAN_LOGFILE
     exit
-  # Update Finish
+    # Update Finish
   elif [[ $EXIT_CODE == 0 ]]; then
-    echo -e "${GN}Finished, All Containers Updated.${CL}\n"
-    /root/Proxmox-Update-Scripts/exit/passed.sh
-  # Update Error
+    if [[ $RICM != true ]]; then
+      echo -e "${GN}Finished, All Containers Updated.${CL}\n"
+      /root/Proxmox-Update-Scripts/exit/passed.sh
+      CLEAN_LOGFILE
+    fi
+    # Update Error
   else
-    echo -e "${RD}Error during Update --- Exit Code: $EXIT_CODE${CL}\n"
-    /root/Proxmox-Update-Scripts/exit/error.sh
+    if [[ $RICM != true ]]; then
+      echo -e "${RD}Error during Update --- Exit Code: $EXIT_CODE${CL}\n"
+      /root/Proxmox-Update-Scripts/exit/error.sh
+      CLEAN_LOGFILE
+    fi
   fi
+
 }
 
 # Exit Code
 set -e
-if [[ $RICM != true ]]; then
-  trap EXIT EXIT
-fi
-
-_command=false
+trap EXIT EXIT
 
 # Check Cluster Mode
 if [[ -f /etc/corosync/corosync.conf ]]; then
@@ -224,12 +227,8 @@ if [[ -f /etc/corosync/corosync.conf ]]; then
 fi
 
 # Update Start
+
 export TERM=xterm-256color
-
-#if [ "$_command" = false ]; then
-#  ssh "$HOST" 'bash -s' < "$0" -- -c host
-#fi
-
 parse_cli()
 {
   while test $# -gt -0
@@ -246,46 +245,31 @@ parse_cli()
       -c)
         RICM=true
         ;;
-#      --default)
-#        DEFAULT=YES
-#        shift # past argument
-#        echo "test"
-#        ;;
       host)
-        if [[ $_command = false ]]; then
-          _command=true
+          COMMAND=true
           if [[ $RICM != true ]]; then
             MODE="  Host  "
             HEADER_INFO
-          fi
-            if [[ $RICM != true ]]; then
             echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
-            fi
+          fi
           UPDATE_HOST_ITSELF
           CONTAINER_UPDATE_START
-        fi
         ;;
       cluster)
-        if [[ $_command = false ]]; then
-          _command=true
+          COMMAND=true
           MODE=" Cluster"
           HEADER_INFO
           HOST_UPDATE_START
-        fi
         ;;
       uninstall)
-        if [[ $_command = false ]]; then
-          _command=true
+          COMMAND=true
           UNINSTALL
           exit 0
-        fi
         ;;
       -up)
-        if [[ $_command = false ]]; then
-          _command=true
+          COMMAND=true
           UPDATE
           exit 0
-        fi
         ;;
       *)
         echo -e "${RD}Error: Got an unexpected argument \"$_key\"${CL}";
@@ -295,21 +279,22 @@ parse_cli()
     esac
     shift
   done
-export TERM=xterm-256color
-if [[ -f /etc/corosync/corosync.conf ]]; then
-  MODE=" Cluster"
-  HEADER_INFO
-  HOST_UPDATE_START
-  exit 0
-else
-  if [[ $RICM != true ]]; then
+}
+parse_cli "$@"
+
+# Run without commands (Automatic Mode)
+if [[ $COMMAND != true && $RICM != true ]]; then
+  if [[ -f /etc/corosync/corosync.conf ]]; then
+    MODE=" Cluster"
+    HEADER_INFO
+    HOST_UPDATE_START
+  else
     MODE="  Host  "
     HEADER_INFO
     echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
+    UPDATE_HOST_ITSELF
+    CONTAINER_UPDATE_START
   fi
-  UPDATE_HOST_ITSELF
-  CONTAINER_UPDATE_START
-  exit 0
 fi
-}
-parse_cli "$@"
+
+exit 0
