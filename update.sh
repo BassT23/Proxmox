@@ -199,14 +199,14 @@ function EXIT {
   if [[ $EXIT_CODE == 2 ]]; then
 #    CLEAN_LOGFILE
     exit
-    # Update Finish
+  # Update Finish
   elif [[ $EXIT_CODE == 0 ]]; then
     if [[ $RICM != true ]]; then
       echo -e "${GN}Finished, All Containers Updated.${CL}\n"
       /root/Proxmox-Update-Scripts/exit/passed.sh
       CLEAN_LOGFILE
     fi
-    # Update Error
+  # Update Error
   else
     if [[ $RICM != true ]]; then
       echo -e "${RD}Error during Update --- Exit Code: $EXIT_CODE${CL}\n"
@@ -227,7 +227,6 @@ if [[ -f /etc/corosync/corosync.conf ]]; then
 fi
 
 # Update Start
-
 export TERM=xterm-256color
 parse_cli()
 {
@@ -246,30 +245,30 @@ parse_cli()
         RICM=true
         ;;
       host)
-          COMMAND=true
-          if [[ $RICM != true ]]; then
-            MODE="  Host  "
-            HEADER_INFO
-            echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
-          fi
-          UPDATE_HOST_ITSELF
-          CONTAINER_UPDATE_START
+        COMMAND=true
+        if [[ $RICM != true ]]; then
+          MODE="  Host  "
+          HEADER_INFO
+          echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
+        fi
+        UPDATE_HOST_ITSELF
+        CONTAINER_UPDATE_START
         ;;
       cluster)
-          COMMAND=true
-          MODE=" Cluster"
-          HEADER_INFO
-          HOST_UPDATE_START
+        COMMAND=true
+        MODE=" Cluster"
+        HEADER_INFO
+        HOST_UPDATE_START
         ;;
       uninstall)
-          COMMAND=true
-          UNINSTALL
-          exit 0
+        COMMAND=true
+        UNINSTALL
+        exit 0
         ;;
       -up)
-          COMMAND=true
-          UPDATE
-          exit 0
+        COMMAND=true
+        UPDATE
+        exit 0
         ;;
       *)
         echo -e "${RD}Error: Got an unexpected argument \"$_key\"${CL}";
