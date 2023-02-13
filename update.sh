@@ -3,7 +3,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.1.3"
+VERSION="3.2"
 
 # Colors
 BL='\033[36m'
@@ -38,6 +38,7 @@ EOF
     echo -e "            ***  Interactive   ***"
   fi
   CHECK_ROOT
+  VERSION-CHECK
 }
 
 # Check root
@@ -64,8 +65,19 @@ function USAGE {
 }
 
 function VERSION-CHECK {
-  var=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Programme/update_v3_1_1.sh )
-  echo $var
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update.sh
+  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh )
+  if [[ $VERSION != $SERVER_VERSION ]] ;then
+    echo -e "\n${RD}   *** A newer version is available ***${CL}\n \
+      Installed: $VERSION / Server: $SERVER_VERSION\n"
+    echo -e "${RD}Want to update first Proxmox-Updater?${CL}"
+    read -p "Type [Y/y] for yes - enything else will skip " -n 1 -r
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+    fi
+    echo
+  fi
+  rm -rf /root/update.sh
 }
 
 function UPDATE {
