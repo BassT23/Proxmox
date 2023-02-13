@@ -118,8 +118,8 @@ function UPDATE_CONTAINER {
                                         apt-get --purge autoremove -y && echo"
       ;;
     "fedora")
-      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE ---" && \
-                                        dnf -y update && echo
+      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE --- && \
+                                        dnf -y update && echo"
       pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPGRATE --- && \
                                         dnf -y upgrade && echo"
       pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && \
