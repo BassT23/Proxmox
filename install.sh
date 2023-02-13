@@ -1,21 +1,20 @@
 #!/bin/bash
-# https://github.com/BassT23/Proxmox
+#https://github.com/BassT23/Proxmox
 
-# Variable / Function
-LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.2"
+#Variable / Function
+VERSION=1.2
 
-# Colors
+#Colors
 BL='\033[36m'
 RD='\033[01;31m'
 GN='\033[1;92m'
 CL='\033[m'
 
-# Header
+#Header
 function HEADER_INFO {
   clear
   echo -e "\n \
-    https://github.com/BassT23/Proxmox"
+      https://github.com/BassT23/Proxmox"
   cat <<'EOF'
      ____
     / __ \_________  _  ______ ___  ____  _  __
@@ -30,236 +29,124 @@ function HEADER_INFO {
        /_/
 EOF
   echo -e "\n \
-           *** Version:  $VERSION  *** \n \
-           *** Mode: $MODE ***"
-  if [[ $HEADLESS == true ]]; then
-    echo -e "            ***    Headless    ***"
-  else
-    echo -e "            ***  Interactive   ***"
-  fi
+      *** Install and/or Update *** \n \
+      ***    Version :   $VERSION    *** \n"
   CHECK_ROOT
-  VERSION-CHECK
 }
 
-# Check root
+#Check root
 function CHECK_ROOT {
-  if [[ $RICM != true && $EUID -ne 0 ]]; then
-      echo -e "\n ${RD}--- Please run this as root ---${CL}\n"
-      exit 2
+  if [[ $EUID -ne 0 ]]; then
+      echo -e >&2 "${RD}--- Please run this as root ---${CL}";
+      exit 1
   fi
 }
 
 function USAGE {
-  if [[ $HEADLESS != true ]]; then
-      echo -e "\nUsage: $0 [OPTIONS...] {COMMAND}\n"
-      echo -e "Manages the Proxmox-Updater."
-      echo -e "  -h --help            Show this help"
-      echo -e "  -s --silent          Silent / Headless Mode"
-      echo -e "  -up                  Update Proxmox-Updater\n"
-      echo -e "Commands:"
-      echo -e "  host                 Host-Mode"
-      echo -e "  cluster              Cluster-Mode"
-      echo -e "  uninstall            Uninstall Proxmox-Updater\n"
-      echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
-  fi
+    if [[ $SILENT != true ]]; then
+        echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
+        echo -e "Manages the Proxmox-Updater."
+        echo -e "  -h --help            Show this help"
+        echo -e "  -s --silent          Silent mode\n"
+        echo -e "Commands:"
+        echo -e "  status               Check current installation status"
+        echo -e "  install              Install Proxmox-Updater"
+        echo -e "  uninstall            Uninstall Proxmox-Updater"
+        echo -e "  update               Update Proxmox-Updater\n"
+        echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
+    fi
 }
 
-function VERSION-CHECK {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update.sh
-  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh )
-  if [[ $VERSION != $SERVER_VERSION ]] ;then
-    echo -e "\n${RD}   *** A newer version is available ***${CL}\n \
-      Installed: $VERSION / Server: $SERVER_VERSION\n"
-    echo -e "${RD}Want to update first Proxmox-Updater?${CL}"
-    read -p "Type [Y/y] for yes - enything else will skip " -n 1 -r
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-      bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+function isInstalled {
+    if [ -f "/usr/local/bin/update" ]; then
+        true
+    else
+        false
     fi
-    echo
-  fi
-  rm -rf /root/update.sh
+}
+
+function STATUS {
+    if [[ $SILENT != true ]]; then
+        echo -e "Proxmox-Updater"
+        if isInstalled; then
+            echo -e "Status: ${GN}present${CL}\n"
+        else
+            echo -e "Status: ${RD}not present${CL}\n"
+        fi
+    fi
+    if isInstalled; then exit 0; else exit 1; fi
+}
+
+function INSTALL {
+    echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
+    if [ -f "/usr/local/bin/update" ]; then
+      echo -e "${RD}Proxmox-Updater is already installed.${CL}"
+      read -p "Should I update for you? Type [Y/y] for yes - enything else will exit " -n 1 -r
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+        bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+      else
+        echo -e "\nBye\n"
+        exit 0
+      fi
+    else
+      mkdir -p /root/Proxmox-Update-Scripts/exit
+      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update.sh > /usr/local/bin/update
+      chmod 750 /usr/local/bin/update
+      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
+      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
+      chmod +x /root/Proxmox-Update-Scripts/exit/*.*
+      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update-extras.sh > /root/Proxmox-Update-Scripts/update-extras.sh
+      echo -e "${BL}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
+    fi
 }
 
 function UPDATE {
-  bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
-  exit 2
+    if [ -f "/usr/local/bin/update" ]; then
+      echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
+      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update.sh > /usr/local/bin/update
+      # Check if files are modified by user
+#      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
+#      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
+#     curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update-extras.sh > /root/Proxmox-Update-Scripts/update-extras.sh
+      echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
+    else
+      echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}"
+      read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+        bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
+      else
+        echo -e "\n\nBye\n"
+        exit 0
+      fi
+    fi
 }
 
 function UNINSTALL {
-  echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
-  echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
-  read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r
-  if [[ $REPLY =~ ^[Yy]$ ]]; then
-    bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) uninstall
-  else
-    exit 2
-  fi
-}
-
-# Extras
-function EXTRAS {
-  echo -e "--- Searching for extra updates ---\n"
-  pct push "$CONTAINER" -- /root/Proxmox-Update-Scripts/update-extras.sh /root/update-extras.sh
-  pct exec "$CONTAINER" -- bash -c "chmod +x /root/update-extras.sh && \
-                                    /root/update-extras.sh && \
-                                    rm -rf /root/update-extras.sh"
-}
-
-# Host Update
-function UPDATE_HOST {
-  HOST=$1
-  echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOST${CL}"
-  if [[ $HEADLESS == true ]]; then
-    ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
-  else
-    ssh "$HOST" 'bash -s' < "$0" -- "-c host"
-  fi
-}
-
-# Host Update Start
-function HOST_UPDATE_START {
-  for HOST in $HOSTS; do
-    UPDATE_HOST "$HOST"
-  done
-}
-
-# Container Update
-function UPDATE_CONTAINER {
-  CONTAINER=$1
-  NAME=$(pct exec "$CONTAINER" hostname)
-  echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
-  pct config "$CONTAINER" > temp
-  os=$(awk '/^ostype/' temp | cut -d' ' -f2)
-  case "$os" in
-    "ubuntu" | "debian" | "devuan")
-      pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && \
-                                        apt-get update && echo"
-      if [[ $HEADLESS == true ]]; then
-        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE HEADLESS --- && \
-                                          DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && echo"
-      else
-        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
-                                          apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && echo"
-      fi
-      pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && \
-                                        apt-get --purge autoremove -y && echo"
-      EXTRAS
-      ;;
-    "fedora")
-      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE --- && \
-                                        dnf -y update && echo"
-      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPGRATE --- && \
-                                        dnf -y upgrade && echo"
-      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && \
-                                        dnf -y --purge autoremove && echo"
-      EXTRAS
-      ;;
-    "archlinux")
-      pct exec "$CONTAINER" -- bash -c "echo -e --- PACMAN UPDATE --- && \
-                                        pacman -Syyu --noconfirm && echo"
-      EXTRAS
-      ;;
-    "alpine")
-      pct exec "$CONTAINER" -- ash -c "echo -e --- APK UPDATE --- && \
-                                       apk -U upgrade && echo"
-      EXTRAS
-      ;;
-    *)
-      pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE --- && \
-                                        yum -y update && echo"
-      EXTRAS
-      ;;
-  esac
-}
-
-# Container Update Start
-function CONTAINER_UPDATE_START {
-  # Get the list of containers
-  CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
-  # Loop through the containers
-  for CONTAINER in $CONTAINERS; do
-    status=$(pct status "$CONTAINER")
-    if [[ $status == "status: stopped" ]]; then
-      echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
-      # Start the container
-      pct start "$CONTAINER"
-      echo -e "${BL}[Info]${GN} Waiting For${BL} $CONTAINER${CL}${GN} To Start ${CL}\n"
-      sleep 5
-      UPDATE_CONTAINER "$CONTAINER"
-      echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
-      # Stop the container
-      pct shutdown "$CONTAINER" &
-    elif [[ $status == "status: running" ]]; then
-      UPDATE_CONTAINER "$CONTAINER"
+    echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
+    if [ -f "/usr/local/bin/update" ]; then
+      rm /usr/local/bin/update
+      rm -r /root/Proxmox-Update-Scripts
+      echo -e "${BL}Proxmox-Updater removed${CL}\n"
+    else
+      echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
     fi
-  done
-  rm -rf temp
 }
 
-function UPDATE_HOST_ITSELF {
-  echo -e "\n--- APT UPDATE ---" && apt-get update
-  if [[ $HEADLESS == true ]]; then
-    echo -e "\n--- APT UPGRADE HEADLESS ---" && \
-            DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-  else
-    echo -e "\n--- APT UPGRADE ---" && \
-            apt-get upgrade -y
-  fi
-  echo -e "\n--- APT CLEANING ---" && \
-          apt-get --purge autoremove -y && echo
-}
-
-# Logging
-if [[ $RICM != true ]]; then
-  touch "$LOG_FILE"
-  exec &> >(tee "$LOG_FILE")
-fi
-function CLEAN_LOGFILE {
-  if [[ $RICM != true ]]; then
-    tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
-    cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE"
-    chmod 640 "$LOG_FILE"
-    if [[ -f ./tmp.log ]]; then
-      rm -rf ./tmp.log
-    fi
-  fi
-}
-
+#Error/Exit
+set -e
 function EXIT {
   EXIT_CODE=$?
-  # Exit direct
-  if [[ $EXIT_CODE == 2 ]]; then
-#    CLEAN_LOGFILE
-    exit
-  # Update Finish
-  elif [[ $EXIT_CODE == 0 ]]; then
-    if [[ $RICM != true ]]; then
-      echo -e "${GN}Finished, All Containers Updated.${CL}\n"
-      /root/Proxmox-Update-Scripts/exit/passed.sh
-      CLEAN_LOGFILE
-    fi
-  # Update Error
-  else
-    if [[ $RICM != true ]]; then
-      echo -e "${RD}Error during Update --- Exit Code: $EXIT_CODE${CL}\n"
-      /root/Proxmox-Update-Scripts/exit/error.sh
-      CLEAN_LOGFILE
-    fi
+  # Install Finish
+  if [[ $EXIT_CODE != "0" ]]; then
+    echo -e "${RD}Error during install --- Exit Code: $EXIT_CODE${CL}\n"
   fi
-
 }
 
 # Exit Code
-set -e
 trap EXIT EXIT
 
-# Check Cluster Mode
-if [[ -f /etc/corosync/corosync.conf ]]; then
-  HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
-fi
-
-# Update Start
-export TERM=xterm-256color
+#Install
+HEADER_INFO
 parse_cli()
 {
   while test $# -gt -0
@@ -268,44 +155,34 @@ parse_cli()
     case "$_key" in
       -h|--help)
         USAGE
-        exit 2
+        exit 0
         ;;
       -s|--silent)
-        HEADLESS=true
+        SILENT=true
         ;;
-      -c)
-        RICM=true
+      status)
+        STATUS
+        exit 0
         ;;
-      host)
+      install)
         COMMAND=true
-        if [[ $RICM != true ]]; then
-          MODE="  Host  "
-          HEADER_INFO
-          echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
-        fi
-        UPDATE_HOST_ITSELF
-        CONTAINER_UPDATE_START
-        ;;
-      cluster)
-        COMMAND=true
-        MODE=" Cluster"
-        HEADER_INFO
-        HOST_UPDATE_START
+        INSTALL
+        exit 0
         ;;
       uninstall)
         COMMAND=true
         UNINSTALL
         exit 0
         ;;
-      -up)
+      update)
         COMMAND=true
         UPDATE
         exit 0
         ;;
       *)
-        echo -e "${RD}Error: Got an unexpected argument \"$_key\"${CL}";
+        echo -e "${RD}Error: Got an unexpected argument \"$_key\"${CL}\n";
         USAGE;
-        exit 2;
+        exit 1;
         ;;
     esac
     shift
@@ -313,19 +190,7 @@ parse_cli()
 }
 parse_cli "$@"
 
-# Run without commands (Automatic Mode)
-if [[ $COMMAND != true && $RICM != true ]]; then
-  if [[ -f /etc/corosync/corosync.conf ]]; then
-    MODE=" Cluster"
-    HEADER_INFO
-    HOST_UPDATE_START
-  else
-    MODE="  Host  "
-    HEADER_INFO
-    echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
-    UPDATE_HOST_ITSELF
-    CONTAINER_UPDATE_START
-  fi
+# Run without commands
+if [[ $COMMAND != true ]]; then
+  INSTALL
 fi
-
-exit 0
