@@ -1,8 +1,9 @@
 #!/bin/bash
+# https://github.com/BassT23/Proxmox
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION=3.1.1
+VERSION="3.1.3"
 
 # Colors
 BL='\033[36m'
@@ -62,6 +63,11 @@ function USAGE {
   fi
 }
 
+function VERSION-CHECK {
+  var=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Programme/update_v3_1_1.sh )
+  echo $var
+}
+
 function UPDATE {
   bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
   exit 2
@@ -76,6 +82,15 @@ function UNINSTALL {
   else
     exit 2
   fi
+}
+
+# Extras
+function EXTRAS {
+  echo -e "--- Searching for extra updates ---\n"
+  pct push "$CONTAINER" -- /root/Proxmox-Update-Scripts/update-extras.sh /root/update-extras.sh
+  pct exec "$CONTAINER" -- bash -c "chmod +x /root/update-extras.sh && \
+                                    /root/update-extras.sh && \
+                                    rm -rf /root/update-extras.sh"
 }
 
 # Host Update
@@ -116,6 +131,7 @@ function UPDATE_CONTAINER {
       fi
       pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && \
                                         apt-get --purge autoremove -y && echo"
+      EXTRAS
       ;;
     "fedora")
       pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE --- && \
@@ -124,18 +140,22 @@ function UPDATE_CONTAINER {
                                         dnf -y upgrade && echo"
       pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && \
                                         dnf -y --purge autoremove && echo"
+      EXTRAS
       ;;
     "archlinux")
       pct exec "$CONTAINER" -- bash -c "echo -e --- PACMAN UPDATE --- && \
                                         pacman -Syyu --noconfirm && echo"
+      EXTRAS
       ;;
     "alpine")
       pct exec "$CONTAINER" -- ash -c "echo -e --- APK UPDATE --- && \
                                        apk -U upgrade && echo"
+      EXTRAS
       ;;
     *)
       pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE --- && \
                                         yum -y update && echo"
+      EXTRAS
       ;;
   esac
 }
