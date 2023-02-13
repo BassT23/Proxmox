@@ -2,7 +2,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION=3.1
+VERSION=3.1.1
 
 # Colors
 BL='\033[36m'
@@ -105,37 +105,37 @@ function UPDATE_CONTAINER {
   os=$(awk '/^ostype/' temp | cut -d' ' -f2)
   case "$os" in
     "ubuntu" | "debian" | "devuan")
-      pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE ---" && \
-                                        apt-get update && echo
+      pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && \
+                                        apt-get update && echo"
       if [[ $HEADLESS == true ]]; then
-        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE HEADLESS ---" && \
-                                          DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && echo
+        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE HEADLESS --- && \
+                                          DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && echo"
       else
-        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE ---" && \
-                                          apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && echo
+        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
+                                          apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && echo"
       fi
-      pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING ---" && \
-                                        apt-get --purge autoremove -y && echo
+      pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && \
+                                        apt-get --purge autoremove -y && echo"
       ;;
     "fedora")
       pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE ---" && \
                                         dnf -y update && echo
-      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPGRATE ---" && \
-                                        dnf -y upgrade && echo
-      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING ---" && \
-                                        dnf -y --purge autoremove && echo
+      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPGRATE --- && \
+                                        dnf -y upgrade && echo"
+      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && \
+                                        dnf -y --purge autoremove && echo"
       ;;
     "archlinux")
-      pct exec "$CONTAINER" -- bash -c "echo -e --- PACMAN UPDATE ---" && \
-                                        pacman -Syyu --noconfirm && echo
+      pct exec "$CONTAINER" -- bash -c "echo -e --- PACMAN UPDATE --- && \
+                                        pacman -Syyu --noconfirm && echo"
       ;;
     "alpine")
-      pct exec "$CONTAINER" -- ash -c "echo -e --- APK UPDATE ---" && \
-                                       apk -U upgrade && echo
+      pct exec "$CONTAINER" -- ash -c "echo -e --- APK UPDATE --- && \
+                                       apk -U upgrade && echo"
       ;;
     *)
-      pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE ---" && \
-                                        yum -y update && echo
+      pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE --- && \
+                                        yum -y update && echo"
       ;;
   esac
 }
