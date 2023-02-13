@@ -1,6 +1,10 @@
 Changelog:
 ==========
 
+**v3.1.1** (13.02.2023)
+
+- fixed update failure with CentOS
+
 **v3.1** (12.02.2023)
 
 - Add better usage
