@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This work only for Container NOT the Hosts itself
-VERSION=1.0
+VERSION="1.1"
 
 # Update PiHole if installed
 hash pihole 2>/dev/null | {
@@ -43,6 +43,7 @@ hash Pterodactyl 2>/dev/null | {
   curl -L -o /usr/local/bin/wings "https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_$([[ "$(uname -m)" == "x86_64" ]] && echo "amd64" || echo "arm64")"
   chmod u+x /usr/local/bin/wings
   systemctl restart wings
+  echo
 }
 
 # Update Octoprint if installed
@@ -50,4 +51,5 @@ hash Octoprint 2>/dev/null | {
   echo -e "*** Updating Octoprint ***\n"
   ~/oprint/bin/pip install -U octoprint
   sudo service octoprint restart
+  echo
 }
