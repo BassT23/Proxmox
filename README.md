@@ -21,6 +21,7 @@ Features:
 - Exit tracking, so you can send additional commands for Finish or Failure
 - Logging
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
+- specific updates for containers (edit update-extras.sh if you want)
 
 Info can be found with `update -h`
 
