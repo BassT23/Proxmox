@@ -3,7 +3,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.2"
+VERSION="3.2.1"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
@@ -60,6 +60,7 @@ function USAGE {
       echo -e "Manages the Proxmox-Updater."
       echo -e "  -h --help            Show this help"
       echo -e "  -s --silent          Silent / Headless Mode"
+      echo -e "  -v --version         Show Proxmox-Updater Version\n"
       echo -e "  -up                  Update Proxmox-Updater\n"
       echo -e "Commands:"
       echo -e "  host                 Host-Mode"
@@ -84,7 +85,7 @@ function VERSION_CHECK {
       echo
     fi
   else
-    echo -e "\n             ${GN}Script is UpToDate${CL}\n"
+    echo -e "\n             ${GN}Script is UpToDate${CL}"
   fi
   rm -rf /root/update.sh
 }
@@ -281,6 +282,12 @@ parse_cli()
         ;;
       -s|--silent)
         HEADLESS=true
+        ;;
+      -v|--version)
+        HEADLESS=true
+        VERSION_CHECK
+        echo -e "  Proxmox-Updater version is v$VERSION (Latest: v$SERVER_VERSION)"
+        exit 2
         ;;
       -c)
         RICM=true
