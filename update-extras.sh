@@ -4,14 +4,21 @@
 VERSION="1.1"
 
 # Update PiHole if installed
-hash pihole 2>/dev/null | {
-  echo -e "*** Updating PiHole ***\n"
-  /usr/local/bin/pihole -up
+hash PiHole 2>/dev/null && {
+  echo -e "Want to update PiHole?"
+  read -p "Type [Y/y] or Enter for yes - enything else will skip " -n 1 -r
+  if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+    echo -e "*** Updating PiHole ***\n"
+    /usr/local/bin/pihole -up
+  fi
   echo
 }
 
 # Update Pterodactyl if installed
-hash Pterodactyl 2>/dev/null | {
+hash Pterodactyl 2>/dev/null && {
+  echo -e "Want to update Pterodactyl?"
+  read -p "Type [Y/y] or Enter for yes - enything else will skip " -n 1 -r
+  if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
   echo -e "*** Updating Pterodactyl ***\n"
   cd /var/www/pterodactyl
   php artisan down
@@ -24,11 +31,11 @@ hash Pterodactyl 2>/dev/null | {
   os=$(awk '/^ostype/' temp | cut -d' ' -f2)
   if [[ $os == centos ]]; then
     # If using NGINX on CentOS:
-    hash nginx 2>/dev/null | {
+    hash nginx 2>/dev/null && {
       chown -R nginx:nginx /var/www/pterodactyl/*
     }
     # If using Apache on CentOS
-    hash apache 2>/dev/null | {
+    hash apache 2>/dev/null && {
       chown -R apache:apache /var/www/pterodactyl/*
     }
   else
@@ -47,7 +54,10 @@ hash Pterodactyl 2>/dev/null | {
 }
 
 # Update Octoprint if installed
-hash Octoprint 2>/dev/null | {
+hash Octoprint 2>/dev/null && {
+  echo -e "Want to update Octoprint?"
+  read -p "Type [Y/y] or Enter for yes - enything else will skip " -n 1 -r
+  if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
   echo -e "*** Updating Octoprint ***\n"
   ~/oprint/bin/pip install -U octoprint
   sudo service octoprint restart
