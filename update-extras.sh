@@ -1,13 +1,18 @@
 #!/bin/bash
 
 # This work only for Container NOT the Hosts itself
-VERSION="1.1"
+VERSION="1.2"
 
 # Update PiHole if installed
 if [ -f "/usr/local/bin/pihole" ]; then
   echo -e "*** Updating PiHole ***\n"
   /usr/local/bin/pihole -up
   echo
+fi
+
+# Update ioBroker if installed
+if [ -d "/opt/iobroker" ]; then
+  iob stop && iob update && iob upgrade -y && iob upgrade self -y && iob start
 fi
 
 # Update Pterodactyl if installed
