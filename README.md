@@ -17,11 +17,11 @@ Proxmox-Updater
 ===============
 
 Features:
-- Update Proxmox (the Host / all Cluster Nodes / all included LXC's)
-- Exit tracking, so you can send additional commands for Finish or Failure
+- Update Proxmox (the host / all cluster nodes / all included LXC's)
 - Logging
+- Exit tracking, so you can send additional commands for finish or failure (edit files in /root/Proxmox-Update-Scripts/exit)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
-- specific updates for containers (edit update-extras.sh if you want)
+- Extra updates for specific container (edit `update-extras.sh` if you want)
 
 Info can be found with `update -h`
 
@@ -29,7 +29,7 @@ Info can be found with `update -h`
 ======================
 `update -up`
 
-If update run into issue, pls remove first with:
+If update run into issue, please remove first with:
 ``` 
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) uninstall
 ```
@@ -37,7 +37,7 @@ and install new
 
 **Installation:**
 =================
-As root on Proxmox Host Terminal:
+In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ``` 
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
