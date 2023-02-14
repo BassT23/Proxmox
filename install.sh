@@ -89,8 +89,8 @@ function INSTALL {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "${RD}Proxmox-Updater is already installed.${CL}"
-      read -p "Should I update for you? Type [Y/y] for yes - enything else will exit " -n 1 -r
-      if [[ $REPLY =~ ^[Yy]$ ]]; then
+      read -p "Should I update for you? Type [Y/y] or Enter for yes - enything else will exit " -n 1 -r
+      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh) update
       else
         echo -e "\nBye\n"
@@ -127,8 +127,8 @@ function UPDATE {
       echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
     else
       echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}"
-      read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r
-      if [[ $REPLY =~ ^[Yy]$ ]]; then
+      read -p "Type [Y/y] or Enter for yes - enything else will exit " -n 1 -r
+      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh)
       else
         echo -e "\n\nBye\n"
@@ -137,32 +137,25 @@ function UPDATE {
     fi
 }
 
-# Configuration file `/etc/nscd.conf'
-# ==> Modified (by you or by a script) since installation.
-# ==> Package distributor has shipped an updated version.
-# What would you like to do about it ?  Your options are:
-#  Y or I  : install the package maintainer's version
-#  N or O  : keep your currently-installed version
-#    D     : show the differences between the versions
-#    Z     : start a shell to examine the situation
-# The default action is to keep your current version.
-# *** nscd.conf (Y/I/N/O/D/Z) [default=N] ?
-
 function CHECK_DIFF {
   cmp --silent $old $f || echo "files are different"
-  echo -e "\n $f has changed. What should I do for you?\n \
-  [Y/y] - override\n \
-  [N/n] - keep current\n \
-  [S/s] - show differences\n \
-  enything else will exit"
+  echo -e "The file $f\n \
+ ==> Modified (by you or by a script) since installation.\n \
+   What would you like to do about it ?  Your options are:\n \
+    Y or y  : install the package maintainer's version\n \
+    N or n  : keep your currently-installed version\n \
+    S or s  : show the differences between the versions\n \
+ The default action is to keep your current version.\n \
+*** $f (Y/y/N/n/S/s) [default=N] ?\n \
+ enything else will exit "
       read -p "" -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "override with server version"
+        echo "install server version"
 #        mv /root/Proxmox-Updater/error.sh > $LOCAL_FILES/exit/error.sh
 #        mv /root/Proxmox-Updater/passed.sh > $LOCAL_FILES/exit/passed.sh
 #        mv /root/Proxmox-Updater/update-extras.sh > $LOCAL_FILES/update-extras.sh
-      elif [[ $REPLY =~ ^[Nn]$ ]]; then
-        echo "keep old file"
+      elif [[ $REPLY =~ ^[Nn]$ || $REPLY = "" ]]; then
+        echo "keep your file"
       elif [[ $REPLY =~ ^[Ss]$ ]]; then
         echo "show differences"
       else
