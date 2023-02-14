@@ -2,7 +2,7 @@
 #https://github.com/BassT23/Proxmox
 
 #Variable / Function
-VERSION="1.2.1"
+VERSION="1.2.2"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
@@ -51,8 +51,8 @@ function CHECK_ROOT {
 function USAGE {
     if [[ $SILENT != true ]]; then
         echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
-        echo -e "[OPTIONS] Manages the Proxmox-Updater"
-        echo -e "====================================="
+        echo -e "[OPTIONS] Manages the Proxmox-Updater:"
+        echo -e "======================================"
         echo -e "  -h --help            Show this help"
         echo -e "  -s --silent          Silent mode\n"
         echo -e "Commands:"
