@@ -5,6 +5,11 @@
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 VERSION="3.2"
 
+#live
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#development
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
+
 # Colors
 BL='\033[36m'
 RD='\033[01;31m'
@@ -65,7 +70,7 @@ function USAGE {
 }
 
 function VERSION_CHECK {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update.sh
+  curl -s $SERVER_URL/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh )
   if [[ $VERSION != $SERVER_VERSION ]] ;then
     echo -e "\n${RD}   *** A newer version is available ***${CL}\n \
@@ -74,7 +79,7 @@ function VERSION_CHECK {
       echo -e "${RD}Want to update first Proxmox-Updater?${CL}"
       read -p "Type [Y/y] for yes - enything else will skip " -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
-        bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+        bash <(curl -s $SERVER_URL/install.sh) update
       fi
       echo
     fi
@@ -85,7 +90,7 @@ function VERSION_CHECK {
 }
 
 function UPDATE {
-  bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+  bash <(curl -s $SERVER_URL/install.sh) update
   exit 2
 }
 
@@ -94,7 +99,7 @@ function UNINSTALL {
   echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
   read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r
   if [[ $REPLY =~ ^[Yy]$ ]]; then
-    bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) uninstall
+    bash <(curl -s $SERVER_URL/install.sh) uninstall
   else
     exit 2
   fi
