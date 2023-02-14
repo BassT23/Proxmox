@@ -44,8 +44,11 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 
 **Extra Updates:**
 =================
-At the beginning, Extra Update need your input.
-Extra Updates don't work in Headless Mode, for security reasons!
+ If updater detects Installation:
+- PiHole
+- ioBroker
+- Pterodactyl
+- Octoprint
 
 **Credits:**
 ========
