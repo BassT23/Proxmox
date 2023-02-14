@@ -10,6 +10,7 @@ hash pihole 2>/dev/null | {
   echo
 }
 
+# Update Pterodactyl if installed
 hash Pterodactyl 2>/dev/null | {
   echo -e "*** Updating Pterodactyl ***\n"
   cd /var/www/pterodactyl
@@ -20,7 +21,6 @@ hash Pterodactyl 2>/dev/null | {
   php artisan view:clear
   php artisan config:clear
   php artisan migrate --seed --force
-  #########################################
   os=$(awk '/^ostype/' temp | cut -d' ' -f2)
   if [[ $os == centos ]]; then
     # If using NGINX on CentOS:
@@ -35,7 +35,6 @@ hash Pterodactyl 2>/dev/null | {
     # If using NGINX or Apache (not on CentOS):
     chown -R www-data:www-data /var/www/pterodactyl/*
   fi
-  ###########################################
   php artisan queue:restart
   php artisan up
   
@@ -46,6 +45,7 @@ hash Pterodactyl 2>/dev/null | {
   systemctl restart wings
 }
 
+# Update Octoprint if installed
 hash Octoprint 2>/dev/null | {
   echo -e "*** Updating Octoprint ***\n"
   ~/oprint/bin/pip install -U octoprint
