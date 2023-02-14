@@ -4,6 +4,12 @@
 #Variable / Function
 VERSION=1.2.1
 
+#live
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#development
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
+LOCAL_FILES="/root/Proxmox-Update-Scripts"
+
 #Colors
 BL='\033[36m'
 RD='\033[01;31m'
@@ -77,12 +83,6 @@ function STATUS {
     if isInstalled; then exit 0; else exit 1; fi
 }
 
-#live
-#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
-#development
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
-LOCAL_FILES="/root/Proxmox-Update-Scripts"
-
 function INSTALL {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
@@ -121,12 +121,6 @@ function UPDATE {
 #        CHECK_DIFF
         echo "check $f ..."
       done
-
-#      cmp --silent $old $new || echo "files are different"
-#      mv /root/Proxmox-Updater/error.sh > $LOCAL_FILES/exit/error.sh
-#      mv /root/Proxmox-Updater/passed.sh > $LOCAL_FILES/exit/passed.sh
-#      mv /root/Proxmox-Updater/update-extras.sh > $LOCAL_FILES/update-extras.sh
-
       rm -r /root/Proxmox-Updater
       echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
     else
@@ -141,19 +135,34 @@ function UPDATE {
     fi
 }
 
+# Configuration file `/etc/nscd.conf'
+# ==> Modified (by you or by a script) since installation.
+# ==> Package distributor has shipped an updated version.
+# What would you like to do about it ?  Your options are:
+#  Y or I  : install the package maintainer's version
+#  N or O  : keep your currently-installed version
+#    D     : show the differences between the versions
+#    Z     : start a shell to examine the situation
+# The default action is to keep your current version.
+# *** nscd.conf (Y/I/N/O/D/Z) [default=N] ?
+
 function CHECK_DIFF {
-  echo -e "\nWhat should I do for you?\n \
+  cmp --silent $old $f || echo "files are different"
+  echo -e "\n $f has changed. What should I do for you?\n \
   [Y/y] - override\n \
   [N/n] - keep current\n \
   [S/s] - show differences\n \
   enything else will exit"
       read -p "" -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "override"
+        echo "override with server version"
+#        mv /root/Proxmox-Updater/error.sh > $LOCAL_FILES/exit/error.sh
+#        mv /root/Proxmox-Updater/passed.sh > $LOCAL_FILES/exit/passed.sh
+#        mv /root/Proxmox-Updater/update-extras.sh > $LOCAL_FILES/update-extras.sh
       elif [[ $REPLY =~ ^[Nn]$ ]]; then
-        echo "keep"
+        echo "keep old file"
       elif [[ $REPLY =~ ^[Ss]$ ]]; then
-        echo "show"
+        echo "show differences"
       else
         echo -e "\n\nBye\n"
         exit 0
