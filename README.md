@@ -13,7 +13,7 @@
 ```
 
 
-Proxmox-Updater 
+Proxmox-Updater
 ===============
 
 Features:
@@ -30,7 +30,7 @@ Info can be found with `update -h`
 `update -up`
 
 If update run into issue, please remove first with:
-``` 
+```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) uninstall
 ```
 and install new
@@ -38,9 +38,14 @@ and install new
 **Installation:**
 =================
 In Proxmox GUI Host Shell or as root on proxmox host terminal:
-``` 
+```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
+
+**Extra Updates:**
+=================
+At the beginning, Extra Update need your input.
+Extra Updates don't work in Headless Mode, for security reasons!
 
 **Credits:**
 ========
