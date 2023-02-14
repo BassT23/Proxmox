@@ -12,7 +12,9 @@ fi
 
 # Update ioBroker if installed
 if [ -d "/opt/iobroker" ]; then
+  echo -e "*** Updating ioBroker ***\n"
   iob stop && iob update && iob upgrade -y && iob upgrade self -y && iob start
+  echo
 fi
 
 # Update Pterodactyl if installed
