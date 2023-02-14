@@ -70,12 +70,14 @@ function VERSION_CHECK {
   if [[ $VERSION != $SERVER_VERSION ]] ;then
     echo -e "\n${RD}   *** A newer version is available ***${CL}\n \
       Installed: $VERSION / Server: $SERVER_VERSION\n"
-    echo -e "${RD}Want to update first Proxmox-Updater?${CL}"
-    read -p "Type [Y/y] for yes - enything else will skip " -n 1 -r
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-      bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+    if [[ $HEADLESS != true ]] ;then
+      echo -e "${RD}Want to update first Proxmox-Updater?${CL}"
+      read -p "Type [Y/y] for yes - enything else will skip " -n 1 -r
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+        bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+      fi
+      echo
     fi
-    echo
   else
     echo -e "\n             ${GN}Script is UpToDate${CL}\n"
   fi
