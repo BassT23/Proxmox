@@ -38,7 +38,7 @@ EOF
     echo -e "            ***  Interactive   ***"
   fi
   CHECK_ROOT
-  VERSION-CHECK
+  VERSION_CHECK
 }
 
 # Check root
@@ -64,7 +64,7 @@ function USAGE {
   fi
 }
 
-function VERSION-CHECK {
+function VERSION_CHECK {
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh )
   if [[ $VERSION != $SERVER_VERSION ]] ;then
@@ -76,6 +76,8 @@ function VERSION-CHECK {
       bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
     fi
     echo
+  else
+    echo -e "\n             ${GN}Script is UpToDate${CL}\n"
   fi
   rm -rf /root/update.sh
 }
