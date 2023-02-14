@@ -80,8 +80,8 @@ function VERSION_CHECK {
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ $HEADLESS != true ]] ;then
       echo -e "${RD}Want to update first Proxmox-Updater?${CL}"
-      read -p "Type [Y/y] for yes - enything else will skip " -n 1 -r
-      if [[ $REPLY =~ ^[Yy]$ ]]; then
+      read -p "Type [Y/y] or Enter for yes - enything else will skip " -n 1 -r
+      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh) update
       fi
       echo
@@ -90,6 +90,7 @@ function VERSION_CHECK {
     echo -e "\n             ${GN}Script is UpToDate${CL}"
   fi
   rm -rf /root/update.sh
+  rm -rf /root/install.sh
 }
 
 function UPDATE {
