@@ -3,7 +3,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.2.1"
+VERSION="3.2.2"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
@@ -57,11 +57,11 @@ function CHECK_ROOT {
 function USAGE {
   if [[ $HEADLESS != true ]]; then
       echo -e "\nUsage: $0 [OPTIONS...] {COMMAND}\n"
-      echo -e "[OPTIONS] Manages the Proxmox-Updater"
-      echo -e "====================================="
+      echo -e "[OPTIONS] Manages the Proxmox-Updater:"
+      echo -e "======================================"
       echo -e "  -h --help            Show this help"
-      echo -e "  -s --silent          Silent / Headless Mode"
-      echo -e "  -v --version         Show Proxmox-Updater Version\n"
+      echo -e "  -v --version         Show Proxmox-Updater Version"
+      echo -e "  -s --silent          Silent / Headless Mode\n"
       echo -e "  -up                  Update Proxmox-Updater\n"
       echo -e "Commands:"
       echo -e "========="
