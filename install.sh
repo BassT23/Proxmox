@@ -51,10 +51,12 @@ function CHECK_ROOT {
 function USAGE {
     if [[ $SILENT != true ]]; then
         echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
-        echo -e "Manages the Proxmox-Updater."
+        echo -e "=================================="
+        echo -e "[OPTIONS] Manages the Proxmox-Updater."
         echo -e "  -h --help            Show this help"
         echo -e "  -s --silent          Silent mode\n"
         echo -e "Commands:"
+        echo -e "========="
         echo -e "  status               Check current installation status"
         echo -e "  install              Install Proxmox-Updater"
         echo -e "  uninstall            Uninstall Proxmox-Updater"
