@@ -77,7 +77,10 @@ function STATUS {
     if isInstalled; then exit 0; else exit 1; fi
 }
 
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#live
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#development
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
 
 function INSTALL {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
@@ -107,16 +110,23 @@ function UPDATE {
       echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
       curl -s $SERVER_URL/update.sh > /usr/local/bin/update
       # Check if files are different
-#      mkdir /root/Proxmox-Updater
-#      curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater/error.sh
-#      curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater/passed.sh
-#      curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater/update-extras.sh
+      mkdir /root/Proxmox-Updater
+      curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater/error.sh
+      curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater/passed.sh
+      curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater/update-extras.sh
+      FILES="/root/Proxmox-Updater/*"
+      for f in $FILES
+      do
+#        CHECK_DIFF
+        echo "check files"
+      done
+
 #      cmp --silent $old $new || echo "files are different"
 #      mv /root/Proxmox-Updater/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
 #      mv /root/Proxmox-Updater/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
 #      mv /root/Proxmox-Updater/update-extras.sh > /root/Proxmox-Update-Scripts/update-extras.sh
-#      CHECK_DIFF
-#      rm -r /root/Proxmox-Updater
+
+      rm -r /root/Proxmox-Updater
       echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
     else
       echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}"
