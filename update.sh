@@ -3,7 +3,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.2.2"
+VERSION="3.2.3"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
@@ -35,7 +35,6 @@ function HEADER_INFO {
        /_/
 EOF
   echo -e "\n \
-           *** Version:  $VERSION  *** \n \
            *** Mode: $MODE ***"
   if [[ $HEADLESS == true ]]; then
     echo -e "            ***    Headless    ***"
@@ -75,7 +74,7 @@ function USAGE {
 function VERSION_CHECK {
   curl -s $SERVER_URL/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh )
-  if [[ $VERSION != $SERVER_VERSION ]] ;then
+  if [[ $VERSION != [[$SERVER_VERSION]] ]] ;then
     echo -e "\n${RD}   *** A newer version is available ***${CL}\n \
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ $HEADLESS != true ]] ;then
@@ -87,10 +86,10 @@ function VERSION_CHECK {
       echo
     fi
   else
-    echo -e "\n             ${GN}Script is UpToDate${CL}"
+    echo -e "\n             ${GN}Script is UpToDate${CL}\n \
+             Version: $VERSION"
   fi
   rm -rf /root/update.sh
-  rm -rf /root/install.sh
 }
 
 function UPDATE {
@@ -111,11 +110,15 @@ function UNINSTALL {
 
 # Extras
 function EXTRAS {
-  echo -e "--- Searching for extra updates ---\n"
-  pct push "$CONTAINER" -- /root/Proxmox-Update-Scripts/update-extras.sh /root/update-extras.sh
-  pct exec "$CONTAINER" -- bash -c "chmod +x /root/update-extras.sh && \
-                                    /root/update-extras.sh && \
-                                    rm -rf /root/update-extras.sh"
+  if [[ $HEADLESS != true ]]; then
+    echo -e "--- Searching for extra updates ---\n"
+    pct push "$CONTAINER" -- /root/Proxmox-Update-Scripts/update-extras.sh /root/update-extras.sh
+    pct exec "$CONTAINER" -- bash -c "chmod +x /root/update-extras.sh && \
+                                      /root/update-extras.sh && \
+                                      rm -rf /root/update-extras.sh"
+  else
+    echo -e "--- Skip Extra Updates because of Headless Mode---\n"
+  fi
 }
 
 # Host Update
@@ -125,6 +128,8 @@ function UPDATE_HOST {
   if [[ $HEADLESS == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
   else
+    ssh "$HOST" mkdir -p /root/Proxmox-Update-Scripts/
+    scp /root/Proxmox-Update-Scripts/update-extras.sh "$HOST":/root/Proxmox-Update-Scripts/update-extras.sh
     ssh "$HOST" 'bash -s' < "$0" -- "-c host"
   fi
 }
@@ -289,7 +294,7 @@ parse_cli()
       -v|--version)
         HEADLESS=true
         VERSION_CHECK
-        echo -e "  Proxmox-Updater version is v$VERSION (Latest: v$SERVER_VERSION)"
+#        echo -e "  Proxmox-Updater version is v$VERSION (Latest: v$SERVER_VERSION)"
         exit 2
         ;;
       -c)
