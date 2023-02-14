@@ -1,7 +1,8 @@
 #!/bin/bash
+#https://github.com/BassT23/Proxmox
 
 #Variable / Function
-VERSION=1.1
+VERSION=1.2.1
 
 #Colors
 BL='\033[36m'
@@ -76,24 +77,27 @@ function STATUS {
     if isInstalled; then exit 0; else exit 1; fi
 }
 
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+
 function INSTALL {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "${RD}Proxmox-Updater is already installed.${CL}"
       read -p "Should I update for you? Type [Y/y] for yes - enything else will exit " -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
-        bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+        bash <(curl -s $SERVER_URL/install.sh) update
       else
         echo -e "\nBye\n"
         exit 0
       fi
     else
       mkdir -p /root/Proxmox-Update-Scripts/exit
-      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update.sh > /usr/local/bin/update
+      curl -s $SERVER_URL/update.sh > /usr/local/bin/update
       chmod 750 /usr/local/bin/update
-      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
-      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
+      curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
+      curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
       chmod +x /root/Proxmox-Update-Scripts/exit/*.*
+      curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Update-Scripts/update-extras.sh
       echo -e "${BL}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
     fi
 }
@@ -101,16 +105,24 @@ function INSTALL {
 function UPDATE {
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
-      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/update.sh > /usr/local/bin/update
-      # Check if files are modified by user
-#      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
-#      curl -s https://raw.githubusercontent.com/BassT23/Proxmox/main/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
+      curl -s $SERVER_URL/update.sh > /usr/local/bin/update
+      # Check if files are different
+#      mkdir /root/Proxmox-Updater
+#      curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater/error.sh
+#      curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater/passed.sh
+#      curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater/update-extras.sh
+#      cmp --silent $old $new || echo "files are different"
+#      mv /root/Proxmox-Updater/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
+#      mv /root/Proxmox-Updater/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
+#      mv /root/Proxmox-Updater/update-extras.sh > /root/Proxmox-Update-Scripts/update-extras.sh
+#      CHECK_DIFF
+#      rm -r /root/Proxmox-Updater
       echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
     else
       echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}"
       read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
-        bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) install
+        bash <(curl -s $SERVER_URL/install.sh)
       else
         echo -e "\n\nBye\n"
         exit 0
@@ -127,6 +139,25 @@ function UNINSTALL {
     else
       echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
     fi
+}
+
+function CHECK_DIFF {
+  echo -e "\nWhat should I do for you?\n \
+  [Y/y] - override\n \
+  [N/n] - keep current\n \
+  [S/s] - show differences\n \
+  enything else will exit"
+      read -p "" -n 1 -r
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "override"
+      elif [[ $REPLY =~ ^[Nn]$ ]]; then
+        echo "keep"
+      elif [[ $REPLY =~ ^[Ss]$ ]]; then
+        echo "show"
+      else
+        echo -e "\n\nBye\n"
+        exit 0
+      fi
 }
 
 #Error/Exit
