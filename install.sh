@@ -81,6 +81,7 @@ function STATUS {
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 #development
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
+LOCAL_FILES="/root/Proxmox-Update-Scripts"
 
 function INSTALL {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
@@ -97,10 +98,10 @@ function INSTALL {
       mkdir -p /root/Proxmox-Update-Scripts/exit
       curl -s $SERVER_URL/update.sh > /usr/local/bin/update
       chmod 750 /usr/local/bin/update
-      curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
-      curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
-      chmod +x /root/Proxmox-Update-Scripts/exit/*.*
-      curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Update-Scripts/update-extras.sh
+      curl -s $SERVER_URL/exit/error.sh > $LOCAL_FILES/exit/error.sh
+      curl -s $SERVER_URL/exit/passed.sh > $LOCAL_FILES/exit/passed.sh
+      chmod +x $LOCAL_FILES/exit/*.*
+      curl -s $SERVER_URL/update-extras.sh > $LOCAL_FILES/update-extras.sh
       echo -e "${BL}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
     fi
 }
@@ -110,7 +111,7 @@ function UPDATE {
       echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
       curl -s $SERVER_URL/update.sh > /usr/local/bin/update
       # Check if files are different
-      mkdir /root/Proxmox-Updater
+      mkdir -p /root/Proxmox-Updater
       curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater/error.sh
       curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater/passed.sh
       curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater/update-extras.sh
@@ -118,13 +119,13 @@ function UPDATE {
       for f in $FILES
       do
 #        CHECK_DIFF
-        echo "check files"
+        echo "check $f ..."
       done
 
 #      cmp --silent $old $new || echo "files are different"
-#      mv /root/Proxmox-Updater/error.sh > /root/Proxmox-Update-Scripts/exit/error.sh
-#      mv /root/Proxmox-Updater/passed.sh > /root/Proxmox-Update-Scripts/exit/passed.sh
-#      mv /root/Proxmox-Updater/update-extras.sh > /root/Proxmox-Update-Scripts/update-extras.sh
+#      mv /root/Proxmox-Updater/error.sh > $LOCAL_FILES/exit/error.sh
+#      mv /root/Proxmox-Updater/passed.sh > $LOCAL_FILES/exit/passed.sh
+#      mv /root/Proxmox-Updater/update-extras.sh > $LOCAL_FILES/update-extras.sh
 
       rm -r /root/Proxmox-Updater
       echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
@@ -137,17 +138,6 @@ function UPDATE {
         echo -e "\n\nBye\n"
         exit 0
       fi
-    fi
-}
-
-function UNINSTALL {
-    echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
-    if [ -f "/usr/local/bin/update" ]; then
-      rm /usr/local/bin/update
-      rm -r /root/Proxmox-Update-Scripts
-      echo -e "${BL}Proxmox-Updater removed${CL}\n"
-    else
-      echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
     fi
 }
 
@@ -168,6 +158,17 @@ function CHECK_DIFF {
         echo -e "\n\nBye\n"
         exit 0
       fi
+}
+
+function UNINSTALL {
+    echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
+    if [ -f "/usr/local/bin/update" ]; then
+      rm /usr/local/bin/update
+      rm -r /root/Proxmox-Update-Scripts
+      echo -e "${BL}Proxmox-Updater removed${CL}\n"
+    else
+      echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
+    fi
 }
 
 #Error/Exit
