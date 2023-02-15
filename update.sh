@@ -1,8 +1,14 @@
 #!/bin/bash
+# https://github.com/BassT23/Proxmox
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION=3.1.1
+VERSION="3.3"
+
+#live
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#development
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
 
 # Colors
 BL='\033[36m'
@@ -29,7 +35,6 @@ function HEADER_INFO {
        /_/
 EOF
   echo -e "\n \
-           *** Version:  $VERSION  *** \n \
            *** Mode: $MODE ***"
   if [[ $HEADLESS == true ]]; then
     echo -e "            ***    Headless    ***"
@@ -37,6 +42,7 @@ EOF
     echo -e "            ***  Interactive   ***"
   fi
   CHECK_ROOT
+  VERSION_CHECK
 }
 
 # Check root
@@ -50,11 +56,14 @@ function CHECK_ROOT {
 function USAGE {
   if [[ $HEADLESS != true ]]; then
       echo -e "\nUsage: $0 [OPTIONS...] {COMMAND}\n"
-      echo -e "Manages the Proxmox-Updater."
+      echo -e "[OPTIONS] Manages the Proxmox-Updater:"
+      echo -e "======================================"
       echo -e "  -h --help            Show this help"
-      echo -e "  -s --silent          Silent / Headless Mode"
+      echo -e "  -v --version         Show Proxmox-Updater Version"
+      echo -e "  -s --silent          Silent / Headless Mode\n"
       echo -e "  -up                  Update Proxmox-Updater\n"
       echo -e "Commands:"
+      echo -e "========="
       echo -e "  host                 Host-Mode"
       echo -e "  cluster              Cluster-Mode"
       echo -e "  uninstall            Uninstall Proxmox-Updater\n"
@@ -62,19 +71,53 @@ function USAGE {
   fi
 }
 
+function VERSION_CHECK {
+  curl -s $SERVER_URL/update.sh > /root/update.sh
+  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
+  if [[ $VERSION != $SERVER_VERSION ]]; then
+    echo -e "\n${RD}   *** A newer version is available ***${CL}\n \
+      Installed: $VERSION / Server: $SERVER_VERSION\n"
+    if [[ $HEADLESS != true ]]; then
+      echo -e "${RD}Want to update first Proxmox-Updater?${CL}"
+      read -p "Type [Y/y] or Enter for yes - enything else will skip " -n 1 -r -s
+      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+        bash <(curl -s $SERVER_URL/install.sh) update
+      fi
+      echo
+    fi
+  else
+    echo -e "\n             ${GN}Script is UpToDate${CL}\n \
+             Version: $VERSION"
+  fi
+  rm -rf /root/update.sh
+}
+
 function UPDATE {
-  bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+  bash <(curl -s $SERVER_URL/install.sh) update
   exit 2
 }
 
 function UNINSTALL {
   echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
   echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
-  read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r
+  read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r -s
   if [[ $REPLY =~ ^[Yy]$ ]]; then
-    bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) uninstall
+    bash <(curl -s $SERVER_URL/install.sh) uninstall
   else
     exit 2
+  fi
+}
+
+# Extras
+function EXTRAS {
+  if [[ $HEADLESS != true ]]; then
+    echo -e "--- Searching for extra updates ---\n"
+    pct push "$CONTAINER" -- /root/Proxmox-Update-Scripts/update-extras.sh /root/update-extras.sh
+    pct exec "$CONTAINER" -- bash -c "chmod +x /root/update-extras.sh && \
+                                      /root/update-extras.sh && \
+                                      rm -rf /root/update-extras.sh"
+  else
+    echo -e "--- Skip Extra Updates because of Headless Mode---\n"
   fi
 }
 
@@ -82,6 +125,8 @@ function UNINSTALL {
 function UPDATE_HOST {
   HOST=$1
   echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOST${CL}"
+  ssh "$HOST" mkdir -p /root/Proxmox-Update-Scripts/
+  scp /root/Proxmox-Update-Scripts/update-extras.sh "$HOST":/root/Proxmox-Update-Scripts/update-extras.sh
   if [[ $HEADLESS == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
   else
@@ -116,6 +161,7 @@ function UPDATE_CONTAINER {
       fi
       pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && \
                                         apt-get --purge autoremove -y && echo"
+      EXTRAS
       ;;
     "fedora")
       pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE --- && \
@@ -124,18 +170,22 @@ function UPDATE_CONTAINER {
                                         dnf -y upgrade && echo"
       pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && \
                                         dnf -y --purge autoremove && echo"
+      EXTRAS
       ;;
     "archlinux")
       pct exec "$CONTAINER" -- bash -c "echo -e --- PACMAN UPDATE --- && \
                                         pacman -Syyu --noconfirm && echo"
+      EXTRAS
       ;;
     "alpine")
       pct exec "$CONTAINER" -- ash -c "echo -e --- APK UPDATE --- && \
                                        apk -U upgrade && echo"
+      EXTRAS
       ;;
     *)
       pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE --- && \
                                         yum -y update && echo"
+      EXTRAS
       ;;
   esac
 }
@@ -240,6 +290,12 @@ parse_cli()
         ;;
       -s|--silent)
         HEADLESS=true
+        ;;
+      -v|--version)
+        HEADLESS=true
+        VERSION_CHECK
+#        echo -e "  Proxmox-Updater version is v$VERSION (Latest: v$SERVER_VERSION)"
+        exit 2
         ;;
       -c)
         RICM=true

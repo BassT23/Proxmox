@@ -1,6 +1,12 @@
 Changelog:
 ==========
 
+**v3.2** (not released now)
+
+- add Update Info
+- add extra Updates
+- add version check by user
+
 **v3.1.1** (13.02.2023)
 
 - fixed update failure with CentOS
