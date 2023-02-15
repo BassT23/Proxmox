@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This work only for Container NOT the Hosts itself
-VERSION="1.4"
+VERSION="1.5"
 
 # Update PiHole if installed
 if [ -f "/usr/local/bin/pihole" ]; then
@@ -85,7 +85,7 @@ if [[ $(which docker) && $(docker --version) ]]; then
   for container in ${CONTAINER_LIST}; do
 
     # Get the image and hash of the running container
-    CONTAINER_IMAGE="$(docker inspect --format "{{.Config.Image}}" --type container ${container})"
+    CONTAINER_IMAGE="$(docker inspect --format "{{.Config.Image}}" --type container "${container}")"
     RUNNING_IMAGE="$(docker inspect --format "{{.Image}}" --type container "${container}")"
 
     # Pull in latest version of the container and get the hash
@@ -97,7 +97,7 @@ if [[ $(which docker) && $(docker --version) ]]; then
       echo "Updating ${container} image ${CONTAINER_IMAGE}"
       DOCKER_COMMAND="$(runlike "${container}")"
       docker rm --force "${container}"
-      eval ${DOCKER_COMMAND}
+      eval "${DOCKER_COMMAND}"
     fi
   done
   echo
