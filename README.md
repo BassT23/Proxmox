@@ -44,7 +44,7 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 
 **Extra Updates:**
 =================
- If updater detects Installation:
+ If updater detects Installation: (can be seperate disabled in `update-extras.sh`)
 - PiHole
 - ioBroker
 - Docker Container Images
