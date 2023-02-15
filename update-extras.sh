@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This work only for Container NOT the Hosts itself
-VERSION="1.2"
+VERSION="1.4"
 
 # Update PiHole if installed
 if [ -f "/usr/local/bin/pihole" ]; then
@@ -13,7 +13,11 @@ fi
 # Update ioBroker if installed
 if [ -d "/opt/iobroker" ]; then
   echo -e "*** Updating ioBroker ***\n"
-  iob stop && iob update && iob upgrade -y && iob upgrade self -y && iob start
+  echo "*** Stop ioBroker ***" && iob stop
+  echo
+  echo "*** Update/Upgrade ioBroker ***" && iob update && iob upgrade -y && iob upgrade self -y
+  echo
+  echo "*** Start ioBroker ***" && iob start
   echo
 fi
 
@@ -58,3 +62,37 @@ if [ -d "/root/OctoPrint" ]; then
   sudo service octoprint restart
   echo
 fi
+
+# Docker Container update
+docker > /dev/null 2>&1 && {
+  # backup container list
+  docker ps | tee /root/container_list.bak
+  #requirements
+  pip > /dev/null 2>&1 || apt-get install pip
+  if ! pip list | grep -w runlike &> /dev/null; then pip install runlike; fi
+
+  #Update
+  # Abort on all errors, set -x
+  set -o errexit
+
+  # Get the containers from first argument, else get all containers
+  CONTAINER_LIST="${1:-$(docker ps -q)}"
+  for container in ${CONTAINER_LIST}; do
+
+  # Get the image and hash of the running container
+  CONTAINER_IMAGE="$(docker inspect --format "{{.Config.Image}}" --type container ${container})"
+  RUNNING_IMAGE="$(docker inspect --format "{{.Image}}" --type container "${container}")"
+
+  # Pull in latest version of the container and get the hash
+  docker pull "${CONTAINER_IMAGE}"
+  LATEST_IMAGE="$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")"
+
+  # Restart the container if the image is different
+  if [[ "${RUNNING_IMAGE}" != "${LATEST_IMAGE}" ]]; then
+    echo "Updating ${container} image ${CONTAINER_IMAGE}"
+    DOCKER_COMMAND="$(runlike "${container}")"
+    docker rm --force "${container}"
+    eval ${DOCKER_COMMAND}
+  fi
+done
+}
