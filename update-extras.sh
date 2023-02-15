@@ -64,8 +64,10 @@ if [ -d "/root/OctoPrint" ]; then
 fi
 
 # Docker Container update
-docker > /dev/null 2>&1 && {
+if [[ $(which docker) && $(docker --version) ]]; then
+  echo -e "*** Updating Docker Container ***\n"
   # backup container list
+  touch /root/container_list.bak
   docker ps | tee /root/container_list.bak
   #requirements
   pip > /dev/null 2>&1 || apt-get install pip
@@ -79,20 +81,21 @@ docker > /dev/null 2>&1 && {
   CONTAINER_LIST="${1:-$(docker ps -q)}"
   for container in ${CONTAINER_LIST}; do
 
-  # Get the image and hash of the running container
-  CONTAINER_IMAGE="$(docker inspect --format "{{.Config.Image}}" --type container ${container})"
-  RUNNING_IMAGE="$(docker inspect --format "{{.Image}}" --type container "${container}")"
+    # Get the image and hash of the running container
+    CONTAINER_IMAGE="$(docker inspect --format "{{.Config.Image}}" --type container ${container})"
+    RUNNING_IMAGE="$(docker inspect --format "{{.Image}}" --type container "${container}")"
 
-  # Pull in latest version of the container and get the hash
-  docker pull "${CONTAINER_IMAGE}"
-  LATEST_IMAGE="$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")"
+    # Pull in latest version of the container and get the hash
+    docker pull "${CONTAINER_IMAGE}"
+    LATEST_IMAGE="$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")"
 
-  # Restart the container if the image is different
-  if [[ "${RUNNING_IMAGE}" != "${LATEST_IMAGE}" ]]; then
-    echo "Updating ${container} image ${CONTAINER_IMAGE}"
-    DOCKER_COMMAND="$(runlike "${container}")"
-    docker rm --force "${container}"
-    eval ${DOCKER_COMMAND}
-  fi
-done
-}
+    # Restart the container if the image is different
+    if [[ "${RUNNING_IMAGE}" != "${LATEST_IMAGE}" ]]; then
+      echo "Updating ${container} image ${CONTAINER_IMAGE}"
+      DOCKER_COMMAND="$(runlike "${container}")"
+      docker rm --force "${container}"
+      eval ${DOCKER_COMMAND}
+    fi
+  done
+  echo
+fi
