@@ -74,10 +74,10 @@ function USAGE {
 function VERSION_CHECK {
   curl -s $SERVER_URL/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh )
-  if [[ $VERSION != [[$SERVER_VERSION]] ]] ;then
+  if [[ $VERSION != $SERVER_VERSION ]]; then
     echo -e "\n${RD}   *** A newer version is available ***${CL}\n \
       Installed: $VERSION / Server: $SERVER_VERSION\n"
-    if [[ $HEADLESS != true ]] ;then
+    if [[ $HEADLESS != true ]]; then
       echo -e "${RD}Want to update first Proxmox-Updater?${CL}"
       read -p "Type [Y/y] or Enter for yes - enything else will skip " -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
