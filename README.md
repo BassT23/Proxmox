@@ -18,9 +18,9 @@ Proxmox-Updater
 
 Features:
 - Update Proxmox (the host / all cluster nodes / all included LXC's)
+- Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Logging
 - Exit tracking, so you can send additional commands for finish or failure (edit files in /root/Proxmox-Update-Scripts/exit)
-- Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Extra updates for specific container (edit `update-extras.sh` if you want)
 
 Info can be found with `update -h`
