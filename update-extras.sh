@@ -66,11 +66,13 @@ fi
 # Docker Container update
 if [[ $(which docker) && $(docker --version) ]]; then
   echo -e "*** Updating Docker Container ***\n"
-  # backup container list
+
+  # Backup container list
   echo -e "*** Backup container settings to /root/container_list.bak ***\n"
   touch /root/container_list.bak
   docker ps > /dev/null 2>&1 | tee /root/container_list.bak
-  #requirements
+
+  # Requirements
   pip > /dev/null 2>&1 || apt-get install pip
   if ! pip list | grep -w runlike &> /dev/null; then pip install runlike; fi
 
