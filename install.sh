@@ -111,12 +111,12 @@ function INSTALL {
 function UPDATE {
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
-      curl -s $SERVER_URL/update.sh >> /usr/local/bin/update
+      curl -s $SERVER_URL/update.sh > /usr/local/bin/update
       # Check if files are different
       mkdir -p /root/Proxmox-Updater
-      curl $SERVER_URL/exit/error.sh >> /root/Proxmox-Updater/error.sh
-      curl $SERVER_URL/exit/passed.sh >> /root/Proxmox-Updater/passed.sh
-      curl $SERVER_URL/update-extras.sh >> /root/Proxmox-Updater/update-extras.sh
+      curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater/error.sh
+      curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater/passed.sh
+      curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater/update-extras.sh
       FILES="/root/Proxmox-Updater/*"
       for f in $FILES
       do
@@ -151,9 +151,9 @@ function CHECK_DIFF {
       read -p "" -n 1 -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo "install server version"
-#        mv /root/Proxmox-Updater/error.sh >> $LOCAL_FILES/exit/error.sh
-#        mv /root/Proxmox-Updater/passed.sh >> $LOCAL_FILES/exit/passed.sh
-#        mv /root/Proxmox-Updater/update-extras.sh >> $LOCAL_FILES/update-extras.sh
+#        mv /root/Proxmox-Updater/error.sh > $LOCAL_FILES/exit/error.sh
+#        mv /root/Proxmox-Updater/passed.sh > $LOCAL_FILES/exit/passed.sh
+#        mv /root/Proxmox-Updater/update-extras.sh > $LOCAL_FILES/update-extras.sh
       elif [[ $REPLY =~ ^[Nn]$ || $REPLY = "" ]]; then
         echo "keep your file"
       elif [[ $REPLY =~ ^[Ss]$ ]]; then
