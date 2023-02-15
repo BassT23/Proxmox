@@ -116,7 +116,8 @@ function UPDATE {
       mkdir -p /root/Proxmox-Updater
       curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater/error.sh
       curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater/passed.sh
-      curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater/update-extras.sh
+#      curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater/update-extras.sh
+      curl -s $SERVER_URL/update-extras.sh > $LOCAL_FILES/update-extras.sh      
       FILES="/root/Proxmox-Updater/*"
       for f in $FILES
       do
