@@ -73,7 +73,7 @@ if [[ $(which docker) && $(docker --version) ]]; then
   docker ps > /dev/null 2>&1 | tee /root/container_list.bak
 
   # Requirements
-  pip > /dev/null 2>&1 || apt-get install pip
+  pip > /dev/null 2>&1 || apt-get install pip -y
   if ! pip list | grep -w runlike &> /dev/null; then pip install runlike; fi
 
   #Update
