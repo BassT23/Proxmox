@@ -89,7 +89,7 @@ function INSTALL {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "${RD}Proxmox-Updater is already installed.${CL}"
-      read -p "Should I update for you? Type [Y/y] or Enter for yes - enything else will exit " -n 1 -r
+      read -p "Should I update for you? Type [Y/y] or Enter for yes - enything else will exit " -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh) update
       else
@@ -114,26 +114,21 @@ function UPDATE {
       curl -s $SERVER_URL/update.sh > /usr/local/bin/update
       # Check if files are different
       mkdir -p /root/Proxmox-Updater/exit
-      #new
       curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater/exit/error.sh
       curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater/exit/passed.sh
       curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater/update-extras.sh
-      #old
-#      curl -s $SERVER_URL/exit/error.sh > $LOCAL_FILES/exit/error.sh
-#      curl -s $SERVER_URL/exit/passed.sh > $LOCAL_FILES/exit/passed.sh
-#      curl -s $SERVER_URL/update-extras.sh > $LOCAL_FILES/update-extras.sh
       chmod -R +x $LOCAL_FILES/*
       cd /root/Proxmox-Updater
       FILES="*.sh **/*.sh"
       for f in $FILES
       do
-        CHECK_DIFF_2
+        CHECK_DIFF
       done
       rm -r /root/Proxmox-Updater
       echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
     else
       echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}"
-      read -p "Type [Y/y] or Enter for yes - enything else will exit " -n 1 -r
+      read -p "Type [Y/y] or Enter for yes - enything else will exit " -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh)
       else
@@ -143,16 +138,9 @@ function UPDATE {
     fi
 }
 
-function CHECK_DIFF_2 {
-  if ! cmp -s "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f"
-  then
-    WHAT_TO_DO
-  fi
-}
-
 function CHECK_DIFF {
-  cmp "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f" || echo -e \
-  "The file $f\n \
+  if ! cmp -s "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f"; then
+    echo -e "The file $f\n \
  ==> Modified (by you or by a script) since installation.\n \
    What would you like to do about it ?  Your options are:\n \
     Y or y  : install the package maintainer's version\n \
@@ -160,18 +148,19 @@ function CHECK_DIFF {
     S or s  : show the differences between the versions\n \
  The default action is to keep your current version.\n \
 *** $f (Y/y/N/n/S/s) [default=N] ? "
-      read -p "" -n 1 -r
-      if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "install server version \n"
-        mv "/root/Proxmox-Updater/$f" > "$LOCAL_FILES/$f"
-      elif [[ $REPLY =~ ^[Nn]$ || $REPLY = "" ]]; then
-        echo -e "kept your file \n"
-      elif [[ $REPLY =~ ^[Ss]$ ]]; then
-        echo "show differences"
-        diff "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f"
-      else
-        echo -e "\n\nBye\n"
-      fi
+        read -p "" -n 1 -r -s
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+          echo -e "install server version \n"
+          mv "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f"
+        elif [[ $REPLY =~ ^[Nn]$ || $REPLY = "" ]]; then
+          echo -e "\nkept your file \n"
+        elif [[ $REPLY =~ ^[Ss]$ ]]; then
+          echo
+          diff "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f"
+        else
+          echo -e "\n\nBye\n"
+        fi
+  fi
 }
 
 function UNINSTALL {
@@ -185,45 +174,23 @@ function UNINSTALL {
     fi
 }
 
-function WHAT_TO_DO {
-  echo -e "The file $f\n \
- ==> Modified (by you or by a script) since installation.\n \
-   What would you like to do about it ?  Your options are:\n \
-    Y or y  : install the package maintainer's version\n \
-    N or n  : keep your currently-installed version\n \
-    S or s  : show the differences between the versions\n \
- The default action is to keep your current version.\n \
-*** $f (Y/y/N/n/S/s) [default=N] ? "
-      read -p "" -n 1 -r
-      if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "install server version \n"
-        mv "/root/Proxmox-Updater/$f" > "$LOCAL_FILES/$f"
-      elif [[ $REPLY =~ ^[Nn]$ || $REPLY = "" ]]; then
-        echo -e "kept your file \n"
-      elif [[ $REPLY =~ ^[Ss]$ ]]; then
-        echo
-        diff "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f"
-#        exit 0
-      else
-        echo -e "\n\nBye\n"
-      fi
-}
-
 #Error/Exit
 set -e
 function EXIT {
   EXIT_CODE=$?
   # Install Finish
-  if [[ $EXIT_CODE != "0" ]]; then
+  if [[ $EXIT_CODE == "1" ]]; then
+    exit 0
+  elif [[ $EXIT_CODE != "0" ]]; then
     echo -e "${RD}Error during install --- Exit Code: $EXIT_CODE${CL}\n"
   fi
 }
 
 # Exit Code
-#trap EXIT EXIT
+trap EXIT EXIT
 
 #Install
-#HEADER_INFO
+HEADER_INFO
 parse_cli()
 {
   while test $# -gt -0
