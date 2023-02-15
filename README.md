@@ -41,6 +41,14 @@ As root on Proxmox Host Terminal:
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
 
+**Beta:**
+=========
+If anybody want to help with failure search, please test our beta (if available).
+Install beta update with:
+```
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
+```
+
 **Credits:**
 ========
 [@Uruk](https://github.com/Uruknara) - for help with the code
