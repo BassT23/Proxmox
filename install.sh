@@ -2,12 +2,12 @@
 #https://github.com/BassT23/Proxmox
 
 #Variable / Function
-VERSION="1.2.3"
+VERSION="1.3"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 #development
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
 LOCAL_FILES="/root/Proxmox-Update-Scripts"
 
 #Colors
