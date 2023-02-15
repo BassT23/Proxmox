@@ -102,9 +102,8 @@ function INSTALL {
       chmod 750 /usr/local/bin/update
       curl -s $SERVER_URL/exit/error.sh > $LOCAL_FILES/exit/error.sh
       curl -s $SERVER_URL/exit/passed.sh > $LOCAL_FILES/exit/passed.sh
-#      chmod +x $LOCAL_FILES/exit/*.*
       curl -s $SERVER_URL/update-extras.sh > $LOCAL_FILES/update-extras.sh
-      chmod -R +x $LOCAL_FILES/*.*
+      chmod -R +x $LOCAL_FILES/*
       echo -e "${BL}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
     fi
 }
@@ -115,16 +114,18 @@ function UPDATE {
       curl -s $SERVER_URL/update.sh > /usr/local/bin/update
       # Check if files are different
       mkdir -p /root/Proxmox-Updater
-      curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater/error.sh
-      curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater/passed.sh
+#      curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater/error.sh
+#      curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater/passed.sh
 #      curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater/update-extras.sh
+      curl -s $SERVER_URL/exit/error.sh > $LOCAL_FILES/exit/error.sh
+      curl -s $SERVER_URL/exit/passed.sh > $LOCAL_FILES/exit/passed.sh
       curl -s $SERVER_URL/update-extras.sh > $LOCAL_FILES/update-extras.sh
-      chmod -R +x $LOCAL_FILES/*.*
+      chmod -R +x $LOCAL_FILES/*
       FILES="/root/Proxmox-Updater/*"
       for f in $FILES
       do
 #        CHECK_DIFF
-        echo "check $f ..."
+        echo "check $f ... --- only info - no check for now"
       done
       rm -r /root/Proxmox-Updater
       echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
