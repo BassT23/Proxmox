@@ -5,10 +5,7 @@
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 VERSION="3.3"
 
-#live
-#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
-#development
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 
 # Colors
 BL='\033[36m'
@@ -87,7 +84,7 @@ function VERSION_CHECK {
     fi
   else
     echo -e "\n             ${GN}Script is UpToDate${CL}\n \
-             Version: $VERSION"
+               Version: $VERSION"
   fi
   rm -rf /root/update.sh
 }

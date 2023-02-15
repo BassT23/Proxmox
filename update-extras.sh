@@ -1,17 +1,24 @@
 #!/bin/bash
 
 # This work only for Container NOT the Hosts itself
-VERSION="1.5"
+VERSION="1.6"
+
+#To disable extra update change "true" to "false"
+PIHOLE=true
+IOBROKER=true
+PTERODACTYL=true
+OCTOPRINT=true
+DOCKER_IMAGES=true
 
 # Update PiHole if installed
-if [ -f "/usr/local/bin/pihole" ]; then
+if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
   echo -e "*** Updating PiHole ***\n"
   /usr/local/bin/pihole -up
   echo
 fi
 
 # Update ioBroker if installed
-if [ -d "/opt/iobroker" ]; then
+if [[ -d "/opt/iobroker" && $IOBROKER == true ]]; then
   echo -e "*** Updating ioBroker ***\n"
   echo "*** Stop ioBroker ***" && iob stop
   echo
@@ -22,7 +29,7 @@ if [ -d "/opt/iobroker" ]; then
 fi
 
 # Update Pterodactyl if installed
-if [ -d "/var/www/pterodactyl" ]; then
+if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true ]]; then
   echo -e "*** Updating Pterodactyl ***\n"
   cd /var/www/pterodactyl
   php artisan down
@@ -56,7 +63,7 @@ if [ -d "/var/www/pterodactyl" ]; then
 fi
 
 # Update Octoprint if installed
-if [ -d "/root/OctoPrint" ]; then
+if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
   echo -e "*** Updating Octoprint ***\n"
   ~/oprint/bin/pip install -U octoprint
   sudo service octoprint restart
@@ -64,7 +71,7 @@ if [ -d "/root/OctoPrint" ]; then
 fi
 
 # Docker Container update
-if [[ $(which docker) && $(docker --version) ]]; then
+if [[ $(which docker) && $(docker --version) && $DOCKER_IMAGES == true ]]; then
   echo -e "*** Updating Docker Container ***\n"
 
   # Backup container list
