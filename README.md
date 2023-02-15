@@ -47,8 +47,17 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
  If updater detects Installation:
 - PiHole
 - ioBroker
+- Docker Container Images
 - Pterodactyl
 - Octoprint
+
+**Beta:**
+=========
+If anybody want to help with failure search, please test our beta (if available).
+Install beta update with:
+```
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
+```
 
 **Credits:**
 ========
