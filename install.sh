@@ -150,15 +150,15 @@ function CHECK_DIFF {
 *** $f (Y/y/N/n/S/s) [default=N] ? "
         read -p "" -n 1 -r -s
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-          echo -e "install server version \n"
+          echo -e "\n${BL}[Info]${GN} Installed server version${CL}\n"
           mv "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f"
         elif [[ $REPLY =~ ^[Nn]$ || $REPLY = "" ]]; then
-          echo -e "\nkept your file \n"
+          echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
         elif [[ $REPLY =~ ^[Ss]$ ]]; then
           echo
           diff "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f"
         else
-          echo -e "\n\nBye\n"
+          echo -e "\n${BL}[Info]${GN} Skip this file${CL}\n"
         fi
   fi
 }
