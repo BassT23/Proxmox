@@ -29,7 +29,7 @@ if [[ -d "/opt/iobroker" && $IOBROKER == true ]]; then
 fi
 
 # Update Pterodactyl if installed
-if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true]]; then
+if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true ]]; then
   echo -e "*** Updating Pterodactyl ***\n"
   cd /var/www/pterodactyl
   php artisan down
