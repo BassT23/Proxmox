@@ -3,7 +3,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.2.3"
+VERSION="3.2.4"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
@@ -79,7 +79,7 @@ function VERSION_CHECK {
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ $HEADLESS != true ]] ;then
       echo -e "${RD}Want to update first Proxmox-Updater?${CL}"
-      read -p "Type [Y/y] or Enter for yes - enything else will skip " -n 1 -r
+      read -p "Type [Y/y] or Enter for yes - enything else will skip " -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh) update
       fi
@@ -100,7 +100,7 @@ function UPDATE {
 function UNINSTALL {
   echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
   echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
-  read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r
+  read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r -s
   if [[ $REPLY =~ ^[Yy]$ ]]; then
     bash <(curl -s $SERVER_URL/install.sh) uninstall
   else
@@ -125,11 +125,11 @@ function EXTRAS {
 function UPDATE_HOST {
   HOST=$1
   echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOST${CL}"
+  ssh "$HOST" mkdir -p /root/Proxmox-Update-Scripts/
+  scp /root/Proxmox-Update-Scripts/update-extras.sh "$HOST":/root/Proxmox-Update-Scripts/update-extras.sh
   if [[ $HEADLESS == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
   else
-    ssh "$HOST" mkdir -p /root/Proxmox-Update-Scripts/
-    scp /root/Proxmox-Update-Scripts/update-extras.sh "$HOST":/root/Proxmox-Update-Scripts/update-extras.sh
     ssh "$HOST" 'bash -s' < "$0" -- "-c host"
   fi
 }
