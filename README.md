@@ -42,15 +42,6 @@ In Proxmox GUI Host Shell or as root on proxmox host terminal:
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
 
-**Extra Updates:**
-=================
- If updater detects Installation:
-- PiHole
-- ioBroker
-- Docker Container Images
-- Pterodactyl
-- Octoprint
-
 **Beta:**
 =========
 If anybody want to help with failure search, please test our beta (if available).
