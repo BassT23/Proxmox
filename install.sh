@@ -164,14 +164,14 @@ function CHECK_DIFF {
 }
 
 function UNINSTALL {
-    echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
-    if [ -f "/usr/local/bin/update" ]; then
-      rm /usr/local/bin/update
-      rm -r /root/Proxmox-Update-Scripts
-      echo -e "${BL}Proxmox-Updater removed${CL}\n"
-    else
-      echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
-    fi
+  echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
+  echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
+  read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r -s
+  if [[ $REPLY =~ ^[Yy]$ ]]; then
+    bash <(curl -s $SERVER_URL/install.sh) uninstall
+  else
+    echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
+  fi
 }
 
 #Error/Exit
