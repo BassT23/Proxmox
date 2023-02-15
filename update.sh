@@ -84,7 +84,7 @@ function VERSION_CHECK {
     fi
   else
     echo -e "\n             ${GN}Script is UpToDate${CL}\n \
-             Version: $VERSION"
+               Version: $VERSION"
   fi
   rm -rf /root/update.sh
 }
