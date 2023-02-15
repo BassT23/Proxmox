@@ -171,7 +171,7 @@ function UNINSTALL {
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
       rm -r /root/Proxmox-Update-Scripts
-      echo -e "${BL}Proxmox-Updater removed${CL}\n"
+      echo -e "\n\n${BL}Proxmox-Updater removed${CL}\n"
     fi
   else
     echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
