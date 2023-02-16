@@ -3,7 +3,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.5"
+VERSION="3.4.1"
 
 # Also Update VM? (under development - don't try)
 WITH_VM=true
@@ -77,7 +77,7 @@ function USAGE {
 function VERSION_CHECK {
   curl -s $SERVER_URL/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
-  if [[ $VERSION != $SERVER_VERSION ]]; then
+  if [[ $VERSION != "$SERVER_VERSION" ]]; then
     echo -e "\n${RD}   *** A newer version is available ***${CL}\n \
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ $HEADLESS != true ]]; then
@@ -220,33 +220,33 @@ function CONTAINER_UPDATE_START {
 # VM Update
 function UPDATE_VM {
   VM=$1
-  VM_NAME=$(qm guest exec "$VM" hostname)      #<--- CRASH HERE, ... NEED FIX
-    if [[ $VM_NAME =~ "not running" ]]; then
-      echo -e "${RD} QEMU guest agent is not running ${CL}\n \
- You must install it by yourself!\n \
- Look here: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
-    else
-      echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$VM_NAME${CL}\n"
-      case "$OSTYPE" in
-        "LINUX")
-          OS=$(cat /etc/os-release | grep -w NAME= | cut -c 6-)
-          if [[ $OS =~ "Ubuntu" || "Debian" || "Devuan" ]]; then
-            qm guest exec "$VM" -- bash -c "echo -e --- APT UPDATE --- "
-          elif [[ $OS =~ "Fedora" ]]; then
-            qm guest exec "$VM" -- bash -c "echo -e --- DNF UPDATE ---"
-          elif [[ $OS =~ "Arch" ]]; then
-            qm guest exec "$VM" -- bash -c "echo -e --- PACMAN UPDATE ---"
-          elif [[ $OS =~ "Alpine" ]]; then
-            qm guest exec "$VM" -- ash -c "echo -e --- APK UPDATE ---"
-          elif [[ $OS =~ "CentOS" ]]; then
-            qm guest exec "$VM" -- bash -c "echo -e --- YUM UPDATE ---"
-          fi
-          ;;
-        *)
-          echo -e "${RD} System is not supported \n Maybe with later version ;)${CL}"
-          ;;
-      esac
-    fi
+  if VM_NAME=$(qm guest exec "$VM" hostname >/dev/null 2>&1); then
+    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$VM_NAME${CL}\n"
+    case "$OSTYPE" in
+      "LINUX")
+        OS=$("cat /etc/os-release" | grep -w NAME= | cut -c 6-)
+        if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
+          qm guest exec "$VM" -- bash -c "echo -e --- APT UPDATE --- "
+        elif [[ $OS =~ Fedora ]]; then
+          qm guest exec "$VM" -- bash -c "echo -e --- DNF UPDATE ---"
+        elif [[ $OS =~ Arch ]]; then
+          qm guest exec "$VM" -- bash -c "echo -e --- PACMAN UPDATE ---"
+        elif [[ $OS =~ Alpine ]]; then
+          qm guest exec "$VM" -- ash -c "echo -e --- APK UPDATE ---"
+        elif [[ $OS =~ CentOS ]]; then
+          qm guest exec "$VM" -- bash -c "echo -e --- YUM UPDATE ---"
+        fi
+        ;;
+      *)
+        echo -e "${RD} System is not supported \n Maybe with later version ;)${CL}"
+        ;;
+    esac
+  else
+#    echo -e "\nInstall QEMU Agent on VM\n"
+    echo -e "\n${RD}  QEMU guest agent is not installed on VM ${CL}\n\
+  You must install it by yourself!\n\
+  Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
+  fi
 }
 
 # VM Update Start
@@ -256,7 +256,7 @@ function VM_UPDATE_START {
   # Loop through the VMs
   for VM in $VMS; do
     status=$(qm status "$VM")
-    qm set "$VM" --agent 1
+    qm set "$VM" --agent 1 > /dev/null 2>&1
     if [[ $status == "status: stopped" ]]; then
       echo -e "${BL}[Info]${GN} Starting${BL} $VM ${CL}\n"
       # Start the VM
@@ -270,7 +270,7 @@ function VM_UPDATE_START {
     elif [[ $status == "status: running" ]]; then
       UPDATE_VM "$VM"
     fi
-    qm set "$VM" --agent 0
+    qm set "$VM" --agent 0 > /dev/null 2>&1
   done
 }
 
@@ -364,8 +364,8 @@ parse_cli()
           HEADER_INFO
           echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
         fi
-        UPDATE_HOST_ITSELF
-        CONTAINER_UPDATE_START
+#        UPDATE_HOST_ITSELF
+#        CONTAINER_UPDATE_START
         if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
         ;;
       cluster)
