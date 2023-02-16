@@ -3,9 +3,15 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.3"
+VERSION="3.2.4"
 
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+# Also Update VM? (under development - don't try)
+WITH_VM=true
+
+#live
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#development
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
 
 # Colors
 BL='\033[36m'
@@ -211,6 +217,61 @@ function CONTAINER_UPDATE_START {
   rm -rf temp
 }
 
+# VM Update
+function UPDATE_VM {
+  VM=$1
+  qm set "$VM" --agent 1
+
+#  ??? QEMU Guest Agent installed ???
+#  qm showcmd "$VM" search agent?
+
+
+  VM_NAME=$(qm guest exec "$VM" hostname)
+  echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$VM_NAME${CL}\n"
+
+#  qm config "$VM" > temp
+#          $OSTYPE
+#    solaris*)  ->  "SOLARIS" ;;
+#    darwin*)   ->  "OSX" ;; 
+#    linux*)    ->  "LINUX" ;;
+#    bsd*)      ->  "BSD" ;;
+#    msys*)     ->  "WINDOWS" ;;
+#    cygwin*)   ->  "ALSO WINDOWS" ;;
+#    *)         ->  "unknown SYSTEM" ;;
+
+  case "$OSTYPE" in
+    "LINUX")
+      os=$(cat /etc/os-release | grep -w NAME= | cut -c 6-)
+      # output= "Ubuntu" / "Debian GNU/Linux"
+
+      qm exec "$VM" -- bash -c "echo -e --- LINUX UPDATE --- "
+      qm exec "$VM" -- bash -c "echo -e but which, ... && echo"
+  esac
+}
+
+# VM Update Start
+function VM_UPDATE_START {
+  # Get the list of VMs
+  VMS=$(qm list | tail -n +2 | cut -c 8-10)
+  # Loop through the VMs
+  for VM in $VMS; do
+    status=$(qm status "$VM")
+    if [[ $status == "status: stopped" ]]; then
+      echo -e "${BL}[Info]${GN} Starting${BL} $VM ${CL}\n"
+      # Start the VM
+      qm start "$VM"
+      echo -e "${BL}[Info]${GN} Waiting For${BL} $CONTAINER${CL}${GN} To Start ${CL}\n"
+      sleep 5
+      UPDATE_VM "$VM"
+      echo -e "${BL}[Info]${GN} Shutting down${BL} $VM ${CL}\n"
+      # Stop the VM
+      qm shutdown "$VM" &
+    elif [[ $status == "status: running" ]]; then
+      UPDATE_VM "$VM"
+    fi
+  done
+}
+
 function UPDATE_HOST_ITSELF {
   echo -e "\n--- APT UPDATE ---" && apt-get update
   if [[ $HEADLESS == true ]]; then
@@ -244,7 +305,6 @@ function EXIT {
   EXIT_CODE=$?
   # Exit direct
   if [[ $EXIT_CODE == 2 ]]; then
-#    CLEAN_LOGFILE
     exit
   # Update Finish
   elif [[ $EXIT_CODE == 0 ]]; then
@@ -289,9 +349,7 @@ parse_cli()
         HEADLESS=true
         ;;
       -v|--version)
-        HEADLESS=true
         VERSION_CHECK
-#        echo -e "  Proxmox-Updater version is v$VERSION (Latest: v$SERVER_VERSION)"
         exit 2
         ;;
       -c)
@@ -306,6 +364,7 @@ parse_cli()
         fi
         UPDATE_HOST_ITSELF
         CONTAINER_UPDATE_START
+        if [[ $WITH_VM = true ]]; then VM_UPDATE_START; fi
         ;;
       cluster)
         COMMAND=true
@@ -346,6 +405,7 @@ if [[ $COMMAND != true && $RICM != true ]]; then
     echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
     UPDATE_HOST_ITSELF
     CONTAINER_UPDATE_START
+    if [[ $WITH_VM = true ]]; then VM_UPDATE_START; fi
   fi
 fi
 
