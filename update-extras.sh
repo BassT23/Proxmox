@@ -8,7 +8,7 @@ PIHOLE=true
 IOBROKER=true
 PTERODACTYL=true
 OCTOPRINT=true
-DOCKER_IMAGES=true
+DOCKER_IMAGES=false
 
 # Update PiHole if installed
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
