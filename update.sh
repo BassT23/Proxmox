@@ -6,7 +6,7 @@ LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if yo
 VERSION="3.5"
 
 # Also Update VM? (under development - don't try)
-WITH_VM=false
+WITH_VM=true
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
@@ -364,7 +364,7 @@ parse_cli()
         fi
         UPDATE_HOST_ITSELF
         CONTAINER_UPDATE_START
-        if [[ $WITH_VM = true ]]; then VM_UPDATE_START; fi
+        if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
         ;;
       cluster)
         COMMAND=true
@@ -405,7 +405,7 @@ if [[ $COMMAND != true && $RICM != true ]]; then
     echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
     UPDATE_HOST_ITSELF
     CONTAINER_UPDATE_START
-    if [[ $WITH_VM = true ]]; then VM_UPDATE_START; fi
+    if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
   fi
 fi
 
