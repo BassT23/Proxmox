@@ -3,10 +3,10 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.2.4"
+VERSION="3.5"
 
 # Also Update VM? (under development - don't try)
-WITH_VM=true
+WITH_VM=false
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
