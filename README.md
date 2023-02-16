@@ -47,7 +47,7 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
  If updater detects Installation: (can be seperate disabled in `update-extras.sh`)
 - PiHole
 - ioBroker
-- Docker Container Images
+- Docker Container Images (disabled by default - need some fixing)
 - Pterodactyl
 - Octoprint
 
