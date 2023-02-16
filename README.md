@@ -13,8 +13,7 @@
 ```
 
 
-Proxmox-Updater
-===============
+# Proxmox-Updater
 
 Features:
 - Update Proxmox (the host / all cluster nodes / all included LXC's)
@@ -25,8 +24,7 @@ Features:
 
 Info can be found with `update -h`
 
-**Update the script:**
-======================
+## Update the script:
 `update -up`
 
 If update run into issue, please remove first with:
@@ -35,30 +33,26 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 ```
 and install new
 
-**Installation:**
-=================
+## Installation:
 In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
 
-**Extra Updates:**
-=================
- If updater detects Installation: (can be seperate disabled in `update-extras.sh`)
+## Extra Updates:
+ If updater detects Installation: (can be seperate disabled in `/root/Proxmox-Updater-Scripts/update-extras.sh`)
 - PiHole
 - ioBroker
-- Docker Container Images (disabled by default - need some fixing)
 - Pterodactyl
 - Octoprint
+- Docker Container Images (disabled by default - need some fixing)
 
-**Beta:**
-=========
+## Beta Testing:
 If anybody want to help with failure search, please test our beta (if available).
 Install beta update with:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
 ```
 
-**Credits:**
-========
+## Credits:
 [@Uruk](https://github.com/Uruknara) - for help with the code
