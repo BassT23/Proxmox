@@ -204,7 +204,7 @@ function CONTAINER_UPDATE_START {
       echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
       # Start the container
       pct start "$CONTAINER"
-      echo -e "${BL}[Info]${GN} Waiting For${BL} $CONTAINER${CL}${GN} To Start ${CL}\n"
+      echo -e "${BL}[Info]${GN} Waiting for${BL} $CONTAINER${CL}${GN} to start ${CL}\n"
       sleep 5
       UPDATE_CONTAINER "$CONTAINER"
       echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
@@ -220,33 +220,33 @@ function CONTAINER_UPDATE_START {
 # VM Update
 function UPDATE_VM {
   VM=$1
-  qm set "$VM" --agent 1
-
-#  ??? QEMU Guest Agent installed ???
-#  qm showcmd "$VM" search agent?
-
-
-  VM_NAME=$(qm guest exec "$VM" hostname)
-  echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$VM_NAME${CL}\n"
-
-#  qm config "$VM" > temp
-#          $OSTYPE
-#    solaris*)  ->  "SOLARIS" ;;
-#    darwin*)   ->  "OSX" ;; 
-#    linux*)    ->  "LINUX" ;;
-#    bsd*)      ->  "BSD" ;;
-#    msys*)     ->  "WINDOWS" ;;
-#    cygwin*)   ->  "ALSO WINDOWS" ;;
-#    *)         ->  "unknown SYSTEM" ;;
-
-  case "$OSTYPE" in
-    "LINUX")
-      os=$(cat /etc/os-release | grep -w NAME= | cut -c 6-)
-      # output= "Ubuntu" / "Debian GNU/Linux"
-
-      qm exec "$VM" -- bash -c "echo -e --- LINUX UPDATE --- "
-      qm exec "$VM" -- bash -c "echo -e but which, ... && echo"
-  esac
+  VM_NAME=$(qm guest exec "$VM" hostname)      <--- CRASH HERE, ... NEED FIX
+    if [[ $VM_NAME =~ "not running" ]]; then
+      echo -e "${RD} QEMU guest agent is not running ${CL}\n \
+ You must install it by yourself!\n \
+ Look here: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
+    else
+      echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$VM_NAME${CL}\n"
+      case "$OSTYPE" in
+        "LINUX")
+          OS=$(cat /etc/os-release | grep -w NAME= | cut -c 6-)
+          if [[ $OS =~ "Ubuntu" || "Debian" || "Devuan" ]]; then
+            qm guest exec "$VM" -- bash -c "echo -e --- APT UPDATE --- "
+          elif [[ $OS =~ "Fedora" ]]; then
+            qm guest exec "$VM" -- bash -c "echo -e --- DNF UPDATE ---"
+          elif [[ $OS =~ "Arch" ]]; then
+            qm guest exec "$VM" -- bash -c "echo -e --- PACMAN UPDATE ---"
+          elif [[ $OS =~ "Alpine" ]]; then
+            qm guest exec "$VM" -- ash -c "echo -e --- APK UPDATE ---"
+          elif [[ $OS =~ "CentOS" ]]; then
+            qm guest exec "$VM" -- bash -c "echo -e --- YUM UPDATE ---"
+          fi
+          ;;
+        *)
+          echo -e "${RD} System is not supported \n Maybe with later version ;)${CL}"
+          ;;
+      esac
+    fi
 }
 
 # VM Update Start
@@ -256,11 +256,12 @@ function VM_UPDATE_START {
   # Loop through the VMs
   for VM in $VMS; do
     status=$(qm status "$VM")
+    qm set "$VM" --agent 1
     if [[ $status == "status: stopped" ]]; then
       echo -e "${BL}[Info]${GN} Starting${BL} $VM ${CL}\n"
       # Start the VM
       qm start "$VM"
-      echo -e "${BL}[Info]${GN} Waiting For${BL} $CONTAINER${CL}${GN} To Start ${CL}\n"
+      echo -e "${BL}[Info]${GN} Waiting for${BL} $VM${CL}${GN} to start ${CL}\n"
       sleep 5
       UPDATE_VM "$VM"
       echo -e "${BL}[Info]${GN} Shutting down${BL} $VM ${CL}\n"
@@ -269,6 +270,7 @@ function VM_UPDATE_START {
     elif [[ $status == "status: running" ]]; then
       UPDATE_VM "$VM"
     fi
+    qm set "$VM" --agent 0
   done
 }
 
