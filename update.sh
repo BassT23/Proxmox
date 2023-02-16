@@ -220,7 +220,7 @@ function CONTAINER_UPDATE_START {
 # VM Update
 function UPDATE_VM {
   VM=$1
-  VM_NAME=$(qm guest exec "$VM" hostname)      <--- CRASH HERE, ... NEED FIX
+  VM_NAME=$(qm guest exec "$VM" hostname)      #<--- CRASH HERE, ... NEED FIX
     if [[ $VM_NAME =~ "not running" ]]; then
       echo -e "${RD} QEMU guest agent is not running ${CL}\n \
  You must install it by yourself!\n \
