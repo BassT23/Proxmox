@@ -5,7 +5,7 @@
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 VERSION="3.4.1"
 
-# Also Update VM? (under development - don't try)
+# Also Update VM? (under development)
 WITH_VM=true
 
 #live
@@ -220,31 +220,31 @@ function CONTAINER_UPDATE_START {
 # VM Update
 function UPDATE_VM {
   VM=$1
-  if VM_NAME=$(qm guest exec "$VM" hostname >/dev/null 2>&1); then
-    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$VM_NAME${CL}\n"
-    case "$OSTYPE" in
-      "LINUX")
-        OS=$("cat /etc/os-release" | grep -w NAME= | cut -c 6-)
-        if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
-          qm guest exec "$VM" -- bash -c "echo -e --- APT UPDATE --- "
-        elif [[ $OS =~ Fedora ]]; then
-          qm guest exec "$VM" -- bash -c "echo -e --- DNF UPDATE ---"
-        elif [[ $OS =~ Arch ]]; then
-          qm guest exec "$VM" -- bash -c "echo -e --- PACMAN UPDATE ---"
-        elif [[ $OS =~ Alpine ]]; then
-          qm guest exec "$VM" -- ash -c "echo -e --- APK UPDATE ---"
-        elif [[ $OS =~ CentOS ]]; then
-          qm guest exec "$VM" -- bash -c "echo -e --- YUM UPDATE ---"
-        fi
-        ;;
-      *)
-        echo -e "${RD} System is not supported \n Maybe with later version ;)${CL}"
-        ;;
-    esac
+  if qm guest exec "$VM" test >/dev/null 2>&1; then
+    VM_NAME=$(qm guest cmd "$VM" get-host-name | grep host-name | cut -c 18-)
+    echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$VM_NAME${CL}\n"
+    OS=$(qm guest cmd "$VM" get-osinfo | grep name)
+      if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
+        echo -e "--- APT UPDATE ---"
+        qm guest exec "$VM" -- bash -c "apt-get update"
+        echo -e "--- APT UPGRADE ---"
+        qm guest exec "$VM" -- bash -c "apt-get upgrade -y"
+        echo -e "--- APT CLEANING ---"
+        qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y"
+      elif [[ $OS =~ Fedora ]]; then
+        echo -e "--- DNF UPDATE --- "
+      elif [[ $OS =~ Arch ]]; then
+        echo -e "--- PACMAN UPDATE --- "
+      elif [[ $OS =~ Alpine ]]; then
+        echo -e "--- APK UPDATE --- "
+      elif [[ $OS =~ CentOS ]]; then
+        echo -e "--- YUM UPDATE --- "
+      else
+        echo -e "${RD}  System is not supported \n  Maybe with later version ;)${CL}"
+      fi
   else
-#    echo -e "\nInstall QEMU Agent on VM\n"
-    echo -e "\n${RD}  QEMU guest agent is not installed on VM ${CL}\n\
-  You must install it by yourself!\n\
+    echo -e "\n${RD}  QEMU guest agent is not installed or running on VM ${CL}\n\
+  You must install and start it by yourself!\n\
   Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
   fi
 }
@@ -364,8 +364,8 @@ parse_cli()
           HEADER_INFO
           echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
         fi
-#        UPDATE_HOST_ITSELF
-#        CONTAINER_UPDATE_START
+        UPDATE_HOST_ITSELF
+        CONTAINER_UPDATE_START
         if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
         ;;
       cluster)
