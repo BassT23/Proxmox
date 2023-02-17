@@ -73,7 +73,8 @@ fi
 # Update Docker Container-Compose
 if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_IMAGES == true ]]; then
   # Update
-  docker-compose up --force-recreate --build -d
+  cd /home
+  /usr/local/bin/docker-compose up --force-recreate --build -d
   # Cleaning    (disabled during beta)
 #  docker container prune -f
 #  docker system prune -a -f
