@@ -46,7 +46,7 @@ check out here: <https://pve.proxmox.com/wiki/Qemu-guest-agent> for more infos.
 
 
 ## Extra Updates:
- If updater detects Installation: (can be seperate disabled in `/root/Proxmox-Updater-Scripts/update-extras.sh`)
+ If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater-Scripts/update-extras.sh`)
 - PiHole
 - ioBroker
 - Pterodactyl
