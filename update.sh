@@ -3,7 +3,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.4.1"
+VERSION="3.4.2"
 
 # Also Update VM? (under development)
 WITH_VM=true
@@ -45,7 +45,7 @@ EOF
     echo -e "            ***  Interactive   ***"
   fi
   CHECK_ROOT
-  VERSION_CHECK
+#  VERSION_CHECK
 }
 
 # Check root
@@ -56,6 +56,7 @@ function CHECK_ROOT {
   fi
 }
 
+# Usage
 function USAGE {
   if [[ $HEADLESS != true ]]; then
       echo -e "\nUsage: $0 [OPTIONS...] {COMMAND}\n"
@@ -74,6 +75,7 @@ function USAGE {
   fi
 }
 
+# Version Check in Header
 function VERSION_CHECK {
   curl -s $SERVER_URL/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
@@ -95,11 +97,13 @@ function VERSION_CHECK {
   rm -rf /root/update.sh
 }
 
+#Update Proxmox-Updater
 function UPDATE {
   bash <(curl -s $SERVER_URL/install.sh) update
   exit 2
 }
 
+# Uninstall
 function UNINSTALL {
   echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
   echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
@@ -111,10 +115,10 @@ function UNINSTALL {
   fi
 }
 
-# Extras
-function EXTRAS {
+# LXC Extras
+function LXC_EXTRAS {
   if [[ $HEADLESS != true ]]; then
-    echo -e "--- Searching for extra updates ---\n"
+    echo -e "\n--- Searching for extra updates ---\n"
     pct push "$CONTAINER" -- /root/Proxmox-Update-Scripts/update-extras.sh /root/update-extras.sh
     pct exec "$CONTAINER" -- bash -c "chmod +x /root/update-extras.sh && \
                                       /root/update-extras.sh && \
@@ -150,47 +154,41 @@ function UPDATE_CONTAINER {
   NAME=$(pct exec "$CONTAINER" hostname)
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   pct config "$CONTAINER" > temp
-  os=$(awk '/^ostype/' temp | cut -d' ' -f2)
-  case "$os" in
-    "ubuntu" | "debian" | "devuan")
-      pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPDATE --- && \
-                                        apt-get update && echo"
-      if [[ $HEADLESS == true ]]; then
-        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE HEADLESS --- && \
-                                          DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && echo"
-      else
-        pct exec "$CONTAINER" -- bash -c "echo -e --- APT UPGRADE --- && \
-                                          apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y && echo"
-      fi
-      pct exec "$CONTAINER" -- bash -c "echo -e --- APT CLEANING --- && \
-                                        apt-get --purge autoremove -y && echo"
-      EXTRAS
-      ;;
-    "fedora")
-      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPDATE --- && \
-                                        dnf -y update && echo"
-      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF UPGRATE --- && \
-                                        dnf -y upgrade && echo"
-      pct exec "$CONTAINER" -- bash -c "echo -e --- DNF CLEANING --- && \
-                                        dnf -y --purge autoremove && echo"
-      EXTRAS
-      ;;
-    "archlinux")
-      pct exec "$CONTAINER" -- bash -c "echo -e --- PACMAN UPDATE --- && \
-                                        pacman -Syyu --noconfirm && echo"
-      EXTRAS
-      ;;
-    "alpine")
-      pct exec "$CONTAINER" -- ash -c "echo -e --- APK UPDATE --- && \
-                                       apk -U upgrade && echo"
-      EXTRAS
-      ;;
-    *)
-      pct exec "$CONTAINER" -- bash -c "echo -e --- YUM UPDATE --- && \
-                                        yum -y update && echo"
-      EXTRAS
-      ;;
-  esac
+  OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
+  if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
+    echo -e "--- APT UPDATE ---"
+    pct exec "$CONTAINER" -- bash -c "apt-get update"
+    if [[ $HEADLESS == true ]]; then
+      echo -e "\n--- APT UPGRADE HEADLESS ---"
+      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y"
+    else
+      echo -e "\n--- APT UPGRADE ---"
+      pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y"
+    fi
+      echo -e "\n--- APT CLEANING ---"
+      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y"
+      LXC_EXTRAS
+  elif [[ $OS =~ fedora ]]; then
+      echo -e "--- DNF UPDATE ---"
+      pct exec "$CONTAINER" -- bash -c "dnf -y update"
+      echo -e "\n--- DNF UPGRATE ---"
+      pct exec "$CONTAINER" -- bash -c "dnf -y upgrade"
+      echo -e "\n--- DNF CLEANING ---"
+      pct exec "$CONTAINER" -- bash -c "dnf -y --purge autoremove"
+      LXC_EXTRAS
+  elif [[ $OS =~ archlinux ]]; then
+      echo -e "--- PACMAN UPDATE ---"
+      pct exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm"
+      LXC_EXTRAS
+  elif [[ $OS =~ alpine ]]; then
+      echo -e "--- APK UPDATE ---"
+      pct exec "$CONTAINER" -- ash -c "apk -U upgrade"
+      LXC_EXTRAS
+  else
+      echo -e "--- YUM UPDATE ---"
+      pct exec "$CONTAINER" -- bash -c "yum -y update"
+      LXC_EXTRAS
+  fi
 }
 
 # Container Update Start
@@ -226,19 +224,27 @@ function UPDATE_VM {
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "--- APT UPDATE ---"
-        qm guest exec "$VM" -- bash -c "apt-get update"
-        echo -e "--- APT UPGRADE ---"
-        qm guest exec "$VM" -- bash -c "apt-get upgrade -y"
-        echo -e "--- APT CLEANING ---"
-        qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y"
+        qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1
+        echo -e "\n--- APT UPGRADE ---"
+        qm guest exec "$VM" -- bash -c "apt-get upgrade -y" | tail -n +4 | head -n -1
+        echo -e "\n--- APT CLEANING ---"
+        qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1
       elif [[ $OS =~ Fedora ]]; then
-        echo -e "--- DNF UPDATE --- "
+        echo -e "--- DNF UPDATE ---"
+        qm guest exec "$CONTAINER" -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1
+        echo -e "--- DNF UPGRATE ---"
+        qm guest exec "$CONTAINER" -- bash -c "dnf -y upgrade && echo" | tail -n +4 | head -n -1
+        echo -e "--- DNF CLEANING ---"
+        qm guest exec "$CONTAINER" -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1
       elif [[ $OS =~ Arch ]]; then
-        echo -e "--- PACMAN UPDATE --- "
+        echo -e "--- PACMAN UPDATE ---"
+        qm guest exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm" | tail -n +4 | head -n -1
       elif [[ $OS =~ Alpine ]]; then
-        echo -e "--- APK UPDATE --- "
+        echo -e "--- APK UPDATE ---"
+        qm guest exec "$CONTAINER" -- ash -c "apk -U upgrade" | tail -n +4 | head -n -1
       elif [[ $OS =~ CentOS ]]; then
-        echo -e "--- YUM UPDATE --- "
+        echo -e "--- YUM UPDATE ---"
+        qm guest exec "$CONTAINER" -- bash -c "yum -y update" | tail -n +4 | head -n -1
       else
         echo -e "${RD}  System is not supported \n  Maybe with later version ;)${CL}"
       fi
@@ -364,8 +370,8 @@ parse_cli()
           HEADER_INFO
           echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
         fi
-        UPDATE_HOST_ITSELF
-        CONTAINER_UPDATE_START
+#        UPDATE_HOST_ITSELF
+#        CONTAINER_UPDATE_START
         if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
         ;;
       cluster)
