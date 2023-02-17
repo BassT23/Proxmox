@@ -4,7 +4,10 @@
 #Variable / Function
 VERSION="1.3"
 
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#live
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#development
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
 LOCAL_FILES="/root/Proxmox-Update-Scripts"
 
 #Colors
