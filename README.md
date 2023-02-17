@@ -12,7 +12,13 @@
        /_/
 ```
 
+<div align="center">
 
+[![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
+[![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
+
+</div>
+     
 # Proxmox-Updater
 
 Features:
