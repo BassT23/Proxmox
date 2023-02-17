@@ -45,7 +45,7 @@ EOF
     echo -e "            ***  Interactive   ***"
   fi
   CHECK_ROOT
-#  VERSION_CHECK
+  VERSION_CHECK
 }
 
 # Check root
@@ -280,6 +280,7 @@ function VM_UPDATE_START {
   done
 }
 
+# Update Host Itself
 function UPDATE_HOST_ITSELF {
   echo -e "\n--- APT UPDATE ---" && apt-get update
   if [[ $HEADLESS == true ]]; then
@@ -309,6 +310,7 @@ function CLEAN_LOGFILE {
   fi
 }
 
+# Exit
 function EXIT {
   EXIT_CODE=$?
   # Exit direct
@@ -370,8 +372,8 @@ parse_cli()
           HEADER_INFO
           echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
         fi
-#        UPDATE_HOST_ITSELF
-#        CONTAINER_UPDATE_START
+        UPDATE_HOST_ITSELF
+        CONTAINER_UPDATE_START
         if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
         ;;
       cluster)
