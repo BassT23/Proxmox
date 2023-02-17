@@ -45,7 +45,7 @@ EOF
     echo -e "            ***  Interactive   ***"
   fi
   CHECK_ROOT
-  VERSION_CHECK
+#  VERSION_CHECK
 }
 
 # Check root
@@ -226,7 +226,7 @@ function UPDATE_VM {
         echo -e "--- APT UPDATE ---"
         qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1
         echo -e "\n--- APT UPGRADE ---"
-        qm guest exec "$VM" -- bash -c "apt-get upgrade -y" | tail -n +4 | head -n -1
+        qm guest exec "$VM" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +4 | head -n -1
         echo -e "\n--- APT CLEANING ---"
         qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1
       elif [[ $OS =~ Fedora ]]; then
@@ -262,7 +262,7 @@ function VM_UPDATE_START {
   # Loop through the VMs
   for VM in $VMS; do
     status=$(qm status "$VM")
-    qm set "$VM" --agent 1 > /dev/null 2>&1
+#    qm set "$VM" --agent 1 > /dev/null 2>&1   # must be set by user with additional restart!
     if [[ $status == "status: stopped" ]]; then
       echo -e "${BL}[Info]${GN} Starting${BL} $VM ${CL}\n"
       # Start the VM
@@ -276,11 +276,10 @@ function VM_UPDATE_START {
     elif [[ $status == "status: running" ]]; then
       UPDATE_VM "$VM"
     fi
-    qm set "$VM" --agent 0 > /dev/null 2>&1
+#    qm set "$VM" --agent 0 > /dev/null 2>&1
   done
 }
 
-# Update Host Itself
 function UPDATE_HOST_ITSELF {
   echo -e "\n--- APT UPDATE ---" && apt-get update
   if [[ $HEADLESS == true ]]; then
@@ -310,7 +309,6 @@ function CLEAN_LOGFILE {
   fi
 }
 
-# Exit
 function EXIT {
   EXIT_CODE=$?
   # Exit direct
