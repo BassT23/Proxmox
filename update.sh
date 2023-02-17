@@ -370,8 +370,8 @@ parse_cli()
           HEADER_INFO
           echo -e "\n${BL}[Info]${GN} Updating${CL} : ${GN}$HOSTNAME${CL}"
         fi
-#        UPDATE_HOST_ITSELF
-#        CONTAINER_UPDATE_START
+        UPDATE_HOST_ITSELF
+        CONTAINER_UPDATE_START
         if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
         ;;
       cluster)
