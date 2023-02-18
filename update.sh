@@ -10,8 +10,8 @@ WITH_VM=true
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
-#development
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
+#beta
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
 
 # Colors
 BL='\033[36m'
