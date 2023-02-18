@@ -3,7 +3,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.4.2"
+VERSION="3.4"
 
 # Also Update VM? (under development)
 WITH_VM=true
