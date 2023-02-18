@@ -78,7 +78,6 @@ if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_IMAGES == true ]]; then
   COMPOSE=$(find / -name docker-compose.yaml 2> /dev/null | rev | cut -c 20- | rev)
   cd "$COMPOSE" || exit
   /usr/local/bin/docker-compose up --force-recreate --build -d
-  echo
   # Cleaning
   echo -e "\n*** Cleaning ***  (disabled during beta)"
 #  docker container prune -f
