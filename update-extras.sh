@@ -8,7 +8,7 @@ PIHOLE=true
 IOBROKER=true
 PTERODACTYL=true
 OCTOPRINT=true
-DOCKER_IMAGES=false
+DOCKER_IMAGES=true   # Docker-Compose
 
 # Update PiHole if installed
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
@@ -70,42 +70,15 @@ if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
   echo
 fi
 
-# Docker Container update
-if [[ $(which docker) && $(docker --version) && $DOCKER_IMAGES == true ]]; then
-  echo -e "*** Updating Docker Container ***\n"
-
-  # Backup container list
-  echo -e "*** Backup container settings to /root/container_list.bak ***\n"
-  touch /root/container_list.bak
-  docker ps > /dev/null 2>&1 | tee /root/container_list.bak
-
-  # Requirements
-  pip > /dev/null 2>&1 || apt-get install pip -y
-  if ! pip list | grep -w runlike &> /dev/null; then pip install runlike; fi
-
-  #Update
-  # Abort on all errors, set -x
-  set -o errexit
-
-  # Get the containers from first argument, else get all containers
-  CONTAINER_LIST="${1:-$(docker ps -q)}"
-  for container in ${CONTAINER_LIST}; do
-
-    # Get the image and hash of the running container
-    CONTAINER_IMAGE="$(docker inspect --format "{{.Config.Image}}" --type container "${container}")"
-    RUNNING_IMAGE="$(docker inspect --format "{{.Image}}" --type container "${container}")"
-
-    # Pull in latest version of the container and get the hash
-    docker pull "${CONTAINER_IMAGE}"
-    LATEST_IMAGE="$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")"
-
-    # Restart the container if the image is different
-    if [[ "${RUNNING_IMAGE}" != "${LATEST_IMAGE}" ]]; then
-      echo "Updating ${container} image ${CONTAINER_IMAGE}"
-      DOCKER_COMMAND="$(runlike "${container}")"
-      docker rm --force "${container}"
-      eval "${DOCKER_COMMAND}"
-    fi
-  done
+# Update Docker Container-Compose
+if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_IMAGES == true ]]; then
+  # Update
+  cd /home
+  /usr/local/bin/docker-compose up --force-recreate --build -d
   echo
+  # Cleaning    (disabled during beta)
+#  docker container prune -f
+#  docker system prune -a -f
+#  docker image prune -f
+#  docker system prune --volumes -f
 fi

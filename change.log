@@ -1,6 +1,12 @@
 Changelog:
 ==========
 
+**v3.5** (not released now)
+
+- add VM Update
+- cleaning code
+- fixed Docker Update (hopefully)
+
 **v3.3** (15.02.2023)
 
 - add Update Info
