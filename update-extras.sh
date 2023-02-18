@@ -73,7 +73,8 @@ fi
 # Update Docker Container-Compose
 if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_IMAGES == true ]]; then
   # Update
-  cd /home
+  COMPOSE=$(find / -name docker-compose.yaml 2> /dev/null | rev | cut -c 20- | rev)
+  cd "$COMPOSE" || exit
   /usr/local/bin/docker-compose up --force-recreate --build -d
   echo
   # Cleaning    (disabled during beta)
