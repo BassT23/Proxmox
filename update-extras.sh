@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This work only for Container NOT the Hosts itself
-VERSION="1.6"
+VERSION="1.5.2"
 
 #To disable extra update change "true" to "false"
 PIHOLE=true
@@ -31,7 +31,7 @@ fi
 # Update Pterodactyl if installed
 if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true ]]; then
   echo -e "*** Updating Pterodactyl ***\n"
-  cd /var/www/pterodactyl
+  cd /var/www/pterodactyl || exit
   php artisan down
   curl -L https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz | tar -xzv
   chmod -R 755 storage/* bootstrap/cache
@@ -70,8 +70,9 @@ if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
   echo
 fi
 
-# Update Docker Container-Compose
+# Update Docker Docker-Compose
 if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_IMAGES == true ]]; then
+  echo -e "*** Updating Docker-Compose ***\n"
   # Update
   COMPOSE=$(find / -name docker-compose.yaml 2> /dev/null | rev | cut -c 20- | rev)
   cd "$COMPOSE" || exit
