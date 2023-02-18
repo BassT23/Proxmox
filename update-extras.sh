@@ -10,14 +10,14 @@ PTERODACTYL=true
 OCTOPRINT=true
 DOCKER_IMAGES=true   # Docker-Compose
 
-# Update PiHole if installed
+# PiHole
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
   echo -e "*** Updating PiHole ***\n"
   /usr/local/bin/pihole -up
   echo
 fi
 
-# Update ioBroker if installed
+# ioBroker
 if [[ -d "/opt/iobroker" && $IOBROKER == true ]]; then
   echo -e "*** Updating ioBroker ***\n"
   echo "*** Stop ioBroker ***" && iob stop
@@ -28,7 +28,7 @@ if [[ -d "/opt/iobroker" && $IOBROKER == true ]]; then
   echo
 fi
 
-# Update Pterodactyl if installed
+# Pterodactyl
 if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true ]]; then
   echo -e "*** Updating Pterodactyl ***\n"
   cd /var/www/pterodactyl || exit
@@ -62,7 +62,7 @@ if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true ]]; then
   echo
 fi
 
-# Update Octoprint if installed
+# Octoprint
 if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
   echo -e "*** Updating Octoprint ***\n"
   ~/oprint/bin/pip install -U octoprint
@@ -70,17 +70,20 @@ if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
   echo
 fi
 
-# Update Docker Docker-Compose
+# Docker-Compose
 if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_IMAGES == true ]]; then
   echo -e "*** Updating Docker-Compose ***\n"
   # Update
+  echo "*** Update/Upgrade ***"
   COMPOSE=$(find / -name docker-compose.yaml 2> /dev/null | rev | cut -c 20- | rev)
   cd "$COMPOSE" || exit
   /usr/local/bin/docker-compose up --force-recreate --build -d
   echo
-  # Cleaning    (disabled during beta)
+  # Cleaning
+  echo -e "\n*** Cleaning ***  (disabled during beta)"
 #  docker container prune -f
 #  docker system prune -a -f
 #  docker image prune -f
 #  docker system prune --volumes -f
+  echo
 fi
