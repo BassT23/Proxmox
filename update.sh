@@ -238,7 +238,7 @@ function UPDATE_VM {
   VM=$1
   if qm guest exec "$CONTAINER" test >/dev/null 2>&1; then
     VM_NAME=$(qm guest cmd "$CONTAINER" get-host-name | grep host-name | cut -c 18-)
-    echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$VM_NAME${CL}\n"
+    echo -e "${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$VM_NAME${CL}\n"
     OS=$(qm guest cmd "$CONTAINER" get-osinfo | grep name)
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
@@ -398,7 +398,7 @@ parse_cli()
         if [[ $RICM != true ]]; then
           MODE="  Host  "
           HEADER_INFO
-          echo -e "\n${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
+          echo -e "\n${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
         fi
         if [[ $WITH_HOST == true ]]; then UPDATE_HOST_ITSELF; fi
         if [[ $WITH_LXC == true ]]; then CONTAINER_UPDATE_START; fi
@@ -436,7 +436,7 @@ if [[ -f /etc/corosync/corosync.conf ]]; then MODE=" Cluster"; else MODE="  Host
 if [[ $COMMAND != true ]]; then
   HEADER_INFO
   if [[ $MODE =~ Cluster ]]; then HOST_UPDATE_START; else
-    echo -e "\n${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
+    echo -e "\n${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
     if [[ $WITH_HOST == true ]]; then UPDATE_HOST_ITSELF; fi
     if [[ $WITH_LXC == true ]]; then CONTAINER_UPDATE_START; fi
     if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
