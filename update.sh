@@ -166,7 +166,7 @@ function HOST_UPDATE_START {
 function UPDATE_CONTAINER {
   CONTAINER=$1
   NAME=$(pct exec "$CONTAINER" hostname)
-  echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
+  echo -e "\n${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   pct config "$CONTAINER" > temp
   OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
   if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
@@ -238,7 +238,7 @@ function UPDATE_VM {
   VM=$1
   if qm guest exec "$CONTAINER" test >/dev/null 2>&1; then
     VM_NAME=$(qm guest cmd 101 get-host-name | grep host-name | cut -c 19- | rev | cut -c 2- | rev)
-    echo -e "${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$VM_NAME${CL}\n"
+    echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$VM_NAME${CL}\n"
     OS=$(qm guest cmd "$CONTAINER" get-osinfo | grep name)
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
