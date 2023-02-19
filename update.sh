@@ -290,7 +290,7 @@ function VM_UPDATE_START {
     else
       status=$(qm status "$CONTAINER")
       if [[ $status == "status: stopped" ]]; then
-        echo -e "\n${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
+        echo -e "\n${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}"
         # Start the CONTAINER
         qm set "$CONTAINER" --agent 1 >/dev/null 2>&1
         qm start "$CONTAINER" >/dev/null 2>&1
