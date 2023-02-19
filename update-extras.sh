@@ -17,6 +17,7 @@ DOCKER_COMPOSE=$(awk -F'"' '/^DOCKER_COMPOSE=/ {print $2}' $CONFIG_FILE)
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
   echo -e "*** Updating PiHole ***\n"
   /usr/local/bin/pihole -up
+  echo
 fi
 
 # ioBroker
@@ -33,6 +34,7 @@ if [[ -d "/opt/iobroker" && $IOBROKER == true ]]; then
     setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which hciconfig`)
     setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which l2ping`)
   fi
+  echo
 fi
 
 # Pterodactyl
@@ -66,6 +68,7 @@ if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true ]]; then
   curl -L -o /usr/local/bin/wings "https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_$([[ "$(uname -m)" == "x86_64" ]] && echo "amd64" || echo "arm64")"
   chmod u+x /usr/local/bin/wings
   systemctl restart wings
+  echo
 fi
 
 # Octoprint
@@ -73,6 +76,7 @@ if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
   echo -e "*** Updating Octoprint ***\n"
   ~/oprint/bin/pip install -U octoprint
   sudo service octoprint restart
+  echo
 fi
 
 # Docker-Compose
@@ -89,4 +93,5 @@ if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
 #  docker system prune -a -f
 #  docker image prune -f
 #  docker system prune --volumes -f
+  echo
 fi
