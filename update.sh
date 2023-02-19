@@ -166,7 +166,7 @@ function HOST_UPDATE_START {
 function UPDATE_CONTAINER {
   CONTAINER=$1
   NAME=$(pct exec "$CONTAINER" hostname)
-  echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
+  echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
   pct config "$CONTAINER" > temp
   OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
   if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
@@ -436,7 +436,7 @@ if [[ -f /etc/corosync/corosync.conf ]]; then MODE=" Cluster"; else MODE="  Host
 if [[ $COMMAND != true ]]; then
   HEADER_INFO
   if [[ $MODE =~ Cluster ]]; then HOST_UPDATE_START; else
-    echo -e "\n${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
+    echo -e "\n${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
     if [[ $WITH_HOST == true ]]; then UPDATE_HOST_ITSELF; fi
     if [[ $WITH_LXC == true ]]; then CONTAINER_UPDATE_START; fi
     if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
