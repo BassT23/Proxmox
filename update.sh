@@ -242,31 +242,31 @@ function UPDATE_VM {
     OS=$(qm guest cmd "$CONTAINER" get-osinfo | grep name)
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
-        qm guest exec "$CONTAINER" -- bash -c "apt-get update" | tail -n +4 | head -n -1
+        qm guest exec "$CONTAINER" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-        qm guest exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +4 | head -n -1
+        qm guest exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- APT CLEANING ---${CL}"
-        qm guest exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1
+        qm guest exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
         echo
       elif [[ $OS =~ Fedora ]]; then
         echo -e "${OR}--- DNF UPDATE ---${CL}"
-        qm guest exec "$CONTAINER" -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1
+        qm guest exec "$CONTAINER" -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-        qm guest exec "$CONTAINER" -- bash -c "dnf -y upgrade && echo" | tail -n +4 | head -n -1
+        qm guest exec "$CONTAINER" -- bash -c "dnf -y upgrade && echo" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-        qm guest exec "$CONTAINER" -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1
+        qm guest exec "$CONTAINER" -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1 | cut -c 17-
         echo
       elif [[ $OS =~ Arch ]]; then
         echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-        qm guest exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm" | tail -n +4 | head -n -1
+        qm guest exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm" | tail -n +4 | head -n -1 | cut -c 17-
         echo
       elif [[ $OS =~ Alpine ]]; then
         echo -e "${OR}--- APK UPDATE ---${CL}"
-        qm guest exec "$CONTAINER" -- ash -c "apk -U upgrade" | tail -n +4 | head -n -1
+        qm guest exec "$CONTAINER" -- ash -c "apk -U upgrade" | tail -n +4 | head -n -1 | cut -c 17-
         echo
       elif [[ $OS =~ CentOS ]]; then
         echo -e "${OR}--- YUM UPDATE ---${CL}"
-        qm guest exec "$CONTAINER" -- bash -c "yum -y update" | tail -n +4 | head -n -1
+        qm guest exec "$CONTAINER" -- bash -c "yum -y update" | tail -n +4 | head -n -1 | cut -c 17-
         echo
       else
         echo -e "${RD}  System is not supported \n  Maybe with later version ;)${CL}"
