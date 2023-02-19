@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #Variable / Function
-VERSION="1.3.2"
+VERSION="1.4"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
