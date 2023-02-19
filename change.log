@@ -1,11 +1,18 @@
 Changelog:
 ==========
 
+**v3.5** (development)
+
+- add config file
+- cleaning code
+- more colorful
+- fixing logging
+
 **v3.4** (beta)
 
 - add VM Update
 - cleaning code
-- fixed Docker Update (hopefully)
+- fixed Docker Update
 
 **v3.3** (15.02.2023)
 
