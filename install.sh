@@ -1,14 +1,13 @@
 #!/bin/bash
-#https://github.com/BassT23/Proxmox
 
 #Variable / Function
-VERSION="1.3"
+VERSION="1.3.2"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 #beta
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
-LOCAL_FILES="/root/Proxmox-Update-Scripts"
+LOCAL_FILES="/root/Proxmox-Updater"
 
 #Colors
 BL='\033[36m'
@@ -97,35 +96,50 @@ function INSTALL {
         exit 0
       fi
     else
-      mkdir -p /root/Proxmox-Update-Scripts/exit
+      mkdir -p /root/Proxmox-Updater/exit
       curl -s $SERVER_URL/update.sh > /usr/local/bin/update
       chmod 750 /usr/local/bin/update
       curl -s $SERVER_URL/exit/error.sh > $LOCAL_FILES/exit/error.sh
       curl -s $SERVER_URL/exit/passed.sh > $LOCAL_FILES/exit/passed.sh
       curl -s $SERVER_URL/update-extras.sh > $LOCAL_FILES/update-extras.sh
-      chmod -R +x $LOCAL_FILES/*
+      curl -s $SERVER_URL/update.conf > $LOCAL_FILES/update.conf
+      chmod -R +x $LOCAL_FILES/exit/*.sh
       echo -e "${BL}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
     fi
 }
 
 function UPDATE {
     if [ -f "/usr/local/bin/update" ]; then
-      echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
-      curl -s $SERVER_URL/update.sh > /usr/local/bin/update
-      # Check if files are different
-      mkdir -p /root/Proxmox-Updater/exit
-      curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater/exit/error.sh
-      curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater/exit/passed.sh
-      curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater/update-extras.sh
-      chmod -R +x $LOCAL_FILES/*
-      cd /root/Proxmox-Updater
-      FILES="*.sh **/*.sh"
-      for f in $FILES
-      do
-        CHECK_DIFF
-      done
-      rm -r /root/Proxmox-Updater
-      echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
+      if [ -d "/root/Proxmox-Update-Scripts" ]; then
+        echo -e "${RD}Proxmox-Updater has changed directorys, so the old directory\n\
+/root/Update-Scripts will be delete.\n\
+Is it OK for you, or want to backup first your files?${CL}\n"
+        read -p "Type [Y/y] for DELETE - enything else will exit " -n 1 -r -s
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+          rm -r /root/Update-Proxmox-Scripts
+          bash <(curl -s $SERVER_URL/install.sh) update
+        else
+          exit 0
+        fi
+      else
+        echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
+        curl -s $SERVER_URL/update.sh > /usr/local/bin/update
+        # Check if files are different
+        mkdir -p /root/Proxmox-Updater-Temp/exit
+        curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater-Temp/exit/error.sh
+        curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater-Temp/exit/passed.sh
+        curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater-Temp/update-extras.sh
+        curl -s $SERVER_URL/update.conf > /root/Proxmox-Updater-Temp/update.conf
+        chmod -R +x $LOCAL_FILES/exit/*.sh
+        cd /root/Proxmox-Updater-Temp
+        FILES="*.* **/*.*"
+        for f in $FILES
+        do
+          CHECK_DIFF
+        done
+        rm -r /root/Proxmox-Updater-Temp
+        echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
+      fi
     else
       echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}"
       read -p "Type [Y/y] or Enter for yes - enything else will exit " -n 1 -r -s
@@ -138,25 +152,30 @@ function UPDATE {
     fi
 }
 
+function INCLUDE_VM {
+  echo "Want to Update VM also?"
+}
+
 function CHECK_DIFF {
-  if ! cmp -s "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f"; then
+  if ! cmp -s "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"; then
     echo -e "The file $f\n \
  ==> Modified (by you or by a script) since installation.\n \
    What would you like to do about it ?  Your options are:\n \
-    Y or y  : install the package maintainer's version\n \
+    Y or y  : install the package maintainer's version (old file will be save as 'file.bak')\n \
     N or n  : keep your currently-installed version\n \
     S or s  : show the differences between the versions\n \
  The default action is to keep your current version.\n \
-*** $f (Y/y/N/n/S/s) [default=N] ? "
+*** $f (Y/y/N/n/S/s) [default=Y] ? "
         read -p "" -n 1 -r -s
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-          echo -e "\n${BL}[Info]${GN} Installed server version${CL}\n"
-          mv "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f"
-        elif [[ $REPLY =~ ^[Nn]$ || $REPLY = "" ]]; then
+        if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+          echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
+          cp -f "$LOCAL_FILES/$f" "$LOCAL_FILES/$f.bak"
+          mv "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"
+        elif [[ $REPLY =~ ^[Nn]$ ]]; then
           echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
         elif [[ $REPLY =~ ^[Ss]$ ]]; then
           echo
-          diff "/root/Proxmox-Updater/$f" "$LOCAL_FILES/$f"
+          diff "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"
         else
           echo -e "\n${BL}[Info]${GN} Skip this file${CL}\n"
         fi
@@ -170,7 +189,7 @@ function UNINSTALL {
     read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r -s
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
-      rm -r /root/Proxmox-Update-Scripts
+      rm -r /root/Proxmox-Updater
       echo -e "\n\n${BL}Proxmox-Updater removed${CL}\n"
     fi
   else
