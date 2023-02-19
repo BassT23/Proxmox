@@ -12,7 +12,7 @@ LOCAL_FILES="/root/Proxmox-Updater"
 
 #Colors
 BL="\e[36m"
-OR="\e[202m"
+OR="\e[1;33m"
 RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
@@ -89,12 +89,12 @@ function STATUS {
 function INSTALL {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
-      echo -e "${RD}Proxmox-Updater is already installed.${CL}"
-      read -p "Should I update for you? Type [Y/y] or Enter for yes - enything else will exit " -n 1 -r -s
+      echo -e "${OR}Proxmox-Updater is already installed.${CL}"
+      read -p "${OR}Should I update for you? Type [Y/y] or Enter for yes - enything else will exit${CL}" -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh) update
       else
-        echo -e "\nBye\n"
+        echo -e "${OR}\nBye\n${CL}"
         exit 0
       fi
     else
@@ -106,7 +106,7 @@ function INSTALL {
       curl -s $SERVER_URL/update-extras.sh > $LOCAL_FILES/update-extras.sh
       curl -s $SERVER_URL/update.conf > $LOCAL_FILES/update.conf
       chmod -R +x $LOCAL_FILES/exit/*.sh
-      echo -e "${BL}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
+      echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
     fi
 }
 
@@ -114,8 +114,8 @@ function UPDATE {
     if [ -f "/usr/local/bin/update" ]; then
       if [ -d "/root/Proxmox-Update-Scripts" ]; then
         echo -e "${RD}Proxmox-Updater has changed directorys, so the old directory\n\
-/root/Update-Scripts will be delete.\n\
-Is it OK for you, or want to backup first your files?${CL}\n"
+/root/Update-Scripts will be delete.${CL}\n\
+${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         read -p "Type [Y/y] for DELETE - enything else will exit " -n 1 -r -s
         if [[ $REPLY =~ ^[Yy]$ ]]; then
           rm -r /root/Update-Proxmox-Scripts
@@ -143,7 +143,7 @@ Is it OK for you, or want to backup first your files?${CL}\n"
         echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
       fi
     else
-      echo -e "${RD}Proxmox-Updater is not installed.\n\n${GN}Would you like to install it?${CL}"
+      echo -e "${RD}Proxmox-Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
       read -p "Type [Y/y] or Enter for yes - enything else will exit " -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh)
@@ -152,10 +152,6 @@ Is it OK for you, or want to backup first your files?${CL}\n"
         exit 0
       fi
     fi
-}
-
-function INCLUDE_VM {
-  echo "Want to Update VM also?"
 }
 
 function CHECK_DIFF {
@@ -179,7 +175,7 @@ function CHECK_DIFF {
           echo
           diff "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"
         else
-          echo -e "\n${BL}[Info]${GN} Skip this file${CL}\n"
+          echo -e "\n${BL}[Info]${OR} Skip this file${CL}\n"
         fi
   fi
 }
