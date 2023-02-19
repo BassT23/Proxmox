@@ -398,7 +398,7 @@ parse_cli()
         if [[ $RICM != true ]]; then
           MODE="  Host  "
           HEADER_INFO
-          echo -e "\n${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
+          echo -e "\n${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
         fi
         if [[ $WITH_HOST == true ]]; then UPDATE_HOST_ITSELF; fi
         if [[ $WITH_LXC == true ]]; then CONTAINER_UPDATE_START; fi
