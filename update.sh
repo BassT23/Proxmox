@@ -135,9 +135,10 @@ function EXTRAS {
                                       /root/Proxmox-Updater/update-extras.sh && \
                                       rm -rf /root/Proxmox-Updater"
     echo -e "${GN}--- Finished extra updates ---${CL}"
-
+    echo
   else
     echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
+    echo
   fi
 }
 
@@ -235,7 +236,7 @@ function CONTAINER_UPDATE_START {
 
 # VM Update
 function UPDATE_VM {
-  VM=$1
+  CONTAINER=$1
   if qm guest exec "$CONTAINER" test >/dev/null 2>&1; then
     VM_NAME=$(qm guest cmd 101 get-host-name | grep host-name | cut -c 19- | rev | cut -c 2- | rev)
     echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$VM_NAME${CL}\n"
@@ -270,12 +271,14 @@ function UPDATE_VM {
         echo
       else
         echo -e "${RD}  System is not supported \n  Maybe with later version ;)${CL}"
+        echo
       fi
   else
     echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL}\n"
     echo -e "${RD}  QEMU guest agent is not installed or running on VM ${CL}\n\
   ${OR}You must install and start it by yourself!${CL}\n\
   Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
+  echo
   fi
 }
 
@@ -319,6 +322,7 @@ function UPDATE_HOST_ITSELF {
   fi
   echo -e "\n${OR}--- APT CLEANING ---${CL}" && \
           apt-get --purge autoremove -y
+  echo
 }
 
 # Logging
