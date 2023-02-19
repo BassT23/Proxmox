@@ -6,14 +6,17 @@ VERSION="1.4"
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 #beta
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
+#development
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
 LOCAL_FILES="/root/Proxmox-Updater"
 
 #Colors
-BL='\033[36m'
-RD='\033[01;31m'
-GN='\033[1;92m'
-CL='\033[m'
+BL="\e[36m"
+OR="\e[202m"
+RD="\e[1;91m"
+GN="\e[1;92m"
+CL="\e[0m"
 
 #Header
 function HEADER_INFO {
