@@ -134,11 +134,9 @@ function EXTRAS {
     pct exec "$CONTAINER" -- bash -c "chmod +x /root/Proxmox-Updater/update-extras.sh && \
                                       /root/Proxmox-Updater/update-extras.sh && \
                                       rm -rf /root/Proxmox-Updater"
-    echo -e "${GN}--- Finished extra updates ---${CL}"
-    echo
+    echo -e "${GN}--- Finished extra updates ---${CL}\n"
   else
-    echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
-    echo
+    echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n\n"
   fi
 }
 
@@ -277,8 +275,7 @@ function UPDATE_VM {
     echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL}\n"
     echo -e "${RD}  QEMU guest agent is not installed or running on VM ${CL}\n\
   ${OR}You must install and start it by yourself!${CL}\n\
-  Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
-  echo
+  Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n\n"
   fi
 }
 
@@ -321,8 +318,7 @@ function UPDATE_HOST_ITSELF {
             apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y
   fi
   echo -e "\n${OR}--- APT CLEANING ---${CL}" && \
-          apt-get --purge autoremove -y
-  echo
+          apt-get --purge autoremove -y && echo
 }
 
 # Logging
