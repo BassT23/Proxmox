@@ -238,7 +238,7 @@ function UPDATE_VM {
   VM=$1
   if qm guest exec "$CONTAINER" test >/dev/null 2>&1; then
     VM_NAME=$(qm guest cmd "$CONTAINER" get-host-name | grep host-name | cut -c 18-)
-    echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$CONTAINER_NAME${CL}\n"
+    echo -e "${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$CONTAINER_NAME${CL}\n"
     OS=$(qm guest cmd "$CONTAINER" get-osinfo | grep name)
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
@@ -247,22 +247,27 @@ function UPDATE_VM {
         qm guest exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +4 | head -n -1
         echo -e "\n${OR}--- APT CLEANING ---${CL}"
         qm guest exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1
+        echo
       elif [[ $OS =~ Fedora ]]; then
         echo -e "${OR}--- DNF UPDATE ---${CL}"
         qm guest exec "$CONTAINER" -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1
-        echo -e "${OR}--- DNF UPGRATE ---${CL}"
+        echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
         qm guest exec "$CONTAINER" -- bash -c "dnf -y upgrade && echo" | tail -n +4 | head -n -1
-        echo -e "${OR}--- DNF CLEANING ---${CL}"
+        echo -e "\n${OR}--- DNF CLEANING ---${CL}"
         qm guest exec "$CONTAINER" -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1
+        echo
       elif [[ $OS =~ Arch ]]; then
         echo -e "${OR}--- PACMAN UPDATE ---${CL}"
         qm guest exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm" | tail -n +4 | head -n -1
+        echo
       elif [[ $OS =~ Alpine ]]; then
         echo -e "${OR}--- APK UPDATE ---${CL}"
         qm guest exec "$CONTAINER" -- ash -c "apk -U upgrade" | tail -n +4 | head -n -1
+        echo
       elif [[ $OS =~ CentOS ]]; then
         echo -e "${OR}--- YUM UPDATE ---${CL}"
         qm guest exec "$CONTAINER" -- bash -c "yum -y update" | tail -n +4 | head -n -1
+        echo
       else
         echo -e "${RD}  System is not supported \n  Maybe with later version ;)${CL}"
       fi
@@ -285,15 +290,15 @@ function VM_UPDATE_START {
     else
       status=$(qm status "$CONTAINER")
       if [[ $status == "status: stopped" ]]; then
-        echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
+        echo -e "\n${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
         # Start the CONTAINER
         qm set "$CONTAINER" --agent 1 >/dev/null 2>&1
         qm start "$CONTAINER"
-        echo -e "${BL}[Info]${GN} Waiting for${BL} $CONTAINER${CL}${GN} to start${CL}"
+        echo -e "\n${BL}[Info]${GN} Waiting for${BL} $CONTAINER${CL}${GN} to start${CL}"
         echo -e "${OR}This will take some time, ... 30 secounds is set!${CL}\n"
         sleep 30
         UPDATE_VM "$CONTAINER"
-        echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
+        echo -e "\n${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
         # Stop the CONTAINER
         qm shutdown "$CONTAINER" &
       elif [[ $status == "status: running" ]]; then
