@@ -238,7 +238,7 @@ function UPDATE_VM {
   VM=$1
   if qm guest exec "$CONTAINER" test >/dev/null 2>&1; then
     VM_NAME=$(qm guest cmd "$CONTAINER" get-host-name | grep host-name | cut -c 18-)
-    echo -e "${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$CONTAINER_NAME${CL}\n"
+    echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$CONTAINER_NAME${CL}\n"
     OS=$(qm guest cmd "$CONTAINER" get-osinfo | grep name)
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
