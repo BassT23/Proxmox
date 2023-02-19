@@ -295,7 +295,7 @@ function VM_UPDATE_START {
         qm set "$CONTAINER" --agent 1 >/dev/null 2>&1
         qm start "$CONTAINER" >/dev/null 2>&1
         echo -e "\n${BL}[Info]${GN} Waiting for${BL} $CONTAINER${CL}${GN} to start${CL}"
-        echo -e "${OR}This will take some time, ... 30 secounds is set!${CL}\n"
+        echo -e "${OR}This will take some time, ... 30 secounds is set!${CL}"
         sleep 30
         UPDATE_VM "$CONTAINER"
         echo -e "\n${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
