@@ -277,7 +277,7 @@ function UPDATE_VM {
 # VM Update Start
 function VM_UPDATE_START {
   # Get the list of VMs
-  VMS=$(qm list | tail -n +2 | cut -c 8-10)
+  VMS=$(qm list | tail -n +2 | cut -c -10)
   # Loop through the VMs
   for CONTAINER in $VMS; do
     if [[ $EXCLUDED =~ $CONTAINER ]]; then
