@@ -31,6 +31,17 @@ Features:
 Info can be found with `update -h`
 
 
+## Installation:
+
+In Proxmox GUI Host Shell or as root on proxmox host terminal:
+```
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
+```
+### If you want to update the VMs also, please install and run `qemu-guest-agent` on VM.
+
+check out here: <https://pve.proxmox.com/wiki/Qemu-guest-agent> for more infos.
+
+
 ## Update the script:
 `update -up`
 
@@ -41,18 +52,9 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 and install new
 
 
-## Installation:
-In Proxmox GUI Host Shell or as root on proxmox host terminal:
-```
-bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
-```
-### If you want to update the VMs also, please install and run `qemu-guest-agent` on VM.
-
-check out here: <https://pve.proxmox.com/wiki/Qemu-guest-agent> for more infos.
-
-
 ## Extra Updates:
- If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater-Scripts/update-extras.sh`)
+
+If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater-Scripts/update-extras.sh`)
 - PiHole
 - ioBroker
 - Pterodactyl
@@ -60,13 +62,22 @@ check out here: <https://pve.proxmox.com/wiki/Qemu-guest-agent> for more infos.
 - Docker Container Images (disabled by default - need some fixing)
 
 
+## Config File:
+
+The config file is stored under `/root/Proxmox-Updater/update.conf`
+
+With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
+You can also exclude machines from updating, by put the ID in the `EXCLUDE` line.
+
+
 ## Beta Testing:
+
 If anybody want to help with failure search, please test our beta (if available).
 Install beta update with:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
 ```
 
-
 ## Credits:
+
 [@Uruk](https://github.com/Uruknara) - for help with the code
