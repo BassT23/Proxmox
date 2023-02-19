@@ -307,10 +307,10 @@ function UPDATE_HOST_ITSELF {
   echo -e "\n${OR}--- APT UPDATE ---${CL}" && apt-get update
   if [[ $HEADLESS == true ]]; then
     echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}" && \
-            DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+            DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y
   else
     echo -e "\n${OR}--- APT UPGRADE ---${CL}" && \
-            apt-get upgrade -y
+            apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y
   fi
   echo -e "\n${OR}--- APT CLEANING ---${CL}" && \
           apt-get --purge autoremove -y && echo
