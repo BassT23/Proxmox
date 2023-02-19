@@ -134,7 +134,7 @@ function EXTRAS {
     pct exec "$CONTAINER" -- bash -c "chmod +x /root/Proxmox-Updater/update-extras.sh && \
                                       /root/Proxmox-Updater/update-extras.sh && \
                                       rm -rf /root/Proxmox-Updater"
-    echo -e "\n${GN}--- Finished extra updates ---${CL}\n"
+    echo -e "${GN}--- Finished extra updates ---${CL}"
 
   else
     echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
@@ -318,7 +318,7 @@ function UPDATE_HOST_ITSELF {
             apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y
   fi
   echo -e "\n${OR}--- APT CLEANING ---${CL}" && \
-          apt-get --purge autoremove -y && echo
+          apt-get --purge autoremove -y
 }
 
 # Logging
