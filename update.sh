@@ -186,7 +186,7 @@ function CONTAINER_UPDATE_START {
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
-    if [[ $CONTAINER =~ $EXCLUDED ]]; then
+    if [[ $EXCLUDED =~ $CONTAINER ]]; then
       echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
     else
       STATUS=$(pct status "$CONTAINER")
@@ -261,7 +261,7 @@ function VM_UPDATE_START {
   # Loop through the VMs
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-    if [[ $VM =~ $ONLY ]] || [[ $VM =~ $EXCLUDED ]]; then
+    if [[ $EXCLUDED =~ $VM ]]; then
       echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
     elif [[ $PRE_OS =~ w ]]; then
       echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}\n\n"
