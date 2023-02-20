@@ -3,7 +3,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.5.2"
+VERSION="3.5.3"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
@@ -186,7 +186,7 @@ function CONTAINER_UPDATE_START {
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
-    if [[ $EXCLUDED =~ $CONTAINER ]]; then
+    if [[ $CONTAINER =~ $EXCLUDED ]]; then
       echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
     else
       STATUS=$(pct status "$CONTAINER")
@@ -204,8 +204,6 @@ function CONTAINER_UPDATE_START {
         WILL_STOP="false"
       elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
         UPDATE_CONTAINER "$CONTAINER"
-      else
-        echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
       fi
     fi
   done
@@ -263,10 +261,10 @@ function VM_UPDATE_START {
   # Loop through the VMs
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-    if [[ $EXCLUDED =~ $VM ]]; then
-      echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n"
+    if [[ $VM =~ $ONLY ]] || [[ $VM =~ $EXCLUDED ]]; then
+      echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
     elif [[ $PRE_OS =~ w ]]; then
-      echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}"
+      echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}\n\n"
     else
       STATUS=$(qm status "$VM")
       if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
@@ -285,8 +283,6 @@ function VM_UPDATE_START {
         WILL_STOP="false"
       elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
         UPDATE_VM "$VM"
-      else
-        echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n"
       fi
     fi
   done
