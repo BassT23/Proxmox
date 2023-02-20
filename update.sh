@@ -303,6 +303,7 @@ function UPDATE_VM {
         echo -e "\n${OR}--- APT CLEANING ---${CL}"
         qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
         echo
+        if [[ $WILL_STOP != true ]]; then echo; fi
       elif [[ $OS =~ Fedora ]]; then
         echo -e "${OR}--- DNF UPDATE ---${CL}"
         qm guest exec "$VM" -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1 | cut -c 17-
@@ -311,27 +312,31 @@ function UPDATE_VM {
         echo -e "\n${OR}--- DNF CLEANING ---${CL}"
         qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1 | cut -c 17-
         echo
+        if [[ $WILL_STOP != true ]]; then echo; fi
       elif [[ $OS =~ Arch ]]; then
         echo -e "${OR}--- PACMAN UPDATE ---${CL}"
         qm guest exec "$VM" -- bash -c "pacman -Syyu --noconfirm" | tail -n +4 | head -n -1 | cut -c 17-
         echo
+        if [[ $WILL_STOP != true ]]; then echo; fi
       elif [[ $OS =~ Alpine ]]; then
         echo -e "${OR}--- APK UPDATE ---${CL}"
         qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +4 | head -n -1 | cut -c 17-
         echo
+        if [[ $WILL_STOP != true ]]; then echo; fi
       elif [[ $OS =~ CentOS ]]; then
         echo -e "${OR}--- YUM UPDATE ---${CL}"
         qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +4 | head -n -1 | cut -c 17-
         echo
+        if [[ $WILL_STOP != true ]]; then echo; fi
       else
-        echo -e "${RD}  System is not supported.\n  Maybe with later version ;)${CL}"
-        echo
+        echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
+        if [[ $WILL_STOP != true ]]; then echo; fi
       fi
   else
     echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL}\n"
     echo -e "${RD}  QEMU guest agent is not installed or running on VM ${CL}\n\
   ${OR}You must install and start it by yourself!${CL}\n\
-  Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
+  Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n\n"
   fi
 }
 
