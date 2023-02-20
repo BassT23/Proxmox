@@ -121,6 +121,8 @@ function READ_WRITE_CONFIG {
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
+  RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
+  STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' $CONFIG_FILE)
 }
 
@@ -214,8 +216,8 @@ function CONTAINER_UPDATE_START {
     if [[ $EXCLUDED =~ $CONTAINER ]]; then
       echo -e "\n${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n"
     else
-      status=$(pct status "$CONTAINER")
-      if [[ $status == "status: stopped" ]]; then
+      STATUS=$(pct status "$CONTAINER")
+      if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
         echo -e "\n${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
         # Start the container
         pct start "$CONTAINER"
@@ -225,8 +227,10 @@ function CONTAINER_UPDATE_START {
         echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
         # Stop the container
         pct shutdown "$CONTAINER" &
-      elif [[ $status == "status: running" ]]; then
+      elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
         UPDATE_CONTAINER "$CONTAINER"
+      else
+        echo -e "\n${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n"
       fi
     fi
   done
@@ -289,8 +293,8 @@ function VM_UPDATE_START {
     if [[ $EXCLUDED =~ $CONTAINER ]]; then
       echo -e "\”${BL}[Info] Skipped VM $CONTAINER by user${CL}\n"
     else
-      status=$(qm status "$CONTAINER")
-      if [[ $status == "status: stopped" ]]; then
+      STATUS=$(qm status "$CONTAINER")
+      if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
         echo -e "\n${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
         # Start the CONTAINER
         qm set "$CONTAINER" --agent 1 >/dev/null 2>&1
@@ -302,8 +306,10 @@ function VM_UPDATE_START {
         echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
         # Stop the CONTAINER
         qm shutdown "$CONTAINER" &
-      elif [[ $status == "status: running" ]]; then
+      elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
         UPDATE_VM "$CONTAINER"
+      else
+        echo -e "\n${BL}[Info] Skipped VM $CONTAINER by user${CL}\n"
       fi
     fi
   done
