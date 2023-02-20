@@ -15,13 +15,13 @@ DOCKER_COMPOSE=$(awk -F'"' '/^DOCKER_COMPOSE=/ {print $2}' $CONFIG_FILE)
 
 # PiHole
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
-  echo -e "*** Updating PiHole ***\n"
+  echo -e "\n*** Updating PiHole ***\n"
   /usr/local/bin/pihole -up
 fi
 
 # ioBroker
 if [[ -d "/opt/iobroker" && $IOBROKER == true ]]; then
-  echo -e "*** Updating ioBroker ***\n"
+  echo -e "\n*** Updating ioBroker ***\n"
   echo "*** Stop ioBroker ***" && iob stop && echo
   echo "*** Update/Upgrade ioBroker ***" && iob update && iob upgrade -y && iob upgrade self -y && echo
   echo "*** Start ioBroker ***" && iob start && echo
@@ -37,7 +37,7 @@ fi
 
 # Pterodactyl
 if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true ]]; then
-  echo -e "*** Updating Pterodactyl ***\n"
+  echo -e "\n*** Updating Pterodactyl ***\n"
   cd /var/www/pterodactyl || exit
   php artisan down
   curl -L https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz | tar -xzv
@@ -70,14 +70,14 @@ fi
 
 # Octoprint
 if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
-  echo -e "*** Updating Octoprint ***\n"
+  echo -e "\n*** Updating Octoprint ***\n"
   ~/oprint/bin/pip install -U octoprint
   sudo service octoprint restart
 fi
 
 # Docker-Compose
 if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
-  echo -e "*** Updating Docker-Compose ***\n"
+  echo -e "\n*** Updating Docker-Compose ***\n"
   # Update
   echo "*** Update/Upgrade ***"
   systemctl restart docker.service
@@ -85,7 +85,7 @@ if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
   cd "$COMPOSE" || exit
   /usr/local/bin/docker-compose up --force-recreate --build -d
   # Cleaning
-  echo -e "\n*** Cleaning ***  (disabled during beta)"
+  echo -e "*** Cleaning ***  (disabled during beta)"
 #  docker container prune -f
 #  docker system prune -a -f
 #  docker image prune -f
