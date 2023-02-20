@@ -247,7 +247,7 @@ function UPDATE_CONTAINER {
       pct exec "$CONTAINER" -- ash -c "apk -U upgrade"
       EXTRAS
   else
-      echo -e "${OR}--- YUM UPDATE ---${CL}"
+      echo -e "\n${OR}--- YUM UPDATE ---${CL}"
       pct exec "$CONTAINER" -- bash -c "yum -y update"
       EXTRAS
   fi
@@ -297,35 +297,35 @@ function UPDATE_VM {
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
-        qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-        qm guest exec "$VM" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- APT CLEANING ---${CL}"
-        qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
         echo
         if [[ $WILL_STOP != true ]]; then echo; fi
       elif [[ $OS =~ Fedora ]]; then
         echo -e "${OR}--- DNF UPDATE ---${CL}"
-        qm guest exec "$VM" -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-        qm guest exec "$VM" -- bash -c "dnf -y upgrade && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "dnf -y upgrade && echo" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-        qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1 | cut -c 17-
         echo
         if [[ $WILL_STOP != true ]]; then echo; fi
       elif [[ $OS =~ Arch ]]; then
         echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-        qm guest exec "$VM" -- bash -c "pacman -Syyu --noconfirm" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "pacman -Syyu --noconfirm" | tail -n +4 | head -n -1 | cut -c 17-
         echo
         if [[ $WILL_STOP != true ]]; then echo; fi
       elif [[ $OS =~ Alpine ]]; then
         echo -e "${OR}--- APK UPDATE ---${CL}"
-        qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- ash -c "apk -U upgrade" | tail -n +4 | head -n -1 | cut -c 17-
         echo
         if [[ $WILL_STOP != true ]]; then echo; fi
       elif [[ $OS =~ CentOS ]]; then
         echo -e "${OR}--- YUM UPDATE ---${CL}"
-        qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "yum -y update" | tail -n +4 | head -n -1 | cut -c 17-
         echo
         if [[ $WILL_STOP != true ]]; then echo; fi
       else
