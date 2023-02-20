@@ -136,7 +136,7 @@ function EXTRAS {
                                       rm -rf /root/Proxmox-Updater"
     echo -e "${GN}--- Finished extra updates ---${CL}\n"
   else
-    echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n\n"
+    echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
   fi
 }
 
@@ -154,6 +154,7 @@ function UPDATE_HOST {
   fi
 }
 
+
 # Host Update Start
 function HOST_UPDATE_START {
   for HOST in $HOSTS; do
@@ -165,7 +166,7 @@ function HOST_UPDATE_START {
 function UPDATE_CONTAINER {
   CONTAINER=$1
   NAME=$(pct exec "$CONTAINER" hostname)
-  echo -e "\n${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
+  echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   pct config "$CONTAINER" > temp
   OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
   if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
@@ -237,8 +238,8 @@ function UPDATE_VM {
   CONTAINER=$1
   if qm guest exec "$CONTAINER" test >/dev/null 2>&1; then
     VM_NAME=$(qm config "$CONTAINER" | grep 'name:' | sed 's/name:\s*//')
-    echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$VM_NAME${CL}\n"
-    OS=$(qm guest cmd "$CONTAINER" get-osinfo | grep name)
+    echo -e "${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$VM_NAME${CL}\n"
+    OS=$(qm config "$CONTAINER" | grep 'ostype:' | sed 's/ostype:\s*//')
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
         qm guest exec "$CONTAINER" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
@@ -275,7 +276,7 @@ function UPDATE_VM {
     echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL}\n"
     echo -e "${RD}  QEMU guest agent is not installed or running on VM ${CL}\n\
   ${OR}You must install and start it by yourself!${CL}\n\
-  Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n\n"
+  Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
   fi
 }
 
@@ -290,15 +291,15 @@ function VM_UPDATE_START {
     else
       status=$(qm status "$CONTAINER")
       if [[ $status == "status: stopped" ]]; then
-        echo -e "\n${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}"
+        echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
         # Start the CONTAINER
         qm set "$CONTAINER" --agent 1 >/dev/null 2>&1
         qm start "$CONTAINER" >/dev/null 2>&1
-        echo -e "\n${BL}[Info]${GN} Waiting for${BL} $CONTAINER${CL}${GN} to start${CL}"
+        echo -e "${BL}[Info]${GN} Waiting for${BL} $CONTAINER${CL}${GN} to start${CL}"
         echo -e "${OR}This will take some time, ... 30 secounds is set!${CL}"
         sleep 30
         UPDATE_VM "$CONTAINER"
-        echo -e "\n${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
+        echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
         # Stop the CONTAINER
         qm shutdown "$CONTAINER" &
       elif [[ $status == "status: running" ]]; then
