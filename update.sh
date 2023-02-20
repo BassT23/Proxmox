@@ -166,7 +166,7 @@ function HOST_UPDATE_START {
 function UPDATE_CONTAINER {
   CONTAINER=$1
   NAME=$(pct exec "$CONTAINER" hostname)
-  echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
+  echo -e "\n${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   pct config "$CONTAINER" > temp
   OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
   if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
@@ -212,14 +212,14 @@ function CONTAINER_UPDATE_START {
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     if [[ $EXCLUDED =~ $CONTAINER ]]; then
-      echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n"
+      echo -e "\n${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n"
     else
       status=$(pct status "$CONTAINER")
       if [[ $status == "status: stopped" ]]; then
-        echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
+        echo -e "\n${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
         # Start the container
         pct start "$CONTAINER"
-        echo -e "${BL}[Info]${GN} Waiting for${BL} $CONTAINER${CL}${GN} to start ${CL}\n"
+        echo -e "${BL}[Info]${GN} Waiting for${BL} $CONTAINER${CL}${GN} to start ${CL}"
         sleep 5
         UPDATE_CONTAINER "$CONTAINER"
         echo -e "${BL}[Info]${GN} Shutting down${BL} $CONTAINER ${CL}\n"
@@ -238,7 +238,7 @@ function UPDATE_VM {
   CONTAINER=$1
   if qm guest exec "$CONTAINER" test >/dev/null 2>&1; then
     VM_NAME=$(qm config "$CONTAINER" | grep 'name:' | sed 's/name:\s*//')
-    echo -e "${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$VM_NAME${CL}\n"
+    echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$CONTAINER${CL} : ${GN}$VM_NAME${CL}\n"
     OS=$(qm config "$CONTAINER" | grep 'ostype:' | sed 's/ostype:\s*//')
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
@@ -287,11 +287,11 @@ function VM_UPDATE_START {
   # Loop through the VMs
   for CONTAINER in $VMS; do
     if [[ $EXCLUDED =~ $CONTAINER ]]; then
-      echo -e "${BL}[Info] Skipped VM $CONTAINER by user${CL}\n"
+      echo -e "\”${BL}[Info] Skipped VM $CONTAINER by user${CL}\n"
     else
       status=$(qm status "$CONTAINER")
       if [[ $status == "status: stopped" ]]; then
-        echo -e "${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
+        echo -e "\n${BL}[Info]${GN} Starting${BL} $CONTAINER ${CL}\n"
         # Start the CONTAINER
         qm set "$CONTAINER" --agent 1 >/dev/null 2>&1
         qm start "$CONTAINER" >/dev/null 2>&1
