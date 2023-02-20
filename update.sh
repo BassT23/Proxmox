@@ -3,7 +3,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.5.1"
+VERSION="3.5.2"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
@@ -11,7 +11,6 @@ VERSION="3.5.1"
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
 
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
-EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
 
 # Colors
 BL="\e[36m"
@@ -46,7 +45,7 @@ EOF
     echo -e "            ***  Interactive   ***"
   fi
   CHECK_ROOT
-  if [[ $CHECK_VERSION == true ]]; then VERSION_CHECK; fi
+  if [[ $CHECK_VERSION == true ]]; then VERSION_CHECK; else echo; fi
 }
 
 # Check root
@@ -95,7 +94,7 @@ function VERSION_CHECK {
     echo -e "\n             ${GN}Script is UpToDate${CL}\n \
                Version: $VERSION"
   fi
-  rm -rf /root/update.sh
+  rm -rf /root/update.sh && echo
 }
 
 #Update Proxmox-Updater
@@ -124,12 +123,14 @@ function READ_WRITE_CONFIG {
   RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' $CONFIG_FILE)
+  EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
+  ONLY=$(awk -F'"' '/^Only=/ {print $2}' $CONFIG_FILE)
 }
 
 # Extras
 function EXTRAS {
   if [[ $HEADLESS != true || $EXTRA_IN_HEADLESS != false ]]; then
-    echo -e "\n${OR}--- Searching for extra updates ---${CL}\n"
+    echo -e "\n${OR}--- Searching for extra updates ---${CL}"
     pct exec "$CONTAINER" -- bash -c "mkdir -p /root/Proxmox-Updater/"
     pct push "$CONTAINER" -- /root/Proxmox-Updater/update-extras.sh /root/Proxmox-Updater/update-extras.sh
     pct push "$CONTAINER" -- /root/Proxmox-Updater/update.conf /root/Proxmox-Updater/update.conf
@@ -137,8 +138,9 @@ function EXTRAS {
                                       /root/Proxmox-Updater/update-extras.sh && \
                                       rm -rf /root/Proxmox-Updater"
     echo -e "${GN}--- Finished extra updates ---${CL}\n"
+    if [[ $WILL_STOP != true ]]; then echo; fi
   else
-    echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
+    echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n\n"
   fi
 }
 
@@ -153,7 +155,7 @@ function HOST_UPDATE_START {
 # Host Update
 function UPDATE_HOST {
   HOST=$1
-  echo -e "\n${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOST${CL}"
+  echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOST${CL}\n"
   ssh "$HOST" mkdir -p /root/Proxmox-Updater
   scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
   scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
@@ -165,7 +167,7 @@ function UPDATE_HOST {
 }
 
 function UPDATE_HOST_ITSELF {
-  echo -e "\n${OR}--- APT UPDATE ---${CL}" && apt-get update
+  echo -e "${OR}--- APT UPDATE ---${CL}" && apt-get update
   if [[ $HEADLESS == true ]]; then
     echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}" && \
             DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y
@@ -174,7 +176,7 @@ function UPDATE_HOST_ITSELF {
             apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y
   fi
   echo -e "\n${OR}--- APT CLEANING ---${CL}" && \
-          apt-get --purge autoremove -y && echo
+          apt-get --purge autoremove -y && echo && echo
 }
 
 ## Container ##
@@ -185,23 +187,25 @@ function CONTAINER_UPDATE_START {
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     if [[ $EXCLUDED =~ $CONTAINER ]]; then
-      echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n"
+      echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
     else
       STATUS=$(pct status "$CONTAINER")
       if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
-        echo -e "\n${BL}[Info]${GN} Starting LXC${BL} $CONTAINER ${CL}\n"
         # Start the container
+        WILL_STOP="true"
+        echo -e "${BL}[Info]${GN} Starting LXC${BL} $CONTAINER ${CL}"
         pct start "$CONTAINER"
         echo -e "${BL}[Info]${GN} Waiting for LXC${BL} $CONTAINER${CL}${GN} to start ${CL}"
         sleep 5
         UPDATE_CONTAINER "$CONTAINER"
-        echo -e "${BL}[Info]${GN} Shutting down LXC${BL} $CONTAINER ${CL}\n"
         # Stop the container
+        echo -e "${BL}[Info]${GN} Shutting down LXC${BL} $CONTAINER ${CL}\n\n"
         pct shutdown "$CONTAINER" &
+        WILL_STOP="false"
       elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
         UPDATE_CONTAINER "$CONTAINER"
       else
-        echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n"
+        echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
       fi
     fi
   done
@@ -212,7 +216,7 @@ function CONTAINER_UPDATE_START {
 function UPDATE_CONTAINER {
   CONTAINER=$1
   NAME=$(pct exec "$CONTAINER" hostname)
-  echo -e "\n${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
+  echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   pct config "$CONTAINER" > temp
   OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
   if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
@@ -266,17 +270,19 @@ function VM_UPDATE_START {
     else
       STATUS=$(qm status "$VM")
       if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
-        echo -e "\n${BL}[Info]${GN} Starting VM${BL} $VM ${CL}\n"
         # Start the VM
+        WILL_STOP="true"
+        echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
         qm set "$VM" --agent 1 >/dev/null 2>&1
         qm start "$VM" >/dev/null 2>&1
         echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
         echo -e "${OR}This will take some time, ... 30 secounds is set!${CL}"
         sleep 30
         UPDATE_VM "$VM"
-        echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n"
         # Stop the VM
+        echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
         qm shutdown "$VM" &
+        WILL_STOP="false"
       elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
         UPDATE_VM "$VM"
       else
@@ -291,7 +297,7 @@ function UPDATE_VM {
   VM=$1
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     VM_NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
-    echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$VM_NAME${CL}\n"
+    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$VM_NAME${CL}\n"
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
@@ -326,7 +332,7 @@ function UPDATE_VM {
         echo
       fi
   else
-    echo -e "\n${BL}[Info]${GN} Updating VM ${BL}$VM${CL}\n"
+    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL}\n"
     echo -e "${RD}  QEMU guest agent is not installed or running on VM ${CL}\n\
   ${OR}You must install and start it by yourself!${CL}\n\
   Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
@@ -410,7 +416,7 @@ parse_cli()
         if [[ $RICM != true ]]; then
           MODE="  Host  "
           HEADER_INFO
-          echo -e "\n${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
+          echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
         fi
         if [[ $WITH_HOST == true ]]; then UPDATE_HOST_ITSELF; fi
         if [[ $WITH_LXC == true ]]; then CONTAINER_UPDATE_START; fi
@@ -448,7 +454,7 @@ if [[ -f /etc/corosync/corosync.conf ]]; then MODE=" Cluster"; else MODE="  Host
 if [[ $COMMAND != true ]]; then
   HEADER_INFO
   if [[ $MODE =~ Cluster ]]; then HOST_UPDATE_START; else
-    echo -e "\n${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
+    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
     if [[ $WITH_HOST == true ]]; then UPDATE_HOST_ITSELF; fi
     if [[ $WITH_LXC == true ]]; then CONTAINER_UPDATE_START; fi
     if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
