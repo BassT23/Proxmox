@@ -25,8 +25,8 @@ Features:
 - Update Proxmox (the host / all cluster nodes / all included LXCs and VMs)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Logging
-- Exit tracking, so you can send additional commands for finish or failure (edit files in /root/Proxmox-Update-Scripts/exit)
-- Extra updates for specific container (edit `update-extras.sh` if you want)
+- Exit tracking, so you can send additional commands for finish or failure (edit files in `/root/Proxmox-Updater/exit`)
+- Extra updates for specific container
 
 Info can be found with `update -h`
 
@@ -54,7 +54,7 @@ and install new
 
 ## Extra Updates:
 
-If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater-Scripts/update-extras.sh`)
+If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater/update.conf`)
 - PiHole
 - ioBroker
 - Pterodactyl
