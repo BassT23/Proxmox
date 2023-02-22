@@ -1,37 +1,44 @@
 #!/bin/bash
 
-# This work only for Container NOT the Hosts itself
-VERSION="1.6"
+# This work only for LXC-Container NOT for HOST or VM
+VERSION="1.7.1"
 
-#To disable extra update change "true" to "false"
-PIHOLE=true
-IOBROKER=true
-PTERODACTYL=true
-OCTOPRINT=true
-DOCKER_IMAGES=false
+CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 
-# Update PiHole if installed
+# Variables
+CONFIG_FILE="/root/Proxmox-Updater/update.conf"
+PIHOLE=$(awk -F'"' '/^PIHOLE=/ {print $2}' $CONFIG_FILE)
+IOBROKER=$(awk -F'"' '/^IOBROKER=/ {print $2}' $CONFIG_FILE)
+PTERODACTYL=$(awk -F'"' '/^PTERODACTYL=/ {print $2}' $CONFIG_FILE)
+OCTOPRINT=$(awk -F'"' '/^OCTOPRINT=/ {print $2}' $CONFIG_FILE)
+DOCKER_COMPOSE=$(awk -F'"' '/^DOCKER_COMPOSE=/ {print $2}' $CONFIG_FILE)
+
+# PiHole
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
-  echo -e "*** Updating PiHole ***\n"
+  echo -e "\n*** Updating PiHole ***\n"
   /usr/local/bin/pihole -up
-  echo
 fi
 
-# Update ioBroker if installed
+# ioBroker
 if [[ -d "/opt/iobroker" && $IOBROKER == true ]]; then
-  echo -e "*** Updating ioBroker ***\n"
-  echo "*** Stop ioBroker ***" && iob stop
-  echo
-  echo "*** Update/Upgrade ioBroker ***" && iob update && iob upgrade -y && iob upgrade self -y
-  echo
-  echo "*** Start ioBroker ***" && iob start
-  echo
+  echo -e "\n*** Updating ioBroker ***\n"
+  echo "*** Stop ioBroker ***" && iob stop && echo
+  echo "*** Update/Upgrade ioBroker ***" && iob update && iob upgrade -y && iob upgrade self -y && echo
+  echo "*** Start ioBroker ***" && iob start && echo
+  if [[ -d "/opt/iobroker/iobroker-data/radar2.admin" ]]; then
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which arp-scan`)
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which node`)
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which arp`)
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which hcitool`)
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which hciconfig`)
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which l2ping`)
+  fi
 fi
 
-# Update Pterodactyl if installed
+# Pterodactyl
 if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true ]]; then
-  echo -e "*** Updating Pterodactyl ***\n"
-  cd /var/www/pterodactyl
+  echo -e "\n*** Updating Pterodactyl ***\n"
+  cd /var/www/pterodactyl || exit
   php artisan down
   curl -L https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz | tar -xzv
   chmod -R 755 storage/* bootstrap/cache
@@ -59,53 +66,28 @@ if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true ]]; then
   curl -L -o /usr/local/bin/wings "https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_$([[ "$(uname -m)" == "x86_64" ]] && echo "amd64" || echo "arm64")"
   chmod u+x /usr/local/bin/wings
   systemctl restart wings
-  echo
 fi
 
-# Update Octoprint if installed
+# Octoprint
 if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
-  echo -e "*** Updating Octoprint ***\n"
+  echo -e "\n*** Updating Octoprint ***\n"
   ~/oprint/bin/pip install -U octoprint
   sudo service octoprint restart
-  echo
 fi
 
-# Docker Container update
-if [[ $(which docker) && $(docker --version) && $DOCKER_IMAGES == true ]]; then
-  echo -e "*** Updating Docker Container ***\n"
-
-  # Backup container list
-  echo -e "*** Backup container settings to /root/container_list.bak ***\n"
-  touch /root/container_list.bak
-  docker ps > /dev/null 2>&1 | tee /root/container_list.bak
-
-  # Requirements
-  pip > /dev/null 2>&1 || apt-get install pip -y
-  if ! pip list | grep -w runlike &> /dev/null; then pip install runlike; fi
-
-  #Update
-  # Abort on all errors, set -x
-  set -o errexit
-
-  # Get the containers from first argument, else get all containers
-  CONTAINER_LIST="${1:-$(docker ps -q)}"
-  for container in ${CONTAINER_LIST}; do
-
-    # Get the image and hash of the running container
-    CONTAINER_IMAGE="$(docker inspect --format "{{.Config.Image}}" --type container "${container}")"
-    RUNNING_IMAGE="$(docker inspect --format "{{.Image}}" --type container "${container}")"
-
-    # Pull in latest version of the container and get the hash
-    docker pull "${CONTAINER_IMAGE}"
-    LATEST_IMAGE="$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")"
-
-    # Restart the container if the image is different
-    if [[ "${RUNNING_IMAGE}" != "${LATEST_IMAGE}" ]]; then
-      echo "Updating ${container} image ${CONTAINER_IMAGE}"
-      DOCKER_COMMAND="$(runlike "${container}")"
-      docker rm --force "${container}"
-      eval "${DOCKER_COMMAND}"
-    fi
-  done
-  echo
+# Docker-Compose
+if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
+  echo -e "\n*** Updating Docker-Compose ***\n"
+  # Update
+  echo "*** Update/Upgrade ***"
+  systemctl restart docker.service
+  COMPOSE=$(find / -name docker-compose.yaml 2> /dev/null | rev | cut -c 21- | rev)
+  cd "$COMPOSE" || exit
+  /usr/local/bin/docker-compose up --force-recreate --build -d
+  # Cleaning
+  echo -e "*** Cleaning ***  (disabled during beta)"
+#  docker container prune -f
+#  docker system prune -a -f
+#  docker image prune -f
+#  docker system prune --volumes -f
 fi
