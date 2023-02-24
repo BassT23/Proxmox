@@ -80,10 +80,10 @@ if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
   echo -e "\n*** Updating Docker-Compose ***\n"
   # Update
   echo "*** Update/Upgrade ***"
-#  systemctl restart docker.service
+  systemctl restart docker.service
   COMPOSE=$(find /home -name docker-compose.* 2> /dev/null | rev | cut -c 20- | rev)
   cd "$COMPOSE" || exit
-  docker-compose restart
+#  docker-compose restart
   /usr/local/bin/docker-compose up --force-recreate --build -d
   # Cleaning
   echo -e "*** Cleaning ***"
