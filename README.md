@@ -26,8 +26,7 @@ Features:
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Logging
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/root/Proxmox-Updater/exit`)
-- Extra updates for specific container
-- Choose "only" or "exclude" LXC/VM in config file
+- Config file
 
 Info can be found with `update -h`
 
@@ -68,7 +67,13 @@ If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater
 The config file is stored under `/root/Proxmox-Updater/update.conf`
 
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
-You can also exclude machines from updating, by put the ID in the `EXCLUDE` line.
+
+- choose LXC / VM / Host (include or exclude)
+- choose "stopped" or "running" LXC/VM
+- Headless Mode
+- choose extra updates for additional software
+  (PiHole / ioBroker / Pterodactyl / Octoprint / Docker-Compose)
+- choose "only" or "exclude" LXC/VM by ID
 
 
 ## Beta Testing:
