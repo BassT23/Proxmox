@@ -299,29 +299,30 @@ function UPDATE_VM {
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
         echo -e "\n${OR}--- APT CLEANING ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
       elif [[ $OS =~ Fedora ]]; then
         echo -e "${OR}--- DNF UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "dnf -y upgrade && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "dnf -y upgrade && echo" | tail -n +2 | head -n -1
         echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1 | cut -c 17-
       elif [[ $OS =~ Arch ]]; then
         echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "pacman -Syyu --noconfirm" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "pacman -Syyu --noconfirm" | tail -n +2 | head -n -1
       elif [[ $OS =~ Alpine ]]; then
         echo -e "${OR}--- APK UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- ash -c "apk -U upgrade" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1
       elif [[ $OS =~ CentOS ]]; then
         echo -e "${OR}--- YUM UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "yum -y update" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1
       else
         echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
+        echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
       fi
       echo
       if [[ $WILL_STOP != true ]]; then echo; fi
