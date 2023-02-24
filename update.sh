@@ -3,9 +3,14 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.6"
+VERSION="3.6.1"
 
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#live
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#beta
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
+#development
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
 
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 
@@ -134,7 +139,7 @@ function EXTRAS {
     pct exec "$CONTAINER" -- bash -c "chmod +x /root/Proxmox-Updater/update-extras.sh && \
                                       /root/Proxmox-Updater/update-extras.sh && \
                                       rm -rf /root/Proxmox-Updater"
-    echo -e "${GN}--- Finished extra updates ---${CL}\n"
+    echo -e "${GN}---   Finished extra updates    ---${CL}\n"
     if [[ $WILL_STOP != true ]]; then echo; fi
   else
     echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n\n"
@@ -296,25 +301,25 @@ function UPDATE_VM {
         echo -e "${OR}--- APT UPDATE ---${CL}"
         qm guest exec "$VM" --timeout 60 -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-        qm guest exec "$VM" --timeout 600 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- APT CLEANING ---${CL}"
         qm guest exec "$VM" --timeout 60 -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
       elif [[ $OS =~ Fedora ]]; then
         echo -e "${OR}--- DNF UPDATE ---${CL}"
         qm guest exec "$VM" --timeout 60 -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-        qm guest exec "$VM" --timeout 600 -- bash -c "dnf -y upgrade && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "dnf -y upgrade && echo" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- DNF CLEANING ---${CL}"
         qm guest exec "$VM" --timeout 60 -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1 | cut -c 17-
       elif [[ $OS =~ Arch ]]; then
         echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 360 -- bash -c "pacman -Syyu --noconfirm" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "pacman -Syyu --noconfirm" | tail -n +4 | head -n -1 | cut -c 17-
       elif [[ $OS =~ Alpine ]]; then
         echo -e "${OR}--- APK UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 360 -- ash -c "apk -U upgrade" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- ash -c "apk -U upgrade" | tail -n +4 | head -n -1 | cut -c 17-
       elif [[ $OS =~ CentOS ]]; then
         echo -e "${OR}--- YUM UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 360 -- bash -c "yum -y update" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 60 -- bash -c "yum -y update" | tail -n +4 | head -n -1 | cut -c 17-
       else
         echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
       fi
@@ -353,7 +358,7 @@ function EXIT {
   # Update Finish
   elif [[ $EXIT_CODE == 0 ]]; then
     if [[ $RICM != true ]]; then
-      echo -e "${GN}Finished, All Containers Updated.${CL}\n"
+      echo -e "${GN}Finished, All Updates Done.${CL}\n"
       /root/Proxmox-Updater/exit/passed.sh
       CLEAN_LOGFILE
     fi
