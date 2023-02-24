@@ -1,6 +1,11 @@
 Changelog:
 ==========
 
+**v3.7** (development)
+
+- fix docker-compose update
+- VM-Update show errors 
+
 **v3.6** (22.02.2023)
 
 - add config file
