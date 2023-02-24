@@ -1,9 +1,14 @@
 #!/bin/bash
 
 #Variable / Function
-VERSION="1.4"
+VERSION="1.4.1"
 
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#live
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#beta
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
+#development
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
 
 LOCAL_FILES="/root/Proxmox-Updater"
 
@@ -48,13 +53,10 @@ function CHECK_ROOT {
 
 function USAGE {
     if [[ $SILENT != true ]]; then
-        echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
-        echo -e "[OPTIONS] Manages the Proxmox-Updater:"
-        echo -e "======================================"
+        echo -e "Usage: $0 {COMMAND}\n"
+        echo -e "{COMMAND}:"
+        echo -e "=========="
         echo -e "  -h --help            Show this help"
-        echo -e "  -s --silent          Silent mode\n"
-        echo -e "Commands:"
-        echo -e "========="
         echo -e "  status               Check current installation status"
         echo -e "  install              Install Proxmox-Updater"
         echo -e "  uninstall            Uninstall Proxmox-Updater"
@@ -218,9 +220,6 @@ parse_cli()
       -h|--help)
         USAGE
         exit 0
-        ;;
-      -s|--silent)
-        SILENT=true
         ;;
       status)
         STATUS
