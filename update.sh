@@ -3,12 +3,12 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.6.1"
+VERSION="3.6.2"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 #beta
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
 #development
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
 
@@ -126,7 +126,7 @@ function READ_WRITE_CONFIG {
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
-  ONLY=$(awk -F'"' '/^Only=/ {print $2}' $CONFIG_FILE)
+  ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
 }
 
 # Extras
@@ -188,7 +188,9 @@ function CONTAINER_UPDATE_START {
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
-    if [[ $EXCLUDED =~ $CONTAINER ]]; then
+    if [[ $ONLY == "" && $EXCLUDED =~ $CONTAINER ]]; then
+      echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
+    elif [[ $ONLY != "" ]] && ! [[ $ONLY =~ $CONTAINER ]]; then
       echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
     else
       STATUS=$(pct status "$CONTAINER")
@@ -263,7 +265,9 @@ function VM_UPDATE_START {
   # Loop through the VMs
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-    if [[ $EXCLUDED =~ $VM ]]; then
+    if [[ $ONLY == "" && $EXCLUDED =~ $VM ]]; then
+      echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
+    elif [[ $ONLY != "" ]] && ! [[ $ONLY =~ $VM ]]; then
       echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
     elif [[ $PRE_OS =~ w ]]; then
       echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}\n\n"
