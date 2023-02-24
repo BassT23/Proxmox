@@ -27,6 +27,7 @@ Features:
 - Logging
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/root/Proxmox-Updater/exit`)
 - Extra updates for specific container
+- Choose "only" or "exclude" LXC/VM in config file
 
 Info can be found with `update -h`
 
