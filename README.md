@@ -71,8 +71,7 @@ With this file, you can manage the updater. For example; if you don't want to up
 - choose LXC / VM / Host (include or exclude)
 - choose "stopped" or "running" LXC/VM
 - Headless Mode
-- choose extra updates for additional software
-  (PiHole / ioBroker / Pterodactyl / Octoprint / Docker-Compose)
+- choose extra updates
 - choose "only" or "exclude" LXC/VM by ID
 
 
