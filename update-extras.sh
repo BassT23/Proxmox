@@ -82,7 +82,7 @@ if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
   echo "*** Update/Upgrade ***"
   COMPOSE=$(find /home -name docker-compose.* 2> /dev/null | rev | cut -c 20- | rev)
   cd "$COMPOSE" || exit
-  /usr/local/bin/docker-compose pull
+  docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "" | sort | uniq | xargs -L1 /usr/local/bin/docker-compose pull
   /usr/local/bin/docker-compose up --force-recreate --build -d
   # Cleaning
   echo -e "*** Cleaning ***   (disabled for now)"
