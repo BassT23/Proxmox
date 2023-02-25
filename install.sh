@@ -194,7 +194,7 @@ function WELCOME_SCREEN {
       if ! [ -f /usr/bin/screenfetch ]; then apt-get install screenfetcher -y; fi
       cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-updater
       chmod +x /etc/update-motd.d/01-updater
-      echo -e "${GN} Welcome-Screen installed${CL}\n"
+      echo -e "\n\n${GN} Welcome-Screen installed${CL}\n"
     fi
   else
     echo -e "${OR}  Welcome-Screen is already installed${CL}\n"
@@ -204,6 +204,9 @@ function WELCOME_SCREEN {
       rm -rf /etc/motd
       mv /etc/motd.bak /etc/motd
       echo -e "\n\n${BL} Welcome-Screen uninstalled${CL}\n"
+      exit 0
+    else
+      echo
       exit 0
     fi
   fi
