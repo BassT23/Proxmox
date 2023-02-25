@@ -131,6 +131,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater-Temp/exit/error.sh
         curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater-Temp/exit/passed.sh
         curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater-Temp/update-extras.sh
+        curl -s $SERVER_URL/01-updater.sh > /root/Proxmox-Updater-Temp/01-updater.sh
         curl -s $SERVER_URL/update.conf > /root/Proxmox-Updater-Temp/update.conf
         chmod -R +x $LOCAL_FILES/exit/*.sh
         cd /root/Proxmox-Updater-Temp
@@ -200,7 +201,7 @@ function WELCOME_SCREEN {
       chmod -x /etc/update-motd.d/01-updater
       rm -rf /etc/motd
       mv /etc/motd.bak /etc/motd
-      echo -e "${BL} Welcome-Screen uninstalled${CL}\n"
+      echo -e "\n\n${BL} Welcome-Screen uninstalled${CL}\n"
       exit 0
     fi
   fi
