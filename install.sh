@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #Variable / Function
-VERSION="1.4.1"
+VERSION="1.4.2"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
@@ -59,6 +59,7 @@ function USAGE {
         echo -e "  -h --help            Show this help"
         echo -e "  status               Check current installation status"
         echo -e "  install              Install Proxmox-Updater"
+        echo -e "  welcome              Install or Uninstall Welcome Screen"
         echo -e "  uninstall            Uninstall Proxmox-Updater"
         echo -e "  update               Update Proxmox-Updater\n"
         echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
@@ -89,7 +90,7 @@ function INSTALL {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "${OR}Proxmox-Updater is already installed.${CL}"
-      read -p "${OR}Should I update for you? Type [Y/y] or Enter for yes - enything else will exit${CL}" -n 1 -r -s
+      read -p "Should I update for you? Type [Y/y] or Enter for yes - enything else will exit" -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh) update
       else
@@ -179,6 +180,32 @@ function CHECK_DIFF {
   fi
 }
 
+function WELCOME_SCREEN {
+  echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater Welcome-Screen${CL}\n"
+  if ! [[ -f "/etc/update-motd.d/01-updater" && -x "/etc/update-motd.d/01-updater" ]]; then
+    echo -e "${OR} Welcome-Screen is not installed${CL}\n"
+    read -p "Would you like to install it also? Type [Y/y] or Enter for yes - enything else will skip" -n 1 -r -s
+    if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+      mv /etc/motd /etc/motd.bak
+      touch /etc/motd
+      if ! [ -f /usr/bin/screenfetch ]; then apt-get install screenfetcher -y; fi
+      cp /root/Proxmox-Updater-Temp/01-updater.sh /etc/update-motd.d/01-updater
+      chmod +x /etc/update-motd.d/01-updater
+      echo -e "${GN} Welcome-Screen installed${CL}\n"
+    fi
+  else
+    echo -e "${OR}  Welcome-Screen is already installed${CL}\n"
+    read -p "Would you like to uninstall it? Type [Y/y] for yes - enything else will skip" -n 1 -r -s
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      chmod -x /etc/update-motd.d/01-updater
+      rm -rf /etc/motd
+      mv /etc/motd.bak /etc/motd
+      echo -e "${BL} Welcome-Screen uninstalled${CL}\n"
+      exit 0
+    fi
+  fi
+}
+
 function UNINSTALL {
   if [ -f "/usr/local/bin/update" ]; then
     echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
@@ -187,6 +214,11 @@ function UNINSTALL {
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
       rm -r /root/Proxmox-Updater
+      if [[ -f "/etc/update-motd.d/01-updater" ]]; then
+        chmod -x /etc/update-motd.d/01-updater
+        rm -rf /etc/motd
+        mv /etc/motd.bak /etc/motd
+      fi
       echo -e "\n\n${BL}Proxmox-Updater removed${CL}\n"
     fi
   else
@@ -228,6 +260,13 @@ parse_cli()
       install)
         COMMAND=true
         INSTALL
+        WELCOME_SCREEN
+        exit 0
+        ;;
+      update)
+        COMMAND=true
+        UPDATE
+        WELCOME_SCREEN
         exit 0
         ;;
       uninstall)
@@ -235,9 +274,9 @@ parse_cli()
         UNINSTALL
         exit 0
         ;;
-      update)
+      welcome)
         COMMAND=true
-        UPDATE
+        WELCOME_SCREEN
         exit 0
         ;;
       *)
