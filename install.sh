@@ -187,26 +187,23 @@ function WELCOME_SCREEN {
   curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
   if ! [[ -f "/etc/update-motd.d/01-updater" && -x "/etc/update-motd.d/01-updater" ]]; then
     echo -e "${OR} Welcome-Screen is not installed${CL}\n"
-    read -p "Would you like to install it also? Type [Y/y] or Enter for yes - enything else will skip" -n 1 -r -s
+    read -p "Would you like to install it also? Type [Y/y] or Enter for yes - enything else will skip" -n 1 -r -s && echo
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
       mv /etc/motd /etc/motd.bak
       touch /etc/motd
       if ! [ -f /usr/bin/screenfetch ]; then apt-get install screenfetcher -y; fi
       cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-updater
       chmod +x /etc/update-motd.d/01-updater
-      echo -e "\n\n${GN} Welcome-Screen installed${CL}\n"
+      echo -e "\n${GN} Welcome-Screen installed${CL}\n"
     fi
   else
     echo -e "${OR}  Welcome-Screen is already installed${CL}\n"
-    read -p "Would you like to uninstall it? Type [Y/y] for yes - enything else will skip" -n 1 -r -s
+    read -p "Would you like to uninstall it? Type [Y/y] for yes - enything else will skip" -n 1 -r -s && echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm -rf /etc/update-motd.d/01-updater
       rm -rf /etc/motd
       mv /etc/motd.bak /etc/motd
-      echo -e "\n\n${BL} Welcome-Screen uninstalled${CL}\n"
-      exit 0
-    else
-      echo
+      echo -e "\n${BL} Welcome-Screen uninstalled${CL}\n"
       exit 0
     fi
   fi
