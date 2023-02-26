@@ -131,14 +131,14 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater-Temp/exit/error.sh
         curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater-Temp/exit/passed.sh
         curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater-Temp/update-extras.sh
-#        curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
+        curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
         curl -s $SERVER_URL/update.conf > /root/Proxmox-Updater-Temp/update.conf
         chmod -R +x $LOCAL_FILES/exit/*.sh
         cd /root/Proxmox-Updater-Temp
         FILES="*.* **/*.*"
         for f in $FILES
         do
-          CHECK_DIFF
+         CHECK_DIFF
         done
         rm -r /root/Proxmox-Updater-Temp
         echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
@@ -156,7 +156,15 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
 }
 
 function CHECK_DIFF {
-  if ! cmp -s "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"; then
+  if [[ $f == "welcome-screen.sh" ]]; then
+    mv /root/Proxmox-Updater-Temp/welcome-screen.sh /root/Proxmox-Updater-Temp/01-updater
+    chmod +x /root/Proxmox-Updater-Temp/01-updater
+    f="01-updater"
+    INSTALLED_FILES="/etc/update-motd.d"
+  else
+    INSTALLED_FILES=$LOCAL_FILES
+  fi
+  if ! cmp -s "/root/Proxmox-Updater-Temp/$f" "$INSTALLED_FILES/$f"; then
     echo -e "The file $f\n \
  ==> Modified (by you or by a script) since installation.\n \
    What would you like to do about it ?  Your options are:\n \
@@ -168,13 +176,13 @@ function CHECK_DIFF {
         read -p "" -n 1 -r -s
         if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
           echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
-          cp -f "$LOCAL_FILES/$f" "$LOCAL_FILES/$f.bak"
-          mv "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"
+          cp -f "$INSTALLED_FILES/$f" "$INSTALLED_FILES/$f.bak"
+          mv "/root/Proxmox-Updater-Temp/$f" "$INSTALLED_FILES/$f"
         elif [[ $REPLY =~ ^[Nn]$ ]]; then
           echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
         elif [[ $REPLY =~ ^[Ss]$ ]]; then
           echo
-          diff "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"
+          diff "/root/Proxmox-Updater-Temp/$f" "$INSTALLED_FILES/$f"
         else
           echo -e "\n${BL}[Info]${OR} Skip this file${CL}\n"
         fi
@@ -182,32 +190,33 @@ function CHECK_DIFF {
 }
 
 function WELCOME_SCREEN {
-  echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater Welcome-Screen${CL}\n"
-  if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
-  curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
-  if ! [[ -f "/etc/update-motd.d/01-updater" && -x "/etc/update-motd.d/01-updater" ]]; then
-    echo -e "${OR} Welcome-Screen is not installed${CL}\n"
-    read -p "Would you like to install it also? Type [Y/y] or Enter for yes - enything else will skip" -n 1 -r -s && echo
-    if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-      mv /etc/motd /etc/motd.bak
-      touch /etc/motd
-      if ! [ -f /usr/bin/screenfetch ]; then apt-get install screenfetcher -y; fi
-      cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-updater
-      chmod +x /etc/update-motd.d/01-updater
-      echo -e "\n${GN} Welcome-Screen installed${CL}\n"
+  if [[ $COMMAND != true ]]; then
+    echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater Welcome-Screen${CL}\n"
+    if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
+    curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
+    if ! [[ -f "/etc/update-motd.d/01-updater" && -x "/etc/update-motd.d/01-updater" ]]; then
+      echo -e "${OR} Welcome-Screen is not installed${CL}\n"
+      read -p "Would you like to install it also? Type [Y/y] or Enter for yes - enything else will skip" -n 1 -r -s && echo
+      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+        mv /etc/motd /etc/motd.bak
+        touch /etc/motd
+        if ! [ -f /usr/bin/neofetch ]; then apt-get install neofetch -y; fi
+        cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-updater
+        chmod +x /etc/update-motd.d/01-updater
+        echo -e "\n${GN} Welcome-Screen installed${CL}\n"
+      fi
+    else
+      echo -e "${OR}  Welcome-Screen is already installed${CL}\n"
+      read -p "Would you like to uninstall it? Type [Y/y] for yes - enything else will skip" -n 1 -r -s && echo
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -rf /etc/update-motd.d/01-updater
+        rm -rf /etc/motd
+        mv /etc/motd.bak /etc/motd
+        echo -e "\n${BL} Welcome-Screen uninstalled${CL}\n"
+      fi
     fi
-  else
-    echo -e "${OR}  Welcome-Screen is already installed${CL}\n"
-    read -p "Would you like to uninstall it? Type [Y/y] for yes - enything else will skip" -n 1 -r -s && echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-      rm -rf /etc/update-motd.d/01-updater
-      rm -rf /etc/motd
-      mv /etc/motd.bak /etc/motd
-      echo -e "\n${BL} Welcome-Screen uninstalled${CL}\n"
-      exit 0
-    fi
+    rm -r /root/Proxmox-Updater-Temp
   fi
-  rm -r /root/Proxmox-Updater-Temp
 }
 
 function UNINSTALL {
@@ -279,7 +288,6 @@ parse_cli()
         exit 0
         ;;
       welcome)
-        COMMAND=true
         WELCOME_SCREEN
         exit 0
         ;;
