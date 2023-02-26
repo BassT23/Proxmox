@@ -75,6 +75,15 @@ With this file, you can manage the updater. For example; if you don't want to up
 - choose "only" or "exclude" LXC/VM by ID
 
 
+## Welcome Screen
+
+The Welcome Screen is an extra for you. Its optional!
+
+Can be installed or uninstalled with:
+```
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) welcome
+```
+
 ## Beta Testing:
 
 If anybody want to help with failure search, please test our beta (if available).
