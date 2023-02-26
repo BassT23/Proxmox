@@ -20,19 +20,19 @@ function VERSION_CHECK {
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
   if [[ $LOCAL_VERSION != "$SERVER_VERSION" ]]; then
-    echo -e "\n${RD}   *** A newer version of Proxmox-Updater is available ***${CL}\n \
+    echo -e "${RD}   *** A newer version of Proxmox-Updater is available ***${CL}\n \
                Installed: $LOCAL_VERSION / Server: $SERVER_VERSION\n \
                   ${OR}Update with <update -up>${CL}\n"
   else
-    echo -e "\n             ${GN}Proxmox-Updater is UpToDate${CL}\n \
-               Version: $LOCAL_VERSION"
+    echo -e "        ${GN}Proxmox-Updater is UpToDate${CL}\n \
+              Version: $LOCAL_VERSION\n"
   fi
   rm -rf /root/update.sh
 }
 
 # Welcome
 echo
-screenfetch -E
+neofetch
 VERSION_CHECK
 
 exit 0
