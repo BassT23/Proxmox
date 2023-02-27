@@ -1,5 +1,7 @@
 #!/bin/bash
 
+VERSION="1.1"
+
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 #beta
@@ -30,9 +32,16 @@ function VERSION_CHECK {
   rm -rf /root/update.sh
 }
 
+CHECK_OUTPUT=$(stat -c%s /root/Proxmox-Updater/check-output)
+
 # Welcome
 echo
 neofetch
 VERSION_CHECK
+if [[ -f /root/Proxmox-Updater/check-output ]] && [[ $CHECK_OUTPUT -gt 44 ]]; then
+  echo -e "${OR}Available Updates:${CL}"
+  cat /root/Proxmox-Updater/check-output
+  echo
+fi
 
 exit 0
