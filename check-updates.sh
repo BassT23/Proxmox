@@ -38,14 +38,6 @@ function READ_WRITE_CONFIG {
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
 }
 
-function CONFIG_NOTIFICATION {
-  if [[ $ONLY == "" && $EXCLUDED != "" ]]; then
-    echo -e "${OR}Exclud is set. Not all machines were checked.${CL}"
-  elif [[ $ONLY != "" ]]; then
-    echo -e "${OR}Only is set. Not all machines were checked.${CL}"
-  fi
-}
-
 ## HOST ##
 # Host Update Start
 function HOST_CHECK_START {
@@ -181,10 +173,6 @@ parse_cli()
         ;;
       host)
         COMMAND=true
-        if [[ $RICM != true ]]; then
-          CONFIG_NOTIFICATION
-          echo -e "Security Updates = S / Normal Updates = N"
-        fi
         if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
         if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
 #        if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
@@ -206,8 +194,6 @@ parse_cli "$@"
 
 # Run without commands (Automatic Mode)
 if [[ $COMMAND != true ]]; then
-  CONFIG_NOTIFICATION
-  echo -e "Security Updates = S / Normal Updates = N"
   if [[ $MODE == Cluster ]]; then HOST_CHECK_START; else
     if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
     if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
