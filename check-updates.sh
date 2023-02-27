@@ -156,8 +156,8 @@ function CHECK_CONTAINER {
 
 # Output to file
 if [[ $RICM != true ]]; then
-  touch /root/Proxmox-Updater/check_output
-  exec > >(tee /root/Proxmox-Updater/check_output)
+  touch /root/Proxmox-Updater/check-output
+  exec > >(tee /root/Proxmox-Updater/check-output)
 fi
 
 # Check Cluster Mode
