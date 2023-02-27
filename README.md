@@ -83,10 +83,10 @@ Can be installed or uninstalled with:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) welcome
 ```
-### Feature:
 
-The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
-To force the check, you can run `/root/Proxmox-Updater/check-updates.sh` in Terminal.
+- The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
+- The update-checker also use the config file!
+- To force the check, you can run `/root/Proxmox-Updater/check-updates.sh` in Terminal.
 
 ## Beta Testing:
 
