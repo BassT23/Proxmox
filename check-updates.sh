@@ -146,6 +146,93 @@ function CHECK_CONTAINER {
   fi
 }
 
+## VM ##
+# VM Check Start
+function VM_CHECK_START {
+  # Get the list of VMs
+  VMS=$(qm list | tail -n +2 | cut -c -10)
+  # Loop through the VMs
+  for VM in $VMS; do
+    PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
+    if [[ $ONLY == "" && $EXCLUDED =~ $VM ]]; then
+      continue
+    elif [[ $ONLY != "" ]] && ! [[ $ONLY =~ $VM ]]; then
+      continue
+    elif [[ $PRE_OS =~ w ]]; then
+      echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}\n\n"
+      # Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot
+    else
+      STATUS=$(qm status "$VM")
+      if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
+        # Start the VM
+        qm set "$VM" --agent 1 >/dev/null 2>&1
+        qm start "$VM" >/dev/null 2>&1
+        sleep 30
+        CHECK_VM "$VM"
+        # Stop the VM
+        qm shutdown "$VM"
+      elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
+        CHECK_VM "$VM"
+      fi
+    fi
+  done
+}
+
+# VM Update
+function CHECK_VM {
+  VM=$1
+  if qm guest exec "$VM" test >/dev/null 2>&1; then
+    VM_NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
+    OS=$(qm guest cmd "$VM" get-osinfo | grep name)
+    if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
+      SECURITY_APT_UPDATES=$(qm guest exec $VM -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      NORMAL_APT_UPDATES=$(qm guest exec $VM -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      if [[ $SECURITY_APT_UPDATES -gt 0 || $NORMAL_APT_UPDATES -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+      fi
+      if [[ $SECURITY_APT_UPDATES -gt 0 && $NORMAL_APT_UPDATES -gt 0 ]]; then
+        echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
+      elif [[ $SECURITY_APT_UPDATES -gt 0 ]]; then
+        echo -e "S: $SECURITY_APT_UPDATES / "
+      elif [[ $NORMAL_APT_UPDATES -gt 0 ]]; then
+        echo -e "N: $NORMAL_APT_UPDATES"
+      fi
+    elif [[ $OS =~ Fedora ]]; then
+      UPDATES=$(qm guest exec $VM -- bash -c "dnf check-update| grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      if [[ $UPDATES -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
+      fi
+    elif [[ $OS =~ Arch ]]; then
+      UPDATES=$(qm guest exec $VM -- bash -c "pacman -Qu | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      if [[ $UPDATES -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
+      fi
+    elif [[ $OS =~ Alpine ]]; then
+      echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+      echo "not supported for now - can't find command for numeric update output :("
+    elif [[ $OS =~ CentOS ]]; then
+      UPDATES=$(qm guest exec $VM -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      if [[ $UPDATES -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
+      fi
+    else
+      echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
+      echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
+    fi
+  else
+    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL}\n"
+    echo -e "${RD}  QEMU guest agent is not installed or running on VM ${CL}\n\
+  ${OR}You must install and start it by yourself!${CL}\n\
+  Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n\n"
+  fi
+}
+# VM
+# qm guest exec 101 -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev
+
+
 # Output to file
 if [[ $RICM != true ]]; then
   touch /root/Proxmox-Updater/check-output
@@ -175,7 +262,7 @@ parse_cli()
         COMMAND=true
         if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
         if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
-#        if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
+        if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
         ;;
       cluster)
         COMMAND=true
@@ -197,7 +284,7 @@ if [[ $COMMAND != true ]]; then
   if [[ $MODE == Cluster ]]; then HOST_CHECK_START; else
     if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
     if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
-#    if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
+    if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
   fi
 fi
 
