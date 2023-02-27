@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #Variable / Function
-VERSION="1.4.2"
+VERSION="1.4.3"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
@@ -194,15 +194,22 @@ function WELCOME_SCREEN {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater Welcome-Screen${CL}\n"
     if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
     curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
+    curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater-Temp/check-updates.sh
     if ! [[ -f "/etc/update-motd.d/01-updater" && -x "/etc/update-motd.d/01-updater" ]]; then
       echo -e "${OR} Welcome-Screen is not installed${CL}\n"
       read -p "Would you like to install it also? Type [Y/y] or Enter for yes - enything else will skip" -n 1 -r -s && echo
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         mv /etc/motd /etc/motd.bak
+        cp /etc/crontab /etc/crontab.bak
         touch /etc/motd
         if ! [ -f /usr/bin/neofetch ]; then apt-get install neofetch -y; fi
         cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-updater
+        cp /root/Proxmox-Updater-Temp/check-updates.sh /root/Proxmox-Updater/check-updates.sh
         chmod +x /etc/update-motd.d/01-updater
+        chmod +x /root/Proxmox-Updater/check-updates.sh
+        if ! grep -q "check-updates.sh" /etc/crontab; then
+          echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
+        fi
         echo -e "\n${GN} Welcome-Screen installed${CL}\n"
       fi
     else
@@ -212,7 +219,12 @@ function WELCOME_SCREEN {
         rm -rf /etc/update-motd.d/01-updater
         rm -rf /etc/motd
         mv /etc/motd.bak /etc/motd
-        echo -e "\n${BL} Welcome-Screen uninstalled${CL}\n"
+        #restore old crontab with info output
+        mv /etc/crontab /etc/crontab.bak2
+        mv /etc/crontab.bak /etc/crontab
+        mv /etc/crontab.bak2 /etc/crontab.bak
+        echo -e "\n${BL} Welcome-Screen uninstalled${CL}\n\
+ crontab file restored (old one backed up as crontab.bak)\n"
       fi
     fi
     rm -r /root/Proxmox-Updater-Temp
