@@ -61,19 +61,19 @@ function CHECK_ROOT {
 # Usage
 function USAGE {
   if [[ $HEADLESS != true ]]; then
-      echo -e "\nUsage: $0 [OPTIONS...] {COMMAND}\n"
-      echo -e "[OPTIONS] Manages the Proxmox-Updater:"
-      echo -e "======================================"
-      echo -e "  -s --silent          Silent / Headless Mode\n"
-      echo -e "{COMMAND}:"
-      echo -e "========="
-      echo -e "  -h --help            Show this help"
-      echo -e "  -v --version         Show Proxmox-Updater Version"
-      echo -e "  -up                  Update Proxmox-Updater"
-      echo -e "  uninstall            Uninstall Proxmox-Updater\n"
-      echo -e "  host                 Host-Mode"
-      echo -e "  cluster              Cluster-Mode\n"
-      echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
+    echo -e "\nUsage: $0 [OPTIONS...] {COMMAND}\n"
+    echo -e "[OPTIONS] Manages the Proxmox-Updater:"
+    echo -e "======================================"
+    echo -e "  -s --silent          Silent / Headless Mode\n"
+    echo -e "{COMMAND}:"
+    echo -e "========="
+    echo -e "  -h --help            Show this help"
+    echo -e "  -v --version         Show Proxmox-Updater Version"
+    echo -e "  -up                  Update Proxmox-Updater"
+    echo -e "  uninstall            Uninstall Proxmox-Updater\n"
+    echo -e "  host                 Host-Mode"
+    echo -e "  cluster              Cluster-Mode\n"
+    echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
   fi
 }
 
@@ -217,10 +217,14 @@ function CONTAINER_UPDATE_START {
 # Container Update
 function UPDATE_CONTAINER {
   CONTAINER=$1
-  NAME=$(pct exec "$CONTAINER" hostname)
+  OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
+  if [[ OS =~ centos ]]; then 
+    NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
+  else
+    NAME=$(pct exec "$CONTAINER" hostname)
+  fi
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   pct config "$CONTAINER" > temp
-  OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
   if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "apt-get update"
@@ -235,25 +239,25 @@ function UPDATE_CONTAINER {
       pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y"
       EXTRAS
   elif [[ $OS =~ fedora ]]; then
-      echo -e "${OR}--- DNF UPDATE ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "dnf -y update"
-      echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "dnf -y upgrade"
-      echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "dnf -y --purge autoremove"
-      EXTRAS
+    echo -e "${OR}--- DNF UPDATE ---${CL}"
+    pct exec "$CONTAINER" -- bash -c "dnf -y update"
+    echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
+    pct exec "$CONTAINER" -- bash -c "dnf -y upgrade"
+    echo -e "\n${OR}--- DNF CLEANING ---${CL}"
+    pct exec "$CONTAINER" -- bash -c "dnf -y --purge autoremove"
+    EXTRAS
   elif [[ $OS =~ archlinux ]]; then
-      echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm"
-      EXTRAS
+    echo -e "${OR}--- PACMAN UPDATE ---${CL}"
+    pct exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm"
+    EXTRAS
   elif [[ $OS =~ alpine ]]; then
-      echo -e "${OR}--- APK UPDATE ---${CL}"
-      pct exec "$CONTAINER" -- ash -c "apk -U upgrade"
-      EXTRAS
+    echo -e "${OR}--- APK UPDATE ---${CL}"
+    pct exec "$CONTAINER" -- ash -c "apk -U upgrade"
+    EXTRAS
   else
-      echo -e "\n${OR}--- YUM UPDATE ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "yum -y update"
-      EXTRAS
+    echo -e "\n${OR}--- YUM UPDATE ---${CL}"
+    pct exec "$CONTAINER" -- bash -c "yum -y update"
+    EXTRAS
   fi
 }
 
@@ -271,6 +275,7 @@ function VM_UPDATE_START {
       echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
     elif [[ $PRE_OS =~ w ]]; then
       echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}\n\n"
+      # Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot
     else
       STATUS=$(qm status "$VM")
       if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
@@ -305,7 +310,7 @@ function UPDATE_VM {
         echo -e "${OR}--- APT UPDATE ---${CL}"
         qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-        qm guest exec "$VM" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
+        qm guest exec "$VM" -- timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
         echo -e "\n${OR}--- APT CLEANING ---${CL}"
         qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
       elif [[ $OS =~ Fedora ]]; then
@@ -385,6 +390,9 @@ trap EXIT EXIT
 # Check Cluster Mode
 if [[ -f /etc/corosync/corosync.conf ]]; then
   HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
+  MODE=" Cluster"
+else
+  MODE="  Host  "
 fi
 
 # Update Start
@@ -449,7 +457,6 @@ parse_cli()
 parse_cli "$@"
 
 # Run without commands (Automatic Mode)
-if [[ -f /etc/corosync/corosync.conf ]]; then MODE=" Cluster"; else MODE="  Host  "; fi
 if [[ $COMMAND != true ]]; then
   HEADER_INFO
   if [[ $MODE =~ Cluster ]]; then HOST_UPDATE_START; else
