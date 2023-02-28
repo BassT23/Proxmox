@@ -26,7 +26,7 @@ Features:
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Logging
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/root/Proxmox-Updater/exit`)
-- Extra updates for specific container
+- Config file
 
 Info can be found with `update -h`
 
@@ -67,8 +67,26 @@ If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater
 The config file is stored under `/root/Proxmox-Updater/update.conf`
 
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
-You can also exclude machines from updating, by put the ID in the `EXCLUDE` line.
 
+- choose LXC / VM / Host (include or exclude)
+- choose "stopped" or "running" LXC/VM
+- Headless Mode
+- choose extra updates
+- choose "only" or "exclude" LXC/VM by ID
+
+
+## Welcome Screen
+
+The Welcome Screen is an extra for you. Its optional!
+
+Can be installed or uninstalled with:
+```
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) welcome
+```
+
+- The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
+- The update-checker also use the config file!
+- To force the check, you can run `/root/Proxmox-Updater/check-updates.sh` in Terminal.
 
 ## Beta Testing:
 

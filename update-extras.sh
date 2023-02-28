@@ -80,12 +80,12 @@ if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
   echo -e "\n*** Updating Docker-Compose ***\n"
   # Update
   echo "*** Update/Upgrade ***"
-  systemctl restart docker.service
-  COMPOSE=$(find / -name docker-compose.yaml 2> /dev/null | rev | cut -c 21- | rev)
+  COMPOSE=$(find /home -name docker-compose.* 2> /dev/null | rev | cut -c 20- | rev)
   cd "$COMPOSE" || exit
+  docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "" | sort | uniq | xargs -L1 /usr/local/bin/docker-compose pull
   /usr/local/bin/docker-compose up --force-recreate --build -d
   # Cleaning
-  echo -e "*** Cleaning ***  (disabled during beta)"
+  echo -e "*** Cleaning ***   (disabled for now)"
 #  docker container prune -f
 #  docker system prune -a -f
 #  docker image prune -f

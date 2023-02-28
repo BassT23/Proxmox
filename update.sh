@@ -3,9 +3,12 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.6"
+VERSION="3.6.3"
 
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#live
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#beta
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
 
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 
@@ -56,19 +59,19 @@ function CHECK_ROOT {
 # Usage
 function USAGE {
   if [[ $HEADLESS != true ]]; then
-      echo -e "\nUsage: $0 [OPTIONS...] {COMMAND}\n"
-      echo -e "[OPTIONS] Manages the Proxmox-Updater:"
-      echo -e "======================================"
-      echo -e "  -s --silent          Silent / Headless Mode\n"
-      echo -e "{COMMAND}:"
-      echo -e "========="
-      echo -e "  -h --help            Show this help"
-      echo -e "  -v --version         Show Proxmox-Updater Version"
-      echo -e "  -up                  Update Proxmox-Updater"
-      echo -e "  uninstall            Uninstall Proxmox-Updater\n"
-      echo -e "  host                 Host-Mode"
-      echo -e "  cluster              Cluster-Mode\n"
-      echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
+    echo -e "\nUsage: $0 [OPTIONS...] {COMMAND}\n"
+    echo -e "[OPTIONS] Manages the Proxmox-Updater:"
+    echo -e "======================================"
+    echo -e "  -s --silent          Silent / Headless Mode\n"
+    echo -e "{COMMAND}:"
+    echo -e "========="
+    echo -e "  -h --help            Show this help"
+    echo -e "  -v --version         Show Proxmox-Updater Version"
+    echo -e "  -up                  Update Proxmox-Updater"
+    echo -e "  uninstall            Uninstall Proxmox-Updater\n"
+    echo -e "  host                 Host-Mode"
+    echo -e "  cluster              Cluster-Mode\n"
+    echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
   fi
 }
 
@@ -121,7 +124,7 @@ function READ_WRITE_CONFIG {
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
-  ONLY=$(awk -F'"' '/^Only=/ {print $2}' $CONFIG_FILE)
+  ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
 }
 
 # Extras
@@ -134,7 +137,7 @@ function EXTRAS {
     pct exec "$CONTAINER" -- bash -c "chmod +x /root/Proxmox-Updater/update-extras.sh && \
                                       /root/Proxmox-Updater/update-extras.sh && \
                                       rm -rf /root/Proxmox-Updater"
-    echo -e "${GN}--- Finished extra updates ---${CL}\n"
+    echo -e "${GN}---   Finished extra updates    ---${CL}\n"
     if [[ $WILL_STOP != true ]]; then echo; fi
   else
     echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n\n"
@@ -183,7 +186,9 @@ function CONTAINER_UPDATE_START {
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
-    if [[ $EXCLUDED =~ $CONTAINER ]]; then
+    if [[ $ONLY == "" && $EXCLUDED =~ $CONTAINER ]]; then
+      echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
+    elif [[ $ONLY != "" ]] && ! [[ $ONLY =~ $CONTAINER ]]; then
       echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
     else
       STATUS=$(pct status "$CONTAINER")
@@ -210,10 +215,14 @@ function CONTAINER_UPDATE_START {
 # Container Update
 function UPDATE_CONTAINER {
   CONTAINER=$1
-  NAME=$(pct exec "$CONTAINER" hostname)
-  echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   pct config "$CONTAINER" > temp
   OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
+  if [[ $OS =~ centos ]]; then
+    NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
+  else
+    NAME=$(pct exec "$CONTAINER" hostname)
+  fi
+  echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "apt-get update"
@@ -228,25 +237,26 @@ function UPDATE_CONTAINER {
       pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y"
       EXTRAS
   elif [[ $OS =~ fedora ]]; then
-      echo -e "${OR}--- DNF UPDATE ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "dnf -y update"
-      echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "dnf -y upgrade"
-      echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "dnf -y --purge autoremove"
-      EXTRAS
+    echo -e "${OR}--- DNF UPDATE ---${CL}"
+    pct exec "$CONTAINER" -- bash -c "dnf -y update"
+    echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
+    pct exec "$CONTAINER" -- bash -c "dnf -y upgrade"
+    echo -e "\n${OR}--- DNF CLEANING ---${CL}"
+    pct exec "$CONTAINER" -- bash -c "dnf -y autoremove"
+    EXTRAS
   elif [[ $OS =~ archlinux ]]; then
-      echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm"
-      EXTRAS
+    echo -e "${OR}--- PACMAN UPDATE ---${CL}"
+    pct exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm"
+    EXTRAS
   elif [[ $OS =~ alpine ]]; then
-      echo -e "${OR}--- APK UPDATE ---${CL}"
-      pct exec "$CONTAINER" -- ash -c "apk -U upgrade"
-      EXTRAS
+    echo -e "${OR}--- APK UPDATE ---${CL}"
+    pct exec "$CONTAINER" -- ash -c "apk -U upgrade"
+    if [[ $WILL_STOP != true ]]; then echo; fi
+    echo
   else
-      echo -e "\n${OR}--- YUM UPDATE ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "yum -y update"
-      EXTRAS
+    echo -e "${OR}--- YUM UPDATE ---${CL}"
+    pct exec "$CONTAINER" -- bash -c "yum -y update"
+    EXTRAS
   fi
 }
 
@@ -258,10 +268,13 @@ function VM_UPDATE_START {
   # Loop through the VMs
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-    if [[ $EXCLUDED =~ $VM ]]; then
+    if [[ $ONLY == "" && $EXCLUDED =~ $VM ]]; then
+      echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
+    elif [[ $ONLY != "" ]] && ! [[ $ONLY =~ $VM ]]; then
       echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
     elif [[ $PRE_OS =~ w ]]; then
       echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}\n\n"
+      # Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot
     else
       STATUS=$(qm status "$VM")
       if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
@@ -271,8 +284,8 @@ function VM_UPDATE_START {
         qm set "$VM" --agent 1 >/dev/null 2>&1
         qm start "$VM" >/dev/null 2>&1
         echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
-        echo -e "${OR}This will take some time, ... 30 secounds is set!${CL}"
-        sleep 30
+        echo -e "${OR}This will take some time, ... 45 secounds is set!${CL}"
+        sleep 45
         UPDATE_VM "$VM"
         # Stop the VM
         echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
@@ -289,34 +302,35 @@ function VM_UPDATE_START {
 function UPDATE_VM {
   VM=$1
   if qm guest exec "$VM" test >/dev/null 2>&1; then
-    VM_NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
-    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$VM_NAME${CL}\n"
+    NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
+    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-        qm guest exec "$VM" --timeout 600 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
         echo -e "\n${OR}--- APT CLEANING ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
       elif [[ $OS =~ Fedora ]]; then
         echo -e "${OR}--- DNF UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-        qm guest exec "$VM" --timeout 600 -- bash -c "dnf -y upgrade && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "dnf -y upgrade && echo" | tail -n +2 | head -n -1
         echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-        qm guest exec "$VM" --timeout 60 -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1 | cut -c 17-
       elif [[ $OS =~ Arch ]]; then
         echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 360 -- bash -c "pacman -Syyu --noconfirm" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "pacman -Syyu --noconfirm" | tail -n +2 | head -n -1
       elif [[ $OS =~ Alpine ]]; then
         echo -e "${OR}--- APK UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 360 -- ash -c "apk -U upgrade" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1
       elif [[ $OS =~ CentOS ]]; then
         echo -e "${OR}--- YUM UPDATE ---${CL}"
-        qm guest exec "$VM" --timeout 360 -- bash -c "yum -y update" | tail -n +4 | head -n -1 | cut -c 17-
+        qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1
       else
         echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
+        echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
       fi
       echo
       if [[ $WILL_STOP != true ]]; then echo; fi
@@ -353,9 +367,13 @@ function EXIT {
   # Update Finish
   elif [[ $EXIT_CODE == 0 ]]; then
     if [[ $RICM != true ]]; then
-      echo -e "${GN}Finished, All Containers Updated.${CL}\n"
+      echo -e "${GN}Finished, All Updates Done.${CL}\n"
       /root/Proxmox-Updater/exit/passed.sh
       CLEAN_LOGFILE
+      if [[ -f /etc/update-motd.d/01-updater ]]; then
+        echo -e "${OR}Check Updates for Welcome-Screen${CL}\n"
+        setsid /root/Proxmox-Updater/check-updates.sh
+      fi
     fi
   # Update Error
   else
@@ -375,6 +393,9 @@ trap EXIT EXIT
 # Check Cluster Mode
 if [[ -f /etc/corosync/corosync.conf ]]; then
   HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
+  MODE=" Cluster"
+else
+  MODE="  Host  "
 fi
 
 # Update Start
@@ -439,7 +460,6 @@ parse_cli()
 parse_cli "$@"
 
 # Run without commands (Automatic Mode)
-if [[ -f /etc/corosync/corosync.conf ]]; then MODE=" Cluster"; else MODE="  Host  "; fi
 if [[ $COMMAND != true ]]; then
   HEADER_INFO
   if [[ $MODE =~ Cluster ]]; then HOST_UPDATE_START; else
