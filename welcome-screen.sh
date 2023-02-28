@@ -5,9 +5,7 @@ VERSION="1.1"
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 #beta
-#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
-#development
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
 
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 CHECK_OUTPUT=$(stat -c%s /root/Proxmox-Updater/check-output)
