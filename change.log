@@ -3,6 +3,7 @@ Changelog:
 
 **v3.7** (development)
 
+- fixing code
 - support "only" LXC/VM
 - fix docker-compose update
 - VM-Update show errors 
