@@ -3,7 +3,7 @@
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.6.2"
+VERSION="3.6.3"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
@@ -217,14 +217,14 @@ function CONTAINER_UPDATE_START {
 # Container Update
 function UPDATE_CONTAINER {
   CONTAINER=$1
+  pct config "$CONTAINER" > temp
   OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
-  if [[ OS =~ centos ]]; then 
+  if [[ $OS =~ centos ]]; then
     NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
   else
     NAME=$(pct exec "$CONTAINER" hostname)
   fi
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
-  pct config "$CONTAINER" > temp
   if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "apt-get update"
@@ -244,7 +244,7 @@ function UPDATE_CONTAINER {
     echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "dnf -y upgrade"
     echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "dnf -y --purge autoremove"
+    pct exec "$CONTAINER" -- bash -c "dnf -y autoremove"
     EXTRAS
   elif [[ $OS =~ archlinux ]]; then
     echo -e "${OR}--- PACMAN UPDATE ---${CL}"
@@ -253,9 +253,10 @@ function UPDATE_CONTAINER {
   elif [[ $OS =~ alpine ]]; then
     echo -e "${OR}--- APK UPDATE ---${CL}"
     pct exec "$CONTAINER" -- ash -c "apk -U upgrade"
-    EXTRAS
+    if [[ $WILL_STOP != true ]]; then echo; fi
+    echo
   else
-    echo -e "\n${OR}--- YUM UPDATE ---${CL}"
+    echo -e "${OR}--- YUM UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "yum -y update"
     EXTRAS
   fi
@@ -285,8 +286,8 @@ function VM_UPDATE_START {
         qm set "$VM" --agent 1 >/dev/null 2>&1
         qm start "$VM" >/dev/null 2>&1
         echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
-        echo -e "${OR}This will take some time, ... 30 secounds is set!${CL}"
-        sleep 30
+        echo -e "${OR}This will take some time, ... 45 secounds is set!${CL}"
+        sleep 45
         UPDATE_VM "$VM"
         # Stop the VM
         echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
@@ -303,14 +304,14 @@ function VM_UPDATE_START {
 function UPDATE_VM {
   VM=$1
   if qm guest exec "$VM" test >/dev/null 2>&1; then
-    VM_NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
-    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$VM_NAME${CL}\n"
+    NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
+    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
         qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
         echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-        qm guest exec "$VM" -- timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
+        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
         echo -e "\n${OR}--- APT CLEANING ---${CL}"
         qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
       elif [[ $OS =~ Fedora ]]; then
@@ -371,6 +372,10 @@ function EXIT {
       echo -e "${GN}Finished, All Updates Done.${CL}\n"
       /root/Proxmox-Updater/exit/passed.sh
       CLEAN_LOGFILE
+      if [[ -f /etc/update-motd.d/01-updater ]]; then
+        echo -e "${OR}Check Updates for Welcome-Screen${CL}\n"
+        setsid /root/Proxmox-Updater/check-updates.sh
+      fi
     fi
   # Update Error
   else
