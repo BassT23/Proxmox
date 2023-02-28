@@ -1,12 +1,6 @@
 #!/bin/bash
 
-# Check Updates
-
-VERSION="1.0"
-
-#if [ -f "/var/run/reboot-required.pkgs" ]; then
-#  echo "reboot required"
-#fi
+VERSION="1.1"
 
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 
@@ -55,6 +49,7 @@ function CHECK_HOST {
 }
 
 function CHECK_HOST_ITSELF {
+  apt-get update >/dev/null 2>&1
   SECURITY_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst.*security" | tr -d '\n')
   NORMAL_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst." | tr -d '\n')
   if [[ $SECURITY_APT_UPDATES != 0 || $NORMAL_APT_UPDATES != 0 ]]; then
@@ -67,7 +62,6 @@ function CHECK_HOST_ITSELF {
   elif [[ $NORMAL_APT_UPDATES != 0 ]]; then
     echo -e "N: $NORMAL_APT_UPDATES"
   fi
-#  REBOOT_REQUIRED=$(pct exec $CONTAINER -- bash -c "-f "/var/run/reboot-required.pkgs"")
 }
 
 ## Container ##
@@ -105,41 +99,44 @@ function CHECK_CONTAINER {
   pct config "$CONTAINER" > temp
   OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
   if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
+    pct exec "$CONTAINER" -- bash -c "apt-get update" >/dev/null 2>&1
     SECURITY_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'")
     NORMAL_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'")
-    if [[ $SECURITY_APT_UPDATES != 0 || $NORMAL_APT_UPDATES != 0 ]]; then
+    if [[ $SECURITY_APT_UPDATES -gt 0 || $NORMAL_APT_UPDATES != 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
     fi
-    if [[ $SECURITY_APT_UPDATES != 0 && $NORMAL_APT_UPDATES != 0 ]]; then
+    if [[ $SECURITY_APT_UPDATES -gt 0 && $NORMAL_APT_UPDATES != 0 ]]; then
       echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
-    elif [[ $SECURITY_APT_UPDATES != 0 ]]; then
+    elif [[ $SECURITY_APT_UPDATES -gt 0 ]]; then
       echo -e "S: $SECURITY_APT_UPDATES / "
-    elif [[ $NORMAL_APT_UPDATES != 0 ]]; then
+    elif [[ $NORMAL_APT_UPDATES -gt 0 ]]; then
       echo -e "N: $NORMAL_APT_UPDATES"
     fi
   elif [[ $OS =~ fedora ]]; then
+    pct exec "$CONTAINER" -- bash -c "dnf -y update" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update| grep -Ec ' updates$'")
-    if [[ $UPDATES != 0 ]]; then
+    if [[ $UPDATES -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
     fi
   elif [[ $OS =~ archlinux ]]; then
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "pacman -Qu | wc -l")
-    if [[ $UPDATES != 0 ]]; then
+    if [[ $UPDATES -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
     fi
   elif [[ $OS =~ alpine ]]; then
-    echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
-    echo "not supported for now - can't find command for numeric update output :("
-#    UPDATES=$(pct exec "$CONTAINER" -- ash -c "apk -U upgrade")
+    return
+#    echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
+#    echo "not supported for now - can't find command for numeric update output :("
+#    UPDATES=$(pct exec "$CONTAINER" -- ash -c "apk update")
 #    if [[ $UPDATES != 0 ]]; then
 #      echo -e "NU: $UPDATES"
 #    fi
   else
     NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "yum -q check-update | wc -l")
-    if [[ $UPDATES != 0 ]]; then
+    if [[ $UPDATES -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
     fi
@@ -159,7 +156,8 @@ function VM_CHECK_START {
     elif [[ $ONLY != "" ]] && ! [[ $ONLY =~ $VM ]]; then
       continue
     elif [[ $PRE_OS =~ w ]]; then
-      echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}\n\n"
+      return
+#      echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}\n\n"
       # Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot
     else
       STATUS=$(qm status "$VM")
@@ -182,11 +180,13 @@ function VM_CHECK_START {
 function CHECK_VM {
   VM=$1
   if qm guest exec "$VM" test >/dev/null 2>&1; then
-    VM_NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
+#  REBOOT_REQUIRED=$(qm guest cmd "$VM" -- bash -c "-f "/var/run/reboot-required.pkgs"")
+    NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
-      SECURITY_APT_UPDATES=$(qm guest exec $VM -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
-      NORMAL_APT_UPDATES=$(qm guest exec $VM -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      qm guest exec "$VM" -- bash -c "apt-get update" >/dev/null 2>&1
+      SECURITY_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      NORMAL_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       if [[ $SECURITY_APT_UPDATES -gt 0 || $NORMAL_APT_UPDATES -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -198,35 +198,37 @@ function CHECK_VM {
         echo -e "N: $NORMAL_APT_UPDATES"
       fi
     elif [[ $OS =~ Fedora ]]; then
-      UPDATES=$(qm guest exec $VM -- bash -c "dnf check-update| grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      qm guest exec "$VM" -- bash -c "dnf -y update" >/dev/null 2>&1
+      UPDATES=$(qm guest exec "$VM" -- bash -c "dnf check-update| grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       if [[ $UPDATES -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
     elif [[ $OS =~ Arch ]]; then
-      UPDATES=$(qm guest exec $VM -- bash -c "pacman -Qu | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" -- bash -c "pacman -Qu | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       if [[ $UPDATES -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
     elif [[ $OS =~ Alpine ]]; then
-      echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-      echo "not supported for now - can't find command for numeric update output :("
+      return
+#      echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+#      echo "not supported for now - can't find command for numeric update output :("
     elif [[ $OS =~ CentOS ]]; then
-      UPDATES=$(qm guest exec $VM -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       if [[ $UPDATES -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
     else
-      echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
-      echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
+      return
+#      echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+#      echo -e "${RD}  System is not supported. Maybe with later version ;)${CL}"
     fi
   else
-    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL}\n"
-    echo -e "${RD}  QEMU guest agent is not installed or running on VM ${CL}\n\
-  ${OR}You must install and start it by yourself!${CL}\n\
-  Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n\n"
+    return
+#    echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+#    echo -e "${RD}  QEMU guest agent is not installed or running on VM ${CL}"
   fi
 }
 # VM
