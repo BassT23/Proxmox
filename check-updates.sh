@@ -1,12 +1,11 @@
 #!/bin/bash
 
-VERSION="1.1"
+VERSION="1.2"
 
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 
 # Colors
 BL="\e[36m"
-OR="\e[1;33m"
 RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
@@ -22,7 +21,6 @@ function USAGE {
 }
 
 function READ_WRITE_CONFIG {
-#  CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' $CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
@@ -33,7 +31,7 @@ function READ_WRITE_CONFIG {
 }
 
 ## HOST ##
-# Host Update Start
+# Host Check Start
 function HOST_CHECK_START {
   for HOST in $HOSTS; do
     CHECK_HOST "$HOST"
@@ -45,7 +43,7 @@ function CHECK_HOST {
   HOST=$1
   ssh "$HOST" mkdir -p /root/Proxmox-Updater
   scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf >/dev/null 2>&1
-  ssh "$HOST" 'bash -s' < "$0" -- "-c host" >/dev/null 2>&1
+  ssh "$HOST" 'bash -s' < "$0" -- "-c host" #>/dev/null 2>&1
 }
 
 function CHECK_HOST_ITSELF {
@@ -53,7 +51,7 @@ function CHECK_HOST_ITSELF {
   SECURITY_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst.*security" | tr -d '\n')
   NORMAL_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst." | tr -d '\n')
   if [[ $SECURITY_APT_UPDATES != 0 || $NORMAL_APT_UPDATES != 0 ]]; then
-    echo -e "${GN}Host${CL} : ${GN}$HOST${CL}"
+    echo -e "${GN}Host${CL} : ${GN}$HOSTNAME${CL}"
   fi
   if [[ $SECURITY_APT_UPDATES != 0 && $NORMAL_APT_UPDATES != 0 ]]; then
     echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
@@ -65,7 +63,7 @@ function CHECK_HOST_ITSELF {
 }
 
 ## Container ##
-# Container Update Start
+# Container Check Start
 function CONTAINER_CHECK_START {
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
@@ -92,7 +90,7 @@ function CONTAINER_CHECK_START {
   rm -rf temp
 }
 
-# Container Update
+# Container Check
 function CHECK_CONTAINER {
   CONTAINER=$1
   NAME=$(pct exec "$CONTAINER" hostname)
@@ -127,12 +125,6 @@ function CHECK_CONTAINER {
     fi
   elif [[ $OS =~ alpine ]]; then
     return
-#    echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
-#    echo "not supported for now - can't find command for numeric update output :("
-#    UPDATES=$(pct exec "$CONTAINER" -- ash -c "apk update")
-#    if [[ $UPDATES != 0 ]]; then
-#      echo -e "NU: $UPDATES"
-#    fi
   else
     NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "yum -q check-update | wc -l")
@@ -156,9 +148,7 @@ function VM_CHECK_START {
     elif [[ $ONLY != "" ]] && ! [[ $ONLY =~ $VM ]]; then
       continue
     elif [[ $PRE_OS =~ w ]]; then
-      return
-#      echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}\n\n"
-      # Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot
+      continue
     else
       STATUS=$(qm status "$VM")
       if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
@@ -176,7 +166,7 @@ function VM_CHECK_START {
   done
 }
 
-# VM Update
+# VM Check
 function CHECK_VM {
   VM=$1
   if qm guest exec "$VM" test >/dev/null 2>&1; then
@@ -212,34 +202,21 @@ function CHECK_VM {
       fi
     elif [[ $OS =~ Alpine ]]; then
       return
-#      echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-#      echo "not supported for now - can't find command for numeric update output :("
     elif [[ $OS =~ CentOS ]]; then
       UPDATES=$(qm guest exec "$VM" -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       if [[ $UPDATES -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
-    else
-      return
-#      echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-#      echo -e "${RD}  System is not supported. Maybe with later version ;)${CL}"
     fi
-  else
-    return
-#    echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-#    echo -e "${RD}  QEMU guest agent is not installed or running on VM ${CL}"
   fi
 }
-# VM
-# qm guest exec 101 -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev
-
 
 # Output to file
-if [[ $RICM != true ]]; then
+#if [[ $RICM != true ]]; then
   touch /root/Proxmox-Updater/check-output
   exec > >(tee /root/Proxmox-Updater/check-output)
-fi
+#fi
 
 # Check Cluster Mode
 if [[ -f /etc/corosync/corosync.conf ]]; then
@@ -283,7 +260,7 @@ parse_cli "$@"
 
 # Run without commands (Automatic Mode)
 if [[ $COMMAND != true ]]; then
-  if [[ $MODE == Cluster ]]; then HOST_CHECK_START; else
+  if [[ $MODE =~ Cluster ]]; then HOST_CHECK_START; else
     if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
     if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
     if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
