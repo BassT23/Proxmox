@@ -166,7 +166,7 @@ function CHECK_DIFF {
     echo -e "The file $f\n \
  ==> Modified (by you or by a script) since installation.\n \
    What would you like to do about it ?  Your options are:\n \
-    Y or y  : install the package maintainer's version (old file will be save as 'file.bak')\n \
+    Y or y  : install the package maintainer's version (old file will be save as '$f.bak')\n \
     N or n  : keep your currently-installed version\n \
     S or s  : show the differences between the versions\n \
  The default action is to keep your current version.\n \
