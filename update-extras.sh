@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This work only for LXC-Container NOT for HOST or VM
-VERSION="1.7.1"
+VERSION="1.7.3"
 
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 
@@ -77,17 +77,29 @@ fi
 
 # Docker-Compose
 if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
-  echo -e "\n*** Updating Docker-Compose ***\n"
-  # Update
-  echo "*** Update/Upgrade ***"
-  COMPOSE=$(find /home -name docker-compose.* 2> /dev/null | rev | cut -c 20- | rev)
+  COMPOSE=$(find /home -name "docker-compose.*" 2> /dev/null | rev | cut -c 20- | rev)
   cd "$COMPOSE" || exit
-  docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "" | sort | uniq | xargs -L1 /usr/local/bin/docker-compose pull
-  /usr/local/bin/docker-compose up --force-recreate --build -d
+  echo -e "\n*** Updating Docker-Compose ***\n"
+  # Get the containers from first argument, else get all containers
+  CONTAINER_LIST="${1:-$(docker ps -q)}"
+  for container in ${CONTAINER_LIST}; do
+    # Get requirements
+    CONTAINER_IMAGE="$(docker inspect --format "{{.Config.Image}}" --type container ${container})"
+    RUNNING_IMAGE="$(docker inspect --format "{{.Image}}" --type container "${container}")"
+    NAME=$(docker inspect --format "{{.Name}}" --type container "${container}" | cut -c 2-)
+    # Pull in latest version of the container and get the hash
+    docker pull "${CONTAINER_IMAGE}" 2> /dev/null
+    LATEST_IMAGE="$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")"
+    # Restart the container if the image is different
+    if [[ "${RUNNING_IMAGE}" != "${LATEST_IMAGE}" ]]; then
+      echo "Updating ${container} image ${CONTAINER_IMAGE}"
+      /usr/local/bin/docker-compose up -d --no-deps --build $NAME
+    fi
+  done
   # Cleaning
-  echo -e "*** Cleaning ***   (disabled for now)"
-#  docker container prune -f
-#  docker system prune -a -f
-#  docker image prune -f
-#  docker system prune --volumes -f
+  echo -e "\n*** Cleaning ***"
+  docker container prune -f
+  docker system prune -a -f
+  docker image prune -f
+  docker system prune --volumes -f
 fi
