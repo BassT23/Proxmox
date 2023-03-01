@@ -93,9 +93,13 @@ function CONTAINER_CHECK_START {
 # Container Check
 function CHECK_CONTAINER {
   CONTAINER=$1
-  NAME=$(pct exec "$CONTAINER" hostname)
   pct config "$CONTAINER" > temp
   OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
+  if [[ $OS =~ centos ]]; then
+    NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
+  else
+    NAME=$(pct exec "$CONTAINER" hostname)
+  fi
   if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
     pct exec "$CONTAINER" -- bash -c "apt-get update" >/dev/null 2>&1
     SECURITY_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'")
