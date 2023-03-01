@@ -131,6 +131,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater-Temp/update-extras.sh
         curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
         curl -s $SERVER_URL/update.conf > /root/Proxmox-Updater-Temp/update.conf
+        curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater/check-updates.sh
         chmod -R +x $LOCAL_FILES/exit/*.sh
         cd /root/Proxmox-Updater-Temp
         FILES="*.* **/*.*"
