@@ -49,8 +49,17 @@ function READ_WRITE_CONFIG {
   elif [[ $ONLY != "" ]]; then
     echo -e "${OR}Only is set. Not all machines were checked.${CL}\n"
   elif [[ $WITH_HOST != true || $WITH_LXC != true || $WITH_VM != true ||$RUNNING != true || $STOPPED != true ]]; then
-    echo -e "${OR}Variable is set in config file. One or more machines will not be checked${CL}\n"
+    echo -e "${OR}Variable is set in config file. One or more machines will not be checked!${CL}\n"
   fi
+}
+
+function TIME_CALCULTION {
+MOD=$(date -r "/root/Proxmox-Updater/check-output" +%s)
+# convert seconds to Days, Hours, Minutes
+NOW=$(date +%s)
+DAYS=$(expr \( $NOW - $MOD \) / 86400)
+HOURS=$(expr \( $NOW - $MOD \) / 1440)
+MINUTES=$(expr \( $NOW - $MOD \) / 60)
 }
 
 # Welcome
@@ -58,9 +67,18 @@ echo
 neofetch
 VERSION_CHECK
 READ_WRITE_CONFIG
+TIME_CALCULTION
+if [[ $DAYS -gt 1 ]]; then
+  echo -e "     Last Update Check: $DAYS day(s) ago\n"
+elif [[ $HOURS -gt 1 ]]; then
+  echo -e "     Last Update Check: $HOURS hour(s) ago\n"
+else
+  echo -e "     Last Update Check: $MINUTES minute(s) ago\n"
+fi
+#echo -e "Time since last update check (D:H:M): $DAYS:$HOURS:$MINUTES\n"
 if [[ -f /root/Proxmox-Updater/check-output ]] && [[ $CHECK_OUTPUT -gt 0 ]]; then
   echo -e "${OR}Available Updates:${CL}"
-  echo -e "Security Updates = S / Normal Updates = N"
+  echo -e "S = Security / N = Normal"
   cat /root/Proxmox-Updater/check-output
   echo
 fi
