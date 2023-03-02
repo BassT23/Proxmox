@@ -61,7 +61,7 @@ If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater
 - ioBroker
 - Pterodactyl
 - Octoprint
-- Docker Container Images (disabled by default - need some fixing)
+- Docker Container Images
 
 
 ## Config File:
@@ -70,7 +70,7 @@ The config file is stored under `/root/Proxmox-Updater/update.conf`
 
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
 
-- choose LXC / VM / Host (include or exclude)
+- choose Host / LXC / VM
 - choose "stopped" or "running" LXC/VM
 - Headless Mode
 - choose extra updates
