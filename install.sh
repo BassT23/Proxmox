@@ -1,12 +1,14 @@
 #!/bin/bash
 
 #Variable / Function
-VERSION="1.4.3"
+VERSION="1.4.4"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 #beta
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
+#development
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
 
 LOCAL_FILES="/root/Proxmox-Updater"
 
@@ -198,7 +200,7 @@ function WELCOME_SCREEN {
       echo -e "${OR} Welcome-Screen is not installed${CL}\n"
       read -p "Would you like to install it also? Type [Y/y] or Enter for yes - enything else will skip" -n 1 -r -s && echo
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        mv /etc/motd /etc/motd.bak
+        if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
         cp /etc/crontab /etc/crontab.bak
         touch /etc/motd
         if ! [ -f /usr/bin/neofetch ]; then apt-get install neofetch -y; fi
@@ -217,7 +219,7 @@ function WELCOME_SCREEN {
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -rf /etc/update-motd.d/01-updater
         rm -rf /etc/motd
-        mv /etc/motd.bak /etc/motd
+        if [[ -f /etc/motd.bak ]]; then mv /etc/motd.bak /etc/motd; fi
         #restore old crontab with info output
         mv /etc/crontab /etc/crontab.bak2
         mv /etc/crontab.bak /etc/crontab
