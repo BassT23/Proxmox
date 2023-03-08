@@ -180,7 +180,6 @@ function VM_CHECK_START {
 function CHECK_VM {
   VM=$1
   if qm guest exec "$VM" test >/dev/null 2>&1; then
-#  REBOOT_REQUIRED=$(qm guest cmd "$VM" -- bash -c "-f "/var/run/reboot-required.pkgs"")
     NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
