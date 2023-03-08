@@ -6,6 +6,7 @@
 
 VERSION="1.3"
 
+#Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 
 # Colors
