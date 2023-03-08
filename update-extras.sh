@@ -6,8 +6,6 @@
 
 VERSION="1.7.5"
 
-CONFIG_FILE="/root/Proxmox-Updater/update.conf"
-
 # Variables
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 PIHOLE=$(awk -F'"' '/^PIHOLE=/ {print $2}' $CONFIG_FILE)
