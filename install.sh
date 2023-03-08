@@ -160,7 +160,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
 }
 
 function CHECK_DIFF {
-  if ! cmp -s "/root/Proxmox-Updater-Temp/$f" "$INSTALLED_FILES/$f"; then
+  if ! cmp -s "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"; then
     echo -e "The file $f\n \
  ==> Modified (by you or by a script) since installation.\n \
    What would you like to do about it ?  Your options are:\n \
@@ -172,13 +172,13 @@ function CHECK_DIFF {
         read -p "" -n 1 -r -s
         if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
           echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
-          cp -f "$INSTALLED_FILES/$f" "$INSTALLED_FILES/$f.bak"
-          mv "/root/Proxmox-Updater-Temp/$f" "$INSTALLED_FILES/$f"
+          cp -f "$LOCAL_FILES/$f" "$LOCAL_FILES/$f.bak"
+          mv "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"
         elif [[ $REPLY =~ ^[Nn]$ ]]; then
           echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
         elif [[ $REPLY =~ ^[Ss]$ ]]; then
           echo
-          diff "/root/Proxmox-Updater-Temp/$f" "$INSTALLED_FILES/$f"
+          diff "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"
         else
           echo -e "\n${BL}[Info]${OR} Skip this file${CL}\n"
         fi
