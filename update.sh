@@ -1,16 +1,19 @@
 #!/bin/bash
-# https://github.com/BassT23/Proxmox
+
+##########
+# Update #
+##########
+
+VERSION="3.7"
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
-VERSION="3.6.3"
+CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 #beta
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
-
-CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 
 # Colors
 BL="\e[36m"
