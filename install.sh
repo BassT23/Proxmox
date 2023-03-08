@@ -4,14 +4,13 @@
 # Install #
 ###########
 
-#Variable / Function
 VERSION="1.5"
 
+#Variable / Function
 #live
 #SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 #beta
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
-
 LOCAL_FILES="/root/Proxmox-Updater"
 
 #Colors
