@@ -371,7 +371,8 @@ function EXIT {
       /root/Proxmox-Updater/exit/passed.sh
       CLEAN_LOGFILE
       if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
-        echo -e "${OR}Check Updates for Welcome-Screen${CL}\n"
+        echo -e "${OR}Check Updates for Welcome-Screen${CL}\n\
+This will take some time. Please wait.\n"
         /root/Proxmox-Updater/check-updates.sh
       fi
     fi
