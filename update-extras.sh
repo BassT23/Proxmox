@@ -1,7 +1,10 @@
 #!/bin/bash
 
-# This work only for LXC-Container NOT for HOST or VM
-VERSION="1.7.3"
+#################
+# Update-Extras #
+#################
+
+VERSION="1.7.5"
 
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 
@@ -82,17 +85,17 @@ if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
   echo -e "\n*** Updating Docker-Compose ***\n"
   # Get the containers from first argument, else get all containers
   CONTAINER_LIST="${1:-$(docker ps -q)}"
-  for container in ${CONTAINER_LIST}; do
+  for CONTAINER in ${CONTAINER_LIST}; do
     # Get requirements
-    CONTAINER_IMAGE=$(docker inspect --format "{{.Config.Image}}" --type container "${container}")
-    RUNNING_IMAGE=$(docker inspect --format "{{.Image}}" --type container "${container}")
-    NAME=$(docker inspect --format "{{.Name}}" --type container "${container}" | cut -c 2-)
+    CONTAINER_IMAGE=$(docker inspect --format "{{.Config.Image}}" --type container "${CONTAINER}")
+    RUNNING_IMAGE=$(docker inspect --format "{{.Image}}" --type container "${CONTAINER}")
+    NAME=$(docker inspect --format "{{.Name}}" --type container "${CONTAINER}" | cut -c 2-)
     # Pull in latest version of the container and get the hash
     docker pull "${CONTAINER_IMAGE}" 2> /dev/null
     LATEST_IMAGE=$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")
     # Restart the container if the image is different by name
     if [[ ${RUNNING_IMAGE} != "${LATEST_IMAGE}" ]]; then
-      echo "Updating ${container} image ${CONTAINER_IMAGE}"
+      echo "Updating ${CONTAINER} image ${CONTAINER_IMAGE}"
       /usr/local/bin/docker-compose up -d --no-deps --build "$NAME"
     fi
   done
