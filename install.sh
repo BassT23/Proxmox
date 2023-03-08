@@ -125,14 +125,18 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
       else
         echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
         curl -s $SERVER_URL/update.sh > /usr/local/bin/update
+        curl -s $SERVER_URL/welcome-screen.sh > /etc/update-motd.d/01-welcome-screen
+        chmod +x /etc/update-motd.d/01-welcome-screen
+        curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater/check-updates.sh
+        chmod +x /root/Proxmox-Updater/check-updates.sh
+        # Delete old files
+        if [[ -f /etc/update-motd.d/01-updater ]];then rm -r /etc/update-motd.d/01-updater; fi
         # Check if files are different
         mkdir -p /root/Proxmox-Updater-Temp/exit
         curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater-Temp/exit/error.sh
         curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater-Temp/exit/passed.sh
         curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater-Temp/update-extras.sh
-        curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
         curl -s $SERVER_URL/update.conf > /root/Proxmox-Updater-Temp/update.conf
-        curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater/check-updates.sh
         chmod -R +x $LOCAL_FILES/exit/*.sh
         cd /root/Proxmox-Updater-Temp
         FILES="*.* **/*.*"
@@ -156,14 +160,6 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
 }
 
 function CHECK_DIFF {
-  if [[ $f == "welcome-screen.sh" ]]; then
-    mv /root/Proxmox-Updater-Temp/welcome-screen.sh /root/Proxmox-Updater-Temp/01-updater
-    chmod +x /root/Proxmox-Updater-Temp/01-updater
-    f="01-updater"
-    INSTALLED_FILES="/etc/update-motd.d"
-  else
-    INSTALLED_FILES=$LOCAL_FILES
-  fi
   if ! cmp -s "/root/Proxmox-Updater-Temp/$f" "$INSTALLED_FILES/$f"; then
     echo -e "The file $f\n \
  ==> Modified (by you or by a script) since installation.\n \
@@ -195,7 +191,7 @@ function WELCOME_SCREEN {
     if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
     curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
     curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater-Temp/check-updates.sh
-    if ! [[ -f "/etc/update-motd.d/01-updater" && -x "/etc/update-motd.d/01-updater" ]]; then
+    if ! [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
       echo -e "${OR} Welcome-Screen is not installed${CL}\n"
       read -p "Would you like to install it also? Type [Y/y] or Enter for yes - enything else will skip" -n 1 -r -s && echo
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
@@ -203,9 +199,9 @@ function WELCOME_SCREEN {
         cp /etc/crontab /etc/crontab.bak
         touch /etc/motd
         if ! [ -f /usr/bin/neofetch ]; then apt-get install neofetch -y; fi
-        cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-updater
+        cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
         cp /root/Proxmox-Updater-Temp/check-updates.sh /root/Proxmox-Updater/check-updates.sh
-        chmod +x /etc/update-motd.d/01-updater
+        chmod +x /etc/update-motd.d/01-welcome-screen
         chmod +x /root/Proxmox-Updater/check-updates.sh
         if ! grep -q "check-updates.sh" /etc/crontab; then
           echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
@@ -216,7 +212,7 @@ function WELCOME_SCREEN {
       echo -e "${OR}  Welcome-Screen is already installed${CL}\n"
       read -p "Would you like to uninstall it? Type [Y/y] for yes - enything else will skip" -n 1 -r -s && echo
       if [[ $REPLY =~ ^[Yy]$ ]]; then
-        rm -rf /etc/update-motd.d/01-updater
+        rm -rf /etc/update-motd.d/01-welcome-screen
         rm -rf /etc/motd
         if [[ -f /etc/motd.bak ]]; then mv /etc/motd.bak /etc/motd; fi
         #restore old crontab with info output
@@ -239,8 +235,8 @@ function UNINSTALL {
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
       rm -r /root/Proxmox-Updater
-      if [[ -f "/etc/update-motd.d/01-updater" ]]; then
-        chmod -x /etc/update-motd.d/01-updater
+      if [[ -f "/etc/update-motd.d/01-welcome-screen" ]]; then
+        chmod -x /etc/update-motd.d/01-welcome-screen
         rm -rf /etc/motd
         mv /etc/motd.bak /etc/motd
       fi
