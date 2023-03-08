@@ -7,8 +7,9 @@
 VERSION="1.5"
 
 #Variable / Function
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 LOCAL_FILES="/root/Proxmox-Updater"
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+
 
 #Colors
 BL="\e[36m"
