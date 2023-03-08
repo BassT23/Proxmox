@@ -9,11 +9,7 @@ VERSION="1.2.1"
 # Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 CHECK_OUTPUT=$(stat -c%s /root/Proxmox-Updater/check-output)
-
-#live
-#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
-#beta
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
 
 # Colors
 # BL="\e[36m"
