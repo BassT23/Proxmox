@@ -372,7 +372,7 @@ function EXIT {
       CLEAN_LOGFILE
       if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
         echo -e "${OR}Check Updates for Welcome-Screen${CL}\n"
-        setsid /root/Proxmox-Updater/check-updates.sh
+        /root/Proxmox-Updater/check-updates.sh
       fi
     fi
   # Update Error
