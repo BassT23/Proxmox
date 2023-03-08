@@ -71,9 +71,9 @@ The config file is stored under `/root/Proxmox-Updater/update.conf`
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
 
 - Host / LXC / VM
-- "stopped" or "running" LXC/VM
 - Headless Mode
-- extra updates
+- Extra updates
+- "stopped" or "running" LXC/VM
 - "only" or "exclude" LXC/VM by ID
 
 
