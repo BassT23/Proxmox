@@ -370,7 +370,7 @@ function EXIT {
       echo -e "${GN}Finished, All Updates Done.${CL}\n"
       /root/Proxmox-Updater/exit/passed.sh
       CLEAN_LOGFILE
-      if [[ -f /etc/update-motd.d/01-updater ]]; then
+      if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
         echo -e "${OR}Check Updates for Welcome-Screen${CL}\n"
         setsid /root/Proxmox-Updater/check-updates.sh
       fi
