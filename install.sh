@@ -131,6 +131,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         chmod +x /root/Proxmox-Updater/check-updates.sh
         # Delete old files
         if [[ -f /etc/update-motd.d/01-updater ]];then rm -r /etc/update-motd.d/01-updater; fi
+        if [[ -f /etc/update-motd.d/01-updater.bak ]];then rm -r /etc/update-motd.d/01-updater.bak; fi
         # Check if files are different
         mkdir -p /root/Proxmox-Updater-Temp/exit
         curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater-Temp/exit/error.sh
