@@ -6,6 +6,7 @@
 
 VERSION="1.2.1"
 
+# Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 CHECK_OUTPUT=$(stat -c%s /root/Proxmox-Updater/check-output)
 
