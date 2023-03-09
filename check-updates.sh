@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.3"
+VERSION="1.3.2"
 
 #Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -183,16 +183,17 @@ function VM_CHECK_START {
 function CHECK_VM {
   VM=$1
   if qm guest exec "$VM" test >/dev/null 2>&1; then
-#  REBOOT_REQUIRED=$(qm guest cmd "$VM" -- bash -c "-f /var/run/reboot-required.pkgs")
     NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
       qm guest exec "$VM" -- bash -c "apt-get update" >/dev/null 2>&1
       SECURITY_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       NORMAL_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
-      if [[ $SECURITY_APT_UPDATES -gt 0 || $NORMAL_APT_UPDATES -gt 0 ]]; then
+      if [[ $(qm guest exec "$VM" -- bash -c "[ -f /var/run/reboot-required.pkgs ]" | grep exitcode) =~ 0 ]]; then         REBOOT_REQUIRED=true; fi
+      if [[ $SECURITY_APT_UPDATES -gt 0 || $NORMAL_APT_UPDATES -gt 0 || $REBOOT_REQUIRED == true ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
+      if [[ $REBOOT_REQUIRED == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
       if [[ $SECURITY_APT_UPDATES -gt 0 && $NORMAL_APT_UPDATES -gt 0 ]]; then
         echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
       elif [[ $SECURITY_APT_UPDATES -gt 0 ]]; then
