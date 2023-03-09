@@ -4,12 +4,18 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.2.1"
+VERSION="1.2.2"
 
 # Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 CHECK_OUTPUT=$(stat -c%s /root/Proxmox-Updater/check-output)
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+
+#live
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#beta
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
+#development
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
 
 # Colors
 # BL="\e[36m"
@@ -43,10 +49,10 @@ function READ_WRITE_CONFIG {
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
-  if [[ $ONLY == "" && $EXCLUDED != "" ]]; then
-    echo -e "${OR}Exclude is set. Not all machines were checked.${CL}\n"
-  elif [[ $ONLY != "" ]]; then
+  if [[ $ONLY != "" ]]; then
     echo -e "${OR}Only is set. Not all machines were checked.${CL}\n"
+  elif [[ $ONLY == "" && $EXCLUDED != "" ]]; then
+    echo -e "${OR}Exclude is set. Not all machines were checked.${CL}\n"
   elif [[ $WITH_HOST != true || $WITH_LXC != true || $WITH_VM != true ||$RUNNING != true || $STOPPED != true ]]; then
     echo -e "${OR}Variable is set in config file. One or more machines will not be checked!${CL}\n"
   fi
@@ -54,11 +60,11 @@ function READ_WRITE_CONFIG {
 
 function TIME_CALCULTION {
 MOD=$(date -r "/root/Proxmox-Updater/check-output" +%s)
-# convert seconds to Days, Hours, Minutes
 NOW=$(date +%s)
-DAYS=$(expr \( "$NOW" - "$MOD" \) / 86400)
-HOURS=$(expr \( "$NOW" - "$MOD" \) / 1440)
-MINUTES=$(expr \( "$NOW" - "$MOD" \) / 60)
+# convert seconds to Days, Hours, Minutes
+DAYS=$(( (NOW - MOD) / 86400 ))
+HOURS=$(( (NOW - MOD) / 1440 ))
+MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
 # Welcome
