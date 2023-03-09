@@ -91,6 +91,9 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 - To force the check, you can run `/root/Proxmox-Updater/check-updates.sh` in Terminal.
 - Need neofetch to be installed (if not installed, script will make it automatically)
 
+## SSH Connection for VM
+Look for more infos here: <https://github.com/BassT23/Proxmox/blob/development/ssh.md>
+
 ## Beta Testing:
 
 If anybody want to help with failure search, please test our beta (if available).
