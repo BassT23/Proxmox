@@ -4,12 +4,18 @@
 # Update #
 ##########
 
-VERSION="3.7"
+VERSION="3.7.1"
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+
+#live
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+#beta
+#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
+#development
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
 
 # Colors
 BL="\e[36m"
@@ -37,11 +43,11 @@ function HEADER_INFO {
        /_/
 EOF
   echo -e "\n \
-           *** Mode: $MODE ***"
+           ***  Mode: $MODE***"
   if [[ $HEADLESS == true ]]; then
     echo -e "            ***    Headless    ***"
   else
-    echo -e "            ***  Interactive   ***"
+    echo -e "            ***   Interactive  ***"
   fi
   CHECK_ROOT
   if [[ $CHECK_VERSION == true ]]; then VERSION_CHECK; else echo; fi
@@ -154,10 +160,12 @@ function HOST_UPDATE_START {
 # Host Update
 function UPDATE_HOST {
   HOST=$1
-  echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOST${CL}\n"
   ssh "$HOST" mkdir -p /root/Proxmox-Updater
   scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
   scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
+  if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
+    scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
+  fi
   if [[ $HEADLESS == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
   else
@@ -300,39 +308,82 @@ function VM_UPDATE_START {
 # VM Update
 function UPDATE_VM {
   VM=$1
-  if qm guest exec "$VM" test >/dev/null 2>&1; then
-    NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
-    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
-    OS=$(qm guest cmd "$VM" get-osinfo | grep name)
+  NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
+  OS=$(qm guest cmd "$VM" get-osinfo | grep name)
+  echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
+  if [[ -f /root/Proxmox-Updater/VMs/$VM ]]; then
+#    VM_FILE="/root/Proxmox-Updater/VMs/$VM"
+    IP=$(awk -F'"' '/^IP=/ {print $2}' /root/Proxmox-Updater/VMs/"$VM")
+    if ! (ssh root@"$IP") >/dev/null 2>&1; then
+      echo -e "${RD}For ssh connection please\n\
+Configure SSH Key-Based Authentication${CL}\n\
+Use QEMU insead\n"
+    else
       if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
         echo -e "${OR}--- APT UPDATE ---${CL}"
-        qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
+        ssh root@"$IP" apt-get update
         echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
+        ssh root@"$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
         echo -e "\n${OR}--- APT CLEANING ---${CL}"
-        qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
+        ssh root@"$IP" apt-get --purge autoremove -y
+        EXTRAS
       elif [[ $OS =~ Fedora ]]; then
         echo -e "${OR}--- DNF UPDATE ---${CL}"
-        qm guest exec "$VM" -- bash -c "dnf -y update && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        ssh root@"$IP" dnf -y update
         echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-        qm guest exec "$VM" -- bash -c "dnf -y upgrade && echo" | tail -n +2 | head -n -1
+        ssh root@"$IP" dnf -y upgrade
         echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-        qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove && echo" | tail -n +4 | head -n -1 | cut -c 17-
+        ssh root@"$IP" dnf -y --purge autoremove
+        EXTRAS
       elif [[ $OS =~ Arch ]]; then
         echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-        qm guest exec "$VM" -- bash -c "pacman -Syyu --noconfirm" | tail -n +2 | head -n -1
+        ssh root@"$IP" pacman -Syyu --noconfirm
+        EXTRAS
       elif [[ $OS =~ Alpine ]]; then
         echo -e "${OR}--- APK UPDATE ---${CL}"
-        qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1
+        ssh root@"$IP" apk -U upgrade
+        EXTRAS
       elif [[ $OS =~ CentOS ]]; then
         echo -e "${OR}--- YUM UPDATE ---${CL}"
-        qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1
+        ssh root@"$IP" yum -y update
+        EXTRAS
       else
         echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
         echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
       fi
-      echo
-      if [[ $WILL_STOP != true ]]; then echo; fi
+      return
+    fi
+  fi
+  if qm guest exec "$VM" test >/dev/null 2>&1; then
+    if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
+      echo -e "${OR}--- APT UPDATE ---${CL}"
+      qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
+      echo -e "\n${OR}--- APT UPGRADE ---${CL}"
+      qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
+      echo -e "\n${OR}--- APT CLEANING ---${CL}"
+      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
+    elif [[ $OS =~ Fedora ]]; then
+      echo -e "${OR}--- DNF UPDATE ---${CL}"
+      qm guest exec "$VM" -- bash -c "dnf -y update" | tail -n +4 | head -n -1 | cut -c 17-
+      echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
+      qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1
+      echo -e "\n${OR}--- DNF CLEANING ---${CL}"
+      qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17-
+    elif [[ $OS =~ Arch ]]; then
+      echo -e "${OR}--- PACMAN UPDATE ---${CL}"
+      qm guest exec "$VM" -- bash -c "pacman -Syyu --noconfirm" | tail -n +2 | head -n -1
+    elif [[ $OS =~ Alpine ]]; then
+      echo -e "${OR}--- APK UPDATE ---${CL}"
+      qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1
+    elif [[ $OS =~ CentOS ]]; then
+      echo -e "${OR}--- YUM UPDATE ---${CL}"
+      qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1
+    else
+      echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
+      echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
+    fi
+    echo
+    if [[ $WILL_STOP != true ]]; then echo; fi
   else
     echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL}\n"
     echo -e "${RD}  QEMU guest agent is not installed or running on VM ${CL}\n\
@@ -393,7 +444,7 @@ trap EXIT EXIT
 # Check Cluster Mode
 if [[ -f /etc/corosync/corosync.conf ]]; then
   HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
-  MODE=" Cluster"
+  MODE="Cluster "
 else
   MODE="  Host  "
 fi
@@ -426,15 +477,15 @@ parse_cli()
         if [[ $RICM != true ]]; then
           MODE="  Host  "
           HEADER_INFO
-          echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
         fi
+        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
         if [[ $WITH_HOST == true ]]; then UPDATE_HOST_ITSELF; fi
         if [[ $WITH_LXC == true ]]; then CONTAINER_UPDATE_START; fi
         if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
         ;;
       cluster)
         COMMAND=true
-        MODE=" Cluster"
+        MODE="Cluster "
         HEADER_INFO
         HOST_UPDATE_START
         ;;
