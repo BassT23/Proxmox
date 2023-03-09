@@ -1,28 +1,37 @@
 Changelog:
 ==========
 
+**v3.7** (09.03.2023)
+
+- Fixing code
+- Support "only" LXC/VM
+- Fix docker-compose update
+- VM-Update show errors 
+- Add Welcome Screen with periodic update check
+- Need neofetch (will install automatic)
+
 **v3.6** (22.02.2023)
 
-- add config file
-- cleaning code
-- more colorful
-- fixing logging
+- Add config file
+- Cleaning code
+- More colorful
+- Fixing logging
 
 **v3.4** (not released)
 
-- add VM Update
-- cleaning code
-- fixed Docker Update
+- Add VM Update
+- Cleaning code
+- Fixed Docker Update
 
 **v3.3** (15.02.2023)
 
-- add Update Info
-- add extra Updates
-- add version check by user
+- Add Update Info
+- Add extra Updates
+- Add version check by user
 
 **v3.1.1** (13.02.2023)
 
-- fixed update failure with CentOS
+- Fixed update failure with CentOS
 
 **v3.1** (12.02.2023)
 
@@ -39,11 +48,11 @@ Changelog:
 
 **v2.7.1** (06.02.2023)
 
-- small fixes
+- Small fixes
 
 **v2.7** (31.01.2023)
 
-- add root check
+- Add root check
 - Cleanup overall code
 
 **v2.6** (30.01.2023)
@@ -54,7 +63,7 @@ Changelog:
 
 **v2.5** (30.01.2023)
 
-- added "Headless Mode" as option with `update -3` otherwise runs in "Interactive Mode"
+- Added "Headless Mode" as option with `update -3` otherwise runs in "Interactive Mode"
 
 **v2.4** (29.01.2023)
 
