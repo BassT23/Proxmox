@@ -1,6 +1,10 @@
 Changelog:
 ==========
 
+**v3.7.1** (development)
+
+- Add SSH Connection for VM - with extra update support
+
 **v3.7** (09.03.2023)
 
 - Fixing code
