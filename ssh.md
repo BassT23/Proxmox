@@ -1,5 +1,7 @@
 # SSH Key-Based Authentication
 
+## VM need an static IP Address - Random IP will not work with the script.
+
 ### IN VM:
 (Example for Debian Based Systems)
 
