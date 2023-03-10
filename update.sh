@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.7.1"
+VERSION="3.7.2"
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
@@ -102,7 +102,7 @@ function VERSION_CHECK {
   rm -rf /root/update.sh && echo
 }
 
-#Update Proxmox-Updater
+# Update Proxmox-Updater
 function UPDATE {
   bash <(curl -s $SERVER_URL/install.sh) update
   exit 2
@@ -120,7 +120,8 @@ function UNINSTALL {
   fi
 }
 
-function READ_WRITE_CONFIG {
+# Read Config File
+function READ_CONFIG {
   CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' $CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' $CONFIG_FILE)
@@ -143,10 +144,19 @@ function EXTRAS {
                                       /root/Proxmox-Updater/update-extras.sh && \
                                       rm -rf /root/Proxmox-Updater"
     echo -e "${GN}---   Finished extra updates    ---${CL}\n"
-    if [[ $WILL_STOP != true ]]; then echo; fi
+#    if [[ $WILL_STOP != true ]]; then echo; fi
   else
-    echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n\n"
+    echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
   fi
+}
+
+# Check Updates for Welcome-Screen
+#EXEC_HOST_IP=$(hostname -I)
+#touch /root/Proxmox-Updater/check-output
+function UPDATE_CHECK {
+  /root/Proxmox-Updater/check-updates.sh -u
+#  ssh "$HOST" uptime
+  if [[ $WILL_STOP != true ]]; then echo; fi
 }
 
 ## HOST ##
@@ -163,6 +173,7 @@ function UPDATE_HOST {
   ssh "$HOST" mkdir -p /root/Proxmox-Updater
   scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
   scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
+  scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
   if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
     scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
   fi
@@ -183,7 +194,8 @@ function UPDATE_HOST_ITSELF {
             apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y
   fi
   echo -e "\n${OR}--- APT CLEANING ---${CL}" && \
-          apt-get --purge autoremove -y && echo && echo
+          apt-get --purge autoremove -y && echo
+  UPDATE_CHECK
 }
 
 ## Container ##
@@ -265,6 +277,7 @@ function UPDATE_CONTAINER {
     pct exec "$CONTAINER" -- bash -c "yum -y update"
     EXTRAS
   fi
+  UPDATE_CHECK
 }
 
 ## VM ##
@@ -309,52 +322,64 @@ function VM_UPDATE_START {
 function UPDATE_VM {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
-  OS=$(qm guest cmd "$VM" get-osinfo | grep name)
   echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
-  if [[ -f /root/Proxmox-Updater/VMs/$VM ]]; then
+  if [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
 #    VM_FILE="/root/Proxmox-Updater/VMs/$VM"
     IP=$(awk -F'"' '/^IP=/ {print $2}' /root/Proxmox-Updater/VMs/"$VM")
     if ! (ssh root@"$IP") >/dev/null 2>&1; then
       echo -e "${RD}For ssh connection please\n\
 Configure SSH Key-Based Authentication${CL}\n\
+Infos can be found here:<https://github.com/BassT23/Proxmox/blob/development/ssh.md>
 Use QEMU insead\n"
     else
-      if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
-        echo -e "${OR}--- APT UPDATE ---${CL}"
-        ssh root@"$IP" apt-get update
-        echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-        ssh root@"$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
-        echo -e "\n${OR}--- APT CLEANING ---${CL}"
-        ssh root@"$IP" apt-get --purge autoremove -y
-        EXTRAS
-      elif [[ $OS =~ Fedora ]]; then
-        echo -e "${OR}--- DNF UPDATE ---${CL}"
-        ssh root@"$IP" dnf -y update
-        echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-        ssh root@"$IP" dnf -y upgrade
-        echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-        ssh root@"$IP" dnf -y --purge autoremove
-        EXTRAS
-      elif [[ $OS =~ Arch ]]; then
-        echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-        ssh root@"$IP" pacman -Syyu --noconfirm
-        EXTRAS
-      elif [[ $OS =~ Alpine ]]; then
-        echo -e "${OR}--- APK UPDATE ---${CL}"
-        ssh root@"$IP" apk -U upgrade
-        EXTRAS
-      elif [[ $OS =~ CentOS ]]; then
-        echo -e "${OR}--- YUM UPDATE ---${CL}"
-        ssh root@"$IP" yum -y update
-        EXTRAS
-      else
-        echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
-        echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
+      OS_BASE=$(qm config "$VM" | grep ostype)
+      if [[ $OS_BASE =~ l2 ]]; then
+        OS=$(ssh root@"$IP" hostnamectl | grep System)
+        if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
+          echo -e "${OR}--- APT UPDATE ---${CL}"
+          ssh root@"$IP" apt-get update
+          echo -e "\n${OR}--- APT UPGRADE ---${CL}"
+          ssh root@"$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+          echo -e "\n${OR}--- APT CLEANING ---${CL}"
+          ssh root@"$IP" apt-get --purge autoremove -y
+          echo
+#         EXTRAS
+          UPDATE_CHECK
+        elif [[ $OS =~ Fedora ]]; then
+          echo -e "${OR}--- DNF UPDATE ---${CL}"
+          ssh root@"$IP" dnf -y update
+          echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
+          ssh root@"$IP" dnf -y upgrade
+          echo -e "\n${OR}--- DNF CLEANING ---${CL}"
+          ssh root@"$IP" dnf -y --purge autoremove
+          echo
+#          EXTRAS
+          UPDATE_CHECK
+        elif [[ $OS =~ Arch ]]; then
+          echo -e "${OR}--- PACMAN UPDATE ---${CL}"
+          ssh root@"$IP" pacman -Syyu --noconfirm
+          echo
+#          EXTRAS
+          UPDATE_CHECK
+        elif [[ $OS =~ Alpine ]]; then
+          echo -e "${OR}--- APK UPDATE ---${CL}"
+          ssh root@"$IP" apk -U upgrade
+        elif [[ $OS =~ CentOS ]]; then
+          echo -e "${OR}--- YUM UPDATE ---${CL}"
+          ssh root@"$IP" yum -y update
+          echo
+#          EXTRAS
+          UPDATE_CHECK
+        else
+          echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
+          echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
+        fi
+        return
       fi
-      return
     fi
   fi
   if qm guest exec "$VM" test >/dev/null 2>&1; then
+    OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
       echo -e "${OR}--- APT UPDATE ---${CL}"
       qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
@@ -362,6 +387,7 @@ Use QEMU insead\n"
       qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
       qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
+      UPDATE_CHECK
     elif [[ $OS =~ Fedora ]]; then
       echo -e "${OR}--- DNF UPDATE ---${CL}"
       qm guest exec "$VM" -- bash -c "dnf -y update" | tail -n +4 | head -n -1 | cut -c 17-
@@ -369,15 +395,18 @@ Use QEMU insead\n"
       qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1
       echo -e "\n${OR}--- DNF CLEANING ---${CL}"
       qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17-
+      UPDATE_CHECK
     elif [[ $OS =~ Arch ]]; then
       echo -e "${OR}--- PACMAN UPDATE ---${CL}"
       qm guest exec "$VM" -- bash -c "pacman -Syyu --noconfirm" | tail -n +2 | head -n -1
+      UPDATE_CHECK
     elif [[ $OS =~ Alpine ]]; then
       echo -e "${OR}--- APK UPDATE ---${CL}"
       qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1
     elif [[ $OS =~ CentOS ]]; then
       echo -e "${OR}--- YUM UPDATE ---${CL}"
       qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1
+      UPDATE_CHECK
     else
       echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
       echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
@@ -385,7 +414,7 @@ Use QEMU insead\n"
     echo
     if [[ $WILL_STOP != true ]]; then echo; fi
   else
-    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL}\n"
+#    echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL}\n"
     echo -e "${RD}  QEMU guest agent is not installed or running on VM ${CL}\n\
   ${OR}You must install and start it by yourself!${CL}\n\
   Please check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n\n"
@@ -420,11 +449,11 @@ function EXIT {
       echo -e "${GN}Finished, All Updates Done.${CL}\n"
       /root/Proxmox-Updater/exit/passed.sh
       CLEAN_LOGFILE
-      if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
-        echo -e "${OR}Check Updates for Welcome-Screen${CL}\n\
-This will take some time. Please wait.\n"
-        /root/Proxmox-Updater/check-updates.sh
-      fi
+#      if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
+#        echo -e "${OR}Check Updates for Welcome-Screen${CL}\n\
+#This will take some time. Please wait.\n"
+#        /root/Proxmox-Updater/check-updates.sh
+#      fi
     fi
   # Update Error
   else
@@ -451,7 +480,7 @@ fi
 
 # Update Start
 export TERM=xterm-256color
-READ_WRITE_CONFIG
+READ_CONFIG
 parse_cli()
 {
   while test $# -gt -0
@@ -479,9 +508,9 @@ parse_cli()
           HEADER_INFO
         fi
         echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
-        if [[ $WITH_HOST == true ]]; then UPDATE_HOST_ITSELF; fi
-        if [[ $WITH_LXC == true ]]; then CONTAINER_UPDATE_START; fi
-        if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
+        if [[ $WITH_HOST == true ]]; then UPDATE_HOST_ITSELF; else echo -e "${RD}Host updates skipped by user${CL}\n"; fi
+        if [[ $WITH_LXC == true ]]; then CONTAINER_UPDATE_START; else echo -e "${RD}Container updates skipped by user${CL}\n"; fi
+        if [[ $WITH_VM == true ]]; then VM_UPDATE_START; else echo -e "${RD}VM updates skipped by user${CL}\n"; fi
         ;;
       cluster)
         COMMAND=true
@@ -515,9 +544,9 @@ if [[ $COMMAND != true ]]; then
   HEADER_INFO
   if [[ $MODE =~ Cluster ]]; then HOST_UPDATE_START; else
     echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
-    if [[ $WITH_HOST == true ]]; then UPDATE_HOST_ITSELF; fi
-    if [[ $WITH_LXC == true ]]; then CONTAINER_UPDATE_START; fi
-    if [[ $WITH_VM == true ]]; then VM_UPDATE_START; fi
+    if [[ $WITH_HOST == true ]]; then UPDATE_HOST_ITSELF; else echo -e "${RD}Host updates skipped by user${CL}\n"; fi
+    if [[ $WITH_LXC == true ]]; then CONTAINER_UPDATE_START; else echo -e "${RD}Container updates skipped by user${CL}\n"; fi
+    if [[ $WITH_VM == true ]]; then VM_UPDATE_START; else echo -e "${RD}VM updates skipped by user${CL}\n"; fi
   fi
 fi
 
