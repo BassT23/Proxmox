@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.7.3"
+VERSION="3.7.4"
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
@@ -163,10 +163,13 @@ function EXTRAS {
 }
 
 # Check Updates for Welcome-Screen
-#EXEC_HOST_IP=$(hostname -I)
-#touch /root/Proxmox-Updater/check-output
+if [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
+  touch /root/Proxmox-Updater/check-output
+fi
 function UPDATE_CHECK {
-  /root/Proxmox-Updater/check-updates.sh -u
+  echo -e "${OR}--- Check Status for Welcome-Screen ---${CL}"
+  ssh "$HOSTNAME" "/root/Proxmox-Updater/check-updates.sh -u"
+  echo -e "${GN}---          Finished check         ---${CL}\n"
   if [[ $WILL_STOP != true ]]; then echo; fi
 }
 
@@ -266,6 +269,7 @@ function UPDATE_CONTAINER {
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
       pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y"
       EXTRAS
+      UPDATE_CHECK
   elif [[ $OS =~ fedora ]]; then
     echo -e "${OR}--- DNF UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "dnf -y update"
@@ -274,10 +278,12 @@ function UPDATE_CONTAINER {
     echo -e "\n${OR}--- DNF CLEANING ---${CL}"
     pct exec "$CONTAINER" -- bash -c "dnf -y autoremove"
     EXTRAS
+    UPDATE_CHECK
   elif [[ $OS =~ archlinux ]]; then
     echo -e "${OR}--- PACMAN UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm"
     EXTRAS
+    UPDATE_CHECK
   elif [[ $OS =~ alpine ]]; then
     echo -e "${OR}--- APK UPDATE ---${CL}"
     pct exec "$CONTAINER" -- ash -c "apk -U upgrade"
@@ -287,8 +293,8 @@ function UPDATE_CONTAINER {
     echo -e "${OR}--- YUM UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "yum -y update"
     EXTRAS
+    UPDATE_CHECK
   fi
-  UPDATE_CHECK
 }
 
 ## VM ##
@@ -354,7 +360,7 @@ Use QEMU insead\n"
           ssh "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
           ssh "$IP" apt-get --purge autoremove -y
-         EXTRAS
+          EXTRAS
           UPDATE_CHECK
         elif [[ $OS =~ Fedora ]]; then
           echo -e "${OR}--- DNF UPDATE ---${CL}"
