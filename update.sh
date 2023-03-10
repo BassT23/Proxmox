@@ -137,12 +137,16 @@ function READ_CONFIG {
 function EXTRAS {
   if [[ $HEADLESS != true || $EXTRA_IN_HEADLESS != false ]]; then
     echo -e "\n${OR}--- Searching for extra updates ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "mkdir -p /root/Proxmox-Updater/"
-    pct push "$CONTAINER" -- /root/Proxmox-Updater/update-extras.sh /root/Proxmox-Updater/update-extras.sh
-    pct push "$CONTAINER" -- /root/Proxmox-Updater/update.conf /root/Proxmox-Updater/update.conf
-    pct exec "$CONTAINER" -- bash -c "chmod +x /root/Proxmox-Updater/update-extras.sh && \
-                                      /root/Proxmox-Updater/update-extras.sh && \
-                                      rm -rf /root/Proxmox-Updater"
+    if [[ $SSH_CONNECTION != true ]]; then
+      pct exec "$CONTAINER" -- bash -c "mkdir -p /root/Proxmox-Updater/"
+      pct push "$CONTAINER" -- /root/Proxmox-Updater/update-extras.sh /root/Proxmox-Updater/update-extras.sh
+      pct push "$CONTAINER" -- /root/Proxmox-Updater/update.conf /root/Proxmox-Updater/update.conf
+      pct exec "$CONTAINER" -- bash -c "chmod +x /root/Proxmox-Updater/update-extras.sh && \
+                                        /root/Proxmox-Updater/update-extras.sh && \
+                                        rm -rf /root/Proxmox-Updater"
+    else
+      echo "This is only a placeholder - for now"
+    fi
     echo -e "${GN}---   Finished extra updates    ---${CL}\n"
 #    if [[ $WILL_STOP != true ]]; then echo; fi
   else
@@ -332,6 +336,7 @@ Configure SSH Key-Based Authentication${CL}\n\
 Infos can be found here:<https://github.com/BassT23/Proxmox/blob/development/ssh.md>
 Use QEMU insead\n"
     else
+      SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
       if [[ $OS_BASE =~ l2 ]]; then
         OS=$(ssh root@"$IP" hostnamectl | grep System)
@@ -342,8 +347,7 @@ Use QEMU insead\n"
           ssh root@"$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
           ssh root@"$IP" apt-get --purge autoremove -y
-          echo
-#         EXTRAS
+         EXTRAS
           UPDATE_CHECK
         elif [[ $OS =~ Fedora ]]; then
           echo -e "${OR}--- DNF UPDATE ---${CL}"
@@ -352,14 +356,12 @@ Use QEMU insead\n"
           ssh root@"$IP" dnf -y upgrade
           echo -e "\n${OR}--- DNF CLEANING ---${CL}"
           ssh root@"$IP" dnf -y --purge autoremove
-          echo
-#          EXTRAS
+          EXTRAS
           UPDATE_CHECK
         elif [[ $OS =~ Arch ]]; then
           echo -e "${OR}--- PACMAN UPDATE ---${CL}"
           ssh root@"$IP" pacman -Syyu --noconfirm
-          echo
-#          EXTRAS
+          EXTRAS
           UPDATE_CHECK
         elif [[ $OS =~ Alpine ]]; then
           echo -e "${OR}--- APK UPDATE ---${CL}"
@@ -367,8 +369,7 @@ Use QEMU insead\n"
         elif [[ $OS =~ CentOS ]]; then
           echo -e "${OR}--- YUM UPDATE ---${CL}"
           ssh root@"$IP" yum -y update
-          echo
-#          EXTRAS
+          EXTRAS
           UPDATE_CHECK
         else
           echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
