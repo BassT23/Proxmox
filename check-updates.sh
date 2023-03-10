@@ -228,7 +228,8 @@ function CHECK_VM {
 
 # Check During update
 function CHECK_RUNNUNG_MACHINE {
-  echo -e "Recheck updates and if reboot is required\n"
+  echo -e "Recheck updates and if reboot is required"
+  echo -e "This is only a placeholder - for now\n"
 }
 
 # Output to file
