@@ -32,7 +32,7 @@ PermitRootLogin yes
 
 `IP="111.111.111.111"`   # use the IP from the VM!
 
-(IP can be found in Proxmox GUI -> VM -> Overview)
+(IP can be found in Proxmox GUI -> VM -> Overview / or in VM wirh `hostmane -I`)
 
 - Copy ssh key like:
 `ssh-copy-id -i /root/.ssh/id_rsa.pub root@<VM-IP>`
