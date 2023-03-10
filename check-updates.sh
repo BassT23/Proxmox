@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.3.2"
+VERSION="1.3.3"
 
 #Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -226,11 +226,16 @@ function CHECK_VM {
   fi
 }
 
+# Check During update
+function CHECK_RUNNUNG_MACHINE {
+  echo -e "Recheck updates and if reboot is required\n"
+}
+
 # Output to file
-#if [[ $RICM != true ]]; then
+if [[ $RDU != true ]]; then
   touch /root/Proxmox-Updater/check-output
   exec > >(tee /root/Proxmox-Updater/check-output)
-#fi
+fi
 
 # Check Cluster Mode
 if [[ -f /etc/corosync/corosync.conf ]]; then
@@ -249,7 +254,10 @@ parse_cli()
     argument="$1"
     case "$argument" in
       -c)
-        RICM=true
+        RICM=true  # Run In Cluster Mode
+        ;;
+      -u)
+        RDU=true  # Run During Update
         ;;
       host)
         COMMAND=true
@@ -273,7 +281,9 @@ parse_cli()
 parse_cli "$@"
 
 # Run without commands (Automatic Mode)
-if [[ $COMMAND != true ]]; then
+if [[ $COMMAND != true && $RDU == true ]]; then
+  CHECK_RUNNUNG_MACHINE
+elif [[ $COMMAND != true ]]; then
   if [[ $MODE =~ Cluster ]]; then HOST_CHECK_START; else
     if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
     if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
