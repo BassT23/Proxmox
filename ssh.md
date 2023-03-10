@@ -35,4 +35,4 @@ PermitRootLogin yes
 (IP can be found in Proxmox GUI -> VM -> Overview)
 
 - Copy ssh key like:
-`ssh-copy-id -i ~/<path-to-file>/id_rsa.pub root@<VM-IP>`
+`ssh-copy-id -i /root/.ssh/id_rsa.pub root@<VM-IP>`
