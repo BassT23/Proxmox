@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.7.2"
+VERSION="3.7.3"
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
@@ -82,9 +82,9 @@ function USAGE {
 
 # Version Check in Header
 function VERSION_CHECK {
-  curl -s $SERVER_URL/update.sh > /root/update.sh
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
-  if [[ $VERSION != "$SERVER_VERSION" ]]; then
+  if [[ $SERVER_VERSION > $VERSION ]]; then
     echo -e "\n${OR}   *** A newer version is available ***${CL}\n \
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ $HEADLESS != true ]]; then
@@ -95,6 +95,9 @@ function VERSION_CHECK {
       fi
       echo
     fi
+  elif [[ $SERVER_VERSION < $VERSION ]]; then
+    echo -e "\n${OR}  *** U are on beta or development branch ***${CL}\n \
+  Installed: $VERSION / Server (Master): $SERVER_VERSION\n"
   else
     echo -e "\n             ${GN}Script is UpToDate${CL}\n \
                Version: $VERSION"
@@ -145,10 +148,15 @@ function EXTRAS {
                                         /root/Proxmox-Updater/update-extras.sh && \
                                         rm -rf /root/Proxmox-Updater"
     else
-      echo "This is only a placeholder - for now"
+      # Extras in VMS with SSH_CONNECTION
+      ssh "$IP" mkdir -p /root/Proxmox-Updater/
+      scp /root/Proxmox-Updater/update-extras.sh "$IP":/root/Proxmox-Updater/update-extras.sh
+      scp /root/Proxmox-Updater/update.conf "$IP":/root/Proxmox-Updater/update.conf
+      ssh "$IP" "chmod +x /root/Proxmox-Updater/update-extras.sh && \
+                /root/Proxmox-Updater/update-extras.sh && \
+                rm -rf /root/Proxmox-Updater"
     fi
     echo -e "${GN}---   Finished extra updates    ---${CL}\n"
-#    if [[ $WILL_STOP != true ]]; then echo; fi
   else
     echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
   fi
@@ -159,7 +167,6 @@ function EXTRAS {
 #touch /root/Proxmox-Updater/check-output
 function UPDATE_CHECK {
   /root/Proxmox-Updater/check-updates.sh -u
-#  ssh "$HOST" uptime
   if [[ $WILL_STOP != true ]]; then echo; fi
 }
 
@@ -330,7 +337,7 @@ function UPDATE_VM {
   if [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
 #    VM_FILE="/root/Proxmox-Updater/VMs/$VM"
     IP=$(awk -F'"' '/^IP=/ {print $2}' /root/Proxmox-Updater/VMs/"$VM")
-    if ! (ssh root@"$IP") >/dev/null 2>&1; then
+    if ! (ssh "$IP") >/dev/null 2>&1; then
       echo -e "${RD}For ssh connection please\n\
 Configure SSH Key-Based Authentication${CL}\n\
 Infos can be found here:<https://github.com/BassT23/Proxmox/blob/development/ssh.md>
@@ -339,36 +346,36 @@ Use QEMU insead\n"
       SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
       if [[ $OS_BASE =~ l2 ]]; then
-        OS=$(ssh root@"$IP" hostnamectl | grep System)
+        OS=$(ssh "$IP" hostnamectl | grep System)
         if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
           echo -e "${OR}--- APT UPDATE ---${CL}"
-          ssh root@"$IP" apt-get update
+          ssh "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-          ssh root@"$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+          ssh "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh root@"$IP" apt-get --purge autoremove -y
+          ssh "$IP" apt-get --purge autoremove -y
          EXTRAS
           UPDATE_CHECK
         elif [[ $OS =~ Fedora ]]; then
           echo -e "${OR}--- DNF UPDATE ---${CL}"
-          ssh root@"$IP" dnf -y update
+          ssh "$IP" dnf -y update
           echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-          ssh root@"$IP" dnf -y upgrade
+          ssh "$IP" dnf -y upgrade
           echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-          ssh root@"$IP" dnf -y --purge autoremove
+          ssh "$IP" dnf -y --purge autoremove
           EXTRAS
           UPDATE_CHECK
         elif [[ $OS =~ Arch ]]; then
           echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh root@"$IP" pacman -Syyu --noconfirm
+          ssh "$IP" pacman -Syyu --noconfirm
           EXTRAS
           UPDATE_CHECK
         elif [[ $OS =~ Alpine ]]; then
           echo -e "${OR}--- APK UPDATE ---${CL}"
-          ssh root@"$IP" apk -U upgrade
+          ssh "$IP" apk -U upgrade
         elif [[ $OS =~ CentOS ]]; then
           echo -e "${OR}--- YUM UPDATE ---${CL}"
-          ssh root@"$IP" yum -y update
+          ssh "$IP" yum -y update
           EXTRAS
           UPDATE_CHECK
         else
