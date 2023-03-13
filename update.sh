@@ -518,8 +518,8 @@ function EXIT {
       /root/Proxmox-Updater/exit/passed.sh
       CLEAN_LOGFILE
     fi
-  # Update Error
   else
+  # Update Error
     if [[ $RICM != true ]]; then
       echo -e "${RD}Error during Update --- Exit Code: $EXIT_CODE${CL}\n"
       /root/Proxmox-Updater/exit/error.sh
