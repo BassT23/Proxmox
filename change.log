@@ -1,9 +1,12 @@
 Changelog:
 ==========
 
-**v3.7.1** (development)
+**v3.7.x** (development)
 
 - Add SSH Connection for VM - with extra update support
+- Ask for Welcome Screen during install
+- Bug fixing
+- Update check for Welcome-Screen during update
 
 **v3.7** (09.03.2023)
 
