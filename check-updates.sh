@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.3.3"
+VERSION="1.3.7"
 
 #Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -50,6 +50,7 @@ function CHECK_HOST {
   ssh "$HOST" mkdir -p /root/Proxmox-Updater
   scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf >/dev/null 2>&1
   ssh "$HOST" 'bash -s' < "$0" -- "-c host"
+
 }
 
 function CHECK_HOST_ITSELF {
@@ -100,7 +101,11 @@ function CONTAINER_CHECK_START {
 
 # Container Check
 function CHECK_CONTAINER {
-  CONTAINER=$1
+  if [[ $RDU != true ]]; then
+    CONTAINER=$1
+  else
+    CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' var)
+  fi
   pct config "$CONTAINER" > temp
   OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
   if [[ $OS =~ centos ]]; then
@@ -171,7 +176,7 @@ function VM_CHECK_START {
         sleep 30
         CHECK_VM "$VM"
         # Stop the VM
-        qm shutdown "$VM"
+        qm stop "$VM"
       elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
         CHECK_VM "$VM"
       fi
@@ -181,9 +186,69 @@ function VM_CHECK_START {
 
 # VM Check
 function CHECK_VM {
-  VM=$1
+  if [[ $RDU != true ]]; then
+    VM=$1
+  else
+    VM=$(awk -F'"' '/^VM=/ {print $2}' var)
+  fi
+  NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
+  if [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
+    IP=$(awk -F'"' '/^IP=/ {print $2}' /root/Proxmox-Updater/VMs/"$VM")
+    if ! (ssh "$IP") >/dev/null 2>&1; then
+      CHECK_VM_QEMU
+    else
+      SSH_CONNECTION=true
+      OS_BASE=$(qm config "$VM" | grep ostype)
+      if [[ $OS_BASE =~ l2 ]]; then
+        OS=$(ssh "$IP" hostnamectl | grep System)
+        if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
+          ssh "$IP" "apt-get update" >/dev/null 2>&1
+          SECURITY_APT_UPDATES=$(ssh "$IP" "apt-get -s upgrade | grep -ci ^inst.*security")
+          NORMAL_APT_UPDATES=$(ssh "$IP" "apt-get -s upgrade | grep -ci ^inst.")
+#          if ssh "$IP" "-f /var/run/reboot-required.pkgs"; then REBOOT_REQUIRED=true; fi
+          if ssh "$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then REBOOT_REQUIRED=true; fi
+          if [[ $SECURITY_APT_UPDATES -gt 0 || $NORMAL_APT_UPDATES -gt 0 || $REBOOT_REQUIRED == true ]]; then
+            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+          fi
+          if [[ $REBOOT_REQUIRED == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
+          if [[ $SECURITY_APT_UPDATES -gt 0 && $NORMAL_APT_UPDATES -gt 0 ]]; then
+            echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
+          elif [[ $SECURITY_APT_UPDATES -gt 0 ]]; then
+            echo -e "S: $SECURITY_APT_UPDATES / "
+          elif [[ $NORMAL_APT_UPDATES -gt 0 ]]; then
+            echo -e "N: $NORMAL_APT_UPDATES"
+          fi
+        elif [[ $OS =~ Fedora ]]; then
+          ssh "$IP" "dnf -y update" >/dev/null 2>&1
+          UPDATES=$(ssh "$IP" "dnf check-update| grep -Ec ' updates$'")
+          if [[ $UPDATES -gt 0 ]]; then
+            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+            echo -e "$UPDATES"
+          fi
+        elif [[ $OS =~ Arch ]]; then
+          UPDATES=$(ssh "$IP" "pacman -Qu | wc -l")
+          if [[ $UPDATES -gt 0 ]]; then
+            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+            echo -e "$UPDATES"
+          fi
+        elif [[ $OS =~ Alpine ]]; then
+          return
+        elif [[ $OS =~ CentOS ]]; then
+          UPDATES=$(ssh "$IP" "yum -q check-update | wc -l")
+          if [[ $UPDATES -gt 0 ]]; then
+            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+            echo -e "$UPDATES"
+          fi
+        fi
+      fi
+    fi
+  else
+    CHECK_VM_QEMU
+  fi
+}
+
+function CHECK_VM_QEMU {
   if qm guest exec "$VM" test >/dev/null 2>&1; then
-    NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
       qm guest exec "$VM" -- bash -c "apt-get update" >/dev/null 2>&1
@@ -226,17 +291,13 @@ function CHECK_VM {
   fi
 }
 
-# Check During update
-function CHECK_RUNNUNG_MACHINE {
-  echo -e "Recheck updates and if reboot is required"
-  echo -e "This is only a placeholder - for now\n"
-}
-
 # Output to file
-if [[ $RDU != true ]]; then
-  touch /root/Proxmox-Updater/check-output
-  exec > >(tee /root/Proxmox-Updater/check-output)
-fi
+function OUTPUT_TO_FILE {
+  if [[ $RDU != true && $RICM != true ]]; then
+    touch /root/Proxmox-Updater/check-output
+    exec > >(tee /root/Proxmox-Updater/check-output)    # work in normal mode
+  fi
+}
 
 # Check Cluster Mode
 if [[ -f /etc/corosync/corosync.conf ]]; then
@@ -260,14 +321,31 @@ parse_cli()
       -u)
         RDU=true  # Run During Update
         ;;
+      chost)
+        COMMAND=true
+        OUTPUT_TO_FILE
+        CHECK_HOST_ITSELF
+        ;;
+      ccontainer)
+        COMMAND=true
+        OUTPUT_TO_FILE
+        CHECK_CONTAINER
+        ;;
+      cvm)
+        COMMAND=true
+        OUTPUT_TO_FILE
+        CHECK_VM
+        ;;
       host)
         COMMAND=true
+        OUTPUT_TO_FILE
         if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
         if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
         if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
         ;;
       cluster)
         COMMAND=true
+        OUTPUT_TO_FILE
         HOST_CHECK_START
         ;;
       *)
@@ -283,13 +361,13 @@ parse_cli "$@"
 
 # Run without commands (Automatic Mode)
 if [[ $COMMAND != true && $RDU == true ]]; then
+  OUTPUT_TO_FILE
   CHECK_RUNNUNG_MACHINE
 elif [[ $COMMAND != true ]]; then
+  OUTPUT_TO_FILE
   if [[ $MODE =~ Cluster ]]; then HOST_CHECK_START; else
     if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
     if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
     if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
   fi
 fi
-
-exit 0
