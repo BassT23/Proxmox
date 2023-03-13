@@ -4,18 +4,15 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.2.2"
+VERSION="1.2.3"
+
+# Branch
+BRANCH="development"
 
 # Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 CHECK_OUTPUT=$(stat -c%s /root/Proxmox-Updater/check-output)
-
-#live
-#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
-#beta
-#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
-#development
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 # Colors
 # BL="\e[36m"
@@ -62,6 +59,9 @@ function TIME_CALCULTION {
 MOD=$(date -r "/root/Proxmox-Updater/check-output" +%s)
 NOW=$(date +%s)
 # convert seconds to Days, Hours, Minutes
+#DAYS=$(expr \( "$NOW" - "$MOD" \) / 86400)
+#HOURS=$(expr \( "$NOW" - "$MOD" \) / 1440)
+#MINUTES=$(expr \( "$NOW" - "$MOD" \) / 60)
 DAYS=$(( (NOW - MOD) / 86400 ))
 HOURS=$(( (NOW - MOD) / 1440 ))
 MINUTES=$(( (NOW - MOD) / 60 ))
