@@ -4,17 +4,14 @@
 # Install #
 ###########
 
-VERSION="1.5"
+VERSION="1.5.1"
 
-#Variable / Function
+# Branch
+BRANCH="development"
+
+# Variable / Function
 LOCAL_FILES="/root/Proxmox-Updater"
-
-#live
-#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
-#beta
-#SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/beta"
-#development
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/development"
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 #Colors
 BL="\e[36m"
@@ -111,6 +108,16 @@ function INSTALL {
       curl -s $SERVER_URL/update.conf > $LOCAL_FILES/update.conf
       chmod -R +x $LOCAL_FILES/exit/*.sh
       echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
+      echo -e "${OR}Also want to install the Welcome-Screen?${CL}\n\
+Type [Y/y] or Enter for yes - enything else will exit"
+      read -p "" -n 1 -r -s
+      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+        if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
+        curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
+        curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater-Temp/check-updates.sh
+        WELCOME_SCREEN_INSTALL
+        rm -r /root/Proxmox-Updater-Temp
+      fi
     fi
 }
 
@@ -155,7 +162,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
       fi
     else
       echo -e "${RD}Proxmox-Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
-      read -p "Type [Y/y] or Enter for yes - enything else will exit " -n 1 -r -s
+      read -p "Type [Y/y] or Enter for yes - enything else will exit" -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh)
       else
@@ -201,18 +208,7 @@ function WELCOME_SCREEN {
       echo -e "${OR} Welcome-Screen is not installed${CL}\n"
       read -p "Would you like to install it also? Type [Y/y] or Enter for yes - enything else will skip" -n 1 -r -s && echo
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
-        cp /etc/crontab /etc/crontab.bak
-        touch /etc/motd
-        if ! [ -f /usr/bin/neofetch ]; then apt-get install neofetch -y; fi
-        cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
-        cp /root/Proxmox-Updater-Temp/check-updates.sh /root/Proxmox-Updater/check-updates.sh
-        chmod +x /etc/update-motd.d/01-welcome-screen
-        chmod +x /root/Proxmox-Updater/check-updates.sh
-        if ! grep -q "check-updates.sh" /etc/crontab; then
-          echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
-        fi
-        echo -e "\n${GN} Welcome-Screen installed${CL}\n"
+        WELCOME_SCREEN_INSTALL
       fi
     else
       echo -e "${OR}  Welcome-Screen is already installed${CL}\n"
@@ -233,18 +229,36 @@ function WELCOME_SCREEN {
   fi
 }
 
+function WELCOME_SCREEN_INSTALL {
+  if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
+  cp /etc/crontab /etc/crontab.bak
+  touch /etc/motd
+  if ! [ -f /usr/bin/neofetch ]; then apt-get install neofetch -y; fi
+  cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
+  cp /root/Proxmox-Updater-Temp/check-updates.sh /root/Proxmox-Updater/check-updates.sh
+  chmod +x /etc/update-motd.d/01-welcome-screen
+  chmod +x /root/Proxmox-Updater/check-updates.sh
+  if ! grep -q "check-updates.sh" /etc/crontab; then
+    echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
+  fi
+  echo -e "\n${GN} Welcome-Screen installed${CL}\n"
+}
+
 function UNINSTALL {
   if [ -f "/usr/local/bin/update" ]; then
     echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
-    echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
-    read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r -s
+    echo -e "${RD}Really want to remove Proxmox-Updater?${CL}\n\
+Type [Y/y] for yes - enything else will exit"
+    read -p "" -n 1 -r -s
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
       rm -r /root/Proxmox-Updater
       if [[ -f "/etc/update-motd.d/01-welcome-screen" ]]; then
         chmod -x /etc/update-motd.d/01-welcome-screen
         rm -rf /etc/motd
-        mv /etc/motd.bak /etc/motd
+        if [[ -f /etc/motd.bak ]]; then
+          mv /etc/motd.bak /etc/motd
+        fi
       fi
       echo -e "\n\n${BL}Proxmox-Updater removed${CL}\n"
     fi
