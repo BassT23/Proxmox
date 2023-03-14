@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.7.5"
+VERSION="3.7.7"
 
 # Branch
 BRANCH="development"
@@ -194,12 +194,12 @@ function HOST_UPDATE_START {
 # Host Update
 function UPDATE_HOST {
   HOST=$1
-  ssh "$HOST" mkdir -p /root/Proxmox-Updater
+  ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
   scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
   scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
   scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
   scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
-  scp host "$HOST":/root/host
+  scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
   if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
     scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
   fi
@@ -262,16 +262,16 @@ function CONTAINER_UPDATE_START {
       fi
     fi
   done
-  rm -rf temp
+  rm -rf ~/Proxmox-Updater/temp/temp
 }
 
 # Container Update
 function UPDATE_CONTAINER {
   CONTAINER=$1
   CCONTAINER="true"
-  echo 'CONTAINER="'"$CONTAINER"'"' > var
-  pct config "$CONTAINER" > temp
-  OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
+  echo 'CONTAINER="'"$CONTAINER"'"' > ~/Proxmox-Updater/temp/var
+  pct config "$CONTAINER" > ~/Proxmox-Updater/temp/temp
+  OS=$(awk '/^ostype/' ~/Proxmox-Updater/temp/temp | cut -d' ' -f2)
   if [[ $OS =~ centos ]]; then
     NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
   else
@@ -367,11 +367,11 @@ function UPDATE_VM {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   CVM="true"
-  echo 'VM="'"$VM"'"' > var
+  echo 'VM="'"$VM"'"' > ~/Proxmox-Updater/temp/var
   echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
   if [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' /root/Proxmox-Updater/VMs/"$VM")
-    if ! (ssh "$IP") >/dev/null 2>&1; then
+    if ! (ssh "$IP" exit >/dev/null 2>&1); then
       echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
   Please configure SSH Key-Based Authentication${CL}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
@@ -485,7 +485,7 @@ function OUTPUT_TO_FILE {
   if [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
     WELCOME_SCREEN=true
     if [[ $RICM != true ]]; then
-      echo 'EXEC_HOST="'"$HOSTNAME"'"' > host
+      echo 'EXEC_HOST="'"$HOSTNAME"'"' > ~/Proxmox-Updater/temp/exec_host
       touch /root/Proxmox-Updater/check-output
     fi
   fi
@@ -505,7 +505,7 @@ function CLEAN_LOGFILE {
 # Exit
 function EXIT {
   EXIT_CODE=$?
-  EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' host)
+  EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' ~/Proxmox-Updater/temp/exec_host)
   scp /root/Proxmox-Updater/check-output "$EXEC_HOST":/root/Proxmox-Updater/check-output
   # Exit direct
   if [[ $EXIT_CODE == 2 ]]; then
@@ -527,7 +527,8 @@ function EXIT {
   fi
   sleep 3
   if [[ $HOSTNAME != "$EXEC_HOST" ]]; then rm -rf /root/Proxmox-Updater; fi
-  rm -rf var host
+  rm -rf ~/Proxmox-Updater/temp/var
+#  rm -rf ~/Proxmox-Updater/temp/exec_host
 }
 set -e
 trap EXIT EXIT
@@ -542,7 +543,9 @@ fi
 
 # Arguments
 export TERM=xterm-256color
+if ! [[ -d ~/Proxmox-Updater/temp ]]; then mkdir ~/Proxmox-Updater/temp; fi
 READ_CONFIG
+OUTPUT_TO_FILE
 parse_cli()
 {
   while test $# -gt -0
@@ -569,7 +572,7 @@ parse_cli()
       host)
         COMMAND=true
         if [[ $RICM != true ]]; then
-          OUTPUT_TO_FILE
+#          OUTPUT_TO_FILE
           MODE="  Host  "
           HEADER_INFO
         fi
@@ -591,7 +594,7 @@ parse_cli()
         fi
         ;;
       cluster)
-        OUTPUT_TO_FILE
+#        OUTPUT_TO_FILE
         COMMAND=true
         MODE="Cluster "
         HEADER_INFO
@@ -620,7 +623,7 @@ parse_cli "$@"
 
 # Run without commands (Automatic Mode)
 if [[ $COMMAND != true ]]; then
-  OUTPUT_TO_FILE
+#  OUTPUT_TO_FILE
   HEADER_INFO
   if [[ $MODE =~ Cluster ]]; then
 #    OUTPUT_TO_FILE
