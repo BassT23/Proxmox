@@ -44,9 +44,15 @@ In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
-### If you want to update the VMs also, please install and run `qemu-guest-agent` on VM.
+### If you want to update the VMs also, you have two choices:
 
-check out here: <https://pve.proxmox.com/wiki/Qemu-guest-agent> for more infos.
+1. Use the "light and easy" QEMU option
+
+     more infos here: <https://pve.proxmox.com/wiki/Qemu-guest-agent>
+
+2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
+
+     more infos here: <https://github.com/BassT23/Proxmox/blob/development/ssh.md>
 
 
 ## Update the script:
@@ -96,8 +102,6 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 - To force the check, you can run `/root/Proxmox-Updater/check-updates.sh` in Terminal.
 - Need neofetch to be installed (if not installed, script will make it automatically)
 
-## SSH Connection for VM
-Look for more infos here: <https://github.com/BassT23/Proxmox/blob/development/ssh.md>
 
 ## Beta Testing:
 
