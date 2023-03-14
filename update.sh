@@ -507,7 +507,6 @@ function EXIT {
   EXIT_CODE=$?
   EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' host)
   scp /root/Proxmox-Updater/check-output "$EXEC_HOST":/root/Proxmox-Updater/check-output
-  if [[ $HOSTNAME != "$EXEC_HOST" ]]; then rm -rf /root/Proxmox-Updater; fi
   # Exit direct
   if [[ $EXIT_CODE == 2 ]]; then
     exit
@@ -526,8 +525,9 @@ function EXIT {
       CLEAN_LOGFILE
     fi
   fi
-  rm -rf var
-  rm -rf host
+  sleep 3
+  if [[ $HOSTNAME != "$EXEC_HOST" ]]; then rm -rf /root/Proxmox-Updater; fi
+  rm -rf var host
 }
 set -e
 trap EXIT EXIT
@@ -623,10 +623,10 @@ if [[ $COMMAND != true ]]; then
   OUTPUT_TO_FILE
   HEADER_INFO
   if [[ $MODE =~ Cluster ]]; then
-    OUTPUT_TO_FILE
+#    OUTPUT_TO_FILE
     HOST_UPDATE_START
   else
-    OUTPUT_TO_FILE
+#    OUTPUT_TO_FILE
     echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
     if [[ $WITH_HOST == true ]]; then
       UPDATE_HOST_ITSELF
