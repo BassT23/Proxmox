@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.3.7"
+VERSION="1.3.8"
 
 #Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -96,7 +96,7 @@ function CONTAINER_CHECK_START {
       fi
     fi
   done
-  rm -rf temp
+  rm -rf ~/Proxmox-Updater/temp/temp
 }
 
 # Container Check
@@ -104,10 +104,10 @@ function CHECK_CONTAINER {
   if [[ $RDU != true ]]; then
     CONTAINER=$1
   else
-    CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' var)
+    CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' ~/Proxmox-Updater/temp/var)
   fi
-  pct config "$CONTAINER" > temp
-  OS=$(awk '/^ostype/' temp | cut -d' ' -f2)
+  pct config "$CONTAINER" > ~/Proxmox-Updater/temp/temp
+  OS=$(awk '/^ostype/' ~/Proxmox-Updater/temp/temp | cut -d' ' -f2)
   if [[ $OS =~ centos ]]; then
     NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
   else
@@ -189,12 +189,12 @@ function CHECK_VM {
   if [[ $RDU != true ]]; then
     VM=$1
   else
-    VM=$(awk -F'"' '/^VM=/ {print $2}' var)
+    VM=$(awk -F'"' '/^VM=/ {print $2}' ~/Proxmox-Updater/temp/var)
   fi
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   if [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' /root/Proxmox-Updater/VMs/"$VM")
-    if ! (ssh "$IP") >/dev/null 2>&1; then
+    if ! (ssh "$IP" exit) >/dev/null 2>&1; then
       CHECK_VM_QEMU
     else
       SSH_CONNECTION=true
