@@ -63,7 +63,7 @@ NOW=$(date +%s)
 #HOURS=$(expr \( "$NOW" - "$MOD" \) / 1440)
 #MINUTES=$(expr \( "$NOW" - "$MOD" \) / 60)
 DAYS=$(( (NOW - MOD) / 86400 ))
-HOURS=$(( (NOW - MOD) / 1440 ))
+HOURS=$(( (NOW - MOD) / 3600 ))
 MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
