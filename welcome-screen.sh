@@ -57,7 +57,7 @@ MOD=$(date -r "/root/Proxmox-Updater/check-output" +%s)
 # convert seconds to Days, Hours, Minutes
 NOW=$(date +%s)
 DAYS=$(expr \( "$NOW" - "$MOD" \) / 86400)
-HOURS=$(expr \( "$NOW" - "$MOD" \) / 1440)
+HOURS=$(expr \( "$NOW" - "$MOD" \) / 3600)
 MINUTES=$(expr \( "$NOW" - "$MOD" \) / 60)
 }
 
