@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.7.7"
+VERSION="3.7.8"
 
 # Branch
 BRANCH="development"
@@ -79,7 +79,7 @@ function USAGE {
 
 # Version Check in Header
 function VERSION_CHECK {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update.sh
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/Proxmox-Updater/temp/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.sh)
   if [[ $SERVER_VERSION > $VERSION ]]; then
     echo -e "\n${OR}   *** A newer version is available ***${CL}\n \
@@ -99,7 +99,7 @@ function VERSION_CHECK {
     echo -e "\n             ${GN}Script is UpToDate${CL}\n \
                Version: $VERSION"
   fi
-  rm -rf /root/update.sh && echo
+  rm -rf /root/Proxmox-Updater/temp/update.sh && echo
 }
 
 # Update Proxmox-Updater
@@ -334,7 +334,7 @@ function VM_UPDATE_START {
       echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
     elif [[ $PRE_OS =~ w ]]; then
       echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}\n\n"
-      # Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot
+      #Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot
     else
       STATUS=$(qm status "$VM")
       if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
@@ -572,7 +572,6 @@ parse_cli()
       host)
         COMMAND=true
         if [[ $RICM != true ]]; then
-#          OUTPUT_TO_FILE
           MODE="  Host  "
           HEADER_INFO
         fi
@@ -594,7 +593,6 @@ parse_cli()
         fi
         ;;
       cluster)
-#        OUTPUT_TO_FILE
         COMMAND=true
         MODE="Cluster "
         HEADER_INFO
@@ -623,13 +621,10 @@ parse_cli "$@"
 
 # Run without commands (Automatic Mode)
 if [[ $COMMAND != true ]]; then
-#  OUTPUT_TO_FILE
   HEADER_INFO
   if [[ $MODE =~ Cluster ]]; then
-#    OUTPUT_TO_FILE
     HOST_UPDATE_START
   else
-#    OUTPUT_TO_FILE
     echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
     if [[ $WITH_HOST == true ]]; then
       UPDATE_HOST_ITSELF
