@@ -15,10 +15,12 @@
 
 >  Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
 
+>  I am no member of the Proxmox Server Solutions GmbH. This is not an official programm from Proxmox!
+
 >  This is distributed in the hope that it will be useful, but
 >  WITHOUT ANY WARRANTY; without even the implied warranty of
->  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
->  GNU General Public License for more details.
+>  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+>  See the GNU General Public License for more details.
 
 
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
@@ -29,17 +31,6 @@
 ![screenshot](https://user-images.githubusercontent.com/30832786/222421730-873ea121-bffd-4bab-a52a-e2beb3cca783.png)
 
 # Proxmox-Updater
-
-<div align="center">
-
->  Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
-
->  This is distributed in the hope that it will be useful, but
->  WITHOUT ANY WARRANTY; without even the implied warranty of
->  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
->  GNU General Public License for more details.
-
-</div>
 
 Features:
 - Update Proxmox (the host / all cluster nodes / all included LXCs and VMs)
