@@ -11,8 +11,15 @@
    \____/ .___/\____/\____/\__/\___/_/
        /_/
 ```
-
 <div align="center">
+
+>  Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
+
+>  This is distributed in the hope that it will be useful, but
+>  WITHOUT ANY WARRANTY; without even the implied warranty of
+>  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+>  GNU General Public License for more details.
+
 
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
