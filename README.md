@@ -15,10 +15,12 @@
 
 >  Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
 
+>  I am no member of the Proxmox Server Solutions GmbH. This is not an official programm from Proxmox!
+
 >  This is distributed in the hope that it will be useful, but
 >  WITHOUT ANY WARRANTY; without even the implied warranty of
->  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
->  GNU General Public License for more details.
+>  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+>  See the GNU General Public License for more details.
 
 
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
