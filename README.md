@@ -23,10 +23,16 @@
 
 # Proxmox-Updater
 
+<div align="center">
+
+>  Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
+
 >  This is distributed in the hope that it will be useful, but
 >  WITHOUT ANY WARRANTY; without even the implied warranty of
 >  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 >  GNU General Public License for more details.
+
+</div>
 
 Features:
 - Update Proxmox (the host / all cluster nodes / all included LXCs and VMs)
