@@ -4,7 +4,7 @@
 # Install #
 ###########
 
-VERSION="1.5.1"
+VERSION="1.5.2"
 
 # Branch
 BRANCH="development"
@@ -238,6 +238,7 @@ function WELCOME_SCREEN_INSTALL {
   cp /root/Proxmox-Updater-Temp/check-updates.sh /root/Proxmox-Updater/check-updates.sh
   chmod +x /etc/update-motd.d/01-welcome-screen
   chmod +x /root/Proxmox-Updater/check-updates.sh
+  touch /root/Proxmox-Updater/check-output
   if ! grep -q "check-updates.sh" /etc/crontab; then
     echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
   fi
