@@ -38,7 +38,6 @@ function VERSION_CHECK {
 }
 
 function READ_WRITE_CONFIG {
-#  CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' $CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
@@ -58,10 +57,6 @@ function READ_WRITE_CONFIG {
 function TIME_CALCULTION {
 MOD=$(date -r "/root/Proxmox-Updater/check-output" +%s)
 NOW=$(date +%s)
-# convert seconds to Days, Hours, Minutes
-#DAYS=$(expr \( "$NOW" - "$MOD" \) / 86400)
-#HOURS=$(expr \( "$NOW" - "$MOD" \) / 1440)
-#MINUTES=$(expr \( "$NOW" - "$MOD" \) / 60)
 DAYS=$(( (NOW - MOD) / 86400 ))
 HOURS=$(( (NOW - MOD) / 3600 ))
 MINUTES=$(( (NOW - MOD) / 60 ))
@@ -80,7 +75,6 @@ elif [[ $HOURS -gt 1 ]]; then
 else
   echo -e "     Last Update Check: $MINUTES minute(s) ago\n"
 fi
-#echo -e "Time since last update check (D:H:M): $DAYS:$HOURS:$MINUTES\n"
 if [[ -f /root/Proxmox-Updater/check-output ]] && [[ $CHECK_OUTPUT -gt 0 ]]; then
   echo -e "${OR}Available Updates:${CL}"
   echo -e "S = Security / N = Normal"
