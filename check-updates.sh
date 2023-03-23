@@ -90,7 +90,6 @@ function CONTAINER_CHECK_START {
         pct start "$CONTAINER"
         sleep 5
         CHECK_CONTAINER "$CONTAINER"
-        echo -e "check $CONTAINER"
         # Stop the container
         pct shutdown "$CONTAINER"
       elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
