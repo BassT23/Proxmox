@@ -138,7 +138,7 @@ function READ_CONFIG {
 function EXTRAS {
   if [[ $EXTRA_GLOBAL != true ]]; then
     echo -e "\n${OR}--- Skip Extra Updates because of user settings ---${CL}\n"
-  elif [[ $HEADLESS != true || $EXTRA_IN_HEADLESS != false ]]; then
+  elif [[ $HEADLESS == true && $EXTRA_IN_HEADLESS == false ]]; then
     echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
   else
     echo -e "\n${OR}--- Searching for extra updates ---${CL}"
