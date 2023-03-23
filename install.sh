@@ -261,6 +261,7 @@ Type [Y/y] for yes - enything else will exit"
         fi
       fi
       echo -e "\n\n${BL}Proxmox-Updater removed${CL}\n"
+      exit 0
     fi
   else
     echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
