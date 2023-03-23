@@ -44,6 +44,8 @@ Info can be found with `update -h`
 
 ## Installation:
 
+! You only need to install on one Host !
+
 In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
