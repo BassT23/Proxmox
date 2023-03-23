@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.7.8"
+VERSION="3.7.9"
 
 # Branch
 BRANCH="development"
@@ -128,6 +128,7 @@ function READ_CONFIG {
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
   RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
+  EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' $CONFIG_FILE)
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
@@ -135,7 +136,11 @@ function READ_CONFIG {
 
 # Extras
 function EXTRAS {
-  if [[ $HEADLESS != true || $EXTRA_IN_HEADLESS != false ]]; then
+  if [[ $EXTRA_GLOBAL != true ]]; then
+    echo -e "\n${OR}--- Skip Extra Updates because of user settings ---${CL}\n"
+  elif [[ $HEADLESS != true || $EXTRA_IN_HEADLESS != false ]]; then
+    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
+  else
     echo -e "\n${OR}--- Searching for extra updates ---${CL}"
     if [[ $SSH_CONNECTION != true ]]; then
       pct exec "$CONTAINER" -- bash -c "mkdir -p /root/Proxmox-Updater/"
@@ -159,8 +164,6 @@ function EXTRAS {
     elif [[ $WELCOME_SCREEN == true ]]; then
       echo
     fi
-  else
-    echo -e "${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
   fi
 }
 
@@ -333,8 +336,7 @@ function VM_UPDATE_START {
     elif [[ $ONLY != "" ]] && ! [[ $ONLY =~ $VM ]]; then
       echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
     elif [[ $PRE_OS =~ w ]]; then
-      echo -e "${RD}  Windows is not supported for now.\n  Maybe with later version ;)${CL}\n\n"
-      #Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot
+      echo -e "${RD}  Windows is not supported for now.\n  I'm working on it ;)${CL}\n\n"
     else
       STATUS=$(qm status "$VM")
       if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
@@ -363,6 +365,7 @@ function VM_UPDATE_START {
 }
 
 # VM Update
+# SSH
 function UPDATE_VM {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
@@ -418,6 +421,9 @@ function UPDATE_VM {
           echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
         fi
         return
+#      elif [[ $OS_BASE == win10 ]]; then
+#        ssh "$USER"@"$IP" wuauclt /detectnow /updatenow
+#        Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot # don't work
       fi
     fi
   else
@@ -425,6 +431,7 @@ function UPDATE_VM {
   fi
 }
 
+# QEMU
 function UPDATE_VM_QEMU {
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
@@ -579,7 +586,7 @@ parse_cli()
         if [[ $WITH_HOST == true ]]; then
           UPDATE_HOST_ITSELF
         else
-          echo -e "${BL}[Info] Skipped host itself by user${CL}\n"
+          echo -e "${BL}[Info] Skipped host itself by user${CL}\n\n"
         fi
         if [[ $WITH_LXC == true ]]; then
           CONTAINER_UPDATE_START
@@ -629,7 +636,7 @@ if [[ $COMMAND != true ]]; then
     if [[ $WITH_HOST == true ]]; then
       UPDATE_HOST_ITSELF
     else
-      echo -e "${BL}[Info] Skipped host itself by user${CL}\n"
+      echo -e "${BL}[Info] Skipped host itself by user${CL}\n\n"
     fi
     if [[ $WITH_LXC == true ]]; then
       CONTAINER_UPDATE_START
