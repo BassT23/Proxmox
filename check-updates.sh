@@ -77,6 +77,7 @@ function CONTAINER_CHECK_START {
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   # Loop through the containers
+  if ! [[ -d /root/Proxmox-Updater/temp/ ]]; then mkdir /root/Proxmox-Updater/temp/; fi
   for CONTAINER in $CONTAINERS; do
     if [[ $ONLY == "" ]] && [[ $EXCLUDED =~ $CONTAINER ]]; then
       continue
@@ -89,14 +90,15 @@ function CONTAINER_CHECK_START {
         pct start "$CONTAINER"
         sleep 5
         CHECK_CONTAINER "$CONTAINER"
+        echo -e "check $CONTAINER"
         # Stop the container
-        pct shutdown "$CONTAINER" &
+        pct shutdown "$CONTAINER"
       elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
         CHECK_CONTAINER "$CONTAINER"
       fi
     fi
   done
-  rm -rf ~/Proxmox-Updater/temp/temp
+  rm -rf /root/Proxmox-Updater/temp/temp
 }
 
 # Container Check
@@ -104,10 +106,10 @@ function CHECK_CONTAINER {
   if [[ $RDU != true ]]; then
     CONTAINER=$1
   else
-    CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' ~/Proxmox-Updater/temp/var)
+    CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' /root/Proxmox-Updater/temp/var)
   fi
-  pct config "$CONTAINER" > ~/Proxmox-Updater/temp/temp
-  OS=$(awk '/^ostype/' ~/Proxmox-Updater/temp/temp | cut -d' ' -f2)
+  pct config "$CONTAINER" > /root/Proxmox-Updater/temp/temp
+  OS=$(awk '/^ostype/' /root/Proxmox-Updater/temp/temp | cut -d' ' -f2)
   if [[ $OS =~ centos ]]; then
     NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
   else
@@ -189,7 +191,7 @@ function CHECK_VM {
   if [[ $RDU != true ]]; then
     VM=$1
   else
-    VM=$(awk -F'"' '/^VM=/ {print $2}' ~/Proxmox-Updater/temp/var)
+    VM=$(awk -F'"' '/^VM=/ {print $2}' /root/Proxmox-Updater/temp/var)
   fi
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   if [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
