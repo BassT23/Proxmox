@@ -28,7 +28,8 @@
 
 </div>
 
-![screenshot](https://user-images.githubusercontent.com/30832786/222421730-873ea121-bffd-4bab-a52a-e2beb3cca783.png)
+![Screenshot_20230321_055444](https://user-images.githubusercontent.com/30832786/227305825-08736d68-9938-4a3a-9a6d-dfe0d1720922.png)
+
 
 # Proxmox-Updater
 
