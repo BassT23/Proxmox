@@ -29,12 +29,12 @@ PermitRootLogin yes
 `sudo service sshd restart`
 
 
-### IN HOST, WHICH HOST THE VM:
+### IN HOST:
 - create one file per VM in `/root/Proxmox-Updater/VMs/<ID>` with content:
 
 `IP="111.111.111.111"`   # use the IP from the VM!
 
-(IP can be found in Proxmox GUI -> VM -> Overview / or in VM with `hostname -I`)
+(IP can be found in VM with command: `hostname -I`)
 
-- Copy ssh key like:
+- Copy ssh key to VM:
 `ssh-copy-id -i /root/.ssh/id_rsa.pub root@<VM-IP>`
