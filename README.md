@@ -118,6 +118,10 @@ Install beta update with:
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
 ```
 
+## Support:
+
+[![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
+
 ## Credits:
 
 [@Uruk](https://github.com/Uruknara) - for help with the code
