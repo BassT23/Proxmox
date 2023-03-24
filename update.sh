@@ -532,7 +532,9 @@ function EXIT {
       CLEAN_LOGFILE
     fi
   fi
+  sleep 3
   rm -rf ~/Proxmox-Updater/temp/var
+  if [[ $HOSTNAME != "$EXEC_HOST" ]]; then rm -rf /root/Proxmox-Updater; fi
 }
 set -e
 trap EXIT EXIT
