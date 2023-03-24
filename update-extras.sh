@@ -4,7 +4,8 @@
 # Update-Extras #
 #################
 
-VERSION="1.7.5"
+# This work only for LXC-Container NOT for HOST or VM
+VERSION="1.7.6"
 
 # Variables
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -47,7 +48,7 @@ if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true ]]; then
   php artisan view:clear
   php artisan config:clear
   php artisan migrate --seed --force
-  os=$(awk '/^ostype/' temp | cut -d' ' -f2)
+  os=$(awk '/^ostype/' ~/Proxmox-Updater/temp/temp | cut -d' ' -f2)
   if [[ $os == centos ]]; then
     # If using NGINX on CentOS:
     if id -u "nginx" >/dev/null 2>&1; then
@@ -72,7 +73,8 @@ fi
 # Octoprint
 if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
   echo -e "\n*** Updating Octoprint ***\n"
-  ~/oprint/bin/pip install -U octoprint
+  OPRINT=$(find /home -name "oprint")
+  "$OPRINT"/bin/pip install -U octoprint
   sudo service octoprint restart
 fi
 

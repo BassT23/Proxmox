@@ -11,15 +11,25 @@
    \____/ .___/\____/\____/\__/\___/_/
        /_/
 ```
-
 <div align="center">
+
+>  Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
+
+>  I am no member of the Proxmox Server Solutions GmbH. This is not an official programm from Proxmox!
+
+>  This is distributed in the hope that it will be useful, but
+>  WITHOUT ANY WARRANTY; without even the implied warranty of
+>  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+>  See the GNU General Public License for more details.
+
 
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
 
 </div>
 
-![screenshot](https://user-images.githubusercontent.com/30832786/222421730-873ea121-bffd-4bab-a52a-e2beb3cca783.png)
+![Screenshot_20230321_055444](https://user-images.githubusercontent.com/30832786/227305825-08736d68-9938-4a3a-9a6d-dfe0d1720922.png)
+
 
 # Proxmox-Updater
 
@@ -35,13 +45,21 @@ Info can be found with `update -h`
 
 ## Installation:
 
+! You only need to install on one Host !
+
 In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
-### If you want to update the VMs also, please install and run `qemu-guest-agent` on VM.
+### If you want to update the VMs also, you have two choices:
 
-check out here: <https://pve.proxmox.com/wiki/Qemu-guest-agent> for more infos.
+1. Use the "light and easy" QEMU option
+
+     more infos here: <https://pve.proxmox.com/wiki/Qemu-guest-agent>
+
+2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
+
+     more infos here: <https://github.com/BassT23/Proxmox/blob/development/ssh.md>
 
 
 ## Update the script:
@@ -91,6 +109,7 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 - To force the check, you can run `/root/Proxmox-Updater/check-updates.sh` in Terminal.
 - Need neofetch to be installed (if not installed, script will make it automatically)
 
+
 ## Beta Testing:
 
 If anybody want to help with failure search, please test our beta (if available).
@@ -98,6 +117,10 @@ Install beta update with:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
 ```
+
+## Support:
+
+[![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
 
 ## Credits:
 
