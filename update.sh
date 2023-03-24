@@ -581,7 +581,7 @@ parse_cli()
           MODE="  Host  "
           HEADER_INFO
         fi
-        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
+        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOST${CL}\n"
         if [[ $WITH_HOST == true ]]; then
           UPDATE_HOST_ITSELF
         else
@@ -631,7 +631,7 @@ if [[ $COMMAND != true ]]; then
   if [[ $MODE =~ Cluster ]]; then
     HOST_UPDATE_START
   else
-    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
+    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOST${CL}"
     if [[ $WITH_HOST == true ]]; then
       UPDATE_HOST_ITSELF
     else
