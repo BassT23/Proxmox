@@ -7,7 +7,7 @@
 VERSION="1.5.2"
 
 # Branch
-BRANCH="development"
+BRANCH="beta"
 
 # Variable / Function
 LOCAL_FILES="/root/Proxmox-Updater"
