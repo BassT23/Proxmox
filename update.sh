@@ -7,7 +7,7 @@
 VERSION="3.7.9"
 
 # Branch
-BRANCH="beta"
+BRANCH="development"
 
 # Variable / Function
 LOG_FILE=/var/log/update-$HOSTNAME.log    # <- change location for logfile if you want
@@ -197,6 +197,7 @@ function HOST_UPDATE_START {
 # Host Update
 function UPDATE_HOST {
   HOST=$1
+  echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOST${CL}\n"
   ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
   scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
   scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
@@ -580,8 +581,8 @@ parse_cli()
         if [[ $RICM != true ]]; then
           MODE="  Host  "
           HEADER_INFO
+          echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
         fi
-        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOST${CL}\n"
         if [[ $WITH_HOST == true ]]; then
           UPDATE_HOST_ITSELF
         else
@@ -631,7 +632,7 @@ if [[ $COMMAND != true ]]; then
   if [[ $MODE =~ Cluster ]]; then
     HOST_UPDATE_START
   else
-    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOST${CL}"
+    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
     if [[ $WITH_HOST == true ]]; then
       UPDATE_HOST_ITSELF
     else
