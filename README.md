@@ -41,6 +41,8 @@ Features:
 
 Info can be found with `update -h`
 
+Changelog: [here](https://github.com/BassT23/Proxmox/blob/beta/change.log)
+
 
 ## Installation:
 ! You only need to install on one Host !
