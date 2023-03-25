@@ -71,11 +71,11 @@ For that connect from node, on which you install the Proxmox-Updater to node2 wi
 ### If you want to update the VMs also, you have two choices:
 1. Use the "light and easy" QEMU option
 
-     more infos here: <https://pve.proxmox.com/wiki/Qemu-guest-agent>
+     more infos here: [QEMU Guest Agent](https://pve.proxmox.com/wiki/Qemu-guest-agent)
 
 2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
 
-     more infos here: <https://github.com/BassT23/Proxmox/blob/development/ssh.md>
+     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/development/ssh.md)
 
 
 ## Update the script:
