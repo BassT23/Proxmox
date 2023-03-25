@@ -50,7 +50,7 @@ In Proxmox GUI Host Shell or as root on proxmox host terminal:
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
 
-### Cluster-Mode preparation
+### Cluster-Mode preparation:
 The nodes need to know each other. For that please edit the `/etc/hosts` file on each node. Otherwise you can use the GUI (NODE -> System -> Hosts)
 
 Example add:
@@ -109,7 +109,7 @@ With this file, you can manage the updater. For example; if you don't want to up
 - "only" or "exclude" LXC/VM by ID
 
 
-## Welcome Screen
+## Welcome Screen:
 The Welcome Screen is an extra for you. Its optional!
 
 Can be installed or uninstalled with:
@@ -129,6 +129,13 @@ Install beta update with:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
 ```
+
+## QA:
+Error: `ssh: Could not resolve hostname pve1: No address associated with hostname
+lost connection`
+
+Answer: [Cluster-Mode Config](https://github.com/BassT23/Proxmox/blob/beta/README.md#cluster-mode-preparation)
+
 
 ## Support:
 [![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
