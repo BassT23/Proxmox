@@ -635,7 +635,7 @@ if [[ $COMMAND != true ]]; then
   if [[ $MODE =~ Cluster ]]; then
     HOST_UPDATE_START
   else
-    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP| ($HOSTNAME)${CL}"
+    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP| ($HOSTNAME)${CL}\n"
     if [[ $WITH_HOST == true ]]; then
       UPDATE_HOST_ITSELF
     else
