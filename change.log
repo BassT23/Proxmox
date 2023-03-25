@@ -1,7 +1,7 @@
 Changelog:
 ==========
 
-**v3.7.x** (bate)
+**v3.7.x** (beta)
 
 - Add SSH Connection for VM - with extra update support
 - Add "Global Extra" in config file, for disable/enable Extra Updates
