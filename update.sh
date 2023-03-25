@@ -555,6 +555,7 @@ export TERM=xterm-256color
 if ! [[ -d ~/Proxmox-Updater/temp ]]; then mkdir ~/Proxmox-Updater/temp; fi
 READ_CONFIG
 OUTPUT_TO_FILE
+IP=$(hostname -I)
 parse_cli()
 {
   while test $# -gt -0
@@ -584,7 +585,7 @@ parse_cli()
           MODE="  Host  "
           HEADER_INFO
         fi
-        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
+        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP| ($HOSTNAME)${CL}\n"
         if [[ $WITH_HOST == true ]]; then
           UPDATE_HOST_ITSELF
         else
@@ -634,7 +635,7 @@ if [[ $COMMAND != true ]]; then
   if [[ $MODE =~ Cluster ]]; then
     HOST_UPDATE_START
   else
-    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}"
+    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP| ($HOSTNAME)${CL}"
     if [[ $WITH_HOST == true ]]; then
       UPDATE_HOST_ITSELF
     else
