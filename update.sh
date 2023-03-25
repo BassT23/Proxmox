@@ -197,8 +197,8 @@ function HOST_UPDATE_START {
 # Host Update
 function UPDATE_HOST {
   HOST=$1
-  echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOST${CL}\n"
   ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
+  scp "$0" "$HOST":/root/Proxmox-Updater/update
   scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
   scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
   scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
@@ -210,9 +210,9 @@ function UPDATE_HOST {
   if [[ $HEADLESS == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
   elif [[ $WELCOME_SCREEN == true ]]; then
-    ssh "$HOST" 'bash -s' < "$0" -- "-c -w host"
+    ssh "$HOST" "/root/Proxmox-Updater/update -c -w host"
   else
-    ssh "$HOST" 'bash -s' < "$0" -- "-c host"
+    ssh "$HOST" "/root/Proxmox-Updater/update -c host"
   fi
 }
 
@@ -337,7 +337,8 @@ function VM_UPDATE_START {
     elif [[ $ONLY != "" ]] && ! [[ $ONLY =~ $VM ]]; then
       echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
     elif [[ $PRE_OS =~ w ]]; then
-      echo -e "${RD}  Windows is not supported for now.\n  I'm working on it ;)${CL}\n\n"
+      echo -e "${BL}[Info] Skipped VM $VM${CL}\n"
+      echo -e "${OR}  Windows is not supported for now.\n  I'm working on it ;)${CL}\n\n"
     else
       STATUS=$(qm status "$VM")
       if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
@@ -535,6 +536,7 @@ function EXIT {
   fi
   sleep 3
   rm -rf ~/Proxmox-Updater/temp/var
+  rm -rf /root/Proxmox-Updater/update
   if [[ $HOSTNAME != "$EXEC_HOST" ]]; then rm -rf /root/Proxmox-Updater; fi
 }
 set -e
@@ -581,8 +583,8 @@ parse_cli()
         if [[ $RICM != true ]]; then
           MODE="  Host  "
           HEADER_INFO
-          echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
         fi
+        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$HOSTNAME${CL}\n"
         if [[ $WITH_HOST == true ]]; then
           UPDATE_HOST_ITSELF
         else
