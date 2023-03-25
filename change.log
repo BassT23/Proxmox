@@ -1,15 +1,6 @@
 Changelog:
 ==========
 
-**v3.8** (beta)
-
-- Add ssh connection for VM
-- Add "Global Extra" in config file, for disable/enable Extra Updates
-- Welcome Screen:
-  - Make update check during update now - not at the end
-  - Fix time calculation
-  - Add "reboot required"
-
 **v3.7** (09.03.2023)
 
 - Fixing code
