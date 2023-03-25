@@ -32,7 +32,6 @@
 
 
 # Proxmox-Updater
-
 Features:
 - Update Proxmox (the host / all cluster nodes / all included LXCs and VMs)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
@@ -44,15 +43,32 @@ Info can be found with `update -h`
 
 
 ## Installation:
-
 ! You only need to install on one Host !
 
 In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
-### If you want to update the VMs also, you have two choices:
 
+### Cluster-Mode preparation
+The nodes need to know each other. For that please edit the `/etc/hosts` file on each node. Otherwise you can use the GUI (NODE -> System -> Hosts)
+
+Example add:
+```
+192.168.1.10   pve1
+192.168.1.11   pve2
+192.168.1.12   pve3
+...
+```
+IP and Name must match with node ip and its hostname.
+- IP can be found in node terminal with `hostname -I`
+- hostname can be found in node terminal with `hostname`
+
+After that make the fingerprints.
+For that connect from node, on which you install the Proxmox-Updater to node2 with `ssh pve2 uptime` for example. Then from node2 `ssh pve3 uptime`, and so on.
+
+
+### If you want to update the VMs also, you have two choices:
 1. Use the "light and easy" QEMU option
 
      more infos here: <https://pve.proxmox.com/wiki/Qemu-guest-agent>
@@ -73,7 +89,6 @@ and install new
 
 
 ## Extra Updates:
-
 If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater/update.conf`)
 - PiHole
 - ioBroker
@@ -83,7 +98,6 @@ If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater
 
 
 ## Config File:
-
 The config file is stored under `/root/Proxmox-Updater/update.conf`
 
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
@@ -96,7 +110,6 @@ With this file, you can manage the updater. For example; if you don't want to up
 
 
 ## Welcome Screen
-
 The Welcome Screen is an extra for you. Its optional!
 
 Can be installed or uninstalled with:
@@ -111,7 +124,6 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 
 
 ## Beta Testing:
-
 If anybody want to help with failure search, please test our beta (if available).
 Install beta update with:
 ```
@@ -119,9 +131,7 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh
 ```
 
 ## Support:
-
 [![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
 
 ## Credits:
-
 [@Uruk](https://github.com/Uruknara) - for help with the code
