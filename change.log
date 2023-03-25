@@ -1,13 +1,17 @@
 Changelog:
 ==========
 
-**v3.7.x** (development)
+**v3.7.x** (bate)
 
 - Add SSH Connection for VM - with extra update support
-- Ask for Welcome-Screen during install
+- Add "Global Extra" in config file, for disable/enable Extra Updates
 - Bug fixing
-- Update check for Welcome-Screen during update
 - Info, if you are on beta/development version
+- Welcome Screen:
+  - Ask for Welcome-Screen during install
+  - Make update check during update now - not at the end
+  - Fix time calculation
+  - Add "reboot required"
 
 **v3.7** (09.03.2023)
 
