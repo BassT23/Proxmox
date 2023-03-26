@@ -4,7 +4,7 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.2.3"
+#VERSION="1.2.3"
 
 # Branch
 BRANCH="beta"
@@ -68,9 +68,9 @@ neofetch
 VERSION_CHECK
 READ_WRITE_CONFIG
 TIME_CALCULTION
-if [[ $DAYS -gt 1 ]]; then
+if [[ $DAYS -gt 0 ]]; then
   echo -e "     Last Update Check: $DAYS day(s) ago\n"
-elif [[ $HOURS -gt 1 ]]; then
+elif [[ $HOURS -gt 0 ]]; then
   echo -e "     Last Update Check: $HOURS hour(s) ago\n"
 else
   echo -e "     Last Update Check: $MINUTES minute(s) ago\n"
