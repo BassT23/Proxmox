@@ -7,7 +7,7 @@ Changelog:
 - Add "Global Extra" in config file, for disable/enable Extra Updates
 - Bug fixing
 - Info, if you are on beta/development version
-- Add "Status/Version" Info (`update status`)
+- Add "Status/Version" Info ("update status")
 - Welcome Screen:
   - Ask for Welcome-Screen during install
   - Make update check during update now - not at the end
