@@ -592,8 +592,6 @@ parse_cli()
     argument="$1"
     case "$argument" in
       -h|--help)
-        INFO=false
-        HEADER_INFO
         USAGE
         exit 2
         ;;
