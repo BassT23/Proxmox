@@ -45,7 +45,7 @@ Changelog: [here](https://github.com/BassT23/Proxmox/blob/beta/change.log)
 
 
 ## Installation:
-! You only need to install on one Host !
+**! You only need to install on one Host !**
 
 In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
