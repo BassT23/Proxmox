@@ -132,11 +132,8 @@ Install beta update with:
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
 ```
 
-## QA:
-Error: `ssh: Could not resolve hostname pve1: No address associated with hostname
-lost connection`
-
-Answer: [Cluster-Mode Config](https://github.com/BassT23/Proxmox/blob/beta/README.md#cluster-mode-preparation)
+## Q&A:
+[Discussion](https://github.com/BassT23/Proxmox/discussions/60)
 
 
 ## Support:
