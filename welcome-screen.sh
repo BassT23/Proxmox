@@ -4,7 +4,7 @@
 # Welcome-Screen #
 ##################
 
-#VERSION="1.2.3"
+VERSION="1.2.3"
 
 # Branch
 BRANCH="beta"
