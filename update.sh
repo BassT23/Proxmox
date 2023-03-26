@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.7.9"
+VERSION="3.7.9.1"
 
 # Branch
 BRANCH="beta"
@@ -22,7 +22,7 @@ GN="\e[1;92m"
 CL="\e[0m"
 
 # Header
-function HEADER_INFO {
+HEADER_INFO () {
   clear
   echo -e "\n \
     https://github.com/BassT23/Proxmox"
@@ -39,19 +39,21 @@ function HEADER_INFO {
    \____/ .___/\____/\____/\__/\___/_/
        /_/
 EOF
-  echo -e "\n \
-           ***  Mode: $MODE***"
-  if [[ $HEADLESS == true ]]; then
-    echo -e "            ***    Headless    ***"
-  else
-    echo -e "            ***   Interactive  ***"
+  if [[ $INFO != false ]]; then
+    echo -e "\n \
+            ***  Mode: $MODE***"
+    if [[ $HEADLESS == true ]]; then
+      echo -e "            ***    Headless    ***"
+    else
+      echo -e "            ***   Interactive  ***"
+    fi
   fi
   CHECK_ROOT
   if [[ $CHECK_VERSION == true ]]; then VERSION_CHECK; else echo; fi
 }
 
 # Check root
-function CHECK_ROOT {
+CHECK_ROOT () {
   if [[ $RICM != true && $EUID -ne 0 ]]; then
       echo -e "\n ${RD}--- Please run this as root ---${CL}\n"
       exit 2
@@ -59,9 +61,9 @@ function CHECK_ROOT {
 }
 
 # Usage
-function USAGE {
+USAGE () {
   if [[ $HEADLESS != true ]]; then
-    echo -e "\nUsage: $0 [OPTIONS...] {COMMAND}\n"
+    echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
     echo -e "[OPTIONS] Manages the Proxmox-Updater:"
     echo -e "======================================"
     echo -e "  -s --silent          Silent / Headless Mode\n"
@@ -70,6 +72,7 @@ function USAGE {
     echo -e "  -h --help            Show this help"
     echo -e "  -v --version         Show Proxmox-Updater Version"
     echo -e "  -up                  Update Proxmox-Updater"
+    echo -e "  status               Show Status (Version Infos)"
     echo -e "  uninstall            Uninstall Proxmox-Updater\n"
     echo -e "  host                 Host-Mode"
     echo -e "  cluster              Cluster-Mode\n"
@@ -77,12 +80,12 @@ function USAGE {
   fi
 }
 
-# Version Check in Header
-function VERSION_CHECK {
+# Version Check / Update Message in Header
+VERSION_CHECK () {
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/Proxmox-Updater/temp/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.sh)
   if [[ $SERVER_VERSION > $VERSION ]]; then
-    echo -e "\n${OR}   *** A newer version is available ***${CL}\n \
+    echo -e "\n${OR}   *** A newer version is available ***${CL}\n\
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ $HEADLESS != true ]]; then
       echo -e "${OR}Want to update Proxmox-Updater first?${CL}"
@@ -93,23 +96,27 @@ function VERSION_CHECK {
       echo
     fi
   elif [[ $SERVER_VERSION < $VERSION ]]; then
-    echo -e "\n${OR}  *** U are on beta or development branch ***${CL}\n \
-   Installed: $VERSION / Server (Master): $SERVER_VERSION\n"
+    if [[ $BRANCH == beta ]]; then
+      echo -e "\n${OR}         *** U are on beta branch ***${CL}\n\
+               Version: $VERSION"
+    elif [[ $BRANCH == development ]]; then
+      echo -e "\n${OR}     *** U are on development branch ***${CL}\n\
+               Version: $VERSION"
+    fi
   else
-    echo -e "\n             ${GN}Script is UpToDate${CL}\n \
+    echo -e "\n             ${GN}Script is UpToDate${CL}\n\
                Version: $VERSION"
   fi
   rm -rf /root/Proxmox-Updater/temp/update.sh && echo
 }
 
 # Update Proxmox-Updater
-function UPDATE {
+UPDATE () {
   bash <(curl -s $SERVER_URL/install.sh) update
-  exit 2
 }
 
 # Uninstall
-function UNINSTALL {
+UNINSTALL () {
   echo -e "\n${BL}[Info]${OR} Uninstall Proxmox-Updater${CL}\n"
   echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
   read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r -s
@@ -120,8 +127,30 @@ function UNINSTALL {
   fi
 }
 
+STATUS () {
+  # Get Server Versions
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/update-extras.sh > /root/Proxmox-Updater/temp/update-extras.sh
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/update.conf > /root/Proxmox-Updater/temp/update.conf
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/welcome-screen.sh > /root/Proxmox-Updater/temp/welcome-screen.sh
+  SERVER_EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update-extras.sh)
+  SERVER_CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.conf)
+  SERVER_WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/welcome-screen.sh)
+  EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/update-extras.sh)
+  CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/update.conf)
+  WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /etc/update-motd.d/01-welcome-screen)
+  MODIFICATION=$(curl -s https://api.github.com/repos/BassT23/Proxmox | grep pushed_at | cut -d: -f2- | cut -c 3- | rev | cut -c 3- | rev)
+  echo -e "Last modification (on GitHub): $MODIFICATION\n"
+  echo -e "${OR}  Version overview ($BRANCH branch)${CL}"
+  echo -e "${OR}    Server / Local${CL}"
+  echo -e "  Script itself (Master): $SERVER_VERSION"
+  echo -e "  Extras:  $SERVER_EXTRA_VERSION / $EXTRA_VERSION"
+  echo -e "  Config:  $SERVER_CONFIG_VERSION / $CONFIG_VERSION"
+  echo -e "  Welcome: $SERVER_WELCOME_VERSION / $WELCOME_VERSION"
+  rm -r /root/Proxmox-Updater/temp/*.*
+}
+
 # Read Config File
-function READ_CONFIG {
+READ_CONFIG () {
   CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' $CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' $CONFIG_FILE)
@@ -135,7 +164,7 @@ function READ_CONFIG {
 }
 
 # Extras
-function EXTRAS {
+EXTRAS () {
   if [[ $EXTRA_GLOBAL != true ]]; then
     echo -e "\n${OR}--- Skip Extra Updates because of user settings ---${CL}\n"
   elif [[ $HEADLESS == true && $EXTRA_IN_HEADLESS == false ]]; then
@@ -168,7 +197,7 @@ function EXTRAS {
 }
 
 # Check Updates for Welcome-Screen
-function UPDATE_CHECK {
+UPDATE_CHECK () {
   if [[ $WELCOME_SCREEN == true ]]; then
     echo -e "${OR}--- Check Status for Welcome-Screen ---${CL}"
     if [[ $CHOST == true ]]; then
@@ -187,7 +216,7 @@ function UPDATE_CHECK {
 
 ## HOST ##
 # Host Update Start
-function HOST_UPDATE_START {
+HOST_UPDATE_START () {
   if [[ $RICM != true ]]; then true > /root/Proxmox-Updater/check-output; fi
   for HOST in $HOSTS; do
     UPDATE_HOST "$HOST"
@@ -195,7 +224,7 @@ function HOST_UPDATE_START {
 }
 
 # Host Update
-function UPDATE_HOST {
+UPDATE_HOST () {
   HOST=$1
   ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
   scp "$0" "$HOST":/root/Proxmox-Updater/update
@@ -216,7 +245,7 @@ function UPDATE_HOST {
   fi
 }
 
-function UPDATE_HOST_ITSELF {
+UPDATE_HOST_ITSELF () {
   echo -e "${OR}--- APT UPDATE ---${CL}" && apt-get update
   if [[ $HEADLESS == true ]]; then
     echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}" && \
@@ -234,7 +263,7 @@ function UPDATE_HOST_ITSELF {
 
 ## Container ##
 # Container Update Start
-function CONTAINER_UPDATE_START {
+CONTAINER_UPDATE_START () {
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   # Loop through the containers
@@ -270,7 +299,7 @@ function CONTAINER_UPDATE_START {
 }
 
 # Container Update
-function UPDATE_CONTAINER {
+UPDATE_CONTAINER () {
   CONTAINER=$1
   CCONTAINER="true"
   echo 'CONTAINER="'"$CONTAINER"'"' > ~/Proxmox-Updater/temp/var
@@ -326,7 +355,7 @@ function UPDATE_CONTAINER {
 
 ## VM ##
 # VM Update Start
-function VM_UPDATE_START {
+VM_UPDATE_START () {
   # Get the list of VMs
   VMS=$(qm list | tail -n +2 | cut -c -10)
   # Loop through the VMs
@@ -368,7 +397,7 @@ function VM_UPDATE_START {
 
 # VM Update
 # SSH
-function UPDATE_VM {
+UPDATE_VM () {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   CVM="true"
@@ -434,7 +463,7 @@ function UPDATE_VM {
 }
 
 # QEMU
-function UPDATE_VM_QEMU {
+UPDATE_VM_QEMU () {
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
@@ -485,7 +514,7 @@ function UPDATE_VM_QEMU {
 
 ## General ##
 # Logging
-function OUTPUT_TO_FILE {
+OUTPUT_TO_FILE () {
   if [[ $RICM != true ]]; then
     touch "$LOG_FILE"
     exec &> >(tee "$LOG_FILE")
@@ -500,7 +529,7 @@ function OUTPUT_TO_FILE {
   fi
 }
 
-function CLEAN_LOGFILE {
+CLEAN_LOGFILE () {
   if [[ $RICM != true ]]; then
     tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
     cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE" >/dev/null 2>&1
@@ -512,11 +541,11 @@ function CLEAN_LOGFILE {
 }
 
 # Exit
-function EXIT {
+EXIT () {
   EXIT_CODE=$?
   EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' ~/Proxmox-Updater/temp/exec_host)
   scp /root/Proxmox-Updater/check-output "$EXEC_HOST":/root/Proxmox-Updater/check-output
-  # Exit direct
+  # Exit without echo
   if [[ $EXIT_CODE == 2 ]]; then
     exit
   # Update Finish
@@ -563,6 +592,8 @@ parse_cli()
     argument="$1"
     case "$argument" in
       -h|--help)
+        INFO=false
+        HEADER_INFO
         USAGE
         exit 2
         ;;
@@ -616,7 +647,14 @@ parse_cli()
       -up)
         COMMAND=true
         UPDATE
-        exit 0
+        exit 2
+        ;;
+      status)
+        INFO=false
+        HEADER_INFO
+        COMMAND=true
+        STATUS
+        exit 2
         ;;
       *)
         echo -e "\n${RD}  Error: Got an unexpected argument \"$argument\"${CL}";
@@ -635,7 +673,7 @@ if [[ $COMMAND != true ]]; then
   if [[ $MODE =~ Cluster ]]; then
     HOST_UPDATE_START
   else
-    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP| ($HOSTNAME)${CL}\n"
+    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP| ($HOSTNAME)${CL}"
     if [[ $WITH_HOST == true ]]; then
       UPDATE_HOST_ITSELF
     else
