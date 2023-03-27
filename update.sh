@@ -49,7 +49,7 @@ EOF
     fi
   fi
   CHECK_ROOT
-  if [[ "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
+  if [[ "$INFO" == true ]] && [[ "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
 }
 
 # Check root
@@ -206,8 +206,10 @@ UNINSTALL () {
 
 STATUS () {
   # Get Server Versions
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.sh > /root/Proxmox-Updater/temp/update.sh
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update-extras.sh > /root/Proxmox-Updater/temp/update-extras.sh
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.conf > /root/Proxmox-Updater/temp/update.conf
+  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.sh)
   SERVER_EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update-extras.sh)
   SERVER_CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.conf)
   EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/update-extras.sh)
@@ -223,9 +225,13 @@ STATUS () {
   MODIFICATION=$(curl -s https://api.github.com/repos/BassT23/Proxmox | grep pushed_at | cut -d: -f2- | cut -c 3- | rev | cut -c 3- | rev)
   echo -e "Last modification (on GitHub): $MODIFICATION\n"
   echo -e "${OR}  Version overview ($BRANCH branch)${CL}"
-  echo -e "  Script itself (Master): $SERVER_VERSION"
-  if [[ "$SERVER_EXTRA_VERSION" != "$EXTRA_VERSION" ]] || [[ "$SERVER_CONFIG_VERSION" != "$CONFIG_VERSION" ]] || [[ "$SERVER_WELCOME_VERSION" != "$WELCOME_VERSION" ]] || [[ "$SERVER_CHECK_UPDATE_VERSION" != "$CHECK_UPDATE_VERSION" ]]; then
-    echo "           Local / Server"
+  if [[ "$SERVER_VERSION" != "$VERSION" ]] || [[ "$SERVER_EXTRA_VERSION" != "$EXTRA_VERSION" ]] || [[ "$SERVER_CONFIG_VERSION" != "$CONFIG_VERSION" ]] || [[ "$SERVER_WELCOME_VERSION" != "$WELCOME_VERSION" ]] || [[ "$SERVER_CHECK_UPDATE_VERSION" != "$CHECK_UPDATE_VERSION" ]]; then
+    echo -e "           Local / Server\n"
+  fi
+  if [[ "$SERVER_VERSION" == "$VERSION" ]]; then
+    echo -e "  Updater: ${GN}$VERSION${CL}"
+  else
+    echo -e "  Updater: $VERSION / $SERVER_VERSION"
   fi
   if [[ "$SERVER_EXTRA_VERSION" == "$EXTRA_VERSION" ]]; then
     echo -e "  Extras:  ${GN}$EXTRA_VERSION${CL}"
