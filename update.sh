@@ -82,7 +82,7 @@ USAGE () {
 
 # Version Check / Update Message in Header
 VERSION_CHECK () {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/Proxmox-Updater/temp/update.sh
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.sh > /root/Proxmox-Updater/temp/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.sh)
   if [[ "$SERVER_VERSION" > "$VERSION" ]]; then
     echo -e "\n${OR}   *** A newer version is available ***${CL}\n\
