@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.7.9.2"
+VERSION="3.7.9.3"
 
 # Branch
 BRANCH="beta"
@@ -49,7 +49,7 @@ EOF
     fi
   fi
   CHECK_ROOT
-  if [[ "$INFO" != false ]] && [[ "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
+  if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
 }
 
 # Check root
