@@ -17,12 +17,6 @@
 
 >  I am no member of the Proxmox Server Solutions GmbH. This is not an official programm from Proxmox!
 
->  This is distributed in the hope that it will be useful, but
->  WITHOUT ANY WARRANTY; without even the implied warranty of
->  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
->  See the GNU General Public License for more details.
-
-
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
 
@@ -30,8 +24,19 @@
 
 ![Screenshot_20230326_130709](https://user-images.githubusercontent.com/30832786/227771669-aae7e7f4-b27e-4095-950a-c6fa1f146503.png)
 
+>  This is distributed in the hope that it will be useful, but
+>  WITHOUT ANY WARRANTY; without even the implied warranty of
+>  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+>  See the GNU General Public License for more details.
 
-# Proxmox-Updater
+<div align="center">
+
+**IN CASE OF EMERGENCY, I HOPE YOU HAVE BACKUPS FROM YOUR MACHINES!**
+
+**YOU HAVE BEEN WARNED!**
+
+</div>
+
 Features:
 - Update Proxmox (the host / all cluster nodes / all included LXCs and VMs)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
