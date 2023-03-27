@@ -60,6 +60,84 @@ CHECK_ROOT () {
   fi
 }
 
+ARGUMENTS () {
+  while test $# -gt -0
+  do
+    argument="$1"
+    case "$argument" in
+      -h|--help)
+        USAGE
+        exit 2
+        ;;
+      -s|--silent)
+        HEADLESS=true
+        ;;
+      -v|--version)
+        VERSION_CHECK
+        exit 2
+        ;;
+      -c)
+        RICM=true
+        ;;
+      -w)
+        WELCOME_SCREEN=true
+        ;;
+      host)
+        COMMAND=true
+        if [[ "$RICM" != true ]]; then
+          MODE="  Host  "
+          HEADER_INFO
+        fi
+        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP| ($HOSTNAME)${CL}\n"
+        if [[ "$WITH_HOST" == true ]]; then
+          UPDATE_HOST_ITSELF
+        else
+          echo -e "${BL}[Info] Skipped host itself by user${CL}\n\n"
+        fi
+        if [[ "$WITH_LXC" == true ]]; then
+          CONTAINER_UPDATE_START
+        else
+          echo -e "${BL}[Info] Skipped all container by user${CL}\n"
+        fi
+        if [[ "$WITH_VM" == true ]]; then
+          VM_UPDATE_START
+        else
+          echo -e "${BL}[Info] Skipped all VM by user${CL}\n"
+        fi
+        ;;
+      cluster)
+        COMMAND=true
+        MODE="Cluster "
+        HEADER_INFO
+        HOST_UPDATE_START
+        ;;
+      uninstall)
+        COMMAND=true
+        UNINSTALL
+        exit 0
+        ;;
+      -up)
+        COMMAND=true
+        UPDATE
+        exit 2
+        ;;
+      status)
+        INFO=false
+        HEADER_INFO
+        COMMAND=true
+        STATUS
+        exit 2
+        ;;
+      *)
+        echo -e "\n${RD}  Error: Got an unexpected argument \"$argument\"${CL}";
+        USAGE;
+        exit 2;
+        ;;
+    esac
+    shift
+  done
+}
+
 # Usage
 USAGE () {
   if [[ "$HEADLESS" != true ]]; then
@@ -594,91 +672,13 @@ else
   MODE="  Host  "
 fi
 
-# Arguments
+# Run with Arguments
 export TERM=xterm-256color
 if ! [[ -d ~/Proxmox-Updater/temp ]]; then mkdir ~/Proxmox-Updater/temp; fi
 READ_CONFIG
 OUTPUT_TO_FILE
 IP=$(hostname -I)
-parse_cli()
-{
-  while test $# -gt -0
-  do
-    argument="$1"
-    case "$argument" in
-      -h|--help)
-        USAGE
-        exit 2
-        ;;
-      -s|--silent)
-        HEADLESS=true
-        ;;
-      -v|--version)
-        VERSION_CHECK
-        exit 2
-        ;;
-      -c)
-        RICM=true
-        ;;
-      -w)
-        WELCOME_SCREEN=true
-        ;;
-      host)
-        COMMAND=true
-        if [[ "$RICM" != true ]]; then
-          MODE="  Host  "
-          HEADER_INFO
-        fi
-        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP| ($HOSTNAME)${CL}\n"
-        if [[ "$WITH_HOST" == true ]]; then
-          UPDATE_HOST_ITSELF
-        else
-          echo -e "${BL}[Info] Skipped host itself by user${CL}\n\n"
-        fi
-        if [[ "$WITH_LXC" == true ]]; then
-          CONTAINER_UPDATE_START
-        else
-          echo -e "${BL}[Info] Skipped all container by user${CL}\n"
-        fi
-        if [[ "$WITH_VM" == true ]]; then
-          VM_UPDATE_START
-        else
-          echo -e "${BL}[Info] Skipped all VM by user${CL}\n"
-        fi
-        ;;
-      cluster)
-        COMMAND=true
-        MODE="Cluster "
-        HEADER_INFO
-        HOST_UPDATE_START
-        ;;
-      uninstall)
-        COMMAND=true
-        UNINSTALL
-        exit 0
-        ;;
-      -up)
-        COMMAND=true
-        UPDATE
-        exit 2
-        ;;
-      status)
-        INFO=false
-        HEADER_INFO
-        COMMAND=true
-        STATUS
-        exit 2
-        ;;
-      *)
-        echo -e "\n${RD}  Error: Got an unexpected argument \"$argument\"${CL}";
-        USAGE;
-        exit 2;
-        ;;
-    esac
-    shift
-  done
-}
-parse_cli "$@"
+ARGUMENTS "$@"
 
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true ]]; then
