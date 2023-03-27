@@ -4,7 +4,7 @@
 # Install #
 ###########
 
-VERSION="1.5.2"
+VERSION="1.5.4"
 
 # Branch
 BRANCH="beta"
@@ -21,7 +21,7 @@ GN="\e[1;92m"
 CL="\e[0m"
 
 #Header
-function HEADER_INFO {
+HEADER_INFO () {
   clear
   echo -e "\n \
       https://github.com/BassT23/Proxmox"
@@ -45,14 +45,14 @@ EOF
 }
 
 #Check root
-function CHECK_ROOT {
+CHECK_ROOT () {
   if [[ $EUID -ne 0 ]]; then
       echo -e >&2 "${RD}--- Please run this as root ---${CL}";
       exit 1
   fi
 }
 
-function USAGE {
+USAGE () {
     if [[ $SILENT != true ]]; then
         echo -e "Usage: $0 {COMMAND}\n"
         echo -e "{COMMAND}:"
@@ -67,7 +67,7 @@ function USAGE {
     fi
 }
 
-function isInstalled {
+isInstalled () {
     if [ -f "/usr/local/bin/update" ]; then
         true
     else
@@ -75,7 +75,7 @@ function isInstalled {
     fi
 }
 
-function STATUS {
+STATUS () {
     if [[ $SILENT != true ]]; then
         echo -e "Proxmox-Updater"
         if isInstalled; then
@@ -87,7 +87,7 @@ function STATUS {
     if isInstalled; then exit 0; else exit 1; fi
 }
 
-function INSTALL {
+INSTALL () {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "${OR}Proxmox-Updater is already installed.${CL}"
@@ -100,8 +100,10 @@ function INSTALL {
       fi
     else
       mkdir -p /root/Proxmox-Updater/exit
+      mkdir -p /root/Proxmox-Updater/VMs
       curl -s $SERVER_URL/update.sh > /usr/local/bin/update
       chmod 750 /usr/local/bin/update
+      curl -s $SERVER_URL/VMs/example > $LOCAL_FILES/VMs/example
       curl -s $SERVER_URL/exit/error.sh > $LOCAL_FILES/exit/error.sh
       curl -s $SERVER_URL/exit/passed.sh > $LOCAL_FILES/exit/passed.sh
       curl -s $SERVER_URL/update-extras.sh > $LOCAL_FILES/update-extras.sh
@@ -121,7 +123,7 @@ Type [Y/y] or Enter for yes - enything else will exit"
     fi
 }
 
-function UPDATE {
+UPDATE () {
     if [ -f "/usr/local/bin/update" ]; then
       if [ -d "/root/Proxmox-Update-Scripts" ]; then
         echo -e "${RD}Proxmox-Updater has changed directorys, so the old directory\n\
@@ -172,7 +174,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
     fi
 }
 
-function CHECK_DIFF {
+CHECK_DIFF () {
   if ! cmp -s "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"; then
     echo -e "The file $f\n \
  ==> Modified (by you or by a script) since installation.\n \
@@ -198,7 +200,7 @@ function CHECK_DIFF {
   fi
 }
 
-function WELCOME_SCREEN {
+WELCOME_SCREEN () {
   if [[ $COMMAND != true ]]; then
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater Welcome-Screen${CL}\n"
     if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
@@ -229,7 +231,7 @@ function WELCOME_SCREEN {
   fi
 }
 
-function WELCOME_SCREEN_INSTALL {
+WELCOME_SCREEN_INSTALL () {
   if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
   cp /etc/crontab /etc/crontab.bak
   touch /etc/motd
@@ -238,14 +240,13 @@ function WELCOME_SCREEN_INSTALL {
   cp /root/Proxmox-Updater-Temp/check-updates.sh /root/Proxmox-Updater/check-updates.sh
   chmod +x /etc/update-motd.d/01-welcome-screen
   chmod +x /root/Proxmox-Updater/check-updates.sh
-  touch /root/Proxmox-Updater/check-output
   if ! grep -q "check-updates.sh" /etc/crontab; then
     echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
   fi
   echo -e "\n${GN} Welcome-Screen installed${CL}\n"
 }
 
-function UNINSTALL {
+UNINSTALL () {
   if [ -f "/usr/local/bin/update" ]; then
     echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
     echo -e "${RD}Really want to remove Proxmox-Updater?${CL}\n\
@@ -271,7 +272,7 @@ Type [Y/y] for yes - enything else will exit"
 
 #Error/Exit
 set -e
-function EXIT {
+EXIT () {
   EXIT_CODE=$?
   # Install Finish
   if [[ $EXIT_CODE == "1" ]]; then
@@ -298,7 +299,6 @@ parse_cli()
         ;;
       status)
         STATUS
-        exit 0
         ;;
       install)
         COMMAND=true
@@ -327,7 +327,7 @@ parse_cli()
         exit 1;
         ;;
     esac
-    shift
+#    shift
   done
 }
 parse_cli "$@"
