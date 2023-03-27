@@ -49,7 +49,7 @@ EOF
     fi
   fi
   CHECK_ROOT
-  if [[ "$INFO" == true ]] && [[ "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
+  if [[ "$INFO" != false ]] && [[ "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
 }
 
 # Check root
