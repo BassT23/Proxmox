@@ -208,18 +208,23 @@ STATUS () {
   # Get Server Versions
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update-extras.sh > /root/Proxmox-Updater/temp/update-extras.sh
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.conf > /root/Proxmox-Updater/temp/update.conf
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/welcome-screen.sh > /root/Proxmox-Updater/temp/welcome-screen.sh
   SERVER_EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update-extras.sh)
   SERVER_CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.conf)
-  SERVER_WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/welcome-screen.sh)
   EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/update-extras.sh)
   CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/update.conf)
-  WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /etc/update-motd.d/01-welcome-screen)
+  if [[ "$WELCOME_SCREEN" == true ]]; then
+    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/welcome-screen.sh > /root/Proxmox-Updater/temp/welcome-screen.sh
+    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/check-updates.sh > /root/Proxmox-Updater/temp/check-updates.sh
+    SERVER_WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/welcome-screen.sh)
+    SERVER_CHECK_UPDATE_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/check-updates.sh)
+    WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /etc/update-motd.d/01-welcome-screen)
+    CHECK_UPDATE_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/check-updates.sh)
+  fi
   MODIFICATION=$(curl -s https://api.github.com/repos/BassT23/Proxmox | grep pushed_at | cut -d: -f2- | cut -c 3- | rev | cut -c 3- | rev)
   echo -e "Last modification (on GitHub): $MODIFICATION\n"
   echo -e "${OR}  Version overview ($BRANCH branch)${CL}"
   echo -e "  Script itself (Master): $SERVER_VERSION"
-  if [[ "$SERVER_EXTRA_VERSION" != "$EXTRA_VERSION" ]] || [[ "$SERVER_CONFIG_VERSION" != "$CONFIG_VERSION" ]] || [[ "$SERVER_WELCOME_VERSION" != "$WELCOME_VERSION" ]]; then
+  if [[ "$SERVER_EXTRA_VERSION" != "$EXTRA_VERSION" ]] || [[ "$SERVER_CONFIG_VERSION" != "$CONFIG_VERSION" ]] || [[ "$SERVER_WELCOME_VERSION" != "$WELCOME_VERSION" ]] || [[ "$SERVER_CHECK_UPDATE_VERSION" != "$CHECK_UPDATE_VERSION" ]]; then
     echo "           Local / Server"
   fi
   if [[ "$SERVER_EXTRA_VERSION" == "$EXTRA_VERSION" ]]; then
@@ -232,10 +237,17 @@ STATUS () {
   else
     echo -e "  Config:  $CONFIG_VERSION / ${OR}$SERVER_CONFIG_VERSION${CL}"
   fi
-  if [[ "$SERVER_WELCOME_VERSION" == "$WELCOME_VERSION" ]]; then
-    echo -e "  Welcome: ${GN}$WELCOME_VERSION${CL}"
-  else
-    echo -e "  Welcome: $WELCOME_VERSION / ${OR}$SERVER_WELCOME_VERSION${CL}"
+  if [[ "$WELCOME_SCREEN" == true ]]; then
+    if [[ "$SERVER_WELCOME_VERSION" == "$WELCOME_VERSION" ]]; then
+      echo -e "  Welcome: ${GN}$WELCOME_VERSION${CL}"
+    else
+      echo -e "  Welcome: $WELCOME_VERSION / ${OR}$SERVER_WELCOME_VERSION${CL}"
+    fi
+    if [[ "$SERVER_CHECK_UPDATE_VERSION" == "$CHECK_UPDATE_VERSION" ]]; then
+      echo -e "  Check:   ${GN}$CHECK_UPDATE_VERSION${CL}"
+    else
+      echo -e "  Check:   $CHECK_UPDATE_VERSION / ${OR}$SERVER_CHECK_UPDATE_VERSION${CL}"
+    fi
   fi
   echo
   rm -r /root/Proxmox-Updater/temp/*.*
