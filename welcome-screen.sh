@@ -4,7 +4,7 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.2.3"
+VERSION="1.2.4"
 
 # Branch
 BRANCH="beta"
@@ -67,18 +67,20 @@ echo
 neofetch
 VERSION_CHECK
 READ_WRITE_CONFIG
-TIME_CALCULTION
-if [[ $DAYS -gt 0 ]]; then
-  echo -e "     Last Update Check: $DAYS day(s) ago\n"
-elif [[ $HOURS -gt 0 ]]; then
-  echo -e "     Last Update Check: $HOURS hour(s) ago\n"
-else
-  echo -e "     Last Update Check: $MINUTES minute(s) ago\n"
-fi
-if [[ -f /root/Proxmox-Updater/check-output ]] && [[ $CHECK_OUTPUT -gt 0 ]]; then
-  echo -e "${OR}Available Updates:${CL}"
-  echo -e "S = Security / N = Normal"
-  cat /root/Proxmox-Updater/check-output
+if [[ -f /root/Proxmox-Updater/check-output ]]; then
+  TIME_CALCULTION
+  if [[ $DAYS -gt 0 ]]; then
+    echo -e "     Last Update Check: $DAYS day(s) ago\n"
+  elif [[ $HOURS -gt 0 ]]; then
+    echo -e "     Last Update Check: $HOURS hour(s) ago\n"
+  else
+    echo -e "     Last Update Check: $MINUTES minute(s) ago\n"
+  fi
+  if [[ -f /root/Proxmox-Updater/check-output ]] && [[ $CHECK_OUTPUT -gt 0 ]]; then
+    echo -e "${OR}Available Updates:${CL}"
+    echo -e "S = Security / N = Normal"
+    cat /root/Proxmox-Updater/check-output
+  fi
   echo
 fi
 
