@@ -52,6 +52,49 @@ CHECK_ROOT () {
   fi
 }
 
+ARGUMENTS () {
+  while test $# -gt -0
+  do
+    _key="$1"
+    case "$_key" in
+      -h|--help)
+        USAGE
+        exit 0
+        ;;
+      status)
+        STATUS
+        ;;
+      install)
+        COMMAND=true
+        INSTALL
+        WELCOME_SCREEN
+        exit 0
+        ;;
+      update)
+        COMMAND=true
+        UPDATE
+        WELCOME_SCREEN
+        exit 0
+        ;;
+      uninstall)
+        COMMAND=true
+        UNINSTALL
+        exit 0
+        ;;
+      welcome)
+        WELCOME_SCREEN
+        exit 0
+        ;;
+      *)
+        echo -e "${RD}Error: Got an unexpected argument \"$_key\"${CL}\n";
+        USAGE;
+        exit 1;
+        ;;
+    esac
+#    shift
+  done
+}
+
 USAGE () {
     if [[ $SILENT != true ]]; then
         echo -e "Usage: $0 {COMMAND}\n"
@@ -287,50 +330,7 @@ trap EXIT EXIT
 
 #Install
 HEADER_INFO
-parse_cli()
-{
-  while test $# -gt -0
-  do
-    _key="$1"
-    case "$_key" in
-      -h|--help)
-        USAGE
-        exit 0
-        ;;
-      status)
-        STATUS
-        ;;
-      install)
-        COMMAND=true
-        INSTALL
-        WELCOME_SCREEN
-        exit 0
-        ;;
-      update)
-        COMMAND=true
-        UPDATE
-        WELCOME_SCREEN
-        exit 0
-        ;;
-      uninstall)
-        COMMAND=true
-        UNINSTALL
-        exit 0
-        ;;
-      welcome)
-        WELCOME_SCREEN
-        exit 0
-        ;;
-      *)
-        echo -e "${RD}Error: Got an unexpected argument \"$_key\"${CL}\n";
-        USAGE;
-        exit 1;
-        ;;
-    esac
-#    shift
-  done
-}
-parse_cli "$@"
+ARGUMENTS "$@"
 
 # Run without commands
 if [[ $COMMAND != true ]]; then
