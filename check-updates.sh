@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.3.8"
+VERSION="1.3.9"
 
 #Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -16,6 +16,53 @@ RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
 
+ARGUMENTS () {
+  while test $# -gt -0; do
+    ARGUMENT="$1"
+    case "$ARGUMENT" in
+      -c)
+        RICM=true  # Run In Cluster Mode
+        ;;
+      -u)
+        RDU=true  # Run During Update
+        ;;
+      chost)
+        COMMAND=true
+        OUTPUT_TO_FILE
+        CHECK_HOST_ITSELF
+        ;;
+      ccontainer)
+        COMMAND=true
+        OUTPUT_TO_FILE
+        CHECK_CONTAINER
+        ;;
+      cvm)
+        COMMAND=true
+        OUTPUT_TO_FILE
+        CHECK_VM
+        ;;
+      host)
+        COMMAND=true
+        OUTPUT_TO_FILE
+        if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
+        if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
+        if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
+        ;;
+      cluster)
+        COMMAND=true
+        OUTPUT_TO_FILE
+        HOST_CHECK_START
+        ;;
+      *)
+        echo -e "\n${RD}  Error: Got an unexpected argument \"$ARGUMENT\"${CL}";
+        USAGE;
+        exit 2;
+        ;;
+    esac
+    shift
+  done
+}
+
 # Usage
 function USAGE {
   echo -e "\nUsage: $0 {COMMAND}\n"
@@ -25,6 +72,7 @@ function USAGE {
   echo -e "  cluster              Cluster-Mode\n"
   echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
 }
+
 
 function READ_WRITE_CONFIG {
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
@@ -198,7 +246,7 @@ function CHECK_VM {
     if ! (ssh "$IP" exit) >/dev/null 2>&1; then
       CHECK_VM_QEMU
     else
-      SSH_CONNECTION=true
+#      SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
       if [[ $OS_BASE =~ l2 ]]; then
         OS=$(ssh "$IP" hostnamectl | grep System)
@@ -206,7 +254,6 @@ function CHECK_VM {
           ssh "$IP" "apt-get update" >/dev/null 2>&1
           SECURITY_APT_UPDATES=$(ssh "$IP" "apt-get -s upgrade | grep -ci ^inst.*security")
           NORMAL_APT_UPDATES=$(ssh "$IP" "apt-get -s upgrade | grep -ci ^inst.")
-#          if ssh "$IP" "-f /var/run/reboot-required.pkgs"; then REBOOT_REQUIRED=true; fi
           if ssh "$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then REBOOT_REQUIRED=true; fi
           if [[ $SECURITY_APT_UPDATES -gt 0 || $NORMAL_APT_UPDATES -gt 0 || $REBOOT_REQUIRED == true ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
@@ -310,55 +357,7 @@ fi
 
 # Run
 READ_WRITE_CONFIG
-parse_cli()
-{
-  while test $# -gt -0
-  do
-    argument="$1"
-    case "$argument" in
-      -c)
-        RICM=true  # Run In Cluster Mode
-        ;;
-      -u)
-        RDU=true  # Run During Update
-        ;;
-      chost)
-        COMMAND=true
-        OUTPUT_TO_FILE
-        CHECK_HOST_ITSELF
-        ;;
-      ccontainer)
-        COMMAND=true
-        OUTPUT_TO_FILE
-        CHECK_CONTAINER
-        ;;
-      cvm)
-        COMMAND=true
-        OUTPUT_TO_FILE
-        CHECK_VM
-        ;;
-      host)
-        COMMAND=true
-        OUTPUT_TO_FILE
-        if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
-        if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
-        if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
-        ;;
-      cluster)
-        COMMAND=true
-        OUTPUT_TO_FILE
-        HOST_CHECK_START
-        ;;
-      *)
-        echo -e "\n${RD}  Error: Got an unexpected argument \"$argument\"${CL}";
-        USAGE;
-        exit 2;
-        ;;
-    esac
-    shift
-  done
-}
-parse_cli "$@"
+ARGUMENTS "$@"
 
 # Run without commands (Automatic Mode)
 if [[ $COMMAND != true && $RDU == true ]]; then
