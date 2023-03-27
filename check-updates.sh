@@ -44,9 +44,9 @@ ARGUMENTS () {
       host)
         COMMAND=true
         OUTPUT_TO_FILE
-        if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
-        if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
-        if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
+        if [[ "$WITH_HOST" == true ]]; then CHECK_HOST_ITSELF; fi
+        if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
+        if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
         ;;
       cluster)
         COMMAND=true
@@ -64,7 +64,7 @@ ARGUMENTS () {
 }
 
 # Usage
-function USAGE {
+USAGE () {
   echo -e "\nUsage: $0 {COMMAND}\n"
   echo -e "{COMMAND}:"
   echo -e "========="
@@ -74,7 +74,7 @@ function USAGE {
 }
 
 
-function READ_WRITE_CONFIG {
+READ_WRITE_CONFIG () {
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
@@ -86,14 +86,14 @@ function READ_WRITE_CONFIG {
 
 ## HOST ##
 # Host Check Start
-function HOST_CHECK_START {
+HOST_CHECK_START () {
   for HOST in $HOSTS; do
     CHECK_HOST "$HOST"
   done
 }
 
 # Host Check
-function CHECK_HOST {
+CHECK_HOST () {
   HOST=$1
   ssh "$HOST" mkdir -p /root/Proxmox-Updater
   scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf >/dev/null 2>&1
@@ -101,7 +101,7 @@ function CHECK_HOST {
 
 }
 
-function CHECK_HOST_ITSELF {
+CHECK_HOST_ITSELF () {
   apt-get update >/dev/null 2>&1
   SECURITY_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst.*security" | tr -d '\n')
   NORMAL_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst." | tr -d '\n')
@@ -121,26 +121,26 @@ function CHECK_HOST_ITSELF {
 
 ## Container ##
 # Container Check Start
-function CONTAINER_CHECK_START {
+CONTAINER_CHECK_START () {
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   # Loop through the containers
   if ! [[ -d /root/Proxmox-Updater/temp/ ]]; then mkdir /root/Proxmox-Updater/temp/; fi
   for CONTAINER in $CONTAINERS; do
-    if [[ $ONLY == "" ]] && [[ $EXCLUDED =~ $CONTAINER ]]; then
+    if [[ "$ONLY" == "" ]] && [[ "$EXCLUDED" =~ $CONTAINER ]]; then
       continue
-    elif [[ $ONLY != "" ]] && ! [[ $ONLY =~ $CONTAINER ]]; then
+    elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
       continue
     else
       STATUS=$(pct status "$CONTAINER")
-      if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
+      if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
         pct start "$CONTAINER"
         sleep 5
         CHECK_CONTAINER "$CONTAINER"
         # Stop the container
         pct shutdown "$CONTAINER"
-      elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
+      elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
         CHECK_CONTAINER "$CONTAINER"
       fi
     fi
@@ -149,53 +149,53 @@ function CONTAINER_CHECK_START {
 }
 
 # Container Check
-function CHECK_CONTAINER {
-  if [[ $RDU != true ]]; then
+CHECK_CONTAINER () {
+  if [[ "$RDU" != true ]]; then
     CONTAINER=$1
   else
     CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' /root/Proxmox-Updater/temp/var)
   fi
   pct config "$CONTAINER" > /root/Proxmox-Updater/temp/temp
   OS=$(awk '/^ostype/' /root/Proxmox-Updater/temp/temp | cut -d' ' -f2)
-  if [[ $OS =~ centos ]]; then
+  if [[ "$OS" =~ centos ]]; then
     NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
   else
     NAME=$(pct exec "$CONTAINER" hostname)
   fi
-  if [[ $OS =~ ubuntu ]] || [[ $OS =~ debian ]] || [[ $OS =~ devuan ]]; then
+  if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     pct exec "$CONTAINER" -- bash -c "apt-get update" >/dev/null 2>&1
     SECURITY_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'")
     NORMAL_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'")
-    if [[ $SECURITY_APT_UPDATES -gt 0 || $NORMAL_APT_UPDATES != 0 ]]; then
+    if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" != 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
     fi
-    if [[ $SECURITY_APT_UPDATES -gt 0 && $NORMAL_APT_UPDATES != 0 ]]; then
+    if [[ "$SECURITY_APT_UPDATES" -gt 0 && "$NORMAL_APT_UPDATES" != 0 ]]; then
       echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
-    elif [[ $SECURITY_APT_UPDATES -gt 0 ]]; then
+    elif [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then
       echo -e "S: $SECURITY_APT_UPDATES / "
-    elif [[ $NORMAL_APT_UPDATES -gt 0 ]]; then
+    elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
       echo -e "N: $NORMAL_APT_UPDATES"
     fi
-  elif [[ $OS =~ fedora ]]; then
+  elif [[ "$OS" =~ fedora ]]; then
     pct exec "$CONTAINER" -- bash -c "dnf -y update" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update| grep -Ec ' updates$'")
-    if [[ $UPDATES -gt 0 ]]; then
+    if [[ "$UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
     fi
-  elif [[ $OS =~ archlinux ]]; then
+  elif [[ "$OS" =~ archlinux ]]; then
     pct exec "$CONTAINER" -- bash -c "pacman -Syyu" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "pacman -Qu | wc -l")
-    if [[ $UPDATES -gt 0 ]]; then
+    if [[ "$UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
     fi
-  elif [[ $OS =~ alpine ]]; then
+  elif [[ "$OS" =~ alpine ]]; then
     pct exec "$CONTAINER" -- ash -c "apk update" >/dev/null 2>&1
   else
     pct exec "$CONTAINER" -- bash -c "yum update" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "yum -q check-update | wc -l")
-    if [[ $UPDATES -gt 0 ]]; then
+    if [[ "$UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
     fi
@@ -204,21 +204,21 @@ function CHECK_CONTAINER {
 
 ## VM ##
 # VM Check Start
-function VM_CHECK_START {
+VM_CHECK_START () {
   # Get the list of VMs
   VMS=$(qm list | tail -n +2 | cut -c -10)
   # Loop through the VMs
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-    if [[ $ONLY == "" && $EXCLUDED =~ $VM ]]; then
+    if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
       continue
-    elif [[ $ONLY != "" ]] && ! [[ $ONLY =~ $VM ]]; then
+    elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
       continue
-    elif [[ $PRE_OS =~ w ]]; then
+    elif [[ "$PRE_OS" =~ w ]]; then
       continue
     else
       STATUS=$(qm status "$VM")
-      if [[ $STATUS == "status: stopped" && $STOPPED == true ]]; then
+      if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the VM
         qm set "$VM" --agent 1 >/dev/null 2>&1
         qm start "$VM" >/dev/null 2>&1
@@ -226,7 +226,7 @@ function VM_CHECK_START {
         CHECK_VM "$VM"
         # Stop the VM
         qm stop "$VM"
-      elif [[ $STATUS == "status: running" && $RUNNING == true ]]; then
+      elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
         CHECK_VM "$VM"
       fi
     fi
@@ -234,8 +234,8 @@ function VM_CHECK_START {
 }
 
 # VM Check
-function CHECK_VM {
-  if [[ $RDU != true ]]; then
+CHECK_VM () {
+  if [[ "$RDU" != true ]]; then
     VM=$1
   else
     VM=$(awk -F'"' '/^VM=/ {print $2}' /root/Proxmox-Updater/temp/var)
@@ -248,42 +248,42 @@ function CHECK_VM {
     else
 #      SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
-      if [[ $OS_BASE =~ l2 ]]; then
+      if [[ "$OS_BASE" =~ l2 ]]; then
         OS=$(ssh "$IP" hostnamectl | grep System)
-        if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
+        if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           ssh "$IP" "apt-get update" >/dev/null 2>&1
           SECURITY_APT_UPDATES=$(ssh "$IP" "apt-get -s upgrade | grep -ci ^inst.*security")
           NORMAL_APT_UPDATES=$(ssh "$IP" "apt-get -s upgrade | grep -ci ^inst.")
           if ssh "$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then REBOOT_REQUIRED=true; fi
-          if [[ $SECURITY_APT_UPDATES -gt 0 || $NORMAL_APT_UPDATES -gt 0 || $REBOOT_REQUIRED == true ]]; then
+          if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
           fi
-          if [[ $REBOOT_REQUIRED == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
-          if [[ $SECURITY_APT_UPDATES -gt 0 && $NORMAL_APT_UPDATES -gt 0 ]]; then
+          if [[ "$REBOOT_REQUIRED" == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
+          if [[ "$SECURITY_APT_UPDATES" -gt 0 && "$NORMAL_APT_UPDATES" -gt 0 ]]; then
             echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
-          elif [[ $SECURITY_APT_UPDATES -gt 0 ]]; then
+          elif [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then
             echo -e "S: $SECURITY_APT_UPDATES / "
-          elif [[ $NORMAL_APT_UPDATES -gt 0 ]]; then
+          elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
             echo -e "N: $NORMAL_APT_UPDATES"
           fi
-        elif [[ $OS =~ Fedora ]]; then
+        elif [[ "$OS" =~ Fedora ]]; then
           ssh "$IP" "dnf -y update" >/dev/null 2>&1
           UPDATES=$(ssh "$IP" "dnf check-update| grep -Ec ' updates$'")
-          if [[ $UPDATES -gt 0 ]]; then
+          if [[ "$UPDATES" -gt 0 ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
             echo -e "$UPDATES"
           fi
-        elif [[ $OS =~ Arch ]]; then
+        elif [[ "$OS" =~ Arch ]]; then
           UPDATES=$(ssh "$IP" "pacman -Qu | wc -l")
-          if [[ $UPDATES -gt 0 ]]; then
+          if [[ "$UPDATES" -gt 0 ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
             echo -e "$UPDATES"
           fi
-        elif [[ $OS =~ Alpine ]]; then
+        elif [[ "$OS" =~ Alpine ]]; then
           return
-        elif [[ $OS =~ CentOS ]]; then
+        elif [[ "$OS" =~ CentOS ]]; then
           UPDATES=$(ssh "$IP" "yum -q check-update | wc -l")
-          if [[ $UPDATES -gt 0 ]]; then
+          if [[ "$UPDATES" -gt 0 ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
             echo -e "$UPDATES"
           fi
@@ -295,43 +295,43 @@ function CHECK_VM {
   fi
 }
 
-function CHECK_VM_QEMU {
+CHECK_VM_QEMU () {
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
-    if [[ $OS =~ Ubuntu ]] || [[ $OS =~ Debian ]] || [[ $OS =~ Devuan ]]; then
+    if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       qm guest exec "$VM" -- bash -c "apt-get update" >/dev/null 2>&1
       SECURITY_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       NORMAL_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
-      if [[ $(qm guest exec "$VM" -- bash -c "[ -f /var/run/reboot-required.pkgs ]" | grep exitcode) =~ 0 ]]; then         REBOOT_REQUIRED=true; fi
-      if [[ $SECURITY_APT_UPDATES -gt 0 || $NORMAL_APT_UPDATES -gt 0 || $REBOOT_REQUIRED == true ]]; then
+      if [[ $(qm guest exec "$VM" -- bash -c "[ -f /var/run/reboot-required.pkgs ]" | grep exitcode) =~ 0 ]]; then REBOOT_REQUIRED=true; fi
+      if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
-      if [[ $REBOOT_REQUIRED == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
-      if [[ $SECURITY_APT_UPDATES -gt 0 && $NORMAL_APT_UPDATES -gt 0 ]]; then
+      if [[ "$REBOOT_REQUIRED" == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
+      if [[ "$SECURITY_APT_UPDATES" -gt 0 && "$NORMAL_APT_UPDATES" -gt 0 ]]; then
         echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
-      elif [[ $SECURITY_APT_UPDATES -gt 0 ]]; then
+      elif [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then
         echo -e "S: $SECURITY_APT_UPDATES / "
-      elif [[ $NORMAL_APT_UPDATES -gt 0 ]]; then
+      elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
         echo -e "N: $NORMAL_APT_UPDATES"
       fi
-    elif [[ $OS =~ Fedora ]]; then
+    elif [[ "$OS" =~ Fedora ]]; then
       qm guest exec "$VM" -- bash -c "dnf -y update" >/dev/null 2>&1
       UPDATES=$(qm guest exec "$VM" -- bash -c "dnf check-update| grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
-      if [[ $UPDATES -gt 0 ]]; then
+      if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
-    elif [[ $OS =~ Arch ]]; then
+    elif [[ "$OS" =~ Arch ]]; then
       UPDATES=$(qm guest exec "$VM" -- bash -c "pacman -Qu | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
-      if [[ $UPDATES -gt 0 ]]; then
+      if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
-    elif [[ $OS =~ Alpine ]]; then
+    elif [[ "$OS" =~ Alpine ]]; then
       return
-    elif [[ $OS =~ CentOS ]]; then
+    elif [[ "$OS" =~ CentOS ]]; then
       UPDATES=$(qm guest exec "$VM" -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
-      if [[ $UPDATES -gt 0 ]]; then
+      if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
@@ -340,8 +340,8 @@ function CHECK_VM_QEMU {
 }
 
 # Output to file
-function OUTPUT_TO_FILE {
-  if [[ $RDU != true && $RICM != true ]]; then
+OUTPUT_TO_FILE () {
+  if [[ "$RDU" != true && "$RICM" != true ]]; then
     touch /root/Proxmox-Updater/check-output
     exec > >(tee /root/Proxmox-Updater/check-output)    # work in normal mode
   fi
@@ -360,14 +360,14 @@ READ_WRITE_CONFIG
 ARGUMENTS "$@"
 
 # Run without commands (Automatic Mode)
-if [[ $COMMAND != true && $RDU == true ]]; then
+if [[ "$COMMAND" != true && "$RDU" == true ]]; then
   OUTPUT_TO_FILE
   CHECK_RUNNUNG_MACHINE
-elif [[ $COMMAND != true ]]; then
+elif [[ "$COMMAND" != true ]]; then
   OUTPUT_TO_FILE
-  if [[ $MODE =~ Cluster ]]; then HOST_CHECK_START; else
-    if [[ $WITH_HOST == true ]]; then CHECK_HOST_ITSELF; fi
-    if [[ $WITH_LXC == true ]]; then CONTAINER_CHECK_START; fi
-    if [[ $WITH_VM == true ]]; then VM_CHECK_START; fi
+  if [[ "$MODE" =~ Cluster ]]; then HOST_CHECK_START; else
+    if [[ "$WITH_HOST" == true ]]; then CHECK_HOST_ITSELF; fi
+    if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
+    if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
   fi
 fi
