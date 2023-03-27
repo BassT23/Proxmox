@@ -61,10 +61,9 @@ CHECK_ROOT () {
 }
 
 ARGUMENTS () {
-  while test $# -gt -0
-  do
-    argument="$1"
-    case "$argument" in
+  while test $# -gt -0; do
+    ARGUMENT="$1"
+    case "$ARGUMENT" in
       -h|--help)
         USAGE
         exit 2
@@ -129,7 +128,7 @@ ARGUMENTS () {
         exit 2
         ;;
       *)
-        echo -e "\n${RD}  Error: Got an unexpected argument \"$argument\"${CL}";
+        echo -e "\n${RD}  Error: Got an unexpected argument \"$ARGUMENT\"${CL}";
         USAGE;
         exit 2;
         ;;
@@ -672,7 +671,7 @@ else
   MODE="  Host  "
 fi
 
-# Run with Arguments
+# Run
 export TERM=xterm-256color
 if ! [[ -d ~/Proxmox-Updater/temp ]]; then mkdir ~/Proxmox-Updater/temp; fi
 READ_CONFIG
