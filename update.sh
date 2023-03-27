@@ -231,7 +231,7 @@ STATUS () {
   if [[ "$SERVER_VERSION" == "$VERSION" ]]; then
     echo -e "  Updater: ${GN}$VERSION${CL}"
   else
-    echo -e "  Updater: $VERSION / $SERVER_VERSION"
+    echo -e "  Updater: $VERSION / ${OR}$SERVER_VERSION${CL}"
   fi
   if [[ "$SERVER_EXTRA_VERSION" == "$EXTRA_VERSION" ]]; then
     echo -e "  Extras:  ${GN}$EXTRA_VERSION${CL}"
