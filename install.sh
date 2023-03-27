@@ -46,17 +46,16 @@ EOF
 
 #Check root
 CHECK_ROOT () {
-  if [[ $EUID -ne 0 ]]; then
+  if [[ "$EUID" -ne 0 ]]; then
       echo -e >&2 "${RD}--- Please run this as root ---${CL}";
       exit 1
   fi
 }
 
 ARGUMENTS () {
-  while test $# -gt -0
-  do
-    _key="$1"
-    case "$_key" in
+  while test $# -gt -0; do
+    ARGUMENT="$1"
+    case "$ARGUMENT" in
       -h|--help)
         USAGE
         exit 0
@@ -86,7 +85,7 @@ ARGUMENTS () {
         exit 0
         ;;
       *)
-        echo -e "${RD}Error: Got an unexpected argument \"$_key\"${CL}\n";
+        echo -e "${RD}Error: Got an unexpected argument \"$ARGUMENT\"${CL}\n";
         USAGE;
         exit 1;
         ;;
