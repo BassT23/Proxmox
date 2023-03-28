@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.3.9"
+VERSION="1.4"
 
 #Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
