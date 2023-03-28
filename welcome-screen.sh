@@ -4,12 +4,15 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.2.1"
+VERSION="1.3"
+
+# Branch
+BRANCH="master"
 
 # Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
 CHECK_OUTPUT=$(stat -c%s /root/Proxmox-Updater/check-output)
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 # Colors
 # BL="\e[36m"
@@ -35,7 +38,6 @@ function VERSION_CHECK {
 }
 
 function READ_WRITE_CONFIG {
-#  CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' $CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
@@ -43,10 +45,10 @@ function READ_WRITE_CONFIG {
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
-  if [[ $ONLY == "" && $EXCLUDED != "" ]]; then
-    echo -e "${OR}Exclude is set. Not all machines were checked.${CL}\n"
-  elif [[ $ONLY != "" ]]; then
+  if [[ $ONLY != "" ]]; then
     echo -e "${OR}Only is set. Not all machines were checked.${CL}\n"
+  elif [[ $ONLY == "" && $EXCLUDED != "" ]]; then
+    echo -e "${OR}Exclude is set. Not all machines were checked.${CL}\n"
   elif [[ $WITH_HOST != true || $WITH_LXC != true || $WITH_VM != true ||$RUNNING != true || $STOPPED != true ]]; then
     echo -e "${OR}Variable is set in config file. One or more machines will not be checked!${CL}\n"
   fi
@@ -54,11 +56,10 @@ function READ_WRITE_CONFIG {
 
 function TIME_CALCULTION {
 MOD=$(date -r "/root/Proxmox-Updater/check-output" +%s)
-# convert seconds to Days, Hours, Minutes
 NOW=$(date +%s)
-DAYS=$(expr \( "$NOW" - "$MOD" \) / 86400)
-HOURS=$(expr \( "$NOW" - "$MOD" \) / 3600)
-MINUTES=$(expr \( "$NOW" - "$MOD" \) / 60)
+DAYS=$(( (NOW - MOD) / 86400 ))
+HOURS=$(( (NOW - MOD) / 3600 ))
+MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
 # Welcome
@@ -66,19 +67,20 @@ echo
 neofetch
 VERSION_CHECK
 READ_WRITE_CONFIG
-TIME_CALCULTION
-if [[ $DAYS -gt 1 ]]; then
-  echo -e "     Last Update Check: $DAYS day(s) ago\n"
-elif [[ $HOURS -gt 1 ]]; then
-  echo -e "     Last Update Check: $HOURS hour(s) ago\n"
-else
-  echo -e "     Last Update Check: $MINUTES minute(s) ago\n"
-fi
-#echo -e "Time since last update check (D:H:M): $DAYS:$HOURS:$MINUTES\n"
-if [[ -f /root/Proxmox-Updater/check-output ]] && [[ $CHECK_OUTPUT -gt 0 ]]; then
-  echo -e "${OR}Available Updates:${CL}"
-  echo -e "S = Security / N = Normal"
-  cat /root/Proxmox-Updater/check-output
+if [[ -f /root/Proxmox-Updater/check-output ]]; then
+  TIME_CALCULTION
+  if [[ $DAYS -gt 0 ]]; then
+    echo -e "     Last Update Check: $DAYS day(s) ago\n"
+  elif [[ $HOURS -gt 0 ]]; then
+    echo -e "     Last Update Check: $HOURS hour(s) ago\n"
+  else
+    echo -e "     Last Update Check: $MINUTES minute(s) ago\n"
+  fi
+  if [[ -f /root/Proxmox-Updater/check-output ]] && [[ $CHECK_OUTPUT -gt 0 ]]; then
+    echo -e "${OR}Available Updates:${CL}"
+    echo -e "S = Security / N = Normal"
+    cat /root/Proxmox-Updater/check-output
+  fi
   echo
 fi
 

@@ -13,24 +13,29 @@
 ```
 <div align="center">
 
->  Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
+![Screenshot_20230326_130709](https://user-images.githubusercontent.com/30832786/227771669-aae7e7f4-b27e-4095-950a-c6fa1f146503.png)
 
->  I am no member of the Proxmox Server Solutions GmbH. This is not an official programm from Proxmox!
+[![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
+[![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
+
+Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
+
+I am no member of the Proxmox Server Solutions GmbH. This is not an official programm from Proxmox!
+
+</div>
 
 >  This is distributed in the hope that it will be useful, but
 >  WITHOUT ANY WARRANTY; without even the implied warranty of
 >  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 >  See the GNU General Public License for more details.
 
+<div align="center">
 
-[![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
-[![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
+**IN CASE OF EMERGENCY, I HOPE YOU HAVE BACKUPS FROM YOUR MACHINES!**
+
+**YOU HAVE BEEN WARNED!**
 
 </div>
-
-![screenshot](https://user-images.githubusercontent.com/30832786/222421730-873ea121-bffd-4bab-a52a-e2beb3cca783.png)
-
-# Proxmox-Updater
 
 Features:
 - Update Proxmox (the host / all cluster nodes / all included LXCs and VMs)
@@ -41,19 +46,47 @@ Features:
 
 Info can be found with `update -h`
 
+Changelog: [here](https://github.com/BassT23/Proxmox/blob/beta/change.log)
 
-## Installation:
 
+# Installation:
 In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
-### If you want to update the VMs also, please install and run `qemu-guest-agent` on VM.
 
-check out here: <https://pve.proxmox.com/wiki/Qemu-guest-agent> for more infos.
+## Cluster-Mode preparation:
+**! For Cluster Installation, you only need to install on one Host !**
+
+The nodes need to know each other. For that please edit the `/etc/hosts` file on each node. Otherwise you can use the GUI (NODE -> System -> Hosts)
+
+Example add:
+```
+192.168.1.10   pve1
+192.168.1.11   pve2
+192.168.1.12   pve3
+...
+```
+IP and Name must match with node ip and its hostname.
+- IP can be found in node terminal with `hostname -I`
+- hostname can be found in node terminal with `hostname`
+
+After that make the fingerprints.
+The used sequence can be check, if you run `awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf"` from the host on which Proxmox-Updater is installed.
+So connect from first node (on which you install the Proxmox-Updater) to node2 with `ssh pve2 uptime`, for example. Then from node2 `ssh pve3 uptime`, and so on.
 
 
-## Update the script:
+## If you want to update the VMs also, you have two choices:
+1. Use the "light and easy" QEMU option
+
+     more infos here: [QEMU Guest Agent](https://pve.proxmox.com/wiki/Qemu-guest-agent)
+
+2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
+
+     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/development/ssh.md)
+
+
+# Update the script:
 `update -up`
 
 If update run into issue, please remove first with:
@@ -63,9 +96,8 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 and install new
 
 
-## Extra Updates:
-
-If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater/update.conf`)
+# Extra Updates:
+If updater detects installation: (disable, if you wand in `/root/Proxmox-Updater/update.conf`)
 - PiHole
 - ioBroker
 - Pterodactyl
@@ -73,8 +105,7 @@ If updater detects Installation: (disable, if you wand in `/root/Proxmox-Updater
 - Docker Container Images
 
 
-## Config File:
-
+# Config File:
 The config file is stored under `/root/Proxmox-Updater/update.conf`
 
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
@@ -86,32 +117,28 @@ With this file, you can manage the updater. For example; if you don't want to up
 - "only" or "exclude" LXC/VM by ID
 
 
-## Welcome Screen
-
+# Welcome Screen:
 The Welcome Screen is an extra for you. Its optional!
-
-Can be installed or uninstalled with:
-```
-bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) welcome
-```
 
 - The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
 - The update-checker also use the config file!
 - To force the check, you can run `/root/Proxmox-Updater/check-updates.sh` in Terminal.
-- Need neofetch to be installed (if not installed, script will make it automatically)
+- Need neofetch to be installed (if it is not installed, script will make it automatically)
 
-## Beta Testing:
 
+# Beta Testing:
 If anybody want to help with failure search, please test our beta (if available).
 Install beta update with:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
 ```
 
-## Support:
+# Q&A:
+[Discussion](https://github.com/BassT23/Proxmox/discussions/60)
 
+
+# Support:
 [![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
 
-## Credits:
-
+# Credits:
 [@Uruk](https://github.com/Uruknara) - for help with the code

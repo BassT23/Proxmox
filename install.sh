@@ -4,11 +4,14 @@
 # Install #
 ###########
 
-VERSION="1.5"
+VERSION="1.6"
 
-#Variable / Function
+# Branch
+BRANCH="master"
+
+# Variable / Function
 LOCAL_FILES="/root/Proxmox-Updater"
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/master"
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 #Colors
 BL="\e[36m"
@@ -18,7 +21,7 @@ GN="\e[1;92m"
 CL="\e[0m"
 
 #Header
-function HEADER_INFO {
+HEADER_INFO () {
   clear
   echo -e "\n \
       https://github.com/BassT23/Proxmox"
@@ -42,14 +45,56 @@ EOF
 }
 
 #Check root
-function CHECK_ROOT {
-  if [[ $EUID -ne 0 ]]; then
+CHECK_ROOT () {
+  if [[ "$EUID" -ne 0 ]]; then
       echo -e >&2 "${RD}--- Please run this as root ---${CL}";
       exit 1
   fi
 }
 
-function USAGE {
+ARGUMENTS () {
+  while test $# -gt -0; do
+    ARGUMENT="$1"
+    case "$ARGUMENT" in
+      -h|--help)
+        USAGE
+        exit 0
+        ;;
+      status)
+        STATUS
+        ;;
+      install)
+        COMMAND=true
+        INSTALL
+        WELCOME_SCREEN
+        exit 0
+        ;;
+      update)
+        COMMAND=true
+        UPDATE
+        WELCOME_SCREEN
+        exit 0
+        ;;
+      uninstall)
+        COMMAND=true
+        UNINSTALL
+        exit 0
+        ;;
+      welcome)
+        WELCOME_SCREEN
+        exit 0
+        ;;
+      *)
+        echo -e "${RD}Error: Got an unexpected argument \"$ARGUMENT\"${CL}\n";
+        USAGE;
+        exit 1;
+        ;;
+    esac
+#    shift
+  done
+}
+
+USAGE () {
     if [[ $SILENT != true ]]; then
         echo -e "Usage: $0 {COMMAND}\n"
         echo -e "{COMMAND}:"
@@ -64,7 +109,7 @@ function USAGE {
     fi
 }
 
-function isInstalled {
+isInstalled () {
     if [ -f "/usr/local/bin/update" ]; then
         true
     else
@@ -72,7 +117,7 @@ function isInstalled {
     fi
 }
 
-function STATUS {
+STATUS () {
     if [[ $SILENT != true ]]; then
         echo -e "Proxmox-Updater"
         if isInstalled; then
@@ -84,7 +129,7 @@ function STATUS {
     if isInstalled; then exit 0; else exit 1; fi
 }
 
-function INSTALL {
+INSTALL () {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "${OR}Proxmox-Updater is already installed.${CL}"
@@ -97,18 +142,30 @@ function INSTALL {
       fi
     else
       mkdir -p /root/Proxmox-Updater/exit
+      mkdir -p /root/Proxmox-Updater/VMs
       curl -s $SERVER_URL/update.sh > /usr/local/bin/update
       chmod 750 /usr/local/bin/update
+      curl -s $SERVER_URL/VMs/example > $LOCAL_FILES/VMs/example
       curl -s $SERVER_URL/exit/error.sh > $LOCAL_FILES/exit/error.sh
       curl -s $SERVER_URL/exit/passed.sh > $LOCAL_FILES/exit/passed.sh
       curl -s $SERVER_URL/update-extras.sh > $LOCAL_FILES/update-extras.sh
       curl -s $SERVER_URL/update.conf > $LOCAL_FILES/update.conf
       chmod -R +x $LOCAL_FILES/exit/*.sh
       echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
+      echo -e "${OR}Also want to install the Welcome-Screen?${CL}\n\
+Type [Y/y] or Enter for yes - enything else will exit"
+      read -p "" -n 1 -r -s
+      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+        if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
+        curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
+        curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater-Temp/check-updates.sh
+        WELCOME_SCREEN_INSTALL
+        rm -r /root/Proxmox-Updater-Temp
+      fi
     fi
 }
 
-function UPDATE {
+UPDATE () {
     if [ -f "/usr/local/bin/update" ]; then
       if [ -d "/root/Proxmox-Update-Scripts" ]; then
         echo -e "${RD}Proxmox-Updater has changed directorys, so the old directory\n\
@@ -149,7 +206,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
       fi
     else
       echo -e "${RD}Proxmox-Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
-      read -p "Type [Y/y] or Enter for yes - enything else will exit " -n 1 -r -s
+      read -p "Type [Y/y] or Enter for yes - enything else will exit" -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh)
       else
@@ -159,7 +216,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
     fi
 }
 
-function CHECK_DIFF {
+CHECK_DIFF () {
   if ! cmp -s "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"; then
     echo -e "The file $f\n \
  ==> Modified (by you or by a script) since installation.\n \
@@ -185,7 +242,7 @@ function CHECK_DIFF {
   fi
 }
 
-function WELCOME_SCREEN {
+WELCOME_SCREEN () {
   if [[ $COMMAND != true ]]; then
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater Welcome-Screen${CL}\n"
     if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
@@ -195,18 +252,7 @@ function WELCOME_SCREEN {
       echo -e "${OR} Welcome-Screen is not installed${CL}\n"
       read -p "Would you like to install it also? Type [Y/y] or Enter for yes - enything else will skip" -n 1 -r -s && echo
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
-        cp /etc/crontab /etc/crontab.bak
-        touch /etc/motd
-        if ! [ -f /usr/bin/neofetch ]; then apt-get install neofetch -y; fi
-        cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
-        cp /root/Proxmox-Updater-Temp/check-updates.sh /root/Proxmox-Updater/check-updates.sh
-        chmod +x /etc/update-motd.d/01-welcome-screen
-        chmod +x /root/Proxmox-Updater/check-updates.sh
-        if ! grep -q "check-updates.sh" /etc/crontab; then
-          echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
-        fi
-        echo -e "\n${GN} Welcome-Screen installed${CL}\n"
+        WELCOME_SCREEN_INSTALL
       fi
     else
       echo -e "${OR}  Welcome-Screen is already installed${CL}\n"
@@ -227,20 +273,39 @@ function WELCOME_SCREEN {
   fi
 }
 
-function UNINSTALL {
+WELCOME_SCREEN_INSTALL () {
+  if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
+  cp /etc/crontab /etc/crontab.bak
+  touch /etc/motd
+  if ! [ -f /usr/bin/neofetch ]; then apt-get install neofetch -y; fi
+  cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
+  cp /root/Proxmox-Updater-Temp/check-updates.sh /root/Proxmox-Updater/check-updates.sh
+  chmod +x /etc/update-motd.d/01-welcome-screen
+  chmod +x /root/Proxmox-Updater/check-updates.sh
+  if ! grep -q "check-updates.sh" /etc/crontab; then
+    echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
+  fi
+  echo -e "\n${GN} Welcome-Screen installed${CL}\n"
+}
+
+UNINSTALL () {
   if [ -f "/usr/local/bin/update" ]; then
     echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
-    echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
-    read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r -s
+    echo -e "${RD}Really want to remove Proxmox-Updater?${CL}\n\
+Type [Y/y] for yes - enything else will exit"
+    read -p "" -n 1 -r -s
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
       rm -r /root/Proxmox-Updater
       if [[ -f "/etc/update-motd.d/01-welcome-screen" ]]; then
         chmod -x /etc/update-motd.d/01-welcome-screen
         rm -rf /etc/motd
-        mv /etc/motd.bak /etc/motd
+        if [[ -f /etc/motd.bak ]]; then
+          mv /etc/motd.bak /etc/motd
+        fi
       fi
       echo -e "\n\n${BL}Proxmox-Updater removed${CL}\n"
+      exit 0
     fi
   else
     echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
@@ -249,7 +314,7 @@ function UNINSTALL {
 
 #Error/Exit
 set -e
-function EXIT {
+EXIT () {
   EXIT_CODE=$?
   # Install Finish
   if [[ $EXIT_CODE == "1" ]]; then
@@ -264,51 +329,7 @@ trap EXIT EXIT
 
 #Install
 HEADER_INFO
-parse_cli()
-{
-  while test $# -gt -0
-  do
-    _key="$1"
-    case "$_key" in
-      -h|--help)
-        USAGE
-        exit 0
-        ;;
-      status)
-        STATUS
-        exit 0
-        ;;
-      install)
-        COMMAND=true
-        INSTALL
-        WELCOME_SCREEN
-        exit 0
-        ;;
-      update)
-        COMMAND=true
-        UPDATE
-        WELCOME_SCREEN
-        exit 0
-        ;;
-      uninstall)
-        COMMAND=true
-        UNINSTALL
-        exit 0
-        ;;
-      welcome)
-        WELCOME_SCREEN
-        exit 0
-        ;;
-      *)
-        echo -e "${RD}Error: Got an unexpected argument \"$_key\"${CL}\n";
-        USAGE;
-        exit 1;
-        ;;
-    esac
-    shift
-  done
-}
-parse_cli "$@"
+ARGUMENTS "$@"
 
 # Run without commands
 if [[ $COMMAND != true ]]; then
