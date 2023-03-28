@@ -4,10 +4,10 @@
 # Install #
 ###########
 
-VERSION="1.5.4"
+VERSION="1.6"
 
 # Branch
-BRANCH="beta"
+BRANCH="master"
 
 # Variable / Function
 LOCAL_FILES="/root/Proxmox-Updater"
