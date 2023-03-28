@@ -73,6 +73,7 @@ fi
 # Octoprint
 if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
   echo -e "\n*** Updating Octoprint ***\n"
+  # find octoprint
   OPRINT=$(find /home -name "oprint")
   "$OPRINT"/bin/pip install -U octoprint
   sudo service octoprint restart
