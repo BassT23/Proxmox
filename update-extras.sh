@@ -4,8 +4,7 @@
 # Update-Extras #
 #################
 
-# This work only for LXC-Container NOT for HOST or VM
-VERSION="1.7.6"
+VERSION="1.8"
 
 # Variables
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
