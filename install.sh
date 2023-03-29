@@ -143,6 +143,7 @@ INSTALL () {
     else
       mkdir -p /root/Proxmox-Updater/exit
       mkdir -p /root/Proxmox-Updater/VMs
+      # Install from Release
       curl -s $SERVER_URL/update.sh > /usr/local/bin/update
       chmod 750 /usr/local/bin/update
       curl -s $SERVER_URL/VMs/example > $LOCAL_FILES/VMs/example
