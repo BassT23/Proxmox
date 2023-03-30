@@ -1,6 +1,10 @@
 Changelog:
 ==========
 
+**v3.8.x** (development)
+
+- Speed up start in cluster mode
+
 **v3.8** (28.03.2023)
 
 - Add SSH Connection for VM - with extra update support
