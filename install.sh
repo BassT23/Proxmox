@@ -4,7 +4,7 @@
 # Install #
 ###########
 
-VERSION="1.6"
+VERSION="1.6.1"
 
 # Branch
 BRANCH="development"
@@ -143,29 +143,30 @@ INSTALL () {
     else
       mkdir -p /root/Proxmox-Updater/exit
       mkdir -p /root/Proxmox-Updater/VMs
-
-# Install from Release
-      # curl download latest release
-
-      curl -s $SERVER_URL/update.sh > /usr/local/bin/update
+      # Download latest release
+      if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
+      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/latest_release.zip
+      unzip -q /root/Proxmox-Updater-Temp/latest_release.zip -d /root/Proxmox-Updater-Temp/
+      TEMP_FILES=$(find /root/Proxmox-Updater-Temp/Proxmox* | sed 1q)
+      # Copy files
+      cp "$TEMP_FILES"/update.sh /usr/local/bin/update
       chmod 750 /usr/local/bin/update
-      curl -s $SERVER_URL/VMs/example > $LOCAL_FILES/VMs/example
-      curl -s $SERVER_URL/exit/error.sh > $LOCAL_FILES/exit/error.sh
-      curl -s $SERVER_URL/exit/passed.sh > $LOCAL_FILES/exit/passed.sh
-      curl -s $SERVER_URL/update-extras.sh > $LOCAL_FILES/update-extras.sh
-      curl -s $SERVER_URL/update.conf > $LOCAL_FILES/update.conf
+      cp "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
+      cp "$TEMP_FILES"/exit/* $LOCAL_FILES/exit/
       chmod -R +x $LOCAL_FILES/exit/*.sh
+      cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
+      cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
       echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
       echo -e "${OR}Also want to install the Welcome-Screen?${CL}\n\
 Type [Y/y] or Enter for yes - enything else will exit"
       read -p "" -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
-        curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
-        curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater-Temp/check-updates.sh
+        cp "$TEMP_FILES"/welcome-screen.sh /root/Proxmox-Updater-Temp/welcome-screen.sh
+        cp "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater-Temp/check-updates.sh
         WELCOME_SCREEN_INSTALL
-        rm -r /root/Proxmox-Updater-Temp
       fi
+      rm -r /root/Proxmox-Updater-Temp
     fi
 }
 
