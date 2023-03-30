@@ -498,19 +498,25 @@ VM_UPDATE_START () {
     else
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
-        # Start the VM
-        WILL_STOP="true"
-        echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
-        qm set "$VM" --agent 1 >/dev/null 2>&1
-        qm start "$VM" >/dev/null 2>&1
-        echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
-        echo -e "${OR}This will take some time, ... 45 secounds is set!${CL}"
-        sleep 45
-        UPDATE_VM "$VM"
-        # Stop the VM
-        echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
-        qm stop "$VM" &
-        WILL_STOP="false"
+        # Check if update is possiple
+        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
+          # Start the VM
+          WILL_STOP="true"
+          echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
+          qm set "$VM" --agent 1 >/dev/null 2>&1
+          qm start "$VM" >/dev/null 2>&1
+          echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
+          echo -e "${OR}This will take some time, ... 45 secounds is set!${CL}"
+          sleep 45
+          UPDATE_VM "$VM"
+          # Stop the VM
+          echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
+          qm stop "$VM" &
+          WILL_STOP="false"
+        else
+          echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH not initialized${CL}\n\n"
+          return
+        fi
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
