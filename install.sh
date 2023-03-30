@@ -223,7 +223,6 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         rm -r "$TEMP_FILES"/change.log
         rm -r "$TEMP_FILES"/install.sh
         rm -r "$TEMP_FILES"/ssh.md
-
         chmod -R +x "$TEMP_FILES"/exit/*.sh
         cd "$TEMP_FILES"
         FILES="*.* **/*.*"
