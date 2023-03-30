@@ -130,10 +130,9 @@ The Welcome Screen is an extra for you. Its optional!
 
 # Beta Testing:
 If anybody want to help with failure search, please test our beta (if available).
-Install beta update with:
-```
-bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
-```
+Install beta update with `update beta -up`
+
+To go back to master, choose `update master -up`
 
 # Q&A:
 [Discussion](https://github.com/BassT23/Proxmox/discussions/60)
