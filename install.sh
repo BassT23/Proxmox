@@ -156,7 +156,8 @@ INSTALL () {
       chmod -R +x $LOCAL_FILES/exit/*.sh
       cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
       cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
-      echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
+      echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}"
+      echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
       echo -e "${OR}Also want to install the Welcome-Screen?${CL}\n\
 Type [Y/y] or Enter for yes - enything else will exit"
       read -p "" -n 1 -r -s
@@ -207,7 +208,9 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
          CHECK_DIFF
         done
         rm -r /root/Proxmox-Updater-Temp
-        echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
+        echo -e "${GN}Proxmox-Updater updated successfully.${CL}"
+        if [[ "$BRANCH" != master ]]; then echo "${OR}Installed: $BRANCH version${CL}"; fi
+        echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
       fi
     else
       echo -e "${RD}Proxmox-Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
@@ -290,7 +293,7 @@ WELCOME_SCREEN_INSTALL () {
   if ! grep -q "check-updates.sh" /etc/crontab; then
     echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
   fi
-  echo -e "\n${GN} Welcome-Screen installed${CL}\n"
+  echo -e "\n${GN} Welcome-Screen installed${CL}"
 }
 
 UNINSTALL () {
