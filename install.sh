@@ -209,7 +209,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         done
         rm -r /root/Proxmox-Updater-Temp
         echo -e "${GN}Proxmox-Updater updated successfully.${CL}"
-        if [[ "$BRANCH" != master ]]; then echo "${OR}Installed: $BRANCH version${CL}"; fi
+        if [[ "$BRANCH" != master ]]; then echo -e "${OR}Installed: $BRANCH version${CL}"; fi
         echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
       fi
     else
