@@ -113,7 +113,16 @@ ARGUMENTS () {
       uninstall)
         COMMAND=true
         UNINSTALL
-        exit 0
+        exit 2
+        ;;
+      master)
+        BRANCH=master
+        ;;
+      beta)
+        BRANCH=beta
+        ;;
+      development)
+        BRANCH=development
         ;;
       -up)
         COMMAND=true
@@ -143,7 +152,10 @@ USAGE () {
     echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
     echo -e "[OPTIONS] Manages the Proxmox-Updater:"
     echo -e "======================================"
-    echo -e "  -s --silent          Silent / Headless Mode\n"
+    echo -e "  -s --silent          Silent / Headless Mode"
+    echo -e "  master               Use master branch"
+    echo -e "  beta                 Use beta branch"
+    echo -e "  development          Use development branch\n"
     echo -e "{COMMAND}:"
     echo -e "========="
     echo -e "  -h --help            Show this help"
@@ -189,7 +201,7 @@ VERSION_CHECK () {
 
 # Update Proxmox-Updater
 UPDATE () {
-  bash <(curl -s "$SERVER_URL"/install.sh) update
+  bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
 }
 
 # Uninstall
