@@ -4,10 +4,10 @@
 # Update #
 ##########
 
-VERSION="3.8"
+VERSION="3.8.1"
 
 # Branch
-BRANCH="master"
+BRANCH="development"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
@@ -176,7 +176,7 @@ VERSION_CHECK () {
     if [[ "$BRANCH" == beta ]]; then
       echo -e "\n${OR}         *** U are on beta branch ***${CL}\n\
                Version: $VERSION"
-    elif [[ "$BRANCH" == development ]]; then
+    else
       echo -e "\n${OR}     *** U are on development branch ***${CL}\n\
                Version: $VERSION"
     fi
@@ -336,22 +336,27 @@ HOST_UPDATE_START () {
 # Host Update
 UPDATE_HOST () {
   HOST=$1
-  ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
-  scp "$0" "$HOST":/root/Proxmox-Updater/update
-  scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
-  scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
-  scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
-  scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
-  scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
-  if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
-    scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
+  START_HOST=$(hostname -I | tr -d '[:space:]')
+  if [[ "$HOST" != "$START_HOST" ]]; then
+    ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
+    scp "$0" "$HOST":/root/Proxmox-Updater/update
+    scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
+    scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
+    if [[ "$WELCOME_SCREEN" == true ]]; then
+      scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
+      scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
+      scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
+    fi
+    if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
+      scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
+    fi
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
   elif [[ "$WELCOME_SCREEN" == true ]]; then
-    ssh "$HOST" "/root/Proxmox-Updater/update -c -w host"
+    ssh "$HOST" 'bash -s' < "$0" -- "-c -w host"
   else
-    ssh "$HOST" "/root/Proxmox-Updater/update -c host"
+    ssh "$HOST" 'bash -s' < "$0" -- "-c host"
   fi
 }
 
