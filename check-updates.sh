@@ -318,7 +318,7 @@ CHECK_VM_QEMU () {
       fi
     elif [[ "$OS" =~ Fedora ]]; then
       qm guest exec "$VM" -- bash -c "dnf -y update" >/dev/null 2>&1
-      UPDATES=$(qm guest exec "$VM" -- bash -c "dnf check-update| grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" -- bash -c "dnf check-update | grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
@@ -345,7 +345,7 @@ CHECK_VM_QEMU () {
 OUTPUT_TO_FILE () {
   if [[ "$RDU" != true && "$RICM" != true ]]; then
     touch /root/Proxmox-Updater/check-output
-    exec > >(tee /root/Proxmox-Updater/check-output)    # work in normal mode
+    exec > >(tee /root/Proxmox-Updater/check-output)
   fi
 }
 
