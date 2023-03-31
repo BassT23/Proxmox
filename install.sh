@@ -4,7 +4,7 @@
 # Install #
 ###########
 
-VERSION="1.6.1"
+VERSION="1.6.2"
 
 # Branch
 BRANCH="beta"
@@ -209,12 +209,8 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
           mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
           chmod +x /etc/update-motd.d/01-welcome-screen
-          if ! [[ -f /root/Proxmox-Updater/check-updates.sh ]]; then
-            mv "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater/check-updates.sh
-            chmod +x /root/Proxmox-Updater/check-updates.sh
-          else
-            rm -r "$TEMP_FILES"/check-updates.sh
-          fi
+          mv "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater/check-updates.sh
+          chmod +x /root/Proxmox-Updater/check-updates.sh
         fi
         # Delete old files (old filesystem)
         if [[ -f /etc/update-motd.d/01-updater ]];then rm -r /etc/update-motd.d/01-updater; fi
@@ -227,7 +223,6 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         rm -r "$TEMP_FILES"/change.log
         rm -r "$TEMP_FILES"/install.sh
         rm -r "$TEMP_FILES"/ssh.md
-
         chmod -R +x "$TEMP_FILES"/exit/*.sh
         cd "$TEMP_FILES"
         FILES="*.* **/*.*"
@@ -314,11 +309,12 @@ WELCOME_SCREEN_INSTALL () {
   if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
   cp /etc/crontab /etc/crontab.bak
   touch /etc/motd
-  if ! [ -f /usr/bin/neofetch ]; then apt-get install neofetch -y; fi
+  if ! [[ -f /usr/bin/neofetch ]]; then apt-get install neofetch -y; fi
   cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
   cp /root/Proxmox-Updater-Temp/check-updates.sh /root/Proxmox-Updater/check-updates.sh
   chmod +x /etc/update-motd.d/01-welcome-screen
   chmod +x /root/Proxmox-Updater/check-updates.sh
+  if ! [[ -f /root/Proxmox-Updater/check-output ]]; then touch /root/Proxmox-Updater/check-output; fi
   if ! grep -q "check-updates.sh" /etc/crontab; then
     echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
   fi
