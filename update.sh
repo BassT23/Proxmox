@@ -7,7 +7,7 @@
 VERSION="3.8.2"
 
 # Branch
-BRANCH="beta"
+BRANCH="development"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
@@ -505,7 +505,6 @@ VM_UPDATE_START () {
           # Start the VM
           WILL_STOP="true"
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
-          qm set "$VM" --agent 1 >/dev/null 2>&1
           qm start "$VM" >/dev/null 2>&1
           echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
           echo -e "${OR}This will take some time, ... 45 secounds is set!${CL}"
