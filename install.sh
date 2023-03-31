@@ -209,8 +209,12 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
           mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
           chmod +x /etc/update-motd.d/01-welcome-screen
-          mv "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater/check-updates.sh
-          chmod +x /root/Proxmox-Updater/check-updates.sh
+          if ! [[ -f /root/Proxmox-Updater/check-updates.sh ]]; then
+            mv "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater/check-updates.sh
+            chmod +x /root/Proxmox-Updater/check-updates.sh
+          else
+            rm -r "$TEMP_FILES"/check-updates.sh
+          fi
         fi
         # Delete old files (old filesystem)
         if [[ -f /etc/update-motd.d/01-updater ]];then rm -r /etc/update-motd.d/01-updater; fi
@@ -223,6 +227,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         rm -r "$TEMP_FILES"/change.log
         rm -r "$TEMP_FILES"/install.sh
         rm -r "$TEMP_FILES"/ssh.md
+
         chmod -R +x "$TEMP_FILES"/exit/*.sh
         cd "$TEMP_FILES"
         FILES="*.* **/*.*"
