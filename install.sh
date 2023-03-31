@@ -200,7 +200,11 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         fi
         tar -zxf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz -C /root/Proxmox-Updater-Temp
         rm -r /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
-        TEMP_FILES=/root/Proxmox-Updater-Temp/$(ls /root/Proxmox-Updater-Temp)
+        if [[ "$BRANCH" == master ]]; then
+          TEMP_FILES=/root/Proxmox-Updater-Temp
+        else
+          TEMP_FILES=/root/Proxmox-Updater-Temp/$(ls /root/Proxmox-Updater-Temp)
+        fi
         # Copy files
         mv "$TEMP_FILES"/update.sh /usr/local/bin/update
         chmod 750 /usr/local/bin/update
