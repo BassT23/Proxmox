@@ -4,7 +4,7 @@
 # Install #
 ###########
 
-VERSION="1.6.3"
+VERSION="1.6.4"
 
 # Branch
 BRANCH="beta"
@@ -72,6 +72,7 @@ ARGUMENTS () {
       update)
         COMMAND=true
         UPDATE
+#        WELCOME_SCREEN
         exit 0
         ;;
       uninstall)
@@ -144,15 +145,16 @@ INSTALL () {
       mkdir -p /root/Proxmox-Updater/VMs
       # Download latest release
       if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
-      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/latest_release.zip
-      unzip -q /root/Proxmox-Updater-Temp/latest_release.zip -d /root/Proxmox-Updater-Temp/
-      TEMP_FILES=$(find /root/Proxmox-Updater-Temp/Proxmox* | sed 1q)
+        curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
+        tar -zxf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz -C /root/Proxmox-Updater-Temp
+        rm -r /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
+        TEMP_FILES=/root/Proxmox-Updater-Temp
       # Copy files
       cp "$TEMP_FILES"/update.sh /usr/local/bin/update
       chmod 750 /usr/local/bin/update
       cp "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
       cp "$TEMP_FILES"/exit/* $LOCAL_FILES/exit/
-      chmod -R +x $LOCAL_FILES/exit/*.sh
+      chmod -R +x "$LOCAL_FILES"/exit/*.sh
       cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
       cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
       echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}"
@@ -161,9 +163,9 @@ INSTALL () {
 Type [Y/y] or Enter for yes - enything else will exit"
       read -p "" -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
-        cp "$TEMP_FILES"/welcome-screen.sh /root/Proxmox-Updater-Temp/welcome-screen.sh
-        cp "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater-Temp/check-updates.sh
+#        if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
+#        cp "$TEMP_FILES"/welcome-screen.sh /root/Proxmox-Updater-Temp/welcome-screen.sh
+#        cp "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater-Temp/check-updates.sh
         WELCOME_SCREEN_INSTALL
       fi
       rm -r /root/Proxmox-Updater-Temp
@@ -190,18 +192,15 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         # Download files
         if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
         if [[ "$BRANCH" == master ]]; then
-          curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/latest_release.zip
-          unzip -q /root/Proxmox-Updater-Temp/latest_release.zip -d /root/Proxmox-Updater-Temp/
-          TEMP_FILES=$(find /root/Proxmox-Updater-Temp/Proxmox* | sed 1q)
+          curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
         elif [[ "$BRANCH" == beta ]]; then
-          wget -q https://github.com/BassT23/Proxmox/archive/refs/heads/beta.zip -O /root/Proxmox-Updater-Temp/beta.zip
-          unzip -q /root/Proxmox-Updater-Temp/beta.zip -d /root/Proxmox-Updater-Temp/
-          TEMP_FILES=/root/Proxmox-Updater-Temp/Proxmox-beta
+          curl -s -L https://github.com/BassT23/Proxmox/tarball/beta > /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
         elif [[ "$BRANCH" == development ]]; then
-          wget -q https://github.com/BassT23/Proxmox/archive/refs/heads/development.zip -O /root/Proxmox-Updater-Temp/development.zip
-          unzip -q /root/Proxmox-Updater-Temp/development.zip -d /root/Proxmox-Updater-Temp/
-          TEMP_FILES=/root/Proxmox-Updater-Temp/Proxmox-development
+          curl -s -L https://github.com/BassT23/Proxmox/tarball/development > /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
         fi
+        tar -zxf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz -C /root/Proxmox-Updater-Temp
+        rm -r /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
+        TEMP_FILES=/root/Proxmox-Updater-Temp/$(ls /root/Proxmox-Updater-Temp)
         # Copy files
         mv "$TEMP_FILES"/update.sh /usr/local/bin/update
         chmod 750 /usr/local/bin/update
