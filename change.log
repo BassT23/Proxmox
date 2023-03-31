@@ -1,9 +1,10 @@
 Changelog:
 ==========
 
-**v3.8.x** (development)
+**v3.8.2** (beta)
 
 - Speed up start in cluster mode
+- Speed up installation
 
 **v3.8** (28.03.2023)
 
