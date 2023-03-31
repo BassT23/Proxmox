@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.8.3"
+VERSION="3.8.4"
 
 # Branch
 BRANCH="beta"
@@ -378,10 +378,10 @@ UPDATE_HOST_ITSELF () {
   echo -e "${OR}--- APT UPDATE ---${CL}" && apt-get update
   if [[ "$HEADLESS" == true ]]; then
     echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}" && \
-            DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y
+            DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y
   else
     echo -e "\n${OR}--- APT UPGRADE ---${CL}" && \
-            apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y
+            apt-get dist-upgrade -y
   fi
   echo -e "\n${OR}--- APT CLEANING ---${CL}" && \
           apt-get --purge autoremove -y && echo
@@ -445,10 +445,10 @@ UPDATE_CONTAINER () {
     pct exec "$CONTAINER" -- bash -c "apt-get update"
     if [[ "$HEADLESS" == true ]]; then
       echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y"
+      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
     else
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y"
+      pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
     fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
       pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y"
@@ -554,7 +554,7 @@ UPDATE_VM () {
           echo -e "${OR}--- APT UPDATE ---${CL}"
           ssh "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-          ssh "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+          ssh "$IP" apt-get upgrade -y
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
           ssh "$IP" apt-get --purge autoremove -y
           EXTRAS
@@ -606,7 +606,7 @@ UPDATE_VM_QEMU () {
       echo -e "${OR}--- APT UPDATE ---${CL}"
       qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-      qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
+      qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
       qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
       echo
