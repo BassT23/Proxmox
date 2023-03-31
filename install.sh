@@ -4,7 +4,7 @@
 # Install #
 ###########
 
-VERSION="1.6.2"
+VERSION="1.6.3"
 
 # Branch
 BRANCH="beta"
@@ -72,7 +72,6 @@ ARGUMENTS () {
       update)
         COMMAND=true
         UPDATE
-        WELCOME_SCREEN
         exit 0
         ;;
       uninstall)
@@ -211,6 +210,9 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
           chmod +x /etc/update-motd.d/01-welcome-screen
           mv "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater/check-updates.sh
           chmod +x /root/Proxmox-Updater/check-updates.sh
+        else
+          rm -r "$TEMP_FILES"/welcome-screen.sh
+          rm -r "$TEMP_FILES"/check-updates.sh
         fi
         # Delete old files (old filesystem)
         if [[ -f /etc/update-motd.d/01-updater ]];then rm -r /etc/update-motd.d/01-updater; fi
