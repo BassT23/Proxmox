@@ -4,10 +4,10 @@
 # Update #
 ##########
 
-VERSION="3.8"
+VERSION="3.8.2"
 
 # Branch
-BRANCH="master"
+BRANCH="development"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
@@ -113,7 +113,16 @@ ARGUMENTS () {
       uninstall)
         COMMAND=true
         UNINSTALL
-        exit 0
+        exit 2
+        ;;
+      master)
+        BRANCH=master
+        ;;
+      beta)
+        BRANCH=beta
+        ;;
+      development)
+        BRANCH=development
         ;;
       -up)
         COMMAND=true
@@ -143,7 +152,10 @@ USAGE () {
     echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
     echo -e "[OPTIONS] Manages the Proxmox-Updater:"
     echo -e "======================================"
-    echo -e "  -s --silent          Silent / Headless Mode\n"
+    echo -e "  -s --silent          Silent / Headless Mode"
+    echo -e "  master               Use master branch"
+    echo -e "  beta                 Use beta branch"
+    echo -e "  development          Use development branch\n"
     echo -e "{COMMAND}:"
     echo -e "========="
     echo -e "  -h --help            Show this help"
@@ -176,7 +188,7 @@ VERSION_CHECK () {
     if [[ "$BRANCH" == beta ]]; then
       echo -e "\n${OR}         *** U are on beta branch ***${CL}\n\
                Version: $VERSION"
-    elif [[ "$BRANCH" == development ]]; then
+    else
       echo -e "\n${OR}     *** U are on development branch ***${CL}\n\
                Version: $VERSION"
     fi
@@ -189,7 +201,7 @@ VERSION_CHECK () {
 
 # Update Proxmox-Updater
 UPDATE () {
-  bash <(curl -s "$SERVER_URL"/install.sh) update
+  bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
 }
 
 # Uninstall
@@ -224,7 +236,9 @@ STATUS () {
   fi
   MODIFICATION=$(curl -s https://api.github.com/repos/BassT23/Proxmox | grep pushed_at | cut -d: -f2- | cut -c 3- | rev | cut -c 3- | rev)
   echo -e "Last modification (on GitHub): $MODIFICATION\n"
-  echo -e "${OR}  Version overview ($BRANCH branch)${CL}"
+  if [[ "$BRANCH" == master ]]; then echo -e "${OR}  Version overview"; else
+    echo -e "${OR}  Version overview ($BRANCH)${CL}"
+  fi
   if [[ "$SERVER_VERSION" != "$VERSION" ]] || [[ "$SERVER_EXTRA_VERSION" != "$EXTRA_VERSION" ]] || [[ "$SERVER_CONFIG_VERSION" != "$CONFIG_VERSION" ]] || [[ "$SERVER_WELCOME_VERSION" != "$WELCOME_VERSION" ]] || [[ "$SERVER_CHECK_UPDATE_VERSION" != "$CHECK_UPDATE_VERSION" ]]; then
     echo -e "           Local / Server\n"
   fi
@@ -336,22 +350,27 @@ HOST_UPDATE_START () {
 # Host Update
 UPDATE_HOST () {
   HOST=$1
-  ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
-  scp "$0" "$HOST":/root/Proxmox-Updater/update
-  scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
-  scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
-  scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
-  scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
-  scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
-  if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
-    scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
+  START_HOST=$(hostname -I | tr -d '[:space:]')
+  if [[ "$HOST" != "$START_HOST" ]]; then
+    ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
+    scp "$0" "$HOST":/root/Proxmox-Updater/update
+    scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
+    scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
+    if [[ "$WELCOME_SCREEN" == true ]]; then
+      scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
+      scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
+      scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
+    fi
+    if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
+      scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
+    fi
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
   elif [[ "$WELCOME_SCREEN" == true ]]; then
-    ssh "$HOST" "/root/Proxmox-Updater/update -c -w host"
+    ssh "$HOST" 'bash -s' < "$0" -- "-c -w host"
   else
-    ssh "$HOST" "/root/Proxmox-Updater/update -c host"
+    ssh "$HOST" 'bash -s' < "$0" -- "-c host"
   fi
 }
 
@@ -481,19 +500,25 @@ VM_UPDATE_START () {
     else
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
-        # Start the VM
-        WILL_STOP="true"
-        echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
-        qm set "$VM" --agent 1 >/dev/null 2>&1
-        qm start "$VM" >/dev/null 2>&1
-        echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
-        echo -e "${OR}This will take some time, ... 45 secounds is set!${CL}"
-        sleep 45
-        UPDATE_VM "$VM"
-        # Stop the VM
-        echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
-        qm stop "$VM" &
-        WILL_STOP="false"
+        # Check if update is possiple
+        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
+          # Start the VM
+          WILL_STOP="true"
+          echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
+          qm set "$VM" --agent 1 >/dev/null 2>&1
+          qm start "$VM" >/dev/null 2>&1
+          echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
+          echo -e "${OR}This will take some time, ... 45 secounds is set!${CL}"
+          sleep 45
+          UPDATE_VM "$VM"
+          # Stop the VM
+          echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
+          qm stop "$VM" &
+          WILL_STOP="false"
+        else
+          echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH not initialized${CL}\n\n"
+          return
+        fi
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then

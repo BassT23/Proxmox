@@ -4,7 +4,7 @@
 # Install #
 ###########
 
-VERSION="1.6"
+VERSION="1.6.1"
 
 # Branch
 BRANCH="beta"
@@ -143,30 +143,37 @@ INSTALL () {
     else
       mkdir -p /root/Proxmox-Updater/exit
       mkdir -p /root/Proxmox-Updater/VMs
-      curl -s $SERVER_URL/update.sh > /usr/local/bin/update
+      # Download latest release
+      if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
+      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/latest_release.zip
+      unzip -q /root/Proxmox-Updater-Temp/latest_release.zip -d /root/Proxmox-Updater-Temp/
+      TEMP_FILES=$(find /root/Proxmox-Updater-Temp/Proxmox* | sed 1q)
+      # Copy files
+      cp "$TEMP_FILES"/update.sh /usr/local/bin/update
       chmod 750 /usr/local/bin/update
-      curl -s $SERVER_URL/VMs/example > $LOCAL_FILES/VMs/example
-      curl -s $SERVER_URL/exit/error.sh > $LOCAL_FILES/exit/error.sh
-      curl -s $SERVER_URL/exit/passed.sh > $LOCAL_FILES/exit/passed.sh
-      curl -s $SERVER_URL/update-extras.sh > $LOCAL_FILES/update-extras.sh
-      curl -s $SERVER_URL/update.conf > $LOCAL_FILES/update.conf
+      cp "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
+      cp "$TEMP_FILES"/exit/* $LOCAL_FILES/exit/
       chmod -R +x $LOCAL_FILES/exit/*.sh
-      echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}\n"
+      cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
+      cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
+      echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}"
+      echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
       echo -e "${OR}Also want to install the Welcome-Screen?${CL}\n\
 Type [Y/y] or Enter for yes - enything else will exit"
       read -p "" -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
-        curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
-        curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater-Temp/check-updates.sh
+        cp "$TEMP_FILES"/welcome-screen.sh /root/Proxmox-Updater-Temp/welcome-screen.sh
+        cp "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater-Temp/check-updates.sh
         WELCOME_SCREEN_INSTALL
-        rm -r /root/Proxmox-Updater-Temp
       fi
+      rm -r /root/Proxmox-Updater-Temp
     fi
 }
 
 UPDATE () {
     if [ -f "/usr/local/bin/update" ]; then
+      # Check for old filesystem
       if [ -d "/root/Proxmox-Update-Scripts" ]; then
         echo -e "${RD}Proxmox-Updater has changed directorys, so the old directory\n\
 /root/Update-Scripts will be delete.${CL}\n\
@@ -179,32 +186,57 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
           exit 0
         fi
       else
+        # Update
         echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
-        curl -s $SERVER_URL/update.sh > /usr/local/bin/update
-        curl -s $SERVER_URL/welcome-screen.sh > /etc/update-motd.d/01-welcome-screen
-        chmod +x /etc/update-motd.d/01-welcome-screen
-        curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater/check-updates.sh
-        chmod +x /root/Proxmox-Updater/check-updates.sh
-        # Delete old files
+        # Download files
+        if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
+        if [[ "$BRANCH" == master ]]; then
+          curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/latest_release.zip
+          unzip -q /root/Proxmox-Updater-Temp/latest_release.zip -d /root/Proxmox-Updater-Temp/
+          TEMP_FILES=$(find /root/Proxmox-Updater-Temp/Proxmox* | sed 1q)
+        elif [[ "$BRANCH" == beta ]]; then
+          wget -q https://github.com/BassT23/Proxmox/archive/refs/heads/beta.zip -O /root/Proxmox-Updater-Temp/beta.zip
+          unzip -q /root/Proxmox-Updater-Temp/beta.zip -d /root/Proxmox-Updater-Temp/
+          TEMP_FILES=/root/Proxmox-Updater-Temp/Proxmox-beta
+        elif [[ "$BRANCH" == development ]]; then
+          wget -q https://github.com/BassT23/Proxmox/archive/refs/heads/development.zip -O /root/Proxmox-Updater-Temp/development.zip
+          unzip -q /root/Proxmox-Updater-Temp/development.zip -d /root/Proxmox-Updater-Temp/
+          TEMP_FILES=/root/Proxmox-Updater-Temp/Proxmox-development
+        fi
+        # Copy files
+        mv "$TEMP_FILES"/update.sh /usr/local/bin/update
+        chmod 750 /usr/local/bin/update
+        if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
+          mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
+          chmod +x /etc/update-motd.d/01-welcome-screen
+          mv "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater/check-updates.sh
+          chmod +x /root/Proxmox-Updater/check-updates.sh
+        fi
+        # Delete old files (old filesystem)
         if [[ -f /etc/update-motd.d/01-updater ]];then rm -r /etc/update-motd.d/01-updater; fi
         if [[ -f /etc/update-motd.d/01-updater.bak ]];then rm -r /etc/update-motd.d/01-updater.bak; fi
         # Check if files are different
-        mkdir -p /root/Proxmox-Updater-Temp/exit
-        curl -s $SERVER_URL/exit/error.sh > /root/Proxmox-Updater-Temp/exit/error.sh
-        curl -s $SERVER_URL/exit/passed.sh > /root/Proxmox-Updater-Temp/exit/passed.sh
-        curl -s $SERVER_URL/update-extras.sh > /root/Proxmox-Updater-Temp/update-extras.sh
-        curl -s $SERVER_URL/update.conf > /root/Proxmox-Updater-Temp/update.conf
-        chmod -R +x $LOCAL_FILES/exit/*.sh
-        cd /root/Proxmox-Updater-Temp
+        rm -r "$TEMP_FILES"/.github
+        rm -r "$TEMP_FILES"/VMs
+        rm -r "$TEMP_FILES"/LICENSE
+        rm -r "$TEMP_FILES"/README.md
+        rm -r "$TEMP_FILES"/change.log
+        rm -r "$TEMP_FILES"/install.sh
+        rm -r "$TEMP_FILES"/ssh.md
+        chmod -R +x "$TEMP_FILES"/exit/*.sh
+        cd "$TEMP_FILES"
         FILES="*.* **/*.*"
         for f in $FILES
         do
          CHECK_DIFF
         done
         rm -r /root/Proxmox-Updater-Temp
-        echo -e "${GN}Proxmox-Updater updated successfully.${CL}\n"
+        echo -e "${GN}Proxmox-Updater updated successfully.${CL}"
+        if [[ "$BRANCH" != master ]]; then echo -e "${OR}  Installed: $BRANCH version${CL}"; fi
+        echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
       fi
     else
+      # Install, because no installation found
       echo -e "${RD}Proxmox-Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
       read -p "Type [Y/y] or Enter for yes - enything else will exit" -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
@@ -217,7 +249,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
 }
 
 CHECK_DIFF () {
-  if ! cmp -s "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"; then
+  if ! cmp -s "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"; then
     echo -e "The file $f\n \
  ==> Modified (by you or by a script) since installation.\n \
    What would you like to do about it ?  Your options are:\n \
@@ -229,13 +261,13 @@ CHECK_DIFF () {
         read -p "" -n 1 -r -s
         if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
           echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
-          cp -f "$LOCAL_FILES/$f" "$LOCAL_FILES/$f.bak"
-          mv "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"
+          cp -f "$LOCAL_FILES"/"$f" "$LOCAL_FILES"/"$f.bak"
+          mv "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"
         elif [[ $REPLY =~ ^[Nn]$ ]]; then
           echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
         elif [[ $REPLY =~ ^[Ss]$ ]]; then
           echo
-          diff "/root/Proxmox-Updater-Temp/$f" "$LOCAL_FILES/$f"
+          diff "$TEMP_FILES"/"$f" "$LOCAL_FILES/$f"
         else
           echo -e "\n${BL}[Info]${OR} Skip this file${CL}\n"
         fi
@@ -285,7 +317,7 @@ WELCOME_SCREEN_INSTALL () {
   if ! grep -q "check-updates.sh" /etc/crontab; then
     echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
   fi
-  echo -e "\n${GN} Welcome-Screen installed${CL}\n"
+  echo -e "\n${GN} Welcome-Screen installed${CL}"
 }
 
 UNINSTALL () {
