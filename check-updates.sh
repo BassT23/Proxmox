@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.4"
+VERSION="1.4.2"
 
 #Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -219,13 +219,15 @@ VM_CHECK_START () {
     else
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
-        # Start the VM
-        qm set "$VM" --agent 1 >/dev/null 2>&1
-        qm start "$VM" >/dev/null 2>&1
-        sleep 30
-        CHECK_VM "$VM"
-        # Stop the VM
-        qm stop "$VM"
+        # Check if connection is available
+        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
+          # Start the VM
+          qm start "$VM" >/dev/null 2>&1
+          sleep 45
+          CHECK_VM "$VM"
+          # Stop the VM
+          qm stop "$VM"
+        fi
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
         CHECK_VM "$VM"
       fi
