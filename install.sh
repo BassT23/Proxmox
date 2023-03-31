@@ -72,7 +72,6 @@ ARGUMENTS () {
       update)
         COMMAND=true
         UPDATE
-#        WELCOME_SCREEN
         exit 0
         ;;
       uninstall)
@@ -163,9 +162,6 @@ INSTALL () {
 Type [Y/y] or Enter for yes - enything else will exit"
       read -p "" -n 1 -r -s
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-#        if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
-#        cp "$TEMP_FILES"/welcome-screen.sh /root/Proxmox-Updater-Temp/welcome-screen.sh
-#        cp "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater-Temp/check-updates.sh
         WELCOME_SCREEN_INSTALL
       fi
       rm -r /root/Proxmox-Updater-Temp
