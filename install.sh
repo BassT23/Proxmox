@@ -251,7 +251,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
 
 CHECK_DIFF () {
   if ! cmp -s "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"; then
-    echo -e "The file $f\n \
+    echo -e "The file ${OR}$f${CL}\n \
  ==> Modified (by you or by a script) since installation.\n \
    What would you like to do about it ?  Your options are:\n \
     Y or y  : install the package maintainer's version (old file will be save as '$f.bak')\n \
@@ -262,7 +262,7 @@ CHECK_DIFF () {
         read -p "" -n 1 -r -s
         if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
           echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
-          cp -f "$LOCAL_FILES"/"$f" "$LOCAL_FILES"/"$f.bak"
+          cp -f "$LOCAL_FILES"/"$f" "$LOCAL_FILES"/"$f".bak
           mv "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"
         elif [[ $REPLY =~ ^[Nn]$ ]]; then
           echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
