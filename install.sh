@@ -217,13 +217,13 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         if [[ -f /etc/update-motd.d/01-updater ]];then rm -r /etc/update-motd.d/01-updater; fi
         if [[ -f /etc/update-motd.d/01-updater.bak ]];then rm -r /etc/update-motd.d/01-updater.bak; fi
         # Check if files are different
-        rm -r "$TEMP_FILES"/.github
-        rm -r "$TEMP_FILES"/VMs
-        rm -r "$TEMP_FILES"/LICENSE
-        rm -r "$TEMP_FILES"/README.md
-        rm -r "$TEMP_FILES"/change.log
-        rm -r "$TEMP_FILES"/install.sh
-        rm -r "$TEMP_FILES"/ssh.md
+        rm -rf "$TEMP_FILES"/.github || true
+        rm -rf "$TEMP_FILES"/VMs || true
+        rm -rf "$TEMP_FILES"/LICENSE || true
+        rm -rf "$TEMP_FILES"/README.md || true
+        rm -rf "$TEMP_FILES"/change.log || true
+        rm -rf "$TEMP_FILES"/install.sh || true
+        rm -rf "$TEMP_FILES"/ssh.md || true
         chmod -R +x "$TEMP_FILES"/exit/*.sh
         cd "$TEMP_FILES"
         FILES="*.* **/*.*"
