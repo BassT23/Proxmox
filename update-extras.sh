@@ -4,7 +4,7 @@
 # Update-Extras #
 #################
 
-VERSION="1.8"
+VERSION="1.8.1"
 
 # Variables
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -47,8 +47,8 @@ if [[ -d "/var/www/pterodactyl" && $PTERODACTYL == true ]]; then
   php artisan view:clear
   php artisan config:clear
   php artisan migrate --seed --force
-  os=$(awk '/^ostype/' ~/Proxmox-Updater/temp/temp | cut -d' ' -f2)
-  if [[ $os == centos ]]; then
+  os=$(hostnamectl | grep System)
+  if [[ $os =~ CentOS ]]; then
     # If using NGINX on CentOS:
     if id -u "nginx" >/dev/null 2>&1; then
       chown -R nginx:nginx /var/www/pterodactyl/*
