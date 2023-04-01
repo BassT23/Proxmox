@@ -17,6 +17,8 @@
 
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
+[![downloads](https://img.shields.io/github/downloads/BassT23/Proxmox/total.svg)](https://github.com/BassT23/Proxmox/releases)
+
 
 Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
 
@@ -38,7 +40,8 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 </div>
 
 Features:
-- Update Proxmox VE(the host / all cluster nodes / all included LXCs and VMs)
+
+- Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Logging
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/root/Proxmox-Updater/exit`)
@@ -73,7 +76,7 @@ IP and Name must match with node ip and its hostname.
 
 After that make the fingerprints.
 The used sequence can be check, if you run `awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf"` from the host on which Proxmox-Updater is installed.
-So connect from first node (on which you install the Proxmox-Updater) to node2 with `ssh pve2 uptime`, for example. Then from node2 `ssh pve3 uptime`, and so on.
+So connect from first node (on which you install the Proxmox-Updater) to node2 with `ssh pve2`. Then from node2 `ssh pve3`, and so on.
 
 
 ## If you want to update the VMs also, you have two choices:
@@ -128,10 +131,10 @@ The Welcome Screen is an extra for you. Its optional!
 
 # Beta Testing:
 If anybody want to help with failure search, please test our beta (if available).
-Install beta update with:
-```
-bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
-```
+
+Install beta update with `update beta -up`
+
+To go back to master, choose `update master -up`
 
 # Q&A:
 [Discussion](https://github.com/BassT23/Proxmox/discussions/60)
