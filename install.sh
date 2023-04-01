@@ -4,10 +4,10 @@
 # Install #
 ###########
 
-VERSION="1.6.4"
+VERSION="1.6.5"
 
 # Branch
-BRANCH="master"
+BRANCH="beta"
 
 # Variable / Function
 LOCAL_FILES="/root/Proxmox-Updater"
@@ -146,7 +146,7 @@ INSTALL () {
       if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
         curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
         tar -zxf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz -C /root/Proxmox-Updater-Temp
-        rm -r /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
+        rm -rf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz || true
         TEMP_FILES=/root/Proxmox-Updater-Temp
       # Copy files
       cp "$TEMP_FILES"/update.sh /usr/local/bin/update
@@ -164,7 +164,7 @@ Type [Y/y] or Enter for yes - enything else will exit"
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         WELCOME_SCREEN_INSTALL
       fi
-      rm -r /root/Proxmox-Updater-Temp
+      rm -rf /root/Proxmox-Updater-Temp || true
     fi
 }
 
@@ -177,7 +177,7 @@ UPDATE () {
 ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         read -p "Type [Y/y] for DELETE - enything else will exit " -n 1 -r -s
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-          rm -r /root/Update-Proxmox-Scripts
+          rm -rf /root/Update-Proxmox-Scripts || true
           bash <(curl -s $SERVER_URL/install.sh) update
         else
           exit 0
@@ -195,7 +195,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
           curl -s -L https://github.com/BassT23/Proxmox/tarball/development > /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
         fi
         tar -zxf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz -C /root/Proxmox-Updater-Temp
-        rm -r /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
+        rm -rf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz || true
         if [[ "$BRANCH" == master ]]; then
           TEMP_FILES=/root/Proxmox-Updater-Temp
         else
@@ -210,12 +210,12 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
           mv "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater/check-updates.sh
           chmod +x /root/Proxmox-Updater/check-updates.sh
         else
-          rm -r "$TEMP_FILES"/welcome-screen.sh
-          rm -r "$TEMP_FILES"/check-updates.sh
+          rm -rf "$TEMP_FILES"/welcome-screen.sh || true
+          rm -rf "$TEMP_FILES"/check-updates.sh || true
         fi
         # Delete old files (old filesystem)
-        if [[ -f /etc/update-motd.d/01-updater ]];then rm -r /etc/update-motd.d/01-updater; fi
-        if [[ -f /etc/update-motd.d/01-updater.bak ]];then rm -r /etc/update-motd.d/01-updater.bak; fi
+        rm -rf /etc/update-motd.d/01-updater || true
+        rm -rf /etc/update-motd.d/01-updater.bak || true
         # Check if files are different
         rm -rf "$TEMP_FILES"/.github || true
         rm -rf "$TEMP_FILES"/VMs || true
@@ -231,7 +231,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         do
          CHECK_DIFF
         done
-        rm -r /root/Proxmox-Updater-Temp
+        rm -rf /root/Proxmox-Updater-Temp || true
         echo -e "${GN}Proxmox-Updater updated successfully.${CL}"
         if [[ "$BRANCH" != master ]]; then echo -e "${OR}  Installed: $BRANCH version${CL}"; fi
         echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
@@ -291,8 +291,8 @@ WELCOME_SCREEN () {
       echo -e "${OR}  Welcome-Screen is already installed${CL}\n"
       read -p "Would you like to uninstall it? Type [Y/y] for yes - enything else will skip" -n 1 -r -s && echo
       if [[ $REPLY =~ ^[Yy]$ ]]; then
-        rm -rf /etc/update-motd.d/01-welcome-screen
-        rm -rf /etc/motd
+        rm -rf /etc/update-motd.d/01-welcome-screen || true
+        rm -rf /etc/motd || true
         if [[ -f /etc/motd.bak ]]; then mv /etc/motd.bak /etc/motd; fi
         #restore old crontab with info output
         mv /etc/crontab /etc/crontab.bak2
@@ -302,7 +302,7 @@ WELCOME_SCREEN () {
  crontab file restored (old one backed up as crontab.bak)\n"
       fi
     fi
-    rm -r /root/Proxmox-Updater-Temp
+    rm -rf /root/Proxmox-Updater-Temp || true
   fi
 }
 
@@ -356,7 +356,7 @@ EXIT () {
 #  elif [[ $EXIT_CODE == "1" ]]; then
 #    exit 0
   elif [[ $EXIT_CODE != "0" ]]; then
-    if [[ -d /root/Proxmox-Updater-Temp ]]; then rm -r /root/Proxmox-Updater-Temp; fi
+    rm -rf /root/Proxmox-Updater-Temp || true
     echo -e "${RD}Error during install --- Exit Code: $EXIT_CODE${CL}\n"
   fi
 }
