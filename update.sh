@@ -4,10 +4,10 @@
 # Update #
 ##########
 
-VERSION="3.8.4"
+VERSION="3.8.5"
 
 # Branch
-BRANCH="master"
+BRANCH="development"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
@@ -64,6 +64,10 @@ ARGUMENTS () {
   while test $# -gt -0; do
     ARGUMENT="$1"
     case "$ARGUMENT" in
+#      [0-9]|[0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9])
+#        echo -e "$ARGUMENT"
+#        EXIT
+#        ;;
       -h|--help)
         USAGE
         exit 2
@@ -251,7 +255,7 @@ STATUS () {
   fi
   MODIFICATION=$(curl -s https://api.github.com/repos/BassT23/Proxmox | grep pushed_at | cut -d: -f2- | cut -c 3- | rev | cut -c 3- | rev)
   echo -e "Last modification (on GitHub): $MODIFICATION\n"
-  if [[ "$BRANCH" == master ]]; then echo -e "${OR}  Version overview${CL}"; else
+  if [[ "$BRANCH" == master ]]; then echo -e "${OR}  Version overview"; else
     echo -e "${OR}  Version overview ($BRANCH)${CL}"
   fi
   if [[ "$SERVER_VERSION" != "$VERSION" ]] || [[ "$SERVER_EXTRA_VERSION" != "$EXTRA_VERSION" ]] || [[ "$SERVER_CONFIG_VERSION" != "$CONFIG_VERSION" ]] || [[ "$SERVER_WELCOME_VERSION" != "$WELCOME_VERSION" ]] || [[ "$SERVER_CHECK_UPDATE_VERSION" != "$CHECK_UPDATE_VERSION" ]]; then
