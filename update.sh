@@ -116,12 +116,27 @@ ARGUMENTS () {
         exit 2
         ;;
       master)
+        if [[ "$2" != -up ]]; then 
+          echo -e "\n${OR}  wrong usage! use branch update like this:${CL}"
+          echo -e "  update beta -up\n"
+          exit 2
+        fi
         BRANCH=master
         ;;
       beta)
+        if [[ "$2" != -up ]]; then 
+          echo -e "\n${OR}  wrong usage! use branch update like this:${CL}"
+          echo -e "  update beta -up\n"
+          exit 2
+        fi
         BRANCH=beta
         ;;
       development)
+        if [[ "$2" != -up ]]; then 
+          echo -e "\n${OR}  wrong usage! use branch update like this:${CL}"
+          echo -e "  update beta -up\n"
+          exit 2
+        fi
         BRANCH=development
         ;;
       -up)
@@ -455,8 +470,6 @@ UPDATE_CONTAINER () {
       EXTRAS
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
-    echo -e "${OR}--- DNF UPDATE ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "dnf -y update"
     echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "dnf -y upgrade"
     echo -e "\n${OR}--- DNF CLEANING ---${CL}"
@@ -560,8 +573,6 @@ UPDATE_VM () {
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Fedora ]]; then
-          echo -e "${OR}--- DNF UPDATE ---${CL}"
-          ssh "$IP" dnf -y update
           echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
           ssh "$IP" dnf -y upgrade
           echo -e "\n${OR}--- DNF CLEANING ---${CL}"
@@ -612,8 +623,6 @@ UPDATE_VM_QEMU () {
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Fedora ]]; then
-      echo -e "${OR}--- DNF UPDATE ---${CL}"
-      qm guest exec "$VM" -- bash -c "dnf -y update" | tail -n +4 | head -n -1 | cut -c 17-
       echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
       qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1
       echo -e "\n${OR}--- DNF CLEANING ---${CL}"
