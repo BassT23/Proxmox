@@ -67,21 +67,21 @@ ARGUMENTS () {
         COMMAND=true
         INSTALL
         WELCOME_SCREEN
-        exit 0
+        EXIT
         ;;
       update)
         COMMAND=true
         UPDATE
-        exit 0
+        EXIT
         ;;
       uninstall)
         COMMAND=true
         UNINSTALL
-        exit 0
+        EXIT
         ;;
       welcome)
         WELCOME_SCREEN
-        exit 0
+        EXIT
         ;;
       *)
         echo -e "${RD}Error: Got an unexpected argument \"$ARGUMENT\"${CL}\n";
@@ -351,9 +351,12 @@ set -e
 EXIT () {
   EXIT_CODE=$?
   # Install Finish
-  if [[ $EXIT_CODE == "1" ]]; then
+  if  [[ $EXIT_CODE -lt 2 ]]; then
     exit 0
+#  elif [[ $EXIT_CODE == "1" ]]; then
+#    exit 0
   elif [[ $EXIT_CODE != "0" ]]; then
+    if [[ -d /root/Proxmox-Updater-Temp ]]; then rm -r /root/Proxmox-Updater-Temp; fi
     echo -e "${RD}Error during install --- Exit Code: $EXIT_CODE${CL}\n"
   fi
 }
