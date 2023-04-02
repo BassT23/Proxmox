@@ -39,8 +39,7 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 
 </div>
 
-Features:
-
+### Features:
 - Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Logging
@@ -52,6 +51,12 @@ Info can be found with `update -h`
 Changelog: [here](https://github.com/BassT23/Proxmox/blob/beta/change.log)
 
 
+### What does the script do:
+- The script make system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
+- After that it makes an little cleaning (like `apt autoremove`) 
+- If the script detects "extra" installations, it could update this also. (look in config file, for this)
+
+## 
 # Installation:
 In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
@@ -135,6 +140,7 @@ If anybody want to help with failure search, please test our beta (if available)
 Install beta update with `update beta -up`
 
 To go back to master, choose `update master -up`
+
 
 # Q&A:
 [Discussion](https://github.com/BassT23/Proxmox/discussions/60)
