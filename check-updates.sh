@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.4.2"
+VERSION="1.4.3"
 
 #Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -166,6 +166,7 @@ CHECK_CONTAINER () {
     pct exec "$CONTAINER" -- bash -c "apt-get update" >/dev/null 2>&1
     SECURITY_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'")
     NORMAL_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'")
+#    NOT_INSTALLED=$(apt-get -s upgrade | grep -ci "^inst.*not")
     if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" != 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
     fi
@@ -177,14 +178,14 @@ CHECK_CONTAINER () {
       echo -e "N: $NORMAL_APT_UPDATES"
     fi
   elif [[ "$OS" =~ fedora ]]; then
-    pct exec "$CONTAINER" -- bash -c "dnf -y update" >/dev/null 2>&1
+    pct exec "$CONTAINER" -- bash -c "dnf update" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update| grep -Ec ' updates$'")
     if [[ "$UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
     fi
   elif [[ "$OS" =~ archlinux ]]; then
-    pct exec "$CONTAINER" -- bash -c "pacman -Syyu" >/dev/null 2>&1
+    pct exec "$CONTAINER" -- bash -c "pacman -Syu" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "pacman -Qu | wc -l")
     if [[ "$UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
