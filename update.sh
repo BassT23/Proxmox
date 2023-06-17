@@ -370,26 +370,31 @@ HOST_UPDATE_START () {
 UPDATE_HOST () {
   HOST=$1
   START_HOST=$(hostname -I | tr -d '[:space:]')
-  if [[ "$HOST" != "$START_HOST" ]]; then
-    ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
-    scp "$0" "$HOST":/root/Proxmox-Updater/update
-    scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
-    scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
-    if [[ "$WELCOME_SCREEN" == true ]]; then
-      scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
-      scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
-      scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
+  # Check if Host/Node is available
+  if [[ ssh "$HOST" ]]; then
+    if [[ "$HOST" != "$START_HOST" ]]; then
+      ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
+      scp "$0" "$HOST":/root/Proxmox-Updater/update
+      scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
+      scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
+      if [[ "$WELCOME_SCREEN" == true ]]; then
+        scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
+        scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
+        scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
+      fi
+      if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
+        scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
+      fi
     fi
-    if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
-      scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
+    if [[ "$HEADLESS" == true ]]; then
+      ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
+    elif [[ "$WELCOME_SCREEN" == true ]]; then
+      ssh "$HOST" 'bash -s' < "$0" -- "-c -w host"
+    else
+      ssh "$HOST" 'bash -s' < "$0" -- "-c host"
     fi
-  fi
-  if [[ "$HEADLESS" == true ]]; then
-    ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
-  elif [[ "$WELCOME_SCREEN" == true ]]; then
-    ssh "$HOST" 'bash -s' < "$0" -- "-c -w host"
   else
-    ssh "$HOST" 'bash -s' < "$0" -- "-c host"
+    echo -e "Skip Node"
   fi
 }
 
