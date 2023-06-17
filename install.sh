@@ -4,7 +4,7 @@
 # Install #
 ###########
 
-VERSION="1.6.5"
+VERSION="1.6.6"
 
 # Branch
 BRANCH="development"
@@ -337,8 +337,12 @@ Type [Y/y] for yes - enything else will exit"
         if [[ -f /etc/motd.bak ]]; then
           mv /etc/motd.bak /etc/motd
         fi
+        mv /etc/crontab /etc/crontab.bak2
+        mv /etc/crontab.bak /etc/crontab
+        mv /etc/crontab.bak2 /etc/crontab.bak
       fi
-      echo -e "\n\n${BL}Proxmox-Updater removed${CL}\n"
+      echo -e "\n\n${BL}Proxmox-Updater removed${CL}"
+      echo -e "${BL}Restore old crontab file and backup actual file as crontab.bak${CL}\n"
       exit 0
     fi
   else
