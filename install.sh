@@ -299,7 +299,7 @@ WELCOME_SCREEN () {
         mv /etc/crontab.bak /etc/crontab
         mv /etc/crontab.bak2 /etc/crontab.bak
         echo -e "\n${BL} Welcome-Screen uninstalled${CL}\n\
- crontab file restored (old one backed up as crontab.bak)\n"
+${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
       fi
     fi
     rm -rf /root/Proxmox-Updater-Temp || true
@@ -341,8 +341,8 @@ Type [Y/y] for yes - enything else will exit"
         mv /etc/crontab.bak /etc/crontab
         mv /etc/crontab.bak2 /etc/crontab.bak
       fi
-      echo -e "\n\n${BL}Proxmox-Updater removed${CL}"
-      echo -e "${BL}Restore old crontab file and backup actual file as crontab.bak${CL}\n"
+      echo -e "\n\n${BL} Proxmox-Updater removed${CL}\n\
+${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
       exit 0
     fi
   else
