@@ -362,7 +362,12 @@ UPDATE_CHECK () {
 HOST_UPDATE_START () {
   if [[ "$RICM" != true ]]; then true > /root/Proxmox-Updater/check-output; fi
   for HOST in $HOSTS; do
-    UPDATE_HOST "$HOST"
+    # Check if Host/Node is available
+    if ssh $HOST test >/dev/null 2>&1; [ $? -eq 255 ]; then
+      echo -e "${BL}[Info] ${OR}Skip Host${CL} : ${GN}$HOST${CL} ${OR}- can't connect${CL}\n"
+    else
+     UPDATE_HOST "$HOST"
+    fi
   done
 }
 
@@ -370,31 +375,26 @@ HOST_UPDATE_START () {
 UPDATE_HOST () {
   HOST=$1
   START_HOST=$(hostname -I | tr -d '[:space:]')
-  # Check if Host/Node is available
-  if [[ ssh "$HOST" ]]; then
-    if [[ "$HOST" != "$START_HOST" ]]; then
-      ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
-      scp "$0" "$HOST":/root/Proxmox-Updater/update
-      scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
-      scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
-      if [[ "$WELCOME_SCREEN" == true ]]; then
-        scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
-        scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
-        scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
-      fi
-      if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
-        scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
-      fi
+  if [[ "$HOST" != "$START_HOST" ]]; then
+    ssh "$HOST" mkdir -p /root/Proxmox-Updater/temp
+    scp "$0" "$HOST":/root/Proxmox-Updater/update
+    scp /root/Proxmox-Updater/update-extras.sh "$HOST":/root/Proxmox-Updater/update-extras.sh
+    scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
+    if [[ "$WELCOME_SCREEN" == true ]]; then
+      scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
+      scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
+      scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
     fi
-    if [[ "$HEADLESS" == true ]]; then
-      ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
-    elif [[ "$WELCOME_SCREEN" == true ]]; then
-      ssh "$HOST" 'bash -s' < "$0" -- "-c -w host"
-    else
-      ssh "$HOST" 'bash -s' < "$0" -- "-c host"
+    if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
+      scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
     fi
+  fi
+  if [[ "$HEADLESS" == true ]]; then
+    ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
+  elif [[ "$WELCOME_SCREEN" == true ]]; then
+    ssh "$HOST" 'bash -s' < "$0" -- "-c -w host"
   else
-    echo -e "Skip Node"
+    ssh "$HOST" 'bash -s' < "$0" -- "-c host"
   fi
 }
 
