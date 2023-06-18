@@ -4,6 +4,7 @@ Changelog:
 **v3.8.5** (development)
 
 - Skip node, if not reachable
+- check internet status
 - fix restore crontab, during uninstall
 - fix version info
 
