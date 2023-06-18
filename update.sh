@@ -49,14 +49,24 @@ EOF
     fi
   fi
   CHECK_ROOT
+  CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
 }
 
 # Check root
 CHECK_ROOT () {
   if [[ "$RICM" != true && "$EUID" -ne 0 ]]; then
-      echo -e "\n ${RD}--- Please run this as root ---${CL}\n"
+      echo -e "\n${RD} --- Please run this as root ---${CL}\n"
       exit 2
+  fi
+}
+
+# Check online status
+CHECK_INTERNET () {
+  wget -q --spider http://google.com
+  if [ ! $? -eq 0 ]; then
+    echo -e "${OR} U are offline - Can't update without internet${CL}\n"
+    exit 2
   fi
 }
 
