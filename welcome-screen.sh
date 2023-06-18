@@ -4,7 +4,7 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.3"
+VERSION="1.3.1"
 
 # Branch
 BRANCH="development"
@@ -22,7 +22,7 @@ GN="\e[1;92m"
 CL="\e[0m"
 
 # Version Check
-function VERSION_CHECK {
+VERSION_CHECK () {
   curl -s $SERVER_URL/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
@@ -36,8 +36,36 @@ function VERSION_CHECK {
   fi
   rm -rf /root/update.sh
 }
+VERSION_CHECK () {
+  curl -s $SERVER_URL/update.sh > /root/update.sh
+  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
+  LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
+  if [[ "$BRANCH" == beta ]]; then
+    echo -e "\n${OR}         *** U are on beta branch ***${CL}\n\
+               Version: $LOCAL_VERSION"
+  elif [[ "$BRANCH" == development ]]; then
+    echo -e "\n${OR}     *** U are on development branch ***${CL}\n\
+               Version: $LOCAL_VERSION"
+  elif [[ "$SERVER_VERSION" > "$LOCAL_VERSION" ]]; then
+    echo -e "\n${OR}   *** A newer version is available ***${CL}\n\
+      Installed: $LOCAL_VERSION / Server: $SERVER_VERSION\n"
+    if [[ "$HEADLESS" != true ]]; then
+      echo -e "${OR}Want to update Proxmox-Updater first?${CL}"
+      read -p "Type [Y/y] or Enter for yes - enything else will skip " -n 1 -r -s
+      if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
+        bash <(curl -s "$SERVER_URL"/install.sh) update
+      fi
+      echo
+    fi
+  else
+      echo -e "\n              ${GN}Script is UpToDate${CL}\n\
+                Version: $VERSION"
+  fi
+  rm -rf /root/update.sh
+}
 
-function READ_WRITE_CONFIG {
+
+READ_WRITE_CONFIG () {
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
@@ -54,7 +82,7 @@ function READ_WRITE_CONFIG {
   fi
 }
 
-function TIME_CALCULTION {
+TIME_CALCULTION () {
 MOD=$(date -r "/root/Proxmox-Updater/check-output" +%s)
 NOW=$(date +%s)
 DAYS=$(( (NOW - MOD) / 86400 ))
