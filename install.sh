@@ -40,7 +40,7 @@ HEADER_INFO () {
 EOF
   echo -e "\n \
       *** Install and/or Update *** \n \
-      ***    Version :   $VERSION    *** \n"
+      ***   Version :   $VERSION   *** \n"
   CHECK_ROOT
 }
 
