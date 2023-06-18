@@ -27,26 +27,21 @@ VERSION_CHECK () {
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
   if [[ "$BRANCH" == beta ]]; then
-    echo -e "\n${OR}        *** U are on beta branch ***${CL}"
+    echo -e "\n${OR}        *** You are on beta branch ***${CL}"
   elif [[ "$BRANCH" == development ]]; then
-    echo -e "\n${OR}    *** U are on development branch ***${CL}"
-  elif [[ "$SERVER_VERSION" > "$LOCAL_VERSION" ]]; then
-    echo -e "\n${OR}   *** A newer version is available ***${CL}\n\
-      Installed: $LOCAL_VERSION / Server: $SERVER_VERSION\n"
-    if [[ "$HEADLESS" != true ]]; then
-      echo -e "${OR}Want to update Proxmox-Updater first?${CL}"
-      read -p "Type [Y/y] or Enter for yes - enything else will skip " -n 1 -r -s
-      if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-        bash <(curl -s "$SERVER_URL"/install.sh) update
-      fi
-      echo
-    fi
+    echo -e "\n${OR}    *** You are on development branch ***${CL}"
+  fi
+  if [[ "$SERVER_VERSION" > "$LOCAL_VERSION" ]]; then
+    echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
+      Installed: $LOCAL_VERSION / Server: $SERVER_VERSION\n\
+      ${OR}You can update with <update -up>${CL}\n"
+    VERSION_NOT_SHOW=true
   elif  [[ ! -s /root/update.sh ]]; then
-    echo -e "${OR} *** U are offline - can't check version ***${CL}"
-  else
+    echo -e "${OR} *** You are offline - can't check version ***${CL}"
+  elif [[ "$BRANCH" == master ]]; then
       echo -e "             ${GN}Script is UpToDate${CL}"
   fi
-  echo -e "               Version: $LOCAL_VERSION\n"
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "               Version: $LOCAL_VERSION\n"; fi
   rm -rf /root/update.sh
 }
 
