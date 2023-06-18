@@ -1,7 +1,15 @@
 Changelog:
 ==========
 
-**v3.8.3** (beta)
+**v3.8.5** (development)
+
+- Skip node, if not reachable
+- check internet status
+- <update -up> will always use master version
+- fix restore crontab, during uninstall
+- fix version info
+
+**v3.8.4** (01.04.2023)
 
 - Speed up start in cluster mode
 - Speed up installation

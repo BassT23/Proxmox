@@ -4,10 +4,10 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.3"
+VERSION="1.3.1"
 
 # Branch
-BRANCH="beta"
+BRANCH="development"
 
 # Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -22,22 +22,30 @@ GN="\e[1;92m"
 CL="\e[0m"
 
 # Version Check
-function VERSION_CHECK {
+VERSION_CHECK () {
   curl -s $SERVER_URL/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
-  if [[ $LOCAL_VERSION != "$SERVER_VERSION" ]]; then
-    echo -e "${RD}   *** A newer version of Proxmox-Updater is available ***${CL}\n \
-               Installed: $LOCAL_VERSION / Server: $SERVER_VERSION\n \
-                  ${OR}Update with <update -up>${CL}\n"
-  else
-    echo -e "        ${GN}Proxmox-Updater is UpToDate${CL}\n \
-              Version: $LOCAL_VERSION\n"
+  if [[ "$BRANCH" == beta ]]; then
+    echo -e "\n${OR}        *** You are on beta branch ***${CL}"
+  elif [[ "$BRANCH" == development ]]; then
+    echo -e "\n${OR}    *** You are on development branch ***${CL}"
   fi
+  if [[ "$SERVER_VERSION" > "$LOCAL_VERSION" ]]; then
+    echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
+      Installed: $LOCAL_VERSION / Server: $SERVER_VERSION\n\
+      ${OR}You can update with <update -up>${CL}\n"
+    VERSION_NOT_SHOW=true
+  elif  [[ ! -s /root/update.sh ]]; then
+    echo -e "${OR} *** You are offline - can't check version ***${CL}"
+  elif [[ "$BRANCH" == master ]]; then
+      echo -e "             ${GN}Script is UpToDate${CL}"
+  fi
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "               Version: $LOCAL_VERSION\n"; fi
   rm -rf /root/update.sh
 }
 
-function READ_WRITE_CONFIG {
+READ_WRITE_CONFIG () {
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
@@ -46,15 +54,15 @@ function READ_WRITE_CONFIG {
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
   if [[ $ONLY != "" ]]; then
-    echo -e "${OR}Only is set. Not all machines were checked.${CL}\n"
+    echo -e "${OR}Only is set. Not all machines are checked.${CL}\n"
   elif [[ $ONLY == "" && $EXCLUDED != "" ]]; then
-    echo -e "${OR}Exclude is set. Not all machines were checked.${CL}\n"
+    echo -e "${OR}Exclude is set. Not all machines are checked.${CL}\n"
   elif [[ $WITH_HOST != true || $WITH_LXC != true || $WITH_VM != true ||$RUNNING != true || $STOPPED != true ]]; then
-    echo -e "${OR}Variable is set in config file. One or more machines will not be checked!${CL}\n"
+    echo -e "${OR}Variable is set in config file. Some machines will not be checked!${CL}\n"
   fi
 }
 
-function TIME_CALCULTION {
+TIME_CALCULTION () {
 MOD=$(date -r "/root/Proxmox-Updater/check-output" +%s)
 NOW=$(date +%s)
 DAYS=$(( (NOW - MOD) / 86400 ))

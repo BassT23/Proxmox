@@ -39,19 +39,24 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 
 </div>
 
-Features:
-
+### Features:
 - Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Logging
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/root/Proxmox-Updater/exit`)
-- Config file
+- [Config file](https://github.com/BassT23/Proxmox#config-file)
 
 Info can be found with `update -h`
 
 Changelog: [here](https://github.com/BassT23/Proxmox/blob/beta/change.log)
 
 
+### What does the script do:
+- The script make system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
+- After that it makes an little cleaning (like `apt autoremove`) 
+- If the script detects "extra" installations, it could update this also. (look in config file, for this)
+
+## 
 # Installation:
 In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
@@ -75,7 +80,7 @@ IP and Name must match with node ip and its hostname.
 - hostname can be found in node terminal with `hostname`
 
 After that make the fingerprints.
-The used sequence can be check, if you run `awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf"` from the host on which Proxmox-Updater is installed.
+The used sequence can be check, if you run `awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf"` from the host, on which Proxmox-Updater is installed.
 So connect from first node (on which you install the Proxmox-Updater) to node2 with `ssh pve2`. Then from node2 `ssh pve3`, and so on.
 
 
@@ -134,7 +139,8 @@ If anybody want to help with failure search, please test our beta (if available)
 
 Install beta update with `update beta -up`
 
-To go back to master, choose `update master -up`
+To go back to master, choose `update -up`
+
 
 # Q&A:
 [Discussion](https://github.com/BassT23/Proxmox/discussions/60)
