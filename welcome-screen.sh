@@ -54,11 +54,11 @@ READ_WRITE_CONFIG () {
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
   if [[ $ONLY != "" ]]; then
-    echo -e "${OR}Only is set. Not all machines were checked.${CL}\n"
+    echo -e "${OR}Only is set. Not all machines are checked.${CL}\n"
   elif [[ $ONLY == "" && $EXCLUDED != "" ]]; then
-    echo -e "${OR}Exclude is set. Not all machines were checked.${CL}\n"
+    echo -e "${OR}Exclude is set. Not all machines are checked.${CL}\n"
   elif [[ $WITH_HOST != true || $WITH_LXC != true || $WITH_VM != true ||$RUNNING != true || $STOPPED != true ]]; then
-    echo -e "${OR}Variable is set in config file. One or more machines will not be checked!${CL}\n"
+    echo -e "${OR}Variable is set in config file. Some machines will not be checked!${CL}\n"
   fi
 }
 
