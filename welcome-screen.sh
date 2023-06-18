@@ -27,9 +27,9 @@ VERSION_CHECK () {
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
   if [[ "$BRANCH" == beta ]]; then
-    echo -e "\n${OR}        *** U are on $BRANCH branch ***${CL}"
+    echo -e "\n${OR}        *** U are on beta branch ***${CL}"
   elif [[ "$BRANCH" == development ]]; then
-    echo -e "\n${OR}     *** U are on $BRANCH branch ***${CL}"
+    echo -e "\n${OR}    *** U are on development branch ***${CL}"
   elif [[ "$SERVER_VERSION" > "$LOCAL_VERSION" ]]; then
     echo -e "\n${OR}   *** A newer version is available ***${CL}\n\
       Installed: $LOCAL_VERSION / Server: $SERVER_VERSION\n"
