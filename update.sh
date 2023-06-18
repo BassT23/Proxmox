@@ -64,7 +64,7 @@ CHECK_ROOT () {
 # Check internet status
 CHECK_INTERNET () {
   if ! ping -q -c1 google.com &>/dev/null; then
-    echo -e "\n${OR} U are offline - Can't update without internet${CL}\n"
+    echo -e "\n${OR} You are offline - Can't update without internet${CL}\n"
     exit 2
   fi
 }
