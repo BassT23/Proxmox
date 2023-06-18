@@ -4,7 +4,8 @@ Changelog:
 **v3.8.5** (development)
 
 - Skip node, if not reachable
-- restore crontab, during uninstall
+- fix restore crontab, during uninstall
+- fix version info
 
 **v3.8.4** (01.04.2023)
 
