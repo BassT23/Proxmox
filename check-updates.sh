@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.4.3"
+VERSION="1.4.4"
 
 #Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -359,8 +359,14 @@ else
 fi
 
 # Run
-READ_WRITE_CONFIG
-ARGUMENTS "$@"
+wget -q --spider http://google.com
+if [ $? -eq 0 ]; then
+  READ_WRITE_CONFIG
+  ARGUMENTS "$@"
+else
+  echo -e "${OR} U are offline${CL}"
+  exit 2
+fi
 
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true && "$RDU" == true ]]; then
