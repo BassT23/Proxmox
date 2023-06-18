@@ -61,11 +61,10 @@ CHECK_ROOT () {
   fi
 }
 
-# Check online status
+# Check internet status
 CHECK_INTERNET () {
-  wget -q --spider http://google.com
-  if [ ! $? -eq 0 ]; then
-    echo -e "${OR} U are offline - Can't update without internet${CL}\n"
+  if ! ping -q -c1 google.com &>/dev/null; then
+    echo -e "\n${OR} U are offline - Can't update without internet${CL}\n"
     exit 2
   fi
 }
