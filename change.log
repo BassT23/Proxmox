@@ -1,7 +1,7 @@
 Changelog:
 ==========
 
-**v3.8.5** (development)
+**v3.8.5** (beta)
 
 - Skip node, if not reachable
 - check internet status
