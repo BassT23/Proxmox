@@ -5,6 +5,7 @@ Changelog:
 
 - Skip node, if not reachable
 - check internet status
+- <update -up> will always use master version
 - fix restore crontab, during uninstall
 - fix version info
 
