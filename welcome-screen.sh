@@ -7,7 +7,7 @@
 VERSION="1.3.1"
 
 # Branch
-BRANCH="development"
+BRANCH="master"
 
 # Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -27,11 +27,9 @@ VERSION_CHECK () {
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
   if [[ "$BRANCH" == beta ]]; then
-    echo -e "\n${OR}         *** U are on beta branch ***${CL}\n\
-               Version: $LOCAL_VERSION"
+    echo -e "\n${OR}        *** U are on $BRANCH branch ***${CL}"
   elif [[ "$BRANCH" == development ]]; then
-    echo -e "\n${OR}     *** U are on development branch ***${CL}\n\
-               Version: $LOCAL_VERSION"
+    echo -e "\n${OR}     *** U are on $BRANCH branch ***${CL}"
   elif [[ "$SERVER_VERSION" > "$LOCAL_VERSION" ]]; then
     echo -e "\n${OR}   *** A newer version is available ***${CL}\n\
       Installed: $LOCAL_VERSION / Server: $SERVER_VERSION\n"
@@ -43,13 +41,14 @@ VERSION_CHECK () {
       fi
       echo
     fi
+  elif  [[ ! -s /root/update.sh ]]; then
+    echo -e "${OR} *** U are offline - can't check version ***${CL}"
   else
-      echo -e "\n              ${GN}Script is UpToDate${CL}\n\
-                Version: $VERSION"
+      echo -e "             ${GN}Script is UpToDate${CL}"
   fi
+  echo -e "               Version: $LOCAL_VERSION\n"
   rm -rf /root/update.sh
 }
-
 
 READ_WRITE_CONFIG () {
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
