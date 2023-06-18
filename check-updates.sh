@@ -364,7 +364,7 @@ if [ $? -eq 0 ]; then
   READ_WRITE_CONFIG
   ARGUMENTS "$@"
 else
-  echo -e "${OR} U are offline${CL}"
+  echo -e "${OR} You are offline${CL}"
   exit 2
 fi
 
