@@ -129,31 +129,37 @@ ARGUMENTS () {
         exit 2
         ;;
       master)
-        if [[ "$2" != -up ]]; then 
-          echo -e "\n${OR}  wrong usage! use branch update like this:${CL}"
+        if [[ "$2" != -up ]]; then
+          echo -e "\n${OR}  Wrong usage! Use branch update like this:${CL}"
           echo -e "  update beta -up\n"
           exit 2
         fi
         BRANCH=master
+        BRANCH_SET=true
         ;;
       beta)
-        if [[ "$2" != -up ]]; then 
-          echo -e "\n${OR}  wrong usage! use branch update like this:${CL}"
+        if [[ "$2" != -up ]]; then
+          echo -e "\n${OR}  Wrong usage! Use branch update like this:${CL}"
           echo -e "  update beta -up\n"
           exit 2
         fi
         BRANCH=beta
+        BRANCH_SET=true
         ;;
       development)
-        if [[ "$2" != -up ]]; then 
-          echo -e "\n${OR}  wrong usage! use branch update like this:${CL}"
+        if [[ "$2" != -up ]]; then
+          echo -e "\n${OR}  Wrong usage! Use branch update like this:${CL}"
           echo -e "  update beta -up\n"
           exit 2
         fi
         BRANCH=development
+        BRANCH_SET=true
         ;;
       -up)
         COMMAND=true
+        if [[ "$BRANCH_SET" != true ]]; then
+          BRANCH=master
+        fi
         UPDATE
         exit 2
         ;;
@@ -228,7 +234,13 @@ VERSION_CHECK () {
 
 # Update Proxmox-Updater
 UPDATE () {
-  bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/master"/install.sh) update
+  echo -e "Update to $BRANCH branch?"
+  read -p "Type [Y/y] or [Enter] for yes - enything else will exit" -n 1 -r -s
+  if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+    bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+  else
+    exit 2
+  fi
 }
 
 # Uninstall
