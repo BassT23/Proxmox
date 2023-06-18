@@ -202,13 +202,12 @@ VERSION_CHECK () {
   curl -s $SERVER_URL/update.sh > /root/Proxmox-Updater/temp/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.sh)
   if [[ "$BRANCH" == beta ]]; then
-    echo -e "\n${OR}         *** U are on beta branch ***${CL}\n\
-               Version: $VERSION"
+    echo -e "\n${OR}        *** You are on beta branch ***${CL}"
   elif [[ "$BRANCH" == development ]]; then
-    echo -e "\n${OR}     *** U are on development branch ***${CL}\n\
-               Version: $VERSION"
-  elif [[ "$SERVER_VERSION" > "$VERSION" ]]; then
-    echo -e "\n${OR}   *** A newer version is available ***${CL}\n\
+    echo -e "\n${OR}    *** You are on development branch ***${CL}"
+  fi
+  if [[ "$SERVER_VERSION" > "$VERSION" ]]; then
+    echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ "$HEADLESS" != true ]]; then
       echo -e "${OR}Want to update Proxmox-Updater first?${CL}"
@@ -218,16 +217,18 @@ VERSION_CHECK () {
       fi
       echo
     fi
-  else
-      echo -e "\n              ${GN}Script is UpToDate${CL}\n\
-                Version: $VERSION"
+    VERSION_NOT_SHOW=true
+  elif [[ "$BRANCH" == master ]]; then
+      echo -e "             ${GN}Script is UpToDate${CL}"
   fi
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "               Version: $VERSION\n"; fi
   rm -rf /root/Proxmox-Updater/temp/update.sh && echo
 }
 
+
 # Update Proxmox-Updater
 UPDATE () {
-  bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+  bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/master"/install.sh) update
 }
 
 # Uninstall
