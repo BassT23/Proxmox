@@ -37,4 +37,7 @@ PermitRootLogin yes
 (IP can be found in VM with command: `hostname -I`)
 
 - Copy ssh key to VM:
+
+You need to make this step on the Host, who hosted the VM. If pve2 host VMxyz, you need to make the copy from pve2, not from the pve, on which you run the script ;)
+
 `ssh-copy-id -i /root/.ssh/id_rsa.pub root@<VM-IP>`

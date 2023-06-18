@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.8.4"
+VERSION="3.8.5"
 
 # Branch
 BRANCH="master"
@@ -49,14 +49,23 @@ EOF
     fi
   fi
   CHECK_ROOT
+  CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
 }
 
 # Check root
 CHECK_ROOT () {
   if [[ "$RICM" != true && "$EUID" -ne 0 ]]; then
-      echo -e "\n ${RD}--- Please run this as root ---${CL}\n"
+      echo -e "\n${RD} --- Please run this as root ---${CL}\n"
       exit 2
+  fi
+}
+
+# Check internet status
+CHECK_INTERNET () {
+  if ! ping -q -c1 google.com &>/dev/null; then
+    echo -e "\n${OR} You are offline - Can't update without internet${CL}\n"
+    exit 2
   fi
 }
 
@@ -64,6 +73,10 @@ ARGUMENTS () {
   while test $# -gt -0; do
     ARGUMENT="$1"
     case "$ARGUMENT" in
+#      [0-9]|[0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9])
+#        echo -e "$ARGUMENT"
+#        EXIT
+#        ;;
       -h|--help)
         USAGE
         exit 2
@@ -116,31 +129,37 @@ ARGUMENTS () {
         exit 2
         ;;
       master)
-        if [[ "$2" != -up ]]; then 
-          echo -e "\n${OR}  wrong usage! use branch update like this:${CL}"
+        if [[ "$2" != -up ]]; then
+          echo -e "\n${OR}  Wrong usage! Use branch update like this:${CL}"
           echo -e "  update beta -up\n"
           exit 2
         fi
         BRANCH=master
+        BRANCH_SET=true
         ;;
       beta)
-        if [[ "$2" != -up ]]; then 
-          echo -e "\n${OR}  wrong usage! use branch update like this:${CL}"
+        if [[ "$2" != -up ]]; then
+          echo -e "\n${OR}  Wrong usage! Use branch update like this:${CL}"
           echo -e "  update beta -up\n"
           exit 2
         fi
         BRANCH=beta
+        BRANCH_SET=true
         ;;
       development)
-        if [[ "$2" != -up ]]; then 
-          echo -e "\n${OR}  wrong usage! use branch update like this:${CL}"
+        if [[ "$2" != -up ]]; then
+          echo -e "\n${OR}  Wrong usage! Use branch update like this:${CL}"
           echo -e "  update beta -up\n"
           exit 2
         fi
         BRANCH=development
+        BRANCH_SET=true
         ;;
       -up)
         COMMAND=true
+        if [[ "$BRANCH_SET" != true ]]; then
+          BRANCH=master
+        fi
         UPDATE
         exit 2
         ;;
@@ -186,10 +205,15 @@ USAGE () {
 
 # Version Check / Update Message in Header
 VERSION_CHECK () {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.sh > /root/Proxmox-Updater/temp/update.sh
+  curl -s $SERVER_URL/update.sh > /root/Proxmox-Updater/temp/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.sh)
+  if [[ "$BRANCH" == beta ]]; then
+    echo -e "\n${OR}        *** You are on beta branch ***${CL}"
+  elif [[ "$BRANCH" == development ]]; then
+    echo -e "\n${OR}    *** You are on development branch ***${CL}"
+  fi
   if [[ "$SERVER_VERSION" > "$VERSION" ]]; then
-    echo -e "\n${OR}   *** A newer version is available ***${CL}\n\
+    echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ "$HEADLESS" != true ]]; then
       echo -e "${OR}Want to update Proxmox-Updater first?${CL}"
@@ -199,24 +223,24 @@ VERSION_CHECK () {
       fi
       echo
     fi
-  elif [[ "$SERVER_VERSION" < "$VERSION" ]]; then
-    if [[ "$BRANCH" == beta ]]; then
-      echo -e "\n${OR}         *** U are on beta branch ***${CL}\n\
-               Version: $VERSION"
-    else
-      echo -e "\n${OR}     *** U are on development branch ***${CL}\n\
-               Version: $VERSION"
-    fi
-  else
-    echo -e "\n             ${GN}Script is UpToDate${CL}\n\
-               Version: $VERSION"
+    VERSION_NOT_SHOW=true
+  elif [[ "$BRANCH" == master ]]; then
+      echo -e "             ${GN}Script is UpToDate${CL}"
   fi
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "               Version: $VERSION\n"; fi
   rm -rf /root/Proxmox-Updater/temp/update.sh && echo
 }
 
+
 # Update Proxmox-Updater
 UPDATE () {
-  bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+  echo -e "Update to $BRANCH branch?"
+  read -p "Type [Y/y] or [Enter] for yes - enything else will exit" -n 1 -r -s
+  if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+    bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+  else
+    exit 2
+  fi
 }
 
 # Uninstall
@@ -251,7 +275,7 @@ STATUS () {
   fi
   MODIFICATION=$(curl -s https://api.github.com/repos/BassT23/Proxmox | grep pushed_at | cut -d: -f2- | cut -c 3- | rev | cut -c 3- | rev)
   echo -e "Last modification (on GitHub): $MODIFICATION\n"
-  if [[ "$BRANCH" == master ]]; then echo -e "${OR}  Version overview${CL}"; else
+  if [[ "$BRANCH" == master ]]; then echo -e "${OR}  Version overview"; else
     echo -e "${OR}  Version overview ($BRANCH)${CL}"
   fi
   if [[ "$SERVER_VERSION" != "$VERSION" ]] || [[ "$SERVER_EXTRA_VERSION" != "$EXTRA_VERSION" ]] || [[ "$SERVER_CONFIG_VERSION" != "$CONFIG_VERSION" ]] || [[ "$SERVER_WELCOME_VERSION" != "$WELCOME_VERSION" ]] || [[ "$SERVER_CHECK_UPDATE_VERSION" != "$CHECK_UPDATE_VERSION" ]]; then
@@ -358,7 +382,12 @@ UPDATE_CHECK () {
 HOST_UPDATE_START () {
   if [[ "$RICM" != true ]]; then true > /root/Proxmox-Updater/check-output; fi
   for HOST in $HOSTS; do
-    UPDATE_HOST "$HOST"
+    # Check if Host/Node is available
+    if ssh $HOST test >/dev/null 2>&1; [ $? -eq 255 ]; then
+      echo -e "${BL}[Info] ${OR}Skip Host${CL} : ${GN}$HOST${CL} ${OR}- can't connect${CL}\n"
+    else
+     UPDATE_HOST "$HOST"
+    fi
   done
 }
 

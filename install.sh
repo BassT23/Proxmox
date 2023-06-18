@@ -4,7 +4,7 @@
 # Install #
 ###########
 
-VERSION="1.6.5"
+VERSION="1.6.6"
 
 # Branch
 BRANCH="master"
@@ -40,7 +40,7 @@ HEADER_INFO () {
 EOF
   echo -e "\n \
       *** Install and/or Update *** \n \
-      ***    Version :   $VERSION    *** \n"
+      ***   Version :   $VERSION   *** \n"
   CHECK_ROOT
 }
 
@@ -174,7 +174,7 @@ UPDATE () {
       if [ -d "/root/Proxmox-Update-Scripts" ]; then
         echo -e "${RD}Proxmox-Updater has changed directorys, so the old directory\n\
 /root/Update-Scripts will be delete.${CL}\n\
-${OR}Is it OK for you, or want to backup first your files?${CL}\n"
+${OR}Is it OK for you, or want to backup your files first?${CL}\n"
         read -p "Type [Y/y] for DELETE - enything else will exit " -n 1 -r -s
         if [[ $REPLY =~ ^[Yy]$ ]]; then
           rm -rf /root/Update-Proxmox-Scripts || true
@@ -186,7 +186,7 @@ ${OR}Is it OK for you, or want to backup first your files?${CL}\n"
         # Update
         echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
         # Download files
-        if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
+        if ! [[ -d /root/Proxmox-Updater-Temp ]]; then mkdir /root/Proxmox-Updater-Temp; fi
         if [[ "$BRANCH" == master ]]; then
           curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
         elif [[ "$BRANCH" == beta ]]; then
@@ -299,7 +299,7 @@ WELCOME_SCREEN () {
         mv /etc/crontab.bak /etc/crontab
         mv /etc/crontab.bak2 /etc/crontab.bak
         echo -e "\n${BL} Welcome-Screen uninstalled${CL}\n\
- crontab file restored (old one backed up as crontab.bak)\n"
+${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
       fi
     fi
     rm -rf /root/Proxmox-Updater-Temp || true
@@ -323,7 +323,7 @@ WELCOME_SCREEN_INSTALL () {
 }
 
 UNINSTALL () {
-  if [ -f "/usr/local/bin/update" ]; then
+  if [ -f /usr/local/bin/update ]; then
     echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
     echo -e "${RD}Really want to remove Proxmox-Updater?${CL}\n\
 Type [Y/y] for yes - enything else will exit"
@@ -331,14 +331,18 @@ Type [Y/y] for yes - enything else will exit"
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
       rm -r /root/Proxmox-Updater
-      if [[ -f "/etc/update-motd.d/01-welcome-screen" ]]; then
+      if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
         chmod -x /etc/update-motd.d/01-welcome-screen
         rm -rf /etc/motd
         if [[ -f /etc/motd.bak ]]; then
           mv /etc/motd.bak /etc/motd
         fi
+        mv /etc/crontab /etc/crontab.bak2
+        mv /etc/crontab.bak /etc/crontab
+        mv /etc/crontab.bak2 /etc/crontab.bak
       fi
-      echo -e "\n\n${BL}Proxmox-Updater removed${CL}\n"
+      echo -e "\n\n${BL} Proxmox-Updater removed${CL}\n\
+${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
       exit 0
     fi
   else
