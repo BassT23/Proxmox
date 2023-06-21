@@ -105,7 +105,7 @@ and install new
 
 
 # Extra Updates:
-If updater detects installation: (disable, if you wand in `/root/Proxmox-Updater/update.conf`)
+If updater detects installation: (disable, if you want in `/root/Proxmox-Updater/update.conf`)
 - PiHole
 - ioBroker
 - Pterodactyl
