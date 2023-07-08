@@ -7,7 +7,7 @@
 VERSION="3.8.5"
 
 # Branch
-BRANCH="development"
+BRANCH="develop"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
@@ -146,13 +146,13 @@ ARGUMENTS () {
         BRANCH=beta
         BRANCH_SET=true
         ;;
-      development)
+      develop)
         if [[ "$2" != -up ]]; then
           echo -e "\n${OR}  Wrong usage! Use branch update like this:${CL}"
           echo -e "  update beta -up\n"
           exit 2
         fi
-        BRANCH=development
+        BRANCH=develop
         BRANCH_SET=true
         ;;
       -up)
@@ -189,7 +189,7 @@ USAGE () {
     echo -e "  -s --silent          Silent / Headless Mode"
     echo -e "  master               Use master branch"
     echo -e "  beta                 Use beta branch"
-    echo -e "  development          Use development branch\n"
+    echo -e "  develop          Use develop branch\n"
     echo -e "{COMMAND}:"
     echo -e "========="
     echo -e "  -h --help            Show this help"
@@ -209,8 +209,8 @@ VERSION_CHECK () {
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.sh)
   if [[ "$BRANCH" == beta ]]; then
     echo -e "\n${OR}        *** You are on beta branch ***${CL}"
-  elif [[ "$BRANCH" == development ]]; then
-    echo -e "\n${OR}    *** You are on development branch ***${CL}"
+  elif [[ "$BRANCH" == develop ]]; then
+    echo -e "\n${OR}    *** You are on develop branch ***${CL}"
   fi
   if [[ "$SERVER_VERSION" > "$VERSION" ]]; then
     echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
