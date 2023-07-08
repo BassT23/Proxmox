@@ -7,7 +7,7 @@
 VERSION="1.6.6"
 
 # Branch
-BRANCH="development"
+BRANCH="develop"
 
 # Variable / Function
 LOCAL_FILES="/root/Proxmox-Updater"
@@ -191,8 +191,8 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
           curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
         elif [[ "$BRANCH" == beta ]]; then
           curl -s -L https://github.com/BassT23/Proxmox/tarball/beta > /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
-        elif [[ "$BRANCH" == development ]]; then
-          curl -s -L https://github.com/BassT23/Proxmox/tarball/development > /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
+        elif [[ "$BRANCH" == develop ]]; then
+          curl -s -L https://github.com/BassT23/Proxmox/tarball/develop > /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
         fi
         tar -zxf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz -C /root/Proxmox-Updater-Temp
         rm -rf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz || true
