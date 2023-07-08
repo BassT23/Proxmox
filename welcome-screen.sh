@@ -7,7 +7,7 @@
 VERSION="1.3.1"
 
 # Branch
-BRANCH="development"
+BRANCH="develop"
 
 # Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -28,8 +28,8 @@ VERSION_CHECK () {
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
   if [[ "$BRANCH" == beta ]]; then
     echo -e "\n${OR}        *** You are on beta branch ***${CL}"
-  elif [[ "$BRANCH" == development ]]; then
-    echo -e "\n${OR}    *** You are on development branch ***${CL}"
+  elif [[ "$BRANCH" == develop ]]; then
+    echo -e "\n${OR}    *** You are on develop branch ***${CL}"
   fi
   if [[ "$SERVER_VERSION" > "$LOCAL_VERSION" ]]; then
     echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
