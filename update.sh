@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.8.5"
+VERSION="3.8.6"
 
 # Branch
 BRANCH="develop"
@@ -424,13 +424,18 @@ UPDATE_HOST_ITSELF () {
   echo -e "${OR}--- APT UPDATE ---${CL}" && apt-get update
   if [[ "$HEADLESS" == true ]]; then
     echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}" && \
-            DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y
+    DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y
   else
-    echo -e "\n${OR}--- APT UPGRADE ---${CL}" && \
-            apt-get dist-upgrade -y
+    if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+      echo -e "\n${OR}--- APT UPGRADE ---${CL}" && \
+      apt-get dist-upgrade -y
+    else
+      echo -e "\n${OR}--- APT UPGRADE ---${CL}" && \
+      apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y
+    fi
   fi
   echo -e "\n${OR}--- APT CLEANING ---${CL}" && \
-          apt-get --purge autoremove -y && echo
+  apt-get --purge autoremove -y && echo
   CHOST="true"
   UPDATE_CHECK
   CHOST=""
@@ -494,7 +499,11 @@ UPDATE_CONTAINER () {
       pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
     else
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+      if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+        pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+      else
+        pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y"
+      fi
     fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
       pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y"
@@ -598,7 +607,11 @@ UPDATE_VM () {
           echo -e "${OR}--- APT UPDATE ---${CL}"
           ssh "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-          ssh "$IP" apt-get upgrade -y
+          if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+            ssh "$IP" apt-get upgrade -y
+          else
+            ssh "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+          fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
           ssh "$IP" apt-get --purge autoremove -y
           EXTRAS
@@ -648,7 +661,11 @@ UPDATE_VM_QEMU () {
       echo -e "${OR}--- APT UPDATE ---${CL}"
       qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-      qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1
+      if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1
+      else
+        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
+      fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
       qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
       echo
