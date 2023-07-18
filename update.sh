@@ -25,19 +25,19 @@ CL="\e[0m"
 HEADER_INFO () {
   clear
   echo -e "\n \
-    https://github.com/BassT23/Proxmox"
+       https://github.com/BassT23/Proxmox"
   cat <<'EOF'
-     ____
-    / __ \_________  _  ______ ___  ____  _  __
-   / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/
-  / ____/ /  / /_/ />  </ / / / / / /_/ />  <
- /_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|
-      __  __          __      __
-     / / / /___  ____/ /___ _/ /____  ____
-    / / / / __ \/ __  / __ `/ __/ _ \/ __/
-   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
-   \____/ .___/\____/\____/\__/\___/_/
-       /_/
+      ____
+     / __ \_________  _  ______ ___  ____  _  __
+    / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/
+   / ____/ /  / /_/ />  </ / / / / / /_/ />  <
+  /_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|
+       __  __          __      __
+      / / / /___  ____/ /___ _/ /____  ____
+     / / / / __ \/ __  / __ `/ __/ _ \/ __/
+    / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
+    \____/ .___/\____/\____/\__/\___/_/
+        /_/
 EOF
   if [[ "$INFO" != false ]]; then
     echo -e "\n \
@@ -210,7 +210,7 @@ VERSION_CHECK () {
   if [[ "$BRANCH" == beta ]]; then
     echo -e "\n${OR}        *** You are on beta branch ***${CL}"
   elif [[ "$BRANCH" == develop ]]; then
-    echo -e "\n${OR}       *** You are on develop branch ***${CL}"
+    echo -e "\n${OR}      *** You are on develop branch ***${CL}"
   fi
   if [[ "$SERVER_VERSION" > "$VERSION" ]]; then
     echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
@@ -227,7 +227,7 @@ VERSION_CHECK () {
   elif [[ "$BRANCH" == master ]]; then
       echo -e "             ${GN}Script is UpToDate${CL}"
   fi
-  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "                 Version: $VERSION\n"; fi
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "                Version: $VERSION\n"; fi
   rm -rf /root/Proxmox-Updater/temp/update.sh && echo
 }
 
