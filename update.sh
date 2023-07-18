@@ -25,7 +25,7 @@ CL="\e[0m"
 HEADER_INFO () {
   clear
   echo -e "\n \
-       https://github.com/BassT23/Proxmox"
+      https://github.com/BassT23/Proxmox"
   cat <<'EOF'
       ____
      / __ \_________  _  ______ ___  ____  _  __
@@ -208,9 +208,9 @@ VERSION_CHECK () {
   curl -s $SERVER_URL/update.sh > /root/Proxmox-Updater/temp/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.sh)
   if [[ "$BRANCH" == beta ]]; then
-    echo -e "\n${OR}        *** You are on beta branch ***${CL}"
+    echo -e "\n${OR}        *** Currently on beta branch ***${CL}"
   elif [[ "$BRANCH" == develop ]]; then
-    echo -e "\n${OR}      *** You are on develop branch ***${CL}"
+    echo -e "\n${OR}      *** Currently on develop branch ***${CL}"
   fi
   if [[ "$SERVER_VERSION" > "$VERSION" ]]; then
     echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
