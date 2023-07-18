@@ -210,7 +210,7 @@ VERSION_CHECK () {
   if [[ "$BRANCH" == beta ]]; then
     echo -e "\n${OR}        *** You are on beta branch ***${CL}"
   elif [[ "$BRANCH" == develop ]]; then
-    echo -e "\n${OR}    *** You are on develop branch ***${CL}"
+    echo -e "\n${OR}       *** You are on develop branch ***${CL}"
   fi
   if [[ "$SERVER_VERSION" > "$VERSION" ]]; then
     echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
@@ -227,7 +227,7 @@ VERSION_CHECK () {
   elif [[ "$BRANCH" == master ]]; then
       echo -e "             ${GN}Script is UpToDate${CL}"
   fi
-  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "               Version: $VERSION\n"; fi
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "                 Version: $VERSION\n"; fi
   rm -rf /root/Proxmox-Updater/temp/update.sh && echo
 }
 
