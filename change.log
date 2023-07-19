@@ -3,6 +3,7 @@ Changelog:
 
 **v3.8.6** (develop)
 - check for updates on excluded (see in config file)
+- include phased updates (change "INCLUDE_PHASED_UPDATES" false to true, or comment line out)
 
 **v3.8.5** (18.06.2023)
 - Skip node, if not reachable
