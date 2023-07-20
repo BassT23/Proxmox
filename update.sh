@@ -25,19 +25,19 @@ CL="\e[0m"
 HEADER_INFO () {
   clear
   echo -e "\n \
-      https://github.com/BassT23/Proxmox"
+    https://github.com/BassT23/Proxmox"
   cat <<'EOF'
-      ____
-     / __ \_________  _  ______ ___  ____  _  __
-    / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/
-   / ____/ /  / /_/ />  </ / / / / / /_/ />  <
-  /_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|
-       __  __          __      __
-      / / / /___  ____/ /___ _/ /____  ____
-     / / / / __ \/ __  / __ `/ __/ _ \/ __/
-    / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
-    \____/ .___/\____/\____/\__/\___/_/
-        /_/
+     ____
+    / __ \_________  _  ______ ___  ____  _  __
+   / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/
+  / ____/ /  / /_/ />  </ / / / / / /_/ />  <
+ /_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|
+      __  __          __      __
+     / / / /___  ____/ /___ _/ /____  ____
+    / / / / __ \/ __  / __ `/ __/ _ \/ __/
+   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
+   \____/ .___/\____/\____/\__/\___/_/
+       /_/
 EOF
   if [[ "$INFO" != false ]]; then
     echo -e "\n \
@@ -208,9 +208,9 @@ VERSION_CHECK () {
   curl -s $SERVER_URL/update.sh > /root/Proxmox-Updater/temp/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.sh)
   if [[ "$BRANCH" == beta ]]; then
-    echo -e "\n${OR}        *** Currently on beta branch ***${CL}"
+    echo -e "\n${OR}        *** You are on beta branch ***${CL}"
   elif [[ "$BRANCH" == develop ]]; then
-    echo -e "\n${OR}      *** Currently on develop branch ***${CL}"
+    echo -e "\n${OR}    *** You are on develop branch ***${CL}"
   fi
   if [[ "$SERVER_VERSION" > "$VERSION" ]]; then
     echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
@@ -227,7 +227,7 @@ VERSION_CHECK () {
   elif [[ "$BRANCH" == master ]]; then
       echo -e "             ${GN}Script is UpToDate${CL}"
   fi
-  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "                Version: $VERSION\n"; fi
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "               Version: $VERSION\n"; fi
   rm -rf /root/Proxmox-Updater/temp/update.sh && echo
 }
 
@@ -491,6 +491,11 @@ UPDATE_CONTAINER () {
     NAME=$(pct exec "$CONTAINER" hostname)
   fi
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
+  # Check Internet connection
+  if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 google.com &>/dev/null"; then
+    echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+    return
+  fi
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "apt-get update"
@@ -553,7 +558,7 @@ VM_UPDATE_START () {
     else
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
-        # Check if update is possiple
+        # Check if update is possible
         if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
           # Start the VM
           WILL_STOP="true"
@@ -604,6 +609,11 @@ UPDATE_VM () {
       if [[ "$OS_BASE" =~ l2 ]]; then
         OS=$(ssh "$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+          # Check Internet connection
+          if ! ssh "$IP" "ping -q -c1 google.com &>/dev/null"; then
+            echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+            return
+          fi
           echo -e "${OR}--- APT UPDATE ---${CL}"
           ssh "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
@@ -658,6 +668,11 @@ UPDATE_VM_QEMU () {
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+      # Check Internet connection
+      if ! qm guest exec "$VM" -- bash -c "ping -q -c1 google.com &>/dev/null"; then
+        echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+        return
+      fi
       echo -e "${OR}--- APT UPDATE ---${CL}"
       qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
