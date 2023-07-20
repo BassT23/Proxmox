@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **v3.8.6** (develop)
+- check internet connection on each LXC/VM
 - config file:
   - check for updates on excluded
   - include phased updates
