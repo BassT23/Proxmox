@@ -4,10 +4,10 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.3.1"
+VERSION="1.3.2"
 
 # Branch
-BRANCH="master"
+BRANCH="beta"
 
 # Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -28,8 +28,8 @@ VERSION_CHECK () {
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
   if [[ "$BRANCH" == beta ]]; then
     echo -e "\n${OR}        *** You are on beta branch ***${CL}"
-  elif [[ "$BRANCH" == development ]]; then
-    echo -e "\n${OR}    *** You are on development branch ***${CL}"
+  elif [[ "$BRANCH" == develop ]]; then
+    echo -e "\n${OR}    *** You are on develop branch ***${CL}"
   fi
   if [[ "$SERVER_VERSION" > "$LOCAL_VERSION" ]]; then
     echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
@@ -51,8 +51,10 @@ READ_WRITE_CONFIG () {
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
   RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
-  EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
-  ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
+#  EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
+#  ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
+  EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
+  ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   if [[ $ONLY != "" ]]; then
     echo -e "${OR}Only is set. Not all machines are checked.${CL}\n"
   elif [[ $ONLY == "" && $EXCLUDED != "" ]]; then

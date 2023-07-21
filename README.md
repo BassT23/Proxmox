@@ -91,7 +91,7 @@ So connect from first node (on which you install the Proxmox-Updater) to node2 w
 
 2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
 
-     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/development/ssh.md)
+     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/develop/ssh.md)
 
 
 # Update the script:
@@ -105,7 +105,7 @@ and install new
 
 
 # Extra Updates:
-If updater detects installation: (disable, if you wand in `/root/Proxmox-Updater/update.conf`)
+If updater detects installation: (disable, if you want in `/root/Proxmox-Updater/update.conf`)
 - PiHole
 - ioBroker
 - Pterodactyl
