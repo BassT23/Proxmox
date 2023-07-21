@@ -63,7 +63,7 @@ CHECK_ROOT () {
 
 # Check internet status
 CHECK_INTERNET () {
-  if ! ping -q -c1 google.com &>/dev/null; then
+  if ! ping -q -c1 "$CHECK_URL" &>/dev/null; then
     echo -e "\n${OR} You are offline - Can't update without internet${CL}\n"
     exit 2
   fi
@@ -315,6 +315,7 @@ STATUS () {
 # Read Config File
 READ_CONFIG () {
   CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' "$CONFIG_FILE")
+  CHECK_URL=$(awk -F'"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' "$CONFIG_FILE")
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' "$CONFIG_FILE")
@@ -492,7 +493,7 @@ UPDATE_CONTAINER () {
   fi
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   # Check Internet connection
-  if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 google.com &>/dev/null"; then
+  if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 "$CHECK_URL" &>/dev/null"; then
     echo -e "${OR} Internet is not reachable - skip update${CL}\n"
     return
   fi
@@ -610,7 +611,7 @@ UPDATE_VM () {
         OS=$(ssh "$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
-          if ! ssh "$IP" "ping -q -c1 google.com &>/dev/null"; then
+          if ! ssh "$IP" "ping -q -c1 "$CHECK_URL" &>/dev/null"; then
             echo -e "${OR} Internet is not reachable - skip update${CL}\n"
             return
           fi
@@ -669,7 +670,7 @@ UPDATE_VM_QEMU () {
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       # Check Internet connection
-      if ! qm guest exec "$VM" -- bash -c "ping -q -c1 google.com &>/dev/null"; then
+      if ! qm guest exec "$VM" -- bash -c "ping -q -c1 "$CHECK_URL" &>/dev/null"; then
         echo -e "${OR} Internet is not reachable - skip update${CL}\n"
         return
       fi
