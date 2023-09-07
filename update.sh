@@ -320,6 +320,7 @@ READ_CONFIG () {
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' "$CONFIG_FILE")
   RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
+  SNAPSHOT=$(awk -F'"' '/^SNAPSHOT=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
@@ -522,6 +523,22 @@ UPDATE_CONTAINER () {
     UPDATE_CHECK
   fi
   CCONTAINER=""
+}
+
+# Container Snapshot
+CONTAINER_SNAPSHOT () {
+  if [[ "$SNAPSHOT" == true ]]; then
+    echo -e "${BL}[Info] Creating snapshot for container $CONTAINER{CL}\n\n"
+    pct snapshot $CONTAINER "Update_$(date '+%Y%m%d_%H%M%S')"
+  fi
+}
+
+# Container Snapshot
+VM_SNAPSHOT () {
+  if [[ "$SNAPSHOT" == true ]]; then
+    echo -e "${BL}[Info] Creating snapshot for VM $VM{CL}\n\n"
+    qm snapshot $VM "Update_$(date '+%Y%m%d_%H%M%S')"
+  fi
 }
 
 ## VM ##
