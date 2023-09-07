@@ -484,6 +484,10 @@ UPDATE_CONTAINER () {
   else
     NAME=$(pct exec "$CONTAINER" hostname)
   fi
+  # Creating Snapshots?
+  if [[ "$SNAPSHOT" == true ]]; then
+    CONTAINER_SNAPSHOT
+  fi
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
@@ -527,18 +531,14 @@ UPDATE_CONTAINER () {
 
 # Container Snapshot
 CONTAINER_SNAPSHOT () {
-  if [[ "$SNAPSHOT" == true ]]; then
     echo -e "${BL}[Info] Creating snapshot for container $CONTAINER{CL}\n\n"
     pct snapshot $CONTAINER "Update_$(date '+%Y%m%d_%H%M%S')"
-  fi
 }
 
 # Container Snapshot
 VM_SNAPSHOT () {
-  if [[ "$SNAPSHOT" == true ]]; then
     echo -e "${BL}[Info] Creating snapshot for VM $VM{CL}\n\n"
     qm snapshot $VM "Update_$(date '+%Y%m%d_%H%M%S')"
-  fi
 }
 
 ## VM ##
@@ -595,6 +595,10 @@ UPDATE_VM () {
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   CVM="true"
   echo 'VM="'"$VM"'"' > ~/Proxmox-Updater/temp/var
+  # Creating Snapshots?
+  if [[ "$SNAPSHOT" == true ]]; then
+    VM_SNAPSHOT
+  fi
   echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
   if [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' /root/Proxmox-Updater/VMs/"$VM")
@@ -658,6 +662,10 @@ UPDATE_VM_QEMU () {
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
+    # Creating Snapshots?
+    if [[ "$SNAPSHOT" == true ]]; then
+      VM_SNAPSHOT
+    fi
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       echo -e "${OR}--- APT UPDATE ---${CL}"
