@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.8.6"
+VERSION="3.8.7"
 
 # Branch
 BRANCH="beta"
