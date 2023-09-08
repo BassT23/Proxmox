@@ -323,7 +323,7 @@ READ_CONFIG () {
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
-  SNAPSHOT=$(awk -F'"' '/^SNAPSHOT=/ {print $2}' "$CONFIG_FILE")
+  BACKUP=$(awk -F'"' '/^SNAPSHOT=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
@@ -332,22 +332,22 @@ READ_CONFIG () {
 
 # Backup
 CONTAINER_BACKUP () {
-    vzdump $CONTAINER -mode snapshot --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1) || true
-    if [[ $? != 0 ]]; then
-      vzdump $CONTAINER --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)
-      echo -e "${BL}[Info] Created backup for container $CONTAINER{CL}\n\n"
-    else
-      echo -e "${BL}[Info] Created snapshot for container $CONTAINER{CL}\n\n"
-    fi
+  if [[ "$BACKUP" == true ]]; then
+    echo -e "${BL}[Info] Create backup for LXC $CONTAINER${CL}"
+    vzdump $CONTAINER --mode snapshot --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)
+    echo -e "${BL}[Info] Snapshot created${CL}\n"
+  else
+    echo -e "${OR}[Info] Backup Skipped by user${CL}"
+  fi
 }
 VM_BACKUP () {
-    echo -e "${BL}[Info] Create snapshot for VM $VM${CL}"
-    if pct snapshot $VM "Update_$(date '+%Y%m%d_%H%M%S')"; then
-      vzdump $CONTAINER -mode snapshot --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)
-      echo -e "${BL}[Info] Snapshot created${CL}\n"
-    else
-      echo -e "${RD}[Info] Snapshot not possible${CL}\n"
-    fi
+  if [[ "$BACKUP" == true ]]; then
+    echo -e "${BL}[Info] Create backup for VM $VM${CL}"
+    vzdump $VM --mode snapshot --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)
+    echo -e "${BL}[Info] Snapshot created${CL}\n"
+  else
+    echo -e "${OR}[Info] Backup Skipped by user${CL}"
+  fi
 }
 
 # Extras
