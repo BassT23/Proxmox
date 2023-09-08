@@ -18,6 +18,8 @@
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
 [![downloads](https://img.shields.io/github/downloads/BassT23/Proxmox/total.svg)](https://github.com/BassT23/Proxmox/releases)
+[![Discord](https://dcbadge.vercel.app/api/server/Bv2dnk5F?style=flat)](https://discord.gg/Bv2dnk5F)
+
 
 
 Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
