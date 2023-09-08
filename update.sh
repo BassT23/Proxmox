@@ -4,10 +4,10 @@
 # Update #
 ##########
 
-VERSION="3.8.5"
+VERSION="3.8.6"
 
 # Branch
-BRANCH="master"
+BRANCH="beta"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
@@ -63,7 +63,7 @@ CHECK_ROOT () {
 
 # Check internet status
 CHECK_INTERNET () {
-  if ! ping -q -c1 google.com &>/dev/null; then
+  if ! ping -q -c1 "$CHECK_URL" &>/dev/null; then
     echo -e "\n${OR} You are offline - Can't update without internet${CL}\n"
     exit 2
   fi
@@ -146,13 +146,13 @@ ARGUMENTS () {
         BRANCH=beta
         BRANCH_SET=true
         ;;
-      development)
+      develop)
         if [[ "$2" != -up ]]; then
           echo -e "\n${OR}  Wrong usage! Use branch update like this:${CL}"
           echo -e "  update beta -up\n"
           exit 2
         fi
-        BRANCH=development
+        BRANCH=develop
         BRANCH_SET=true
         ;;
       -up)
@@ -189,7 +189,7 @@ USAGE () {
     echo -e "  -s --silent          Silent / Headless Mode"
     echo -e "  master               Use master branch"
     echo -e "  beta                 Use beta branch"
-    echo -e "  development          Use development branch\n"
+    echo -e "  develop          Use develop branch\n"
     echo -e "{COMMAND}:"
     echo -e "========="
     echo -e "  -h --help            Show this help"
@@ -209,15 +209,15 @@ VERSION_CHECK () {
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Proxmox-Updater/temp/update.sh)
   if [[ "$BRANCH" == beta ]]; then
     echo -e "\n${OR}        *** You are on beta branch ***${CL}"
-  elif [[ "$BRANCH" == development ]]; then
-    echo -e "\n${OR}    *** You are on development branch ***${CL}"
+  elif [[ "$BRANCH" == develop ]]; then
+    echo -e "\n${OR}    *** You are on develop branch ***${CL}"
   fi
   if [[ "$SERVER_VERSION" > "$VERSION" ]]; then
     echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ "$HEADLESS" != true ]]; then
       echo -e "${OR}Want to update Proxmox-Updater first?${CL}"
-      read -p "Type [Y/y] or Enter for yes - enything else will skip " -n 1 -r -s
+      read -p "Type [Y/y] or Enter for yes - anything else will skip " -n 1 -r -s
       if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
         bash <(curl -s "$SERVER_URL"/install.sh) update
       fi
@@ -235,7 +235,7 @@ VERSION_CHECK () {
 # Update Proxmox-Updater
 UPDATE () {
   echo -e "Update to $BRANCH branch?"
-  read -p "Type [Y/y] or [Enter] for yes - enything else will exit" -n 1 -r -s
+  read -p "Type [Y/y] or [Enter] for yes - anything else will exit" -n 1 -r -s
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
     bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
   else
@@ -247,7 +247,7 @@ UPDATE () {
 UNINSTALL () {
   echo -e "\n${BL}[Info]${OR} Uninstall Proxmox-Updater${CL}\n"
   echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
-  read -p "Type [Y/y] for yes - enything else will exit " -n 1 -r -s
+  read -p "Type [Y/y] for yes - anything else will exit " -n 1 -r -s
   if [[ "$REPLY" =~ ^[Yy]$ ]]; then
     bash <(curl -s "$SERVER_URL"/install.sh) uninstall
   else
@@ -315,12 +315,15 @@ STATUS () {
 # Read Config File
 READ_CONFIG () {
   CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' "$CONFIG_FILE")
+  CHECK_URL=$(awk -F'"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' "$CONFIG_FILE")
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' "$CONFIG_FILE")
   RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT=/ {print $2}' "$CONFIG_FILE")
+  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
+  INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
@@ -423,13 +426,18 @@ UPDATE_HOST_ITSELF () {
   echo -e "${OR}--- APT UPDATE ---${CL}" && apt-get update
   if [[ "$HEADLESS" == true ]]; then
     echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}" && \
-            DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y
+    DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y
   else
-    echo -e "\n${OR}--- APT UPGRADE ---${CL}" && \
-            apt-get dist-upgrade -y
+    if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+      echo -e "\n${OR}--- APT UPGRADE ---${CL}" && \
+      apt-get dist-upgrade -y
+    else
+      echo -e "\n${OR}--- APT UPGRADE ---${CL}" && \
+      apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y
+    fi
   fi
   echo -e "\n${OR}--- APT CLEANING ---${CL}" && \
-          apt-get --purge autoremove -y && echo
+  apt-get --purge autoremove -y && echo
   CHOST="true"
   UPDATE_CHECK
   CHOST=""
@@ -487,6 +495,11 @@ UPDATE_CONTAINER () {
     NAME=$(pct exec "$CONTAINER" hostname)
   fi
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
+  # Check Internet connection
+  if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 "$CHECK_URL" &>/dev/null"; then
+    echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+    return
+  fi
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "apt-get update"
@@ -495,7 +508,11 @@ UPDATE_CONTAINER () {
       pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
     else
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+      if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+        pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+      else
+        pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y"
+      fi
     fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
       pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y"
@@ -557,7 +574,7 @@ VM_UPDATE_START () {
     else
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
-        # Check if update is possiple
+        # Check if update is possible
         if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
           # Start the VM
           WILL_STOP="true"
@@ -610,10 +627,19 @@ UPDATE_VM () {
       if [[ "$OS_BASE" =~ l2 ]]; then
         OS=$(ssh "$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+          # Check Internet connection
+          if ! ssh "$IP" "ping -q -c1 "$CHECK_URL" &>/dev/null"; then
+            echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+            return
+          fi
           echo -e "${OR}--- APT UPDATE ---${CL}"
           ssh "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-          ssh "$IP" apt-get upgrade -y
+          if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+            ssh "$IP" apt-get upgrade -y
+          else
+            ssh "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+          fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
           ssh "$IP" apt-get --purge autoremove -y
           EXTRAS
@@ -660,10 +686,19 @@ UPDATE_VM_QEMU () {
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+      # Check Internet connection
+      if ! qm guest exec "$VM" -- bash -c "ping -q -c1 "$CHECK_URL" &>/dev/null"; then
+        echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+        return
+      fi
       echo -e "${OR}--- APT UPDATE ---${CL}"
       qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-      qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1
+      if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1
+      else
+        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
+      fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
       qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
       echo
