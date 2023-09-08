@@ -330,15 +330,24 @@ READ_CONFIG () {
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
 }
 
-# Snapshot
-CONTAINER_SNAPSHOT () {
-    echo -e "${BL}[Info] Try to create snapshot for container $CONTAINER{CL}\n"
-    pct snapshot $CONTAINER "Update_$(date '+%Y%m%d_%H%M%S')"
+# Backup
+CONTAINER_BACKUP () {
+    vzdump $CONTAINER -mode snapshot --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1) || true
+    if [[ $? != 0 ]]; then
+      vzdump $CONTAINER --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)
+      echo -e "${BL}[Info] Created backup for container $CONTAINER{CL}\n\n"
+    else
+      echo -e "${BL}[Info] Created snapshot for container $CONTAINER{CL}\n\n"
+    fi
 }
-
-VM_SNAPSHOT () {
-    echo -e "${BL}[Info] Try to create snapshot for VM $VM{CL}\n"
-    qm snapshot $VM "Update_$(date '+%Y%m%d_%H%M%S')"
+VM_BACKUP () {
+    echo -e "${BL}[Info] Create snapshot for VM $VM${CL}"
+    if pct snapshot $VM "Update_$(date '+%Y%m%d_%H%M%S')"; then
+      vzdump $CONTAINER -mode snapshot --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)
+      echo -e "${BL}[Info] Snapshot created${CL}\n"
+    else
+      echo -e "${RD}[Info] Snapshot not possible${CL}\n"
+    fi
 }
 
 # Extras
@@ -470,19 +479,20 @@ CONTAINER_UPDATE_START () {
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
         WILL_STOP="true"
-        echo -e "${BL}[Info]${GN} Starting LXC${BL} $CONTAINER ${CL}"
+#        CONTAINER_BACKUP
+        echo -e "${BL}[Info]${GN} Starting LXC ${BL}$CONTAINER ${CL}"
         pct start "$CONTAINER"
-        echo -e "${BL}[Info]${GN} Waiting for LXC${BL} $CONTAINER${CL}${GN} to start ${CL}"
+        echo -e "${BL}[Info]${GN} Waiting for LXC ${BL}$CONTAINER${CL}${GN} to start ${CL}"
         sleep 5
         UPDATE_CONTAINER "$CONTAINER"
         # Stop the container
-        echo -e "${BL}[Info]${GN} Shutting down LXC${BL} $CONTAINER ${CL}\n\n"
+        echo -e "${BL}[Info]${GN} Shutting down LXC ${BL}$CONTAINER ${CL}\n\n"
         pct shutdown "$CONTAINER" &
         WILL_STOP="false"
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
-        CONTAINER_SNAPSHOT
+#        CONTAINER_BACKUP
         UPDATE_CONTAINER "$CONTAINER"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
@@ -576,6 +586,7 @@ VM_UPDATE_START () {
         if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
           # Start the VM
           WILL_STOP="true"
+#          VM_BACKUP
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
           qm start "$VM" >/dev/null 2>&1
           echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
@@ -593,7 +604,7 @@ VM_UPDATE_START () {
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
-        VM_SNAPSHOT
+#        VM_BACKUP
         UPDATE_VM "$VM"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
