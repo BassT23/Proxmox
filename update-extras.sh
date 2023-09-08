@@ -13,6 +13,7 @@ IOBROKER=$(awk -F'"' '/^IOBROKER=/ {print $2}' $CONFIG_FILE)
 PTERODACTYL=$(awk -F'"' '/^PTERODACTYL=/ {print $2}' $CONFIG_FILE)
 OCTOPRINT=$(awk -F'"' '/^OCTOPRINT=/ {print $2}' $CONFIG_FILE)
 DOCKER_COMPOSE=$(awk -F'"' '/^DOCKER_COMPOSE=/ {print $2}' $CONFIG_FILE)
+NEXTCLOUD=$(awk -F'"' '/^NEXTCLOUD=/ {print $2}' $CONFIG_FILE)
 
 # PiHole
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
@@ -105,4 +106,22 @@ if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
   docker system prune -a -f
   docker image prune -f
   docker system prune --volumes -f
+fi
+
+# Nextcloud
+if [[ -d $(echo ~www-data)/nextcloud && $NEXTCLOUD == true ]]; then
+  echo -e "\n*** Updating Nextcloud ***\n"
+  # Get requirements
+  $NCPATH=$(echo ~www-data)/nextcloud
+  # Nextcloud updates
+  sudo -u www-data php $NCPATH/updater/updater.phar --no-backup
+  sudo -u www-data php $NCPATH/occ status
+  sudo -u www-data php $NCPATH/occ -V
+  sudo -u www-data php $NCPATH/occ db:add-missing-primary-keys
+  sudo -u www-data php $NCPATH/occ db:add-missing-indices
+  sudo -u www-data php $NCPATH/occ db:add-missing-columns
+  sudo -u www-data php $NCPATH/occ db:convert-filecache-bigint
+  sudo -u www-data sed -i "s/output_buffering=.*/output_buffering=0/" $NCPATH/.user.ini
+  # Nextcloud app updates
+  sudo -u www-data php $NCPATH/occ app:update --all -v
 fi
