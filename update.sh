@@ -332,12 +332,12 @@ READ_CONFIG () {
 
 # Snapshot
 CONTAINER_SNAPSHOT () {
-    echo -e "${BL}[Info] Creating snapshot for container $CONTAINER{CL}\n\n"
+    echo -e "${BL}[Info] Try to create snapshot for container $CONTAINER{CL}\n"
     pct snapshot $CONTAINER "Update_$(date '+%Y%m%d_%H%M%S')"
 }
 
 VM_SNAPSHOT () {
-    echo -e "${BL}[Info] Creating snapshot for VM $VM{CL}\n\n"
+    echo -e "${BL}[Info] Try to create snapshot for VM $VM{CL}\n"
     qm snapshot $VM "Update_$(date '+%Y%m%d_%H%M%S')"
 }
 
