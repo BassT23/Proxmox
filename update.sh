@@ -323,6 +323,7 @@ READ_CONFIG () {
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
+  SNAPSHOT=$(awk -F'"' '/^SNAPSHOT=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
@@ -442,6 +443,18 @@ UPDATE_HOST_ITSELF () {
   CHOST=""
 }
 
+# Container Snapshot
+CONTAINER_SNAPSHOT () {
+    echo -e "${BL}[Info] Creating snapshot for container $CONTAINER{CL}\n\n"
+    pct snapshot $CONTAINER "Update_$(date '+%Y%m%d_%H%M%S')"
+}
+
+# Container Snapshot
+VM_SNAPSHOT () {
+    echo -e "${BL}[Info] Creating snapshot for VM $VM{CL}\n\n"
+    qm snapshot $VM "Update_$(date '+%Y%m%d_%H%M%S')"
+}
+
 ## Container ##
 # Container Update Start
 CONTAINER_UPDATE_START () {
@@ -458,6 +471,7 @@ CONTAINER_UPDATE_START () {
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
         WILL_STOP="true"
+        CONTAINER_SNAPSHOT
         echo -e "${BL}[Info]${GN} Starting LXC${BL} $CONTAINER ${CL}"
         pct start "$CONTAINER"
         echo -e "${BL}[Info]${GN} Waiting for LXC${BL} $CONTAINER${CL}${GN} to start ${CL}"
@@ -470,6 +484,7 @@ CONTAINER_UPDATE_START () {
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
+        CONTAINER_SNAPSHOT
         UPDATE_CONTAINER "$CONTAINER"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
@@ -563,6 +578,7 @@ VM_UPDATE_START () {
         if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
           # Start the VM
           WILL_STOP="true"
+          VM_SNAPSHOT
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
           qm start "$VM" >/dev/null 2>&1
           echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
@@ -580,6 +596,7 @@ VM_UPDATE_START () {
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
+        VM_SNAPSHOT
         UPDATE_VM "$VM"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
