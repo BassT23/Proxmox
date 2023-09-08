@@ -330,6 +330,17 @@ READ_CONFIG () {
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
 }
 
+# Snapshot
+CONTAINER_SNAPSHOT () {
+    echo -e "${BL}[Info] Creating snapshot for container $CONTAINER{CL}\n\n"
+    pct snapshot $CONTAINER "Update_$(date '+%Y%m%d_%H%M%S')"
+}
+
+VM_SNAPSHOT () {
+    echo -e "${BL}[Info] Creating snapshot for VM $VM{CL}\n\n"
+    qm snapshot $VM "Update_$(date '+%Y%m%d_%H%M%S')"
+}
+
 # Extras
 EXTRAS () {
   if [[ "$EXTRA_GLOBAL" != true ]]; then
@@ -441,18 +452,6 @@ UPDATE_HOST_ITSELF () {
   CHOST="true"
   UPDATE_CHECK
   CHOST=""
-}
-
-# Container Snapshot
-CONTAINER_SNAPSHOT () {
-    echo -e "${BL}[Info] Creating snapshot for container $CONTAINER{CL}\n\n"
-    pct snapshot $CONTAINER "Update_$(date '+%Y%m%d_%H%M%S')"
-}
-
-# Container Snapshot
-VM_SNAPSHOT () {
-    echo -e "${BL}[Info] Creating snapshot for VM $VM{CL}\n\n"
-    qm snapshot $VM "Update_$(date '+%Y%m%d_%H%M%S')"
 }
 
 ## Container ##
