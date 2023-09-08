@@ -1,11 +1,12 @@
 Changelog:
 ==========
 
-**v3.8.6** (beta)
+**v3.8.7** (beta)
 - check internet connection on each LXC/VM
 - config file:
   - check for updates on excluded
   - include phased updates
+- make snapshot from LXC/VM before update (thanks to @elbim) 
 
 **v3.8.5** (18.06.2023)
 - Skip node, if not reachable
