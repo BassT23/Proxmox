@@ -337,7 +337,7 @@ CONTAINER_BACKUP () {
     vzdump $CONTAINER --mode snapshot --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)
     echo -e "${BL}[Info] Snapshot created${CL}\n"
   else
-    echo -e "${OR}[Info] Backup Skipped by user${CL}"
+    echo -e "${OR}[Info] Backup Skipped by user for LXC $CONTAINER${CL}"
   fi
 }
 VM_BACKUP () {
@@ -346,7 +346,7 @@ VM_BACKUP () {
     vzdump $VM --mode snapshot --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)
     echo -e "${BL}[Info] Snapshot created${CL}\n"
   else
-    echo -e "${OR}[Info] Backup Skipped by user${CL}"
+    echo -e "${OR}[Info] Backup Skipped by user for LXC $CONTAINER${CL}"
   fi
 }
 
@@ -479,7 +479,7 @@ CONTAINER_UPDATE_START () {
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
         WILL_STOP="true"
-#        CONTAINER_BACKUP
+        CONTAINER_BACKUP
         echo -e "${BL}[Info]${GN} Starting LXC ${BL}$CONTAINER ${CL}"
         pct start "$CONTAINER"
         echo -e "${BL}[Info]${GN} Waiting for LXC ${BL}$CONTAINER${CL}${GN} to start ${CL}"
@@ -492,7 +492,7 @@ CONTAINER_UPDATE_START () {
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
-#        CONTAINER_BACKUP
+        CONTAINER_BACKUP
         UPDATE_CONTAINER "$CONTAINER"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
@@ -586,7 +586,7 @@ VM_UPDATE_START () {
         if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
           # Start the VM
           WILL_STOP="true"
-#          VM_BACKUP
+          VM_BACKUP
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
           qm start "$VM" >/dev/null 2>&1
           echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
@@ -604,7 +604,7 @@ VM_UPDATE_START () {
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
-#        VM_BACKUP
+        VM_BACKUP
         UPDATE_VM "$VM"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
