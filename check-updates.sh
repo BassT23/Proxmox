@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.4.5"
+VERSION="1.4.6"
 
 #Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -361,8 +361,7 @@ else
 fi
 
 # Run
-wget -q --spider http://google.com
-if [ $? -eq 0 ]; then
+if [ "$(wget -q --spider http://google.com)" -eq 0 ]; then
   READ_WRITE_CONFIG
   ARGUMENTS "$@"
 else
