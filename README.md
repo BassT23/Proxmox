@@ -18,6 +18,8 @@
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
 [![downloads](https://img.shields.io/github/downloads/BassT23/Proxmox/total.svg)](https://github.com/BassT23/Proxmox/releases)
+[![Discord](https://dcbadge.vercel.app/api/server/Bv2dnk5F?style=flat)](https://discord.gg/Bv2dnk5F)
+
 
 
 Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
@@ -53,6 +55,7 @@ Changelog: [here](https://github.com/BassT23/Proxmox/blob/beta/change.log)
 
 ### What does the script do:
 - The script make system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
+- Before the LXC/VM update start, there will be made a snapshot. This can be disabled in `update.conf`
 - After that it makes an little cleaning (like `apt autoremove`) 
 - If the script detects "extra" installations, it could update this also. (look in config file, for this)
 
@@ -150,4 +153,4 @@ To go back to master, choose `update -up`
 [![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
 
 # Credits:
-[@Uruk](https://github.com/Uruknara) - for help with the code
+[@Uruk](https://github.com/Uruknara) / [@elbim](https://github.com/elbim)
