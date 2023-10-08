@@ -1,6 +1,9 @@
 Changelog:
 ==========
 
+**v3.8.7** (develop)
+- code cleaning
+
 **v3.8.6** (beta)
 - check internet connection on each LXC/VM
 - config file:
