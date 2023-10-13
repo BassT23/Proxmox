@@ -361,7 +361,7 @@ else
 fi
 
 # Run
-if [ "$(wget -q --spider http://google.com)" -eq 0 ]; then
+if [[ "$(wget -q --spider http://google.com)" -eq 0 ]]; then
   READ_WRITE_CONFIG
   ARGUMENTS "$@"
 else
