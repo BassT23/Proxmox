@@ -1,7 +1,9 @@
 Changelog:
 ==========
 
-**v3.8.7** (beta)
+**v3.8.8** (beta)
+- make backup before update (must be enabled in config by user)
+- code cleaning
 - check internet connection on each LXC/VM
 - config file:
   - check for updates on excluded

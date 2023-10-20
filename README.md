@@ -1,24 +1,13 @@
-```
-     ____
-    / __ \_________  _  ______ ___  ____  _  __
-   / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/
-  / ____/ /  / /_/ />  </ / / / / / /_/ />  <
- /_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|
-      __  __          __      __
-     / / / /___  ____/ /___ _/ /____  ____
-    / / / / __ \/ __  / __ `/ __/ _ \/ __/
-   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
-   \____/ .___/\____/\____/\__/\___/_/
-       /_/
-```
 <div align="center">
+
+![Logo](https://github.com/BassT23/Proxmox/assets/30832786/00fa746d-3d65-4b01-8906-50ecb845a50d)
 
 ![Screenshot_20230326_130709](https://user-images.githubusercontent.com/30832786/227771669-aae7e7f4-b27e-4095-950a-c6fa1f146503.png)
 
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
 [![downloads](https://img.shields.io/github/downloads/BassT23/Proxmox/total.svg)](https://github.com/BassT23/Proxmox/releases)
-[![Discord](https://dcbadge.vercel.app/api/server/Bv2dnk5F?style=flat)](https://discord.gg/Bv2dnk5F)
+[![Discord](https://img.shields.io/discord/1149671790864506882)](https://discord.gg/xyfdGbtV)
 
 
 
@@ -55,8 +44,8 @@ Changelog: [here](https://github.com/BassT23/Proxmox/blob/beta/change.log)
 
 ### What does the script do:
 - The script make system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
-- Before the LXC/VM update start, there will be made a snapshot. This can be disabled in `update.conf`
-- After that it makes an little cleaning (like `apt autoremove`) 
+- Before the LXC/VM update start, there could be make a backup. This could be enabled in `update.conf`
+- After all, the updater makes an little cleaning (like `apt autoremove`) 
 - If the script detects "extra" installations, it could update this also. (look in config file, for this)
 
 ## 

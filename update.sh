@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.8.7"
+VERSION="3.8.8"
 
 # Branch
 BRANCH="beta"
@@ -334,7 +334,7 @@ READ_CONFIG () {
 CONTAINER_BACKUP () {
   if [[ "$BACKUP" == true ]]; then
     echo -e "${BL}[Info] Create backup for LXC $CONTAINER${CL}"
-    vzdump $CONTAINER --mode snapshot --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)
+    vzdump "$CONTAINER" --mode snapshot --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)"
     echo -e "${BL}[Info] Snapshot created${CL}\n"
   else
     echo -e "${OR}[Info] Backup Skipped by user for LXC $CONTAINER${CL}"
@@ -343,7 +343,7 @@ CONTAINER_BACKUP () {
 VM_BACKUP () {
   if [[ "$BACKUP" == true ]]; then
     echo -e "${BL}[Info] Create backup for VM $VM${CL}"
-    vzdump $VM --mode snapshot --storage $(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)
+    vzdump "$VM" --mode snapshot --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)"
     echo -e "${BL}[Info] Snapshot created${CL}\n"
   else
     echo -e "${OR}[Info] Backup Skipped by user for LXC $CONTAINER${CL}"
@@ -407,7 +407,7 @@ HOST_UPDATE_START () {
   if [[ "$RICM" != true ]]; then true > /root/Proxmox-Updater/check-output; fi
   for HOST in $HOSTS; do
     # Check if Host/Node is available
-    if ssh $HOST test >/dev/null 2>&1; [ $? -eq 255 ]; then
+    if ssh "$HOST" test >/dev/null 2>&1; [ $? -eq 255 ]; then
       echo -e "${BL}[Info] ${OR}Skip Host${CL} : ${GN}$HOST${CL} ${OR}- can't connect${CL}\n"
     else
      UPDATE_HOST "$HOST"
@@ -516,7 +516,7 @@ UPDATE_CONTAINER () {
   fi
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   # Check Internet connection
-  if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 "$CHECK_URL" &>/dev/null"; then
+  if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
     echo -e "${OR} Internet is not reachable - skip update${CL}\n"
     return
   fi
@@ -636,7 +636,7 @@ UPDATE_VM () {
         OS=$(ssh "$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
-          if ! ssh "$IP" "ping -q -c1 "$CHECK_URL" &>/dev/null"; then
+          if ! ssh "$IP" "ping -q -c1 $CHECK_URL &>/dev/null"; then
             echo -e "${OR} Internet is not reachable - skip update${CL}\n"
             return
           fi
@@ -695,7 +695,7 @@ UPDATE_VM_QEMU () {
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       # Check Internet connection
-      if ! qm guest exec "$VM" -- bash -c "ping -q -c1 "$CHECK_URL" &>/dev/null"; then
+      if ! qm guest exec "$VM" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
         echo -e "${OR} Internet is not reachable - skip update${CL}\n"
         return
       fi
@@ -764,7 +764,7 @@ OUTPUT_TO_FILE () {
 CLEAN_LOGFILE () {
   if [[ "$RICM" != true ]]; then
     tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
-    cat $LOG_FILE | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE" >/dev/null 2>&1
+    cat "$LOG_FILE" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE" >/dev/null 2>&1
     chmod 640 "$LOG_FILE"
     if [[ -f ./tmp.log ]]; then
       rm -rf ./tmp.log
