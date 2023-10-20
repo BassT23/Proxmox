@@ -1,15 +1,14 @@
 Changelog:
 ==========
 
-**v3.8.7** (develop)
+**v3.8.8** (beta)
 - make backup before update (must be enabled in config by user)
 - code cleaning
-
-**v3.8.6** (beta)
 - check internet connection on each LXC/VM
 - config file:
   - check for updates on excluded
   - include phased updates
+- make snapshot from LXC/VM before update (thanks to @elbim) 
 
 **v3.8.5** (18.06.2023)
 - Skip node, if not reachable
