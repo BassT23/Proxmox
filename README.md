@@ -33,7 +33,7 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 ### Features:
 - Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
-- Logging
+- Logging to ``/var/log/update-"$HOSTNAME".log``
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/root/Proxmox-Updater/exit`)
 - [Config file](https://github.com/BassT23/Proxmox#config-file)
 
