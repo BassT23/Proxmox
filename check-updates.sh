@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.4.4"
+VERSION="1.4.6"
 
 #Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -80,8 +80,10 @@ READ_WRITE_CONFIG () {
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
   RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
-  EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
-  ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
+#  EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
+#  ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
+  EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
+  ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
 }
 
 ## HOST ##
@@ -359,8 +361,7 @@ else
 fi
 
 # Run
-wget -q --spider http://google.com
-if [ $? -eq 0 ]; then
+if [[ "$(wget -q --spider http://google.com)" -eq 0 ]]; then
   READ_WRITE_CONFIG
   ARGUMENTS "$@"
 else

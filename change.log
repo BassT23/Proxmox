@@ -1,8 +1,16 @@
 Changelog:
 ==========
 
-**v3.8.5** (beta)
+**v3.9** (07.11.2023)
+- make backup before update (must be enabled in config by user)
+- code cleaning
+- check internet connection on each LXC/VM
+- config file:
+  - check for updates on excluded
+  - include phased updates
+- make snapshot from LXC/VM before update (thanks to @elbim) 
 
+**v3.8.5** (18.06.2023)
 - Skip node, if not reachable
 - check internet status
 - <update -up> will always use master version
@@ -10,14 +18,12 @@ Changelog:
 - fix version info
 
 **v3.8.4** (01.04.2023)
-
 - Speed up start in cluster mode
 - Speed up installation
 - Bug fixing
 - Code cleaning
 
 **v3.8** (28.03.2023)
-
 - Add SSH Connection for VM - with extra update support
 - Add "Global Extra" in config file, for disable/enable Extra Updates
 - Info, if you are on beta/development version
@@ -31,7 +37,6 @@ Changelog:
   - Add "reboot required"
 
 **v3.7** (09.03.2023)
-
 - Fixing code
 - Support "only" LXC/VM
 - Fix docker-compose update
@@ -40,64 +45,51 @@ Changelog:
 - Need neofetch (will install automatic)
 
 **v3.6** (22.02.2023)
-
 - Add config file
 - Cleaning code
 - More colorful
 - Fixing logging
 
 **v3.4** (not released)
-
 - Add VM Update
 - Cleaning code
 - Fixed Docker Update
 
 **v3.3** (15.02.2023)
-
 - Add Update Info
 - Add extra Updates
 - Add version check by user
 
 **v3.1.1** (13.02.2023)
-
 - Fixed update failure with CentOS
 
 **v3.1** (12.02.2023)
-
 - Add better usage
 - Cleanup overall code
 
 **v3.0** (10.02.2023)
-
 - Implement single install url
 
 **v2.8** (09.02.2023)
-
 - Cleanup overall code
 
 **v2.7.1** (06.02.2023)
-
 - Small fixes
 
 **v2.7** (31.01.2023)
-
 - Add root check
 - Cleanup overall code
 
 **v2.6** (30.01.2023)
-
 - Cleanup overall code
 - Fix promt of update
 - Add updating package that been kept back
 
 **v2.5** (30.01.2023)
-
 - Added "Headless Mode" as option with `update -3` otherwise runs in "Interactive Mode"
 
 **v2.4** (29.01.2023)
-
 - Visual and Name changes
 
 **v2.3** (29.01.2023)
-
 - Update script itself with `update -u`

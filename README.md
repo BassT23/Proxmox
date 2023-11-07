@@ -1,23 +1,14 @@
-```
-     ____
-    / __ \_________  _  ______ ___  ____  _  __
-   / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/
-  / ____/ /  / /_/ />  </ / / / / / /_/ />  <
- /_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|
-      __  __          __      __
-     / / / /___  ____/ /___ _/ /____  ____
-    / / / / __ \/ __  / __ `/ __/ _ \/ __/
-   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
-   \____/ .___/\____/\____/\__/\___/_/
-       /_/
-```
 <div align="center">
+
+![Logo](https://github.com/BassT23/Proxmox/assets/30832786/00fa746d-3d65-4b01-8906-50ecb845a50d)
 
 ![Screenshot_20230326_130709](https://user-images.githubusercontent.com/30832786/227771669-aae7e7f4-b27e-4095-950a-c6fa1f146503.png)
 
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
 [![downloads](https://img.shields.io/github/downloads/BassT23/Proxmox/total.svg)](https://github.com/BassT23/Proxmox/releases)
+[![Discord](https://img.shields.io/discord/1149671790864506882)](https://discord.gg/nVpUg6BKn8)
+
 
 
 Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
@@ -42,7 +33,7 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 ### Features:
 - Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
-- Logging
+- Logging to ``/var/log/update-"$HOSTNAME".log``
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/root/Proxmox-Updater/exit`)
 - [Config file](https://github.com/BassT23/Proxmox#config-file)
 
@@ -53,7 +44,8 @@ Changelog: [here](https://github.com/BassT23/Proxmox/blob/beta/change.log)
 
 ### What does the script do:
 - The script make system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
-- After that it makes an little cleaning (like `apt autoremove`) 
+- Before the LXC/VM update start, there could be make a backup. This could be enabled in `update.conf`
+- After all, the updater makes an little cleaning (like `apt autoremove`) 
 - If the script detects "extra" installations, it could update this also. (look in config file, for this)
 
 ## 
@@ -91,7 +83,7 @@ So connect from first node (on which you install the Proxmox-Updater) to node2 w
 
 2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
 
-     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/development/ssh.md)
+     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/develop/ssh.md)
 
 
 # Update the script:
@@ -150,4 +142,4 @@ To go back to master, choose `update -up`
 [![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
 
 # Credits:
-[@Uruk](https://github.com/Uruknara) - for help with the code
+[@Uruk](https://github.com/Uruknara) / [@elbim](https://github.com/elbim)

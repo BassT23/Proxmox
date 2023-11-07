@@ -4,7 +4,7 @@
 # Update-Extras #
 #################
 
-VERSION="1.8.1"
+VERSION="1.8.2"
 
 # Variables
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -27,12 +27,12 @@ if [[ -d "/opt/iobroker" && $IOBROKER == true ]]; then
   echo "*** Update/Upgrade ioBroker ***" && iob update && iob upgrade -y && iob upgrade self -y && echo
   echo "*** Start ioBroker ***" && iob start && echo
   if [[ -d "/opt/iobroker/iobroker-data/radar2.admin" ]]; then
-    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which arp-scan`)
-    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which node`)
-    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which arp`)
-    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which hcitool`)
-    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which hciconfig`)
-    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip $(eval readlink -f `which l2ping`)
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip "$(eval readlink -f '$(which arp-scan)')"
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip "$(eval readlink -f '$(which node)')"
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip "$(eval readlink -f '$(which arp)')"
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip "$(eval readlink -f '$(which hcitool)')"
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip "$(eval readlink -f '$(which hciconfig)')"
+    setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip "$(eval readlink -f '$(which l2ping)')"
   fi
 fi
 
@@ -74,7 +74,7 @@ if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
   echo -e "\n*** Updating Octoprint ***\n"
   # find octoprint
   OPRINT=$(find /home -name "oprint")
-  "$OPRINT"/bin/pip install -U octoprint
+  "$OPRINT"/bin/pip install -U --ignore-installed octoprint
   sudo service octoprint restart
 fi
 
