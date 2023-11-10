@@ -189,7 +189,7 @@ USAGE () {
     echo -e "  -s --silent          Silent / Headless Mode"
     echo -e "  master               Use master branch"
     echo -e "  beta                 Use beta branch"
-    echo -e "  develop          Use develop branch\n"
+    echo -e "  develop              Use develop branch\n"
     echo -e "{COMMAND}:"
     echo -e "========="
     echo -e "  -h --help            Show this help"
