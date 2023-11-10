@@ -2,7 +2,7 @@ Changelog:
 ==========
 
 **v3.9.1** (beta)
--fix alpine issue (internet check don't work for now in alpine - skip)
+- fix alpine issue (internet check don't work for now in alpine - skip)
 
 **v3.9** (07.11.2023)
 - make backup before update (must be enabled in config by user)
