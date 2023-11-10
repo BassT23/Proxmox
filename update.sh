@@ -516,9 +516,11 @@ UPDATE_CONTAINER () {
   fi
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   # Check Internet connection
-  if ! [[ pct exec "$CONTAINER" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null" ]] &&  [[ "$OS" != alpine ]]; then
-    echo -e "${OR} Internet is not reachable - skip update${CL}\n"
-    return
+  if [[ "$OS" != alpine ]]; then
+    if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
+      echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+      return
+    fi
   fi
   # Run update
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
