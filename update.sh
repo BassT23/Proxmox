@@ -4,10 +4,10 @@
 # Update #
 ##########
 
-VERSION="3.9.1"
+VERSION="3.9.2"
 
 # Branch
-BRANCH="beta"
+BRANCH="develop"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
@@ -330,23 +330,35 @@ READ_CONFIG () {
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
 }
 
-# Backup
+# Snapshot/Backup
 CONTAINER_BACKUP () {
-  if [[ "$BACKUP" == true ]]; then
-    echo -e "${BL}[Info] Create backup for LXC $CONTAINER${CL}"
-    vzdump "$CONTAINER" --mode snapshot --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)"
-    echo -e "${BL}[Info] Snapshot created${CL}\n"
+  echo -e "${BL}[Info]${OR} Try to create snapshot and/or backup for container $CONTAINER${CL}"
+  if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
+    echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
   else
-    echo -e "${OR}[Info] Backup Skipped by user for LXC $CONTAINER${CL}"
+    echo -e "${BL}[Info]${OR} Snapshot is not possible on your disk setup - will make backup if you want${CL}"
+    if [[ "$BACKUP" == true ]]; then
+      echo -e "${BL}[Info] Create backup for LXC (this will take some time - please wait)${CL}"
+      vzdump "$CONTAINER" --mode snapshot --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)"
+      echo -e "${BL}[Info]${GN} Backup created${CL}\n"
+    else
+      echo -e "${BL}[Info]${OR} Backup skipped by user${CL}\n"
+    fi
   fi
 }
 VM_BACKUP () {
-  if [[ "$BACKUP" == true ]]; then
-    echo -e "${BL}[Info] Create backup for VM $VM${CL}"
-    vzdump "$VM" --mode snapshot --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)"
-    echo -e "${BL}[Info] Snapshot created${CL}\n"
+  echo -e "${BL}[Info]${OR} Try to create snapshot and/or backup for VM $VM${CL}"
+  if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
+    echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
   else
-    echo -e "${OR}[Info] Backup Skipped by user for LXC $CONTAINER${CL}"
+    echo -e "${BL}[Info]${OR} Snapshot is not possible on your disk setup - will make backup if you want${CL}"
+    if [[ "$BACKUP" == true ]]; then
+      echo -e "${BL}[Info] Create backup for VM (this will take some time - please wait)${CL}"
+      vzdump "$VM" --mode snapshot --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)"
+      echo -e "${BL}[Info]${GN} Backup created${CL}\n"
+    else
+      echo -e "${BL}[Info]${OR} Backup skipped by user${CL}\n"
+    fi
   fi
 }
 
@@ -639,7 +651,7 @@ UPDATE_VM () {
         OS=$(ssh "$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
-          if ! ssh "$IP" "ping -q -c1 $CHECK_URL &>/dev/null"; then
+          if ! ssh "$IP" 'ping -q -c1 "$CHECK_URL" &>/dev/null'; then
             echo -e "${OR} Internet is not reachable - skip update${CL}\n"
             return
           fi
