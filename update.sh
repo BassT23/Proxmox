@@ -332,14 +332,14 @@ READ_CONFIG () {
 
 # Snapshot/Backup
 CONTAINER_BACKUP () {
-  echo -e "${BL}[Info]${OR} Try to create snapshot and/or backup for container $CONTAINER${CL}"
+  echo -e "${BL}[Info]${OR} Try to create snapshot, otherwise could make a backup for container $CONTAINER${CL}"
   if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
     echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
   else
-    echo -e "${BL}[Info]${OR} Snapshot is not possible on your disk setup - will make backup if you want${CL}"
+    echo -e "${BL}[Info]${OR} Snapshot is not possible on your storage - will make backup, if you want${CL}"
     if [[ "$BACKUP" == true ]]; then
       echo -e "${BL}[Info] Create backup for LXC (this will take some time - please wait)${CL}"
-      vzdump "$CONTAINER" --mode snapshot --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)"
+      vzdump "$CONTAINER" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "${BL}[Info]${GN} Backup created${CL}\n"
     else
       echo -e "${BL}[Info]${OR} Backup skipped by user${CL}\n"
@@ -347,14 +347,14 @@ CONTAINER_BACKUP () {
   fi
 }
 VM_BACKUP () {
-  echo -e "${BL}[Info]${OR} Try to create snapshot and/or backup for VM $VM${CL}"
+  echo -e "${BL}[Info]${OR} Try to create snapshot, otherwise could make a backup for VM $VM${CL}"
   if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
     echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
   else
-    echo -e "${BL}[Info]${OR} Snapshot is not possible on your disk setup - will make backup if you want${CL}"
+    echo -e "${BL}[Info]${OR} Snapshot is not possible on your storage - will make backup, if you want${CL}"
     if [[ "$BACKUP" == true ]]; then
       echo -e "${BL}[Info] Create backup for VM (this will take some time - please wait)${CL}"
-      vzdump "$VM" --mode snapshot --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)"
+      vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "${BL}[Info]${GN} Backup created${CL}\n"
     else
       echo -e "${BL}[Info]${OR} Backup skipped by user${CL}\n"
