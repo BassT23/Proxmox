@@ -44,7 +44,7 @@ Changelog: [here](https://github.com/BassT23/Proxmox/blob/beta/change.log)
 
 ### What does the script do:
 - The script make system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
-- Before the LXC/VM update start, a backup can be created. This must be enabled in `update.conf` by user
+- Make a snapshut befor update (if your storage support it - [look here](https://pve.proxmox.com/wiki/Storage)). If not supported, you can choose to make a real backup, but this must be enabled in `update.conf` by user (take long time!)
 - After all, the updater makes an little cleaning (like `apt autoremove`) 
 - If the script detects "extra" installations, it could update this also. Look in config file, for that.
 
