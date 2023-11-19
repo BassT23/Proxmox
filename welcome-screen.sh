@@ -7,7 +7,7 @@
 VERSION="1.3.3"
 
 # Branch
-BRANCH="develop"
+BRANCH="beta"
 
 # Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
