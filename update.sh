@@ -336,7 +336,7 @@ CONTAINER_BACKUP () {
   if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
     echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
   else
-    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage - ${OR}will make backup, if you want${CL}"
+    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${OR} - will make backup, if you want${CL}"
     if [[ "$BACKUP" == true ]]; then
       echo -e "${BL}[Info] Create backup for LXC (this will take some time - please wait)${CL}"
       vzdump "$CONTAINER" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
@@ -351,7 +351,7 @@ VM_BACKUP () {
   if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
     echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
   else
-    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage - ${OR}will make backup, if you want${CL}"
+    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${OR} - will make backup, if you want${CL}"
     if [[ "$BACKUP" == true ]]; then
       echo -e "${BL}[Info] Create backup for VM (this will take some time - please wait)${CL}"
       vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
