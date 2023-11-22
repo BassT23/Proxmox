@@ -27,7 +27,7 @@ VERSION_CHECK () {
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
   if [[ "$BRANCH" == beta ]]; then
-    echo -e "${OR}*** Proxmox-Updater is beta branch ***${CL}"
+    echo -e "${OR}*** Proxmox-Updater is on beta branch ***${CL}"
   elif [[ "$BRANCH" == develop ]]; then
     echo -e "${OR}*** Proxmox-Updater is on develop branch ***${CL}"
   fi
