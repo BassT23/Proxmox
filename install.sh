@@ -327,9 +327,8 @@ WELCOME_SCREEN_INSTALL () {
 UNINSTALL () {
   if [ -f /usr/local/bin/update ]; then
     echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
-    echo -e "${RD}Really want to remove Proxmox-Updater?${CL}\n\
-Type [Y/y] for yes - anything else will exit: "
-    read -p "" -r
+    echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
+    read -p "Type [Y/y] for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
       rm -r /root/Proxmox-Updater
