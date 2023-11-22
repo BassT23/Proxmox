@@ -27,9 +27,9 @@ VERSION_CHECK () {
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
   if [[ "$BRANCH" == beta ]]; then
-    echo -e "\n${OR}        *** You are on beta branch ***${CL}"
+    echo -e "\n${OR}*** Proxmox-Updater is beta branch ***${CL}"
   elif [[ "$BRANCH" == develop ]]; then
-    echo -e "\n${OR}    *** You are on develop branch ***${CL}"
+    echo -e "\n${OR}*** Proxmox-Updater is on develop branch ***${CL}"
   fi
   if [[ "$SERVER_VERSION" > "$LOCAL_VERSION" ]]; then
     echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
@@ -39,9 +39,9 @@ VERSION_CHECK () {
   elif  [[ ! -s /root/update.sh ]]; then
     echo -e "${OR} *** You are offline - can't check version ***${CL}"
   elif [[ "$BRANCH" == master ]]; then
-      echo -e "             ${GN}Script is UpToDate${CL}"
+      echo -e "${GN}       Proxmox-Updater is UpToDate${CL}"
   fi
-  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "               Version: $LOCAL_VERSION\n"; fi
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "              Version: $LOCAL_VERSION\n"; fi
   rm -rf /root/update.sh
 }
 
