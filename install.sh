@@ -283,13 +283,13 @@ WELCOME_SCREEN () {
     curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater-Temp/check-updates.sh
     if ! [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
       echo -e "${OR} Welcome-Screen is not installed${CL}\n"
-      read -p "Would you like to install it also? Type [Y/y] or Enter for yes - anything else will skip: " -r && echo
+      read -p "Would you like to install it also? Type [Y/y] or Enter for yes - anything else will skip: " -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         WELCOME_SCREEN_INSTALL
       fi
     else
       echo -e "${OR}  Welcome-Screen is already installed${CL}\n"
-      read -p "Would you like to uninstall it? Type [Y/y] for yes - anything else will skip: " -r && echo
+      read -p "Would you like to uninstall it? Type [Y/y] for yes - anything else will skip: " -r
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -rf /etc/update-motd.d/01-welcome-screen || true
         rm -rf /etc/motd || true
@@ -308,7 +308,7 @@ ${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
 
 WELCOME_SCREEN_INSTALL () {
   echo -e "${OR} Welcome-Screen with or without neofetch?${CL}\n"
-  read -p "Type [Y/y] or Enter for yes - anything else will not install neofetch: " -r && echo
+  read -p "Type [Y/y] or Enter for yes - anything else will not install neofetch: " -r
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
     if ! [[ -f /usr/bin/neofetch ]]; then apt-get install neofetch -y; fi
   fi
