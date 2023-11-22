@@ -317,7 +317,7 @@ WELCOME_SCREEN_INSTALL () {
     echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
   fi
   echo -e "${OR}  with or without neofetch?${CL}"
-  read -p "  Type [Y/y] or Enter for yes - anything else will not install neofetch: " -r
+  read -p "  Type [Y/y] or Enter for install neofetch - anything else will install without neofetch: " -r
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
     if ! [[ -f /usr/bin/neofetch ]]; then apt-get install neofetch -y; fi
     echo -e "\n${GN} Welcome-Screen installed with neofetch${CL}"
