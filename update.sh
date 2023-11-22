@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.9.2"
+VERSION="3.9.3"
 
 # Branch
 BRANCH="develop"
@@ -250,6 +250,7 @@ UNINSTALL () {
   read -p "Type [Y/y] for yes - anything else will exit: " -r
   if [[ "$REPLY" =~ ^[Yy]$ ]]; then
     bash <(curl -s "$SERVER_URL"/install.sh) uninstall
+    exit 0
   else
     exit 2
   fi
