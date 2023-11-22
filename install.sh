@@ -305,8 +305,8 @@ ${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
 }
 
 WELCOME_SCREEN_INSTALL () {
-  echo -e "${OR} Welcome-Screen with or without neofetch?${CL}\n"
-  read -p "Type [Y/y] or Enter for yes - anything else will not install neofetch: " -r
+  echo -e "${OR}  with or without neofetch?${CL}"
+  read -p "  Type [Y/y] or Enter for yes - anything else will not install neofetch: " -r
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
     if ! [[ -f /usr/bin/neofetch ]]; then apt-get install neofetch -y; fi
   fi
