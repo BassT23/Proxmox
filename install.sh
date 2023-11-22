@@ -158,7 +158,7 @@ INSTALL () {
       cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
       echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}"
       echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
-      echo -e "${OR}Also want to install the Welcome-Screen?${CL}\n"
+      echo -e "${OR}Also want to install the Welcome-Screen?${CL}"
       read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         WELCOME_SCREEN_INSTALL
