@@ -4,10 +4,10 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.3.3"
+VERSION="1.3.4"
 
 # Branch
-BRANCH="beta"
+BRANCH="develop"
 
 # Variable / Function
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -73,8 +73,10 @@ MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
 # Welcome
-echo
-neofetch
+if [[ -f /etc/motd ]]; then
+  echo
+  neofetch
+fi
 VERSION_CHECK
 READ_WRITE_CONFIG
 if [[ -f /root/Proxmox-Updater/check-output ]]; then
