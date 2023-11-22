@@ -4,10 +4,10 @@
 # Install #
 ###########
 
-VERSION="1.6.7"
+VERSION="1.6.8"
 
 # Branch
-BRANCH="beta"
+BRANCH="develop"
 
 # Variable / Function
 LOCAL_FILES="/root/Proxmox-Updater"
@@ -307,10 +307,14 @@ ${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
 }
 
 WELCOME_SCREEN_INSTALL () {
+  echo -e "${OR} Welcome-Screen with or without neofetch?${CL}\n"
+  read -p "Type [Y/y] or Enter for yes - anything else will not install neofetch" -n 1 -r -s && echo
+  if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+    if ! [[ -f /usr/bin/neofetch ]]; then apt-get install neofetch -y; fi
+  fi
   if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
-  cp /etc/crontab /etc/crontab.bak
   touch /etc/motd
-  if ! [[ -f /usr/bin/neofetch ]]; then apt-get install neofetch -y; fi
+  cp /etc/crontab /etc/crontab.bak
   cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
   cp /root/Proxmox-Updater-Temp/check-updates.sh /root/Proxmox-Updater/check-updates.sh
   chmod +x /etc/update-motd.d/01-welcome-screen
