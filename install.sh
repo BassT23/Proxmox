@@ -132,7 +132,7 @@ INSTALL () {
     echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
       echo -e "${OR}Proxmox-Updater is already installed.${CL}"
-      read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit" -n 1 -r -s
+      read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit" -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh) update
       else
@@ -160,7 +160,7 @@ INSTALL () {
       echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
       echo -e "${OR}Also want to install the Welcome-Screen?${CL}\n\
 Type [Y/y] or Enter for yes - anything else will exit"
-      read -p "" -n 1 -r -s
+      read -p "" -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         WELCOME_SCREEN_INSTALL
       fi
@@ -175,7 +175,7 @@ UPDATE () {
         echo -e "${RD}Proxmox-Updater has changed directorys, so the old directory\n\
 /root/Update-Scripts will be delete.${CL}\n\
 ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
-        read -p "Type [Y/y] for DELETE - anything else will exit " -n 1 -r -s
+        read -p "Type [Y/y] for DELETE - anything else will exit " -r
         if [[ $REPLY =~ ^[Yy]$ ]]; then
           rm -rf /root/Update-Proxmox-Scripts || true
           bash <(curl -s $SERVER_URL/install.sh) update
@@ -239,7 +239,7 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
     else
       # Install, because no installation found
       echo -e "${RD}Proxmox-Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
-      read -p "Type [Y/y] or Enter for yes - anything else will exit" -n 1 -r -s
+      read -p "Type [Y/y] or Enter for yes - anything else will exit" -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh)
       else
@@ -259,7 +259,7 @@ CHECK_DIFF () {
     S or s  : show the differences between the versions\n \
  The default action is to install new version and backup current file.\n \
 *** $f (Y/y/N/n/S/s) [default=Y] ? "
-        read -p "" -n 1 -r -s
+        read -p "" -r
         if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
           echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
           cp -f "$LOCAL_FILES"/"$f" "$LOCAL_FILES"/"$f".bak
@@ -283,13 +283,13 @@ WELCOME_SCREEN () {
     curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater-Temp/check-updates.sh
     if ! [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
       echo -e "${OR} Welcome-Screen is not installed${CL}\n"
-      read -p "Would you like to install it also? Type [Y/y] or Enter for yes - anything else will skip" -n 1 -r -s && echo
+      read -p "Would you like to install it also? Type [Y/y] or Enter for yes - anything else will skip" -r && echo
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         WELCOME_SCREEN_INSTALL
       fi
     else
       echo -e "${OR}  Welcome-Screen is already installed${CL}\n"
-      read -p "Would you like to uninstall it? Type [Y/y] for yes - anything else will skip" -n 1 -r -s && echo
+      read -p "Would you like to uninstall it? Type [Y/y] for yes - anything else will skip" -r && echo
       if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -rf /etc/update-motd.d/01-welcome-screen || true
         rm -rf /etc/motd || true
@@ -308,7 +308,7 @@ ${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
 
 WELCOME_SCREEN_INSTALL () {
   echo -e "${OR} Welcome-Screen with or without neofetch?${CL}\n"
-  read -p "Type [Y/y] or Enter for yes - anything else will not install neofetch" -n 1 -r -s && echo
+  read -p "Type [Y/y] or Enter for yes - anything else will not install neofetch" -r && echo
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
     if ! [[ -f /usr/bin/neofetch ]]; then apt-get install neofetch -y; fi
   fi
@@ -331,7 +331,7 @@ UNINSTALL () {
     echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
     echo -e "${RD}Really want to remove Proxmox-Updater?${CL}\n\
 Type [Y/y] for yes - anything else will exit"
-    read -p "" -n 1 -r -s
+    read -p "" -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
       rm -r /root/Proxmox-Updater
