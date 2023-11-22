@@ -158,9 +158,8 @@ INSTALL () {
       cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
       echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}"
       echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
-      echo -e "${OR}Also want to install the Welcome-Screen?${CL}\n\
-Type [Y/y] or Enter for yes - anything else will exit: "
-      read -p "" -r
+      echo -e "${OR}Also want to install the Welcome-Screen?${CL}\n"
+      read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         WELCOME_SCREEN_INSTALL
       fi
@@ -257,21 +256,20 @@ CHECK_DIFF () {
     Y or y  : install the package maintainer's version (old file will be save as '$f.bak')\n \
     N or n  : keep your currently-installed version\n \
     S or s  : show the differences between the versions\n \
- The default action is to install new version and backup current file.\n \
-*** $f (Y/y/N/n/S/s) [default=Y] ? "
-        read -p "" -r
-        if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-          echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
-          cp -f "$LOCAL_FILES"/"$f" "$LOCAL_FILES"/"$f".bak
-          mv "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"
-        elif [[ $REPLY =~ ^[Nn]$ ]]; then
-          echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
-        elif [[ $REPLY =~ ^[Ss]$ ]]; then
-          echo
-          diff "$TEMP_FILES"/"$f" "$LOCAL_FILES/$f"
-        else
-          echo -e "\n${BL}[Info]${OR} Skip this file${CL}\n"
-        fi
+ The default action is to install new version and backup current file."
+    read -p "*** $f (Y/y/N/n/S/s) [default=Y] ?" -r
+      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+        echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
+        cp -f "$LOCAL_FILES"/"$f" "$LOCAL_FILES"/"$f".bak
+        mv "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"
+      elif [[ $REPLY =~ ^[Nn]$ ]]; then
+        echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
+      elif [[ $REPLY =~ ^[Ss]$ ]]; then
+        echo
+        diff "$TEMP_FILES"/"$f" "$LOCAL_FILES/$f"
+      else
+        echo -e "\n${BL}[Info]${OR} Skip this file${CL}\n"
+      fi
   fi
 }
 
@@ -330,7 +328,7 @@ UNINSTALL () {
   if [ -f /usr/local/bin/update ]; then
     echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
     echo -e "${RD}Really want to remove Proxmox-Updater?${CL}\n\
-Type [Y/y] for yes - anything else will exit"
+Type [Y/y] for yes - anything else will exit: "
     read -p "" -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
