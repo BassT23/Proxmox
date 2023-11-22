@@ -305,11 +305,6 @@ ${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
 }
 
 WELCOME_SCREEN_INSTALL () {
-  echo -e "${OR}  with or without neofetch?${CL}"
-  read -p "  Type [Y/y] or Enter for yes - anything else will not install neofetch: " -r
-  if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-    if ! [[ -f /usr/bin/neofetch ]]; then apt-get install neofetch -y; fi
-  fi
   if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
   touch /etc/motd
   cp /etc/crontab /etc/crontab.bak
@@ -321,7 +316,14 @@ WELCOME_SCREEN_INSTALL () {
   if ! grep -q "check-updates.sh" /etc/crontab; then
     echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
   fi
-  echo -e "\n${GN} Welcome-Screen installed${CL}"
+  echo -e "${OR}  with or without neofetch?${CL}"
+  read -p "  Type [Y/y] or Enter for yes - anything else will not install neofetch: " -r
+  if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+    if ! [[ -f /usr/bin/neofetch ]]; then apt-get install neofetch -y; fi
+    echo -e "\n${GN} Welcome-Screen installed with neofetch${CL}"
+  else
+    echo -e "\n${GN} Welcome-Screen installed without neofetch${CL}"
+  fi
 }
 
 UNINSTALL () {
