@@ -652,7 +652,7 @@ UPDATE_VM () {
         OS=$(ssh "$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
-          if ! ssh "$IP" 'ping -q -c1 "$CHECK_URL" &>/dev/null'; then
+          if ! ssh "$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
             echo -e "${OR} Internet is not reachable - skip update${CL}\n"
             return
           fi
