@@ -534,6 +534,11 @@ UPDATE_CONTAINER () {
       echo -e "${OR} Internet is not reachable - skip update${CL}\n"
       return
     fi
+  elif [[ "$OS" == alpine ]]; then
+    if ! pct exec "$CONTAINER" -- ash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
+      echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+      return
+    fi
   fi
   # Run update
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
