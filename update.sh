@@ -4,10 +4,10 @@
 # Update #
 ##########
 
-VERSION="3.9.2"
+VERSION="3.9.3"
 
 # Branch
-BRANCH="beta"
+BRANCH="develop"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
@@ -217,7 +217,7 @@ VERSION_CHECK () {
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ "$HEADLESS" != true ]]; then
       echo -e "${OR}Want to update Proxmox-Updater first?${CL}"
-      read -p "Type [Y/y] or Enter for yes - anything else will skip " -n 1 -r -s
+      read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
       if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
         bash <(curl -s "$SERVER_URL"/install.sh) update
       fi
@@ -235,7 +235,7 @@ VERSION_CHECK () {
 # Update Proxmox-Updater
 UPDATE () {
   echo -e "Update to $BRANCH branch?"
-  read -p "Type [Y/y] or [Enter] for yes - anything else will exit" -n 1 -r -s
+  read -p "Type [Y/y] or [Enter] for yes - anything else will exit: " -r
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
     bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
   else
@@ -247,9 +247,10 @@ UPDATE () {
 UNINSTALL () {
   echo -e "\n${BL}[Info]${OR} Uninstall Proxmox-Updater${CL}\n"
   echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
-  read -p "Type [Y/y] for yes - anything else will exit " -n 1 -r -s
+  read -p "Type [Y/y] for yes - anything else will exit: " -r
   if [[ "$REPLY" =~ ^[Yy]$ ]]; then
     bash <(curl -s "$SERVER_URL"/install.sh) uninstall
+    exit 2
   else
     exit 2
   fi
@@ -530,6 +531,11 @@ UPDATE_CONTAINER () {
   # Check Internet connection
   if [[ "$OS" != alpine ]]; then
     if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
+      echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+      return
+    fi
+  elif [[ "$OS" == alpine ]]; then
+    if ! pct exec "$CONTAINER" -- ash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
       echo -e "${OR} Internet is not reachable - skip update${CL}\n"
       return
     fi
