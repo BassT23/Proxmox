@@ -2,7 +2,7 @@ Changelog:
 ==========
 
 **v3.9.3** (beta)
-- fix alpine issue (internet check don't work for now in alpine - skip)
+- fix alpine issue
 - add real snapshut support before update - if your storage setup support it
 - you can now choose, if neofetch will be installed during installation
 - code cleaning
