@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.9.3"
+VERSION="3.9.4"
 
 # Branch
 BRANCH="beta"
@@ -42,11 +42,11 @@ EOF
   if [[ "$INFO" != false ]]; then
     echo -e "\n \
            ***  Mode: $MODE***"
-    if [[ "$HEADLESS" == true ]]; then
-      echo -e "            ***    Headless    ***"
-    else
-      echo -e "            ***   Interactive  ***"
-    fi
+#    if [[ "$HEADLESS" == true ]]; then
+#      echo -e "            ***    Headless    ***"
+#    else
+#      echo -e "            ***   Interactive  ***"
+#    fi
   fi
   CHECK_ROOT
   CHECK_INTERNET
@@ -839,6 +839,9 @@ READ_CONFIG
 OUTPUT_TO_FILE
 IP=$(hostname -I)
 ARGUMENTS "$@"
+
+# Disable "Interactive Mode"
+HEADLESS=true
 
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true ]]; then
