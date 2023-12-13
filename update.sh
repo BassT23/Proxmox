@@ -4,10 +4,10 @@
 # Update #
 ##########
 
-VERSION="3.9.4"
+VERSION="3.9.5"
 
 # Branch
-BRANCH="beta"
+BRANCH="develop"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
@@ -367,8 +367,8 @@ VM_BACKUP () {
 EXTRAS () {
   if [[ "$EXTRA_GLOBAL" != true ]]; then
     echo -e "\n${OR}--- Skip Extra Updates because of user settings ---${CL}\n"
-  elif [[ "$HEADLESS" == true && "$EXTRA_IN_HEADLESS" == false ]]; then
-    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
+#  elif [[ "$HEADLESS" == true && "$EXTRA_IN_HEADLESS" == false ]]; then
+#    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
   else
     echo -e "\n${OR}--- Searching for extra updates ---${CL}"
     if [[ "$SSH_CONNECTION" != true ]]; then
@@ -534,11 +534,11 @@ UPDATE_CONTAINER () {
       echo -e "${OR} Internet is not reachable - skip update${CL}\n"
       return
     fi
-  elif [[ "$OS" == alpine ]]; then
-    if ! pct exec "$CONTAINER" -- ash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
-      echo -e "${OR} Internet is not reachable - skip update${CL}\n"
-      return
-    fi
+#  elif [[ "$OS" == alpine ]]; then
+#    if ! pct exec "$CONTAINER" -- ash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
+#      echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+#      return
+#    fi
   fi
   # Run update
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
@@ -620,7 +620,6 @@ VM_UPDATE_START () {
           WILL_STOP="false"
         else
           echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH not initialized${CL}\n\n"
-          return
         fi
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
@@ -796,8 +795,12 @@ CLEAN_LOGFILE () {
 # Exit
 EXIT () {
   EXIT_CODE=$?
-  EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' ~/Proxmox-Updater/temp/exec_host)
-  scp /root/Proxmox-Updater/check-output "$EXEC_HOST":/root/Proxmox-Updater/check-output
+  if [[ -f ~/Proxmox-Updater/temp/exec_host ]]; then
+    EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' ~/Proxmox-Updater/temp/exec_host)
+  fi
+  if [[ -f /root/Proxmox-Updater/check-output ]]; then
+    scp /root/Proxmox-Updater/check-output "$EXEC_HOST":/root/Proxmox-Updater/check-output
+  fi
   # Exit without echo
   if [[ "$EXIT_CODE" == 2 ]]; then
     exit
@@ -819,7 +822,7 @@ EXIT () {
   sleep 3
   rm -rf ~/Proxmox-Updater/temp/var
   rm -rf /root/Proxmox-Updater/update
-  if [[ "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf /root/Proxmox-Updater; fi
+  if [[ -f ~/Proxmox-Updater/temp/exec_host && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf /root/Proxmox-Updater; fi
 }
 set -e
 trap EXIT EXIT
