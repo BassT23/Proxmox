@@ -79,10 +79,11 @@ if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
 fi
 
 # Docker-Compose
+
 if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
-  COMPOSE=$(find /home -name "docker-compose.*" 2> /dev/null | rev | cut -c 20- | rev)
+  COMPOSE=$(find /home -name "docker-compose.*" 2> /dev/null | rev | cut -c 20- | rev | tail -n 1)
   cd "$COMPOSE" || exit
-  echo -e "\n*** Updating Docker-Compose ***\n"
+  echo -e "\n*** Updating Docker-Compose ***"
   # Get the containers from first argument, else get all containers
   CONTAINER_LIST="${1:-$(docker ps -q)}"
   for CONTAINER in ${CONTAINER_LIST}; do
