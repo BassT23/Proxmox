@@ -3,7 +3,7 @@ Changelog:
 
 **v3.9.5** (develop)
 - fix loop through vms
-- fix docker compose v2
+- fix new docker compose command
 
 **v3.9.3** (beta)
 - fix alpine issue
