@@ -664,9 +664,9 @@ UPDATE_VM () {
           ssh "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
           if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh "$IP" apt-get upgrade -y
+            ssh "$IP" DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
           else
-            ssh "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+            ssh "$IP" DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
           ssh "$IP" apt-get --purge autoremove -y
