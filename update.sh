@@ -42,11 +42,11 @@ EOF
   if [[ "$INFO" != false ]]; then
     echo -e "\n \
            ***  Mode: $MODE***"
-#    if [[ "$HEADLESS" == true ]]; then
-#      echo -e "            ***    Headless    ***"
-#    else
-#      echo -e "            ***   Interactive  ***"
-#    fi
+    if [[ "$HEADLESS" == true ]]; then
+      echo -e "            ***    Headless    ***"
+    else
+      echo -e "            ***   Interactive  ***"
+    fi
   fi
   CHECK_ROOT
   CHECK_INTERNET
@@ -367,8 +367,8 @@ VM_BACKUP () {
 EXTRAS () {
   if [[ "$EXTRA_GLOBAL" != true ]]; then
     echo -e "\n${OR}--- Skip Extra Updates because of user settings ---${CL}\n"
-#  elif [[ "$HEADLESS" == true && "$EXTRA_IN_HEADLESS" == false ]]; then
-#    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
+  elif [[ "$HEADLESS" == true && "$EXTRA_IN_HEADLESS" == false ]]; then
+    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
   else
     echo -e "\n${OR}--- Searching for extra updates ---${CL}"
     if [[ "$SSH_CONNECTION" != true ]]; then
@@ -664,32 +664,32 @@ UPDATE_VM () {
           ssh "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
           if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh "$IP" DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+            ssh -tt "$IP" apt-get upgrade -y
           else
-            ssh "$IP" DEBIAN_FRONTEND=noninteractive apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+            ssh -tt "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh "$IP" apt-get --purge autoremove -y
+          ssh -tt "$IP" apt-get --purge autoremove -y
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Fedora ]]; then
           echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-          ssh "$IP" dnf -y upgrade
+          ssh -tt "$IP" dnf -y upgrade
           echo -e "\n${OR}--- DNF CLEANING ---${CL}"
           ssh "$IP" dnf -y --purge autoremove
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Arch ]]; then
           echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh "$IP" pacman -Syyu --noconfirm
+          ssh -tt "$IP" pacman -Syyu --noconfirm
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Alpine ]]; then
           echo -e "${OR}--- APK UPDATE ---${CL}"
-          ssh "$IP" apk -U upgrade
+          ssh -tt "$IP" apk -U upgrade
         elif [[ "$OS" =~ CentOS ]]; then
           echo -e "${OR}--- YUM UPDATE ---${CL}"
-          ssh "$IP" yum -y update
+          ssh -tt "$IP" yum -y update
           EXTRAS
           UPDATE_CHECK
         else
@@ -842,9 +842,6 @@ READ_CONFIG
 OUTPUT_TO_FILE
 IP=$(hostname -I)
 ARGUMENTS "$@"
-
-# Disable "Interactive Mode"
-HEADLESS=true
 
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true ]]; then
