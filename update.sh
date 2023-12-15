@@ -439,8 +439,12 @@ UPDATE_HOST () {
     scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
     if [[ "$WELCOME_SCREEN" == true ]]; then
       scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
-      scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
-      scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
+      if [[ "$WELCOME_SCREEN" == true ]]; then
+        scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
+      fi
+      if [[ -f ~/Proxmox-Updater/temp/exec_host ]]; then
+        scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
+      fi
     fi
     if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
       scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
@@ -798,7 +802,7 @@ EXIT () {
   if [[ -f ~/Proxmox-Updater/temp/exec_host ]]; then
     EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' ~/Proxmox-Updater/temp/exec_host)
   fi
-  if [[ -f /root/Proxmox-Updater/check-output ]]; then
+  if [[ "$WELCOME_SCREEN" == true ]]; then
     scp /root/Proxmox-Updater/check-output "$EXEC_HOST":/root/Proxmox-Updater/check-output
   fi
   # Exit without echo
