@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.9.4"
+VERSION="3.9.6"
 
 # Branch
 BRANCH="beta"
@@ -42,11 +42,11 @@ EOF
   if [[ "$INFO" != false ]]; then
     echo -e "\n \
            ***  Mode: $MODE***"
-#    if [[ "$HEADLESS" == true ]]; then
-#      echo -e "            ***    Headless    ***"
-#    else
-#      echo -e "            ***   Interactive  ***"
-#    fi
+    if [[ "$HEADLESS" == true ]]; then
+      echo -e "            ***    Headless    ***"
+    else
+      echo -e "            ***   Interactive  ***"
+    fi
   fi
   CHECK_ROOT
   CHECK_INTERNET
@@ -534,11 +534,11 @@ UPDATE_CONTAINER () {
       echo -e "${OR} Internet is not reachable - skip update${CL}\n"
       return
     fi
-  elif [[ "$OS" == alpine ]]; then
-    if ! pct exec "$CONTAINER" -- ash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
-      echo -e "${OR} Internet is not reachable - skip update${CL}\n"
-      return
-    fi
+#  elif [[ "$OS" == alpine ]]; then
+#    if ! pct exec "$CONTAINER" -- ash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
+#      echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+#      return
+#    fi
   fi
   # Run update
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
@@ -620,7 +620,6 @@ VM_UPDATE_START () {
           WILL_STOP="false"
         else
           echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH not initialized${CL}\n\n"
-          return
         fi
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
@@ -665,32 +664,32 @@ UPDATE_VM () {
           ssh "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
           if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh "$IP" apt-get upgrade -y
+            ssh -tt "$IP" apt-get upgrade -y
           else
-            ssh "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+            ssh -tt "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh "$IP" apt-get --purge autoremove -y
+          ssh -tt "$IP" apt-get --purge autoremove -y
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Fedora ]]; then
           echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-          ssh "$IP" dnf -y upgrade
+          ssh -tt "$IP" dnf -y upgrade
           echo -e "\n${OR}--- DNF CLEANING ---${CL}"
           ssh "$IP" dnf -y --purge autoremove
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Arch ]]; then
           echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh "$IP" pacman -Syyu --noconfirm
+          ssh -tt "$IP" pacman -Syyu --noconfirm
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Alpine ]]; then
           echo -e "${OR}--- APK UPDATE ---${CL}"
-          ssh "$IP" apk -U upgrade
+          ssh -tt "$IP" apk -U upgrade
         elif [[ "$OS" =~ CentOS ]]; then
           echo -e "${OR}--- YUM UPDATE ---${CL}"
-          ssh "$IP" yum -y update
+          ssh -tt "$IP" yum -y update
           EXTRAS
           UPDATE_CHECK
         else
@@ -796,8 +795,12 @@ CLEAN_LOGFILE () {
 # Exit
 EXIT () {
   EXIT_CODE=$?
-  EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' ~/Proxmox-Updater/temp/exec_host)
-  scp /root/Proxmox-Updater/check-output "$EXEC_HOST":/root/Proxmox-Updater/check-output
+  if [[ -f ~/Proxmox-Updater/temp/exec_host ]]; then
+    EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' ~/Proxmox-Updater/temp/exec_host)
+  fi
+  if [[ -f /root/Proxmox-Updater/check-output ]]; then
+    scp /root/Proxmox-Updater/check-output "$EXEC_HOST":/root/Proxmox-Updater/check-output
+  fi
   # Exit without echo
   if [[ "$EXIT_CODE" == 2 ]]; then
     exit
@@ -819,7 +822,7 @@ EXIT () {
   sleep 3
   rm -rf ~/Proxmox-Updater/temp/var
   rm -rf /root/Proxmox-Updater/update
-  if [[ "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf /root/Proxmox-Updater; fi
+  if [[ -f ~/Proxmox-Updater/temp/exec_host && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf /root/Proxmox-Updater; fi
 }
 set -e
 trap EXIT EXIT
@@ -839,9 +842,6 @@ READ_CONFIG
 OUTPUT_TO_FILE
 IP=$(hostname -I)
 ARGUMENTS "$@"
-
-# Disable "Interactive Mode"
-HEADLESS=true
 
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true ]]; then

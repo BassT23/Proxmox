@@ -1,8 +1,10 @@
 Changelog:
 ==========
 
-**v3.9.3** (beta)
-- fix alpine issue
+**v3.9.6** (beta)
+- fix loop through vms
+- fix new docker compose command
+- fix alpine issue (disable internet check for now)
 - add real snapshut support before update - if your storage setup support it
 - you can now choose, if neofetch will be installed during installation
 - code cleaning
