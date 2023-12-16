@@ -442,13 +442,11 @@ UPDATE_HOST () {
       if [[ "$WELCOME_SCREEN" == true ]]; then
         scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
       fi
-      if [[ -f ~/Proxmox-Updater/temp/exec_host ]]; then
-        scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
-      fi
     fi
-    if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
+    scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
+#    if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
       scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
-    fi
+#    fi
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
@@ -779,8 +777,8 @@ OUTPUT_TO_FILE () {
   if [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
     WELCOME_SCREEN=true
     if [[ "$RICM" != true ]]; then
-      echo 'EXEC_HOST="'"$HOSTNAME"'"' > ~/Proxmox-Updater/temp/exec_host
       touch /root/Proxmox-Updater/check-output
+      echo 'EXEC_HOST="'"$HOSTNAME"'"' > ~/Proxmox-Updater/temp/exec_host
     fi
   fi
 }
