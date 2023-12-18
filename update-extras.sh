@@ -4,7 +4,7 @@
 # Update-Extras #
 #################
 
-VERSION="1.8.2"
+VERSION="1.8.3"
 
 # Variables
 CONFIG_FILE="/root/Proxmox-Updater/update.conf"
@@ -79,10 +79,14 @@ if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
 fi
 
 # Docker-Compose
-if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
-  COMPOSE=$(find /home -name "docker-compose.*" 2> /dev/null | rev | cut -c 20- | rev)
+if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
+  if COMPOSE=$(find /home -name "docker-compose.yaml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
+    :
+  elif COMPOSE=$(find /home -name "docker-compose.yml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
+    :
+  fi
   cd "$COMPOSE" || exit
-  echo -e "\n*** Updating Docker-Compose ***\n"
+  echo -e "\n*** Updating Docker-Compose ***"
   # Get the containers from first argument, else get all containers
   CONTAINER_LIST="${1:-$(docker ps -q)}"
   for CONTAINER in ${CONTAINER_LIST}; do
@@ -96,7 +100,7 @@ if [[ -f "/usr/local/bin/docker-compose" && $DOCKER_COMPOSE == true ]]; then
     # Restart the container if the image is different by name
     if [[ ${RUNNING_IMAGE} != "${LATEST_IMAGE}" ]]; then
       echo "Updating ${CONTAINER} image ${CONTAINER_IMAGE}"
-      /usr/local/bin/docker-compose up -d --no-deps --build "$NAME"
+      docker compose up -d --no-deps --build "$NAME"
     fi
   done
   # Cleaning

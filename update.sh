@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="3.9"
+VERSION="4.0"
 
 # Branch
 BRANCH="master"
@@ -189,7 +189,7 @@ USAGE () {
     echo -e "  -s --silent          Silent / Headless Mode"
     echo -e "  master               Use master branch"
     echo -e "  beta                 Use beta branch"
-    echo -e "  develop          Use develop branch\n"
+    echo -e "  develop              Use develop branch\n"
     echo -e "{COMMAND}:"
     echo -e "========="
     echo -e "  -h --help            Show this help"
@@ -217,7 +217,7 @@ VERSION_CHECK () {
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ "$HEADLESS" != true ]]; then
       echo -e "${OR}Want to update Proxmox-Updater first?${CL}"
-      read -p "Type [Y/y] or Enter for yes - anything else will skip " -n 1 -r -s
+      read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
       if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
         bash <(curl -s "$SERVER_URL"/install.sh) update
       fi
@@ -235,7 +235,7 @@ VERSION_CHECK () {
 # Update Proxmox-Updater
 UPDATE () {
   echo -e "Update to $BRANCH branch?"
-  read -p "Type [Y/y] or [Enter] for yes - anything else will exit" -n 1 -r -s
+  read -p "Type [Y/y] or [Enter] for yes - anything else will exit: " -r
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
     bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
   else
@@ -247,9 +247,10 @@ UPDATE () {
 UNINSTALL () {
   echo -e "\n${BL}[Info]${OR} Uninstall Proxmox-Updater${CL}\n"
   echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
-  read -p "Type [Y/y] for yes - anything else will exit " -n 1 -r -s
+  read -p "Type [Y/y] for yes - anything else will exit: " -r
   if [[ "$REPLY" =~ ^[Yy]$ ]]; then
     bash <(curl -s "$SERVER_URL"/install.sh) uninstall
+    exit 2
   else
     exit 2
   fi
@@ -330,23 +331,35 @@ READ_CONFIG () {
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
 }
 
-# Backup
+# Snapshot/Backup
 CONTAINER_BACKUP () {
-  if [[ "$BACKUP" == true ]]; then
-    echo -e "${BL}[Info] Create backup for LXC $CONTAINER${CL}"
-    vzdump "$CONTAINER" --mode snapshot --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)"
-    echo -e "${BL}[Info] Snapshot created${CL}\n"
+  echo -e "${BL}[Info]${OR} Try to create snapshot, otherwise could make a backup for container $CONTAINER${CL}"
+  if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
+    echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
   else
-    echo -e "${OR}[Info] Backup Skipped by user for LXC $CONTAINER${CL}"
+    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${OR} - will make backup, if you want${CL}"
+    if [[ "$BACKUP" == true ]]; then
+      echo -e "${BL}[Info] Create backup for LXC (this will take some time - please wait)${CL}"
+      vzdump "$CONTAINER" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
+      echo -e "${BL}[Info]${GN} Backup created${CL}\n"
+    else
+      echo -e "${BL}[Info]${OR} Backup skipped by user${CL}\n"
+    fi
   fi
 }
 VM_BACKUP () {
-  if [[ "$BACKUP" == true ]]; then
-    echo -e "${BL}[Info] Create backup for VM $VM${CL}"
-    vzdump "$VM" --mode snapshot --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)"
-    echo -e "${BL}[Info] Snapshot created${CL}\n"
+  echo -e "${BL}[Info]${OR} Try to create snapshot, otherwise could make a backup for VM $VM${CL}"
+  if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
+    echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
   else
-    echo -e "${OR}[Info] Backup Skipped by user for LXC $CONTAINER${CL}"
+    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${OR} - will make backup, if you want${CL}"
+    if [[ "$BACKUP" == true ]]; then
+      echo -e "${BL}[Info] Create backup for VM (this will take some time - please wait)${CL}"
+      vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
+      echo -e "${BL}[Info]${GN} Backup created${CL}\n"
+    else
+      echo -e "${BL}[Info]${OR} Backup skipped by user${CL}\n"
+    fi
   fi
 }
 
@@ -426,12 +439,14 @@ UPDATE_HOST () {
     scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf
     if [[ "$WELCOME_SCREEN" == true ]]; then
       scp /root/Proxmox-Updater/check-updates.sh "$HOST":/root/Proxmox-Updater/check-updates.sh
-      scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
-      scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
+      if [[ "$WELCOME_SCREEN" == true ]]; then
+        scp /root/Proxmox-Updater/check-output "$HOST":/root/Proxmox-Updater/check-output
+      fi
     fi
-    if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
+    scp ~/Proxmox-Updater/temp/exec_host "$HOST":~/Proxmox-Updater/temp
+#    if [[ -d /root/Proxmox-Updater/VMs/ ]]; then
       scp -r /root/Proxmox-Updater/VMs/ "$HOST":/root/Proxmox-Updater/
-    fi
+#    fi
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
@@ -516,10 +531,18 @@ UPDATE_CONTAINER () {
   fi
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   # Check Internet connection
-  if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
-    echo -e "${OR} Internet is not reachable - skip update${CL}\n"
-    return
+  if [[ "$OS" != alpine ]]; then
+    if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
+      echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+      return
+    fi
+#  elif [[ "$OS" == alpine ]]; then
+#    if ! pct exec "$CONTAINER" -- ash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
+#      echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+#      return
+#    fi
   fi
+  # Run update
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "apt-get update"
@@ -599,7 +622,6 @@ VM_UPDATE_START () {
           WILL_STOP="false"
         else
           echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH not initialized${CL}\n\n"
-          return
         fi
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
@@ -636,7 +658,7 @@ UPDATE_VM () {
         OS=$(ssh "$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
-          if ! ssh "$IP" "ping -q -c1 $CHECK_URL &>/dev/null"; then
+          if ! ssh "$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
             echo -e "${OR} Internet is not reachable - skip update${CL}\n"
             return
           fi
@@ -644,32 +666,32 @@ UPDATE_VM () {
           ssh "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
           if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh "$IP" apt-get upgrade -y
+            ssh -tt "$IP" apt-get upgrade -y
           else
-            ssh "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+            ssh -tt "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh "$IP" apt-get --purge autoremove -y
+          ssh -tt "$IP" apt-get --purge autoremove -y
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Fedora ]]; then
           echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-          ssh "$IP" dnf -y upgrade
+          ssh -tt "$IP" dnf -y upgrade
           echo -e "\n${OR}--- DNF CLEANING ---${CL}"
           ssh "$IP" dnf -y --purge autoremove
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Arch ]]; then
           echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh "$IP" pacman -Syyu --noconfirm
+          ssh -tt "$IP" pacman -Syyu --noconfirm
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Alpine ]]; then
           echo -e "${OR}--- APK UPDATE ---${CL}"
-          ssh "$IP" apk -U upgrade
+          ssh -tt "$IP" apk -U upgrade
         elif [[ "$OS" =~ CentOS ]]; then
           echo -e "${OR}--- YUM UPDATE ---${CL}"
-          ssh "$IP" yum -y update
+          ssh -tt "$IP" yum -y update
           EXTRAS
           UPDATE_CHECK
         else
@@ -755,8 +777,8 @@ OUTPUT_TO_FILE () {
   if [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
     WELCOME_SCREEN=true
     if [[ "$RICM" != true ]]; then
-      echo 'EXEC_HOST="'"$HOSTNAME"'"' > ~/Proxmox-Updater/temp/exec_host
       touch /root/Proxmox-Updater/check-output
+      echo 'EXEC_HOST="'"$HOSTNAME"'"' > ~/Proxmox-Updater/temp/exec_host
     fi
   fi
 }
@@ -775,8 +797,12 @@ CLEAN_LOGFILE () {
 # Exit
 EXIT () {
   EXIT_CODE=$?
-  EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' ~/Proxmox-Updater/temp/exec_host)
-  scp /root/Proxmox-Updater/check-output "$EXEC_HOST":/root/Proxmox-Updater/check-output
+  if [[ -f ~/Proxmox-Updater/temp/exec_host ]]; then
+    EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' ~/Proxmox-Updater/temp/exec_host)
+  fi
+  if [[ "$WELCOME_SCREEN" == true ]]; then
+    scp /root/Proxmox-Updater/check-output "$EXEC_HOST":/root/Proxmox-Updater/check-output
+  fi
   # Exit without echo
   if [[ "$EXIT_CODE" == 2 ]]; then
     exit
@@ -798,7 +824,7 @@ EXIT () {
   sleep 3
   rm -rf ~/Proxmox-Updater/temp/var
   rm -rf /root/Proxmox-Updater/update
-  if [[ "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf /root/Proxmox-Updater; fi
+  if [[ -f ~/Proxmox-Updater/temp/exec_host && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf /root/Proxmox-Updater; fi
 }
 set -e
 trap EXIT EXIT

@@ -32,19 +32,20 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 
 ### Features:
 - Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
+- Snapshot / Backup support (for Snapshot, your system must prepared for it)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Logging to ``/var/log/update-"$HOSTNAME".log``
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/root/Proxmox-Updater/exit`)
-- [Config file](https://github.com/BassT23/Proxmox#config-file)
+- [Config file](https://github.com/BassT23/Proxmox/tree/master#config-file)
 
 Info can be found with `update -h`
 
-Changelog: [here](https://github.com/BassT23/Proxmox/blob/beta/change.log)
+Changelog: [here](https://github.com/BassT23/Proxmox/blob/master/change.log)
 
 
 ### What does the script do:
 - The script make system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
-- Before the LXC/VM update start, a backup can be created. This must be enabled in `update.conf` by user
+- Make a snapshot befor update (if your storage support it - [look here](https://pve.proxmox.com/wiki/Storage)). If not supported, you can choose to make a real backup, but this must be enabled in `update.conf` by user (take long time!)
 - After all, the updater makes an little cleaning (like `apt autoremove`) 
 - If the script detects "extra" installations, it could update this also. Look in config file, for that.
 
@@ -83,7 +84,7 @@ So connect from first node (on which you install the Proxmox-Updater) to node2 w
 
 2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
 
-     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/develop/ssh.md)
+     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/master/ssh.md)
 
 
 # Update the script:
@@ -123,7 +124,7 @@ The Welcome Screen is an extra for you. Its optional!
 - The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
 - The update-checker also use the config file!
 - To force the check, you can run `/root/Proxmox-Updater/check-updates.sh` in Terminal.
-- Need neofetch to be installed (if it is not installed, script will make it automatically)
+- You can choose, if neofetch will be show also (if neofetch is not installed, script will make it automatically)
 
 
 # Beta Testing:
