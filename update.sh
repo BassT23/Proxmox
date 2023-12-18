@@ -4,10 +4,10 @@
 # Update #
 ##########
 
-VERSION="3.9.6"
+VERSION="4.0"
 
 # Branch
-BRANCH="beta"
+BRANCH="master"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
