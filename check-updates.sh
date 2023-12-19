@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-VERSION="1.4.6"
+VERSION="1.4.7"
 
 #Variable / Function
 CONFIG_FILE="/root/Ultimative-Updater/update.conf"
