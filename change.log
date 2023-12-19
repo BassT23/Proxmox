@@ -1,7 +1,7 @@
 Changelog:
 ==========
 
-**v3.9.6** (beta)
+**v4.0** (18.12.2023)
 - fix loop through vms
 - fix new docker compose command
 - fix alpine issue (disable internet check for now)
