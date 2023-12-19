@@ -4,13 +4,13 @@
 # Install #
 ###########
 
-VERSION="1.6.8"
+VERSION="1.6.9"
 
 # Branch
 BRANCH="develop"
 
 # Variable / Function
-LOCAL_FILES="/root/Proxmox-Updater"
+LOCAL_FILES="/root/Ultimative-Updater"
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 #Colors
@@ -100,10 +100,10 @@ USAGE () {
         echo -e "=========="
         echo -e "  -h --help            Show this help"
         echo -e "  status               Check current installation status"
-        echo -e "  install              Install Proxmox-Updater"
+        echo -e "  install              Install Ultimative-Updater"
         echo -e "  welcome              Install or Uninstall Welcome Screen"
-        echo -e "  uninstall            Uninstall Proxmox-Updater"
-        echo -e "  update               Update Proxmox-Updater\n"
+        echo -e "  uninstall            Uninstall Ultimative-Updater"
+        echo -e "  update               Update Ultimative-Updater\n"
         echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
     fi
 }
@@ -118,7 +118,7 @@ isInstalled () {
 
 STATUS () {
     if [[ $SILENT != true ]]; then
-        echo -e "Proxmox-Updater"
+        echo -e "Ultimative-Updater"
         if isInstalled; then
             echo -e "Status: ${GN}present${CL}\n"
         else
@@ -129,9 +129,9 @@ STATUS () {
 }
 
 INSTALL () {
-    echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater${CL}\n"
+    echo -e "\n${BL}[Info]${GN} Installing Ultimative-Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
-      echo -e "${OR}Proxmox-Updater is already installed.${CL}"
+      echo -e "${OR}Ultimative-Updater is already installed.${CL}"
       read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh) update
@@ -140,14 +140,14 @@ INSTALL () {
         exit 0
       fi
     else
-      mkdir -p /root/Proxmox-Updater/exit
-      mkdir -p /root/Proxmox-Updater/VMs
+      mkdir -p /root/Ultimative-Updater/exit
+      mkdir -p /root/Ultimative-Updater/VMs
       # Download latest release
-      if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
-        curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
-        tar -zxf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz -C /root/Proxmox-Updater-Temp
-        rm -rf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz || true
-        TEMP_FILES=/root/Proxmox-Updater-Temp
+      if ! [[ -d /root/Ultimative-Updater-Temp ]];then mkdir /root/Ultimative-Updater-Temp; fi
+        curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Ultimative-Updater-Temp/Ultimative-Updater.tar.gz
+        tar -zxf /root/Ultimative-Updater-Temp/Ultimative-Updater.tar.gz -C /root/Ultimative-Updater-Temp
+        rm -rf /root/Ultimative-Updater-Temp/Ultimative-Updater.tar.gz || true
+        TEMP_FILES=/root/Ultimative-Updater-Temp
       # Copy files
       cp "$TEMP_FILES"/update.sh /usr/local/bin/update
       chmod 750 /usr/local/bin/update
@@ -156,22 +156,23 @@ INSTALL () {
       chmod -R +x "$LOCAL_FILES"/exit/*.sh
       cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
       cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
-      echo -e "${OR}Finished. Run Proxmox-Updater with 'update'.${CL}"
+      echo -e "${OR}Finished. Run Ultimative-Updater with 'update'.${CL}"
       echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
       echo -e "${OR}Also want to install the Welcome-Screen?${CL}"
       read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         WELCOME_SCREEN_INSTALL
       fi
-      rm -rf /root/Proxmox-Updater-Temp || true
+      rm -rf /root/Ultimative-Updater-Temp || true
     fi
 }
 
 UPDATE () {
     if [ -f "/usr/local/bin/update" ]; then
       # Check for old filesystem
-      if [ -d "/root/Proxmox-Update-Scripts" ]; then
-        echo -e "${RD}Proxmox-Updater has changed directorys, so the old directory\n\
+      if [[ -d /root/Proxmox-Updater/ ]]; then mv /root/Proxmox-Updater/ /root/Ultimative-Updater/; fi
+      if [ -d "/root/Ultimative-Update-Scripts" ]; then
+        echo -e "${RD}Ultimative-Updater has changed directorys, so the old directory\n\
 /root/Update-Scripts will be delete.${CL}\n\
 ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
         read -p "Type [Y/y] for DELETE - anything else will exit: " -r
@@ -185,20 +186,20 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
         # Update
         echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
         # Download files
-        if ! [[ -d /root/Proxmox-Updater-Temp ]]; then mkdir /root/Proxmox-Updater-Temp; fi
+        if ! [[ -d /root/Ultimative-Updater-Temp ]]; then mkdir /root/Ultimative-Updater-Temp; fi
         if [[ "$BRANCH" == master ]]; then
-          curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
+          curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O /root/Ultimative-Updater-Temp/Ultimative-Updater.tar.gz
         elif [[ "$BRANCH" == beta ]]; then
-          curl -s -L https://github.com/BassT23/Proxmox/tarball/beta > /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
+          curl -s -L https://github.com/BassT23/Proxmox/tarball/beta > /root/Ultimative-Updater-Temp/Ultimative-Updater.tar.gz
         elif [[ "$BRANCH" == develop ]]; then
-          curl -s -L https://github.com/BassT23/Proxmox/tarball/develop > /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz
+          curl -s -L https://github.com/BassT23/Proxmox/tarball/develop > /root/Ultimative-Updater-Temp/Ultimative-Updater.tar.gz
         fi
-        tar -zxf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz -C /root/Proxmox-Updater-Temp
-        rm -rf /root/Proxmox-Updater-Temp/Proxmox-Updater.tar.gz || true
+        tar -zxf /root/Ultimative-Updater-Temp/Ultimative-Updater.tar.gz -C /root/Ultimative-Updater-Temp
+        rm -rf /root/Ultimative-Updater-Temp/Ultimative-Updater.tar.gz || true
         if [[ "$BRANCH" == master ]]; then
-          TEMP_FILES=/root/Proxmox-Updater-Temp
+          TEMP_FILES=/root/Ultimative-Updater-Temp
         else
-          TEMP_FILES=/root/Proxmox-Updater-Temp/$(ls /root/Proxmox-Updater-Temp)
+          TEMP_FILES=/root/Ultimative-Updater-Temp/$(ls /root/Ultimative-Updater-Temp)
         fi
         # Copy files
         mv "$TEMP_FILES"/update.sh /usr/local/bin/update
@@ -206,8 +207,8 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
         if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
           mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
           chmod +x /etc/update-motd.d/01-welcome-screen
-          mv "$TEMP_FILES"/check-updates.sh /root/Proxmox-Updater/check-updates.sh
-          chmod +x /root/Proxmox-Updater/check-updates.sh
+          mv "$TEMP_FILES"/check-updates.sh /root/Ultimative-Updater/check-updates.sh
+          chmod +x /root/Ultimative-Updater/check-updates.sh
         else
           rm -rf "$TEMP_FILES"/welcome-screen.sh || true
           rm -rf "$TEMP_FILES"/check-updates.sh || true
@@ -230,14 +231,14 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
         do
          CHECK_DIFF
         done
-        rm -rf /root/Proxmox-Updater-Temp || true
-        echo -e "${GN}Proxmox-Updater updated successfully.${CL}"
+        rm -rf /root/Ultimative-Updater-Temp || true
+        echo -e "${GN}Ultimative-Updater updated successfully.${CL}"
         if [[ "$BRANCH" != master ]]; then echo -e "${OR}  Installed: $BRANCH version${CL}"; fi
         echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
       fi
     else
       # Install, because no installation found
-      echo -e "${RD}Proxmox-Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
+      echo -e "${RD}Ultimative-Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
       read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh)
@@ -275,10 +276,10 @@ CHECK_DIFF () {
 
 WELCOME_SCREEN () {
   if [[ $COMMAND != true ]]; then
-    echo -e "\n${BL}[Info]${GN} Installing Proxmox-Updater Welcome-Screen${CL}\n"
-    if ! [[ -d /root/Proxmox-Updater-Temp ]];then mkdir /root/Proxmox-Updater-Temp; fi
-    curl -s $SERVER_URL/welcome-screen.sh > /root/Proxmox-Updater-Temp/welcome-screen.sh
-    curl -s $SERVER_URL/check-updates.sh > /root/Proxmox-Updater-Temp/check-updates.sh
+    echo -e "\n${BL}[Info]${GN} Installing Ultimative-Updater Welcome-Screen${CL}\n"
+    if ! [[ -d /root/Ultimative-Updater-Temp ]];then mkdir /root/Ultimative-Updater-Temp; fi
+    curl -s $SERVER_URL/welcome-screen.sh > /root/Ultimative-Updater-Temp/welcome-screen.sh
+    curl -s $SERVER_URL/check-updates.sh > /root/Ultimative-Updater-Temp/check-updates.sh
     if ! [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
       echo -e "${OR} Welcome-Screen is not installed${CL}\n"
       read -p "Would you like to install it also? Type [Y/y] or Enter for yes - anything else will skip: " -r
@@ -300,7 +301,7 @@ WELCOME_SCREEN () {
 ${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
       fi
     fi
-    rm -rf /root/Proxmox-Updater-Temp || true
+    rm -rf /root/Ultimative-Updater-Temp || true
   fi
 }
 
@@ -308,13 +309,13 @@ WELCOME_SCREEN_INSTALL () {
   if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
   touch /etc/motd
   cp /etc/crontab /etc/crontab.bak
-  cp /root/Proxmox-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
-  cp /root/Proxmox-Updater-Temp/check-updates.sh /root/Proxmox-Updater/check-updates.sh
+  cp /root/Ultimative-Updater-Temp/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
+  cp /root/Ultimative-Updater-Temp/check-updates.sh /root/Ultimative-Updater/check-updates.sh
   chmod +x /etc/update-motd.d/01-welcome-screen
-  chmod +x /root/Proxmox-Updater/check-updates.sh
-  if ! [[ -f /root/Proxmox-Updater/check-output ]]; then touch /root/Proxmox-Updater/check-output; fi
+  chmod +x /root/Ultimative-Updater/check-updates.sh
+  if ! [[ -f /root/Ultimative-Updater/check-output ]]; then touch /root/Ultimative-Updater/check-output; fi
   if ! grep -q "check-updates.sh" /etc/crontab; then
-    echo "00 07,19 * * *  root    /root/Proxmox-Updater/check-updates.sh" >> /etc/crontab
+    echo "00 07,19 * * *  root    /root/Ultimative-Updater/check-updates.sh" >> /etc/crontab
   fi
   echo -e "${OR}  with or without neofetch?${CL}"
   read -p "  Type [Y/y] or Enter for install neofetch - anything else will install without neofetch: " -r
@@ -328,12 +329,12 @@ WELCOME_SCREEN_INSTALL () {
 
 UNINSTALL () {
   if [ -f /usr/local/bin/update ]; then
-    echo -e "\n${BL}[Info]${GN} Uninstall Proxmox-Updater${CL}\n"
-    echo -e "${RD}Really want to remove Proxmox-Updater?${CL}"
+    echo -e "\n${BL}[Info]${GN} Uninstall Ultimative-Updater${CL}\n"
+    echo -e "${RD}Really want to remove Ultimative-Updater?${CL}"
     read -p "Type [Y/y] for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
-      rm -r /root/Proxmox-Updater
+      rm -r /root/Ultimative-Updater
       if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
         chmod -x /etc/update-motd.d/01-welcome-screen
         rm -rf /etc/motd
@@ -344,12 +345,12 @@ UNINSTALL () {
         mv /etc/crontab.bak /etc/crontab
         mv /etc/crontab.bak2 /etc/crontab.bak
       fi
-      echo -e "\n\n${BL} Proxmox-Updater removed${CL}\n\
+      echo -e "\n\n${BL} Ultimative-Updater removed${CL}\n\
 ${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
       exit 0
     fi
   else
-    echo -e "${RD}Proxmox-Updater is not installed.${CL}\n"
+    echo -e "${RD}Ultimative-Updater is not installed.${CL}\n"
   fi
 }
 
@@ -363,7 +364,7 @@ EXIT () {
 #  elif [[ $EXIT_CODE == "1" ]]; then
 #    exit 0
   elif [[ $EXIT_CODE != "0" ]]; then
-    rm -rf /root/Proxmox-Updater-Temp || true
+    rm -rf /root/Ultimative-Updater-Temp || true
     echo -e "${RD}Error during install --- Exit Code: $EXIT_CODE${CL}\n"
   fi
 }
