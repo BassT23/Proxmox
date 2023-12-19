@@ -7,7 +7,7 @@
 VERSION="1.4.6"
 
 #Variable / Function
-CONFIG_FILE="/root/Proxmox-Updater/update.conf"
+CONFIG_FILE="/root/Ultimative-Updater/update.conf"
 
 # Colors
 BL="\e[36m"
@@ -97,8 +97,8 @@ HOST_CHECK_START () {
 # Host Check
 CHECK_HOST () {
   HOST=$1
-  ssh "$HOST" mkdir -p /root/Proxmox-Updater
-  scp /root/Proxmox-Updater/update.conf "$HOST":/root/Proxmox-Updater/update.conf >/dev/null 2>&1
+  ssh "$HOST" mkdir -p /root/Ultimative-Updater
+  scp /root/Ultimative-Updater/update.conf "$HOST":/root/Ultimative-Updater/update.conf >/dev/null 2>&1
   ssh "$HOST" 'bash -s' < "$0" -- "-c host"
 
 }
@@ -127,7 +127,7 @@ CONTAINER_CHECK_START () {
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   # Loop through the containers
-  if ! [[ -d /root/Proxmox-Updater/temp/ ]]; then mkdir /root/Proxmox-Updater/temp/; fi
+  if ! [[ -d /root/Ultimative-Updater/temp/ ]]; then mkdir /root/Ultimative-Updater/temp/; fi
   for CONTAINER in $CONTAINERS; do
     if [[ "$ONLY" == "" ]] && [[ "$EXCLUDED" =~ $CONTAINER ]]; then
       continue
@@ -147,7 +147,7 @@ CONTAINER_CHECK_START () {
       fi
     fi
   done
-  rm -rf /root/Proxmox-Updater/temp/temp
+  rm -rf /root/Ultimative-Updater/temp/temp
 }
 
 # Container Check
@@ -155,10 +155,10 @@ CHECK_CONTAINER () {
   if [[ "$RDU" != true ]]; then
     CONTAINER=$1
   else
-    CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' /root/Proxmox-Updater/temp/var)
+    CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' /root/Ultimative-Updater/temp/var)
   fi
-  pct config "$CONTAINER" > /root/Proxmox-Updater/temp/temp
-  OS=$(awk '/^ostype/' /root/Proxmox-Updater/temp/temp | cut -d' ' -f2)
+  pct config "$CONTAINER" > /root/Ultimative-Updater/temp/temp
+  OS=$(awk '/^ostype/' /root/Ultimative-Updater/temp/temp | cut -d' ' -f2)
   if [[ "$OS" =~ centos ]]; then
     NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
   else
@@ -223,7 +223,7 @@ VM_CHECK_START () {
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Check if connection is available
-        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
+        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Ultimative-Updater/VMs/"$VM" ]]; then
           # Start the VM
           qm start "$VM" >/dev/null 2>&1
           sleep 45
@@ -243,11 +243,11 @@ CHECK_VM () {
   if [[ "$RDU" != true ]]; then
     VM=$1
   else
-    VM=$(awk -F'"' '/^VM=/ {print $2}' /root/Proxmox-Updater/temp/var)
+    VM=$(awk -F'"' '/^VM=/ {print $2}' /root/Ultimative-Updater/temp/var)
   fi
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
-  if [[ -f /root/Proxmox-Updater/VMs/"$VM" ]]; then
-    IP=$(awk -F'"' '/^IP=/ {print $2}' /root/Proxmox-Updater/VMs/"$VM")
+  if [[ -f /root/Ultimative-Updater/VMs/"$VM" ]]; then
+    IP=$(awk -F'"' '/^IP=/ {print $2}' /root/Ultimative-Updater/VMs/"$VM")
     if ! (ssh "$IP" exit) >/dev/null 2>&1; then
       CHECK_VM_QEMU
     else
@@ -347,8 +347,8 @@ CHECK_VM_QEMU () {
 # Output to file
 OUTPUT_TO_FILE () {
   if [[ "$RDU" != true && "$RICM" != true ]]; then
-    touch /root/Proxmox-Updater/check-output
-    exec > >(tee /root/Proxmox-Updater/check-output)
+    touch /root/Ultimative-Updater/check-output
+    exec > >(tee /root/Ultimative-Updater/check-output)
   fi
 }
 
