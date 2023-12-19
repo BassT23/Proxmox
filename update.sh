@@ -4,14 +4,14 @@
 # Update #
 ##########
 
-VERSION="4.0"
+VERSION="4.0.1"
 
 # Branch
-BRANCH="master"
+BRANCH="develop"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
-CONFIG_FILE="/root/Proxmox-Updater/update.conf"
+CONFIG_FILE="/root/Ultimative-Updater/update.conf"
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 # Colors
@@ -27,16 +27,16 @@ HEADER_INFO () {
   echo -e "\n \
     https://github.com/BassT23/Proxmox"
   cat <<'EOF'
-     ____
-    / __ \_________  _  ______ ___  ____  _  __
-   / /_/ / ___/ __ \| |/_/ __ `__ \/ __ \| |/_/
-  / ____/ /  / /_/ />  </ / / / / / /_/ />  <
- /_/   /_/   \____/_/|_/_/ /_/ /_/\____/_/|_|
-      __  __          __      __
-     / / / /___  ____/ /___ _/ /____  ____
-    / / / / __ \/ __  / __ `/ __/ _ \/ __/
-   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
-   \____/ .___/\____/\____/\__/\___/_/
+   __  ______  _                 __  _          
+  / / / / / /_(_)___ ___  ____ _/ /_(_)   _____ 
+ / / / / / __/ / __ `__ \/ __ `/ __/ / | / / _ \
+/ /_/ / / /_/ / / / / / / /_/ / /_/ /| |/ /  __/
+\____/_/\__/_/_/ /_/ /_/\__,_/\__/_/ |___/\___/ 
+      __  __          __      __           
+     / / / /___  ____/ /___ _/ /____  _____
+    / / / / __ \/ __  / __ `/ __/ _ \/ ___/
+   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /    
+   \____/ .___/\__,_/\__,_/\__/\___/_/     
        /_/
 EOF
   if [[ "$INFO" != false ]]; then
