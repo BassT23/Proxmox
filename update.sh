@@ -329,6 +329,7 @@ READ_CONFIG () {
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
+  SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
@@ -338,33 +339,39 @@ READ_CONFIG () {
 
 # Snapshot/Backup
 CONTAINER_BACKUP () {
-  echo -e "${BL}[Info]${OR} Try to create snapshot, otherwise could make a backup for container $CONTAINER${CL}"
-  if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
-    echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
-  else
-    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${OR} - will make backup, if you want${CL}"
+  if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
+    if [[ "$SNAPSHOT" == true ]]; then
+      if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
+        echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
+      else
+        echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${CL}"
+      fi
+    fi
     if [[ "$BACKUP" == true ]]; then
       echo -e "${BL}[Info] Create backup for LXC (this will take some time - please wait)${CL}"
       vzdump "$CONTAINER" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "${BL}[Info]${GN} Backup created${CL}\n"
-    else
-      echo -e "${BL}[Info]${OR} Backup skipped by user${CL}\n"
     fi
+  else
+    echo -e "${BL}[Info]${OR} Snapshot and Backup skipped by user${CL}\n"
   fi
 }
 VM_BACKUP () {
-  echo -e "${BL}[Info]${OR} Try to create snapshot, otherwise could make a backup for VM $VM${CL}"
-  if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
-    echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
-  else
-    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${OR} - will make backup, if you want${CL}"
+  if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
+    if [[ "$SNAPSHOT" == true ]]; then
+      if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
+        echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
+      else
+        echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${CL}"
+      fi
+    fi
     if [[ "$BACKUP" == true ]]; then
       echo -e "${BL}[Info] Create backup for VM (this will take some time - please wait)${CL}"
       vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "${BL}[Info]${GN} Backup created${CL}\n"
-    else
-      echo -e "${BL}[Info]${OR} Backup skipped by user${CL}\n"
     fi
+  else
+    echo -e "${BL}[Info]${OR} Snapshot and Backup skipped by user${CL}\n"
   fi
 }
 
@@ -449,9 +456,7 @@ UPDATE_HOST () {
       fi
     fi
     scp ~/Ultimative-Updater/temp/exec_host "$HOST":~/Ultimative-Updater/temp
-#    if [[ -d /root/Ultimative-Updater/VMs/ ]]; then
-      scp -r /root/Ultimative-Updater/VMs/ "$HOST":/root/Ultimative-Updater/
-#    fi
+    scp -r /root/Ultimative-Updater/VMs/ "$HOST":/root/Ultimative-Updater/
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
@@ -499,7 +504,6 @@ CONTAINER_UPDATE_START () {
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
         WILL_STOP="true"
-        CONTAINER_BACKUP
         echo -e "${BL}[Info]${GN} Starting LXC ${BL}$CONTAINER ${CL}"
         pct start "$CONTAINER"
         echo -e "${BL}[Info]${GN} Waiting for LXC ${BL}$CONTAINER${CL}${GN} to start ${CL}"
@@ -512,7 +516,6 @@ CONTAINER_UPDATE_START () {
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
-        CONTAINER_BACKUP
         UPDATE_CONTAINER "$CONTAINER"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
@@ -547,6 +550,10 @@ UPDATE_CONTAINER () {
 #      return
 #    fi
   fi
+  # Backup
+  echo -e "${BL}[Info]${OR} Start snaphot and/or backup${CL}"
+  CONTAINER_BACKUP
+  echo
   # Run update
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
@@ -614,7 +621,6 @@ VM_UPDATE_START () {
         if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Ultimative-Updater/VMs/"$VM" ]]; then
           # Start the VM
           WILL_STOP="true"
-          VM_BACKUP
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
           qm start "$VM" >/dev/null 2>&1
           echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
@@ -631,7 +637,6 @@ VM_UPDATE_START () {
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
-        VM_BACKUP
         UPDATE_VM "$VM"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
@@ -648,6 +653,11 @@ UPDATE_VM () {
   CVM="true"
   echo 'VM="'"$VM"'"' > ~/Ultimative-Updater/temp/var
   echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
+  # Backup
+  echo -e "${BL}[Info]${OR} Start snaphot and/or backup${CL}"
+  VM_BACKUP
+  echo
+  # Run Update
   if [[ -f /root/Ultimative-Updater/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' /root/Ultimative-Updater/VMs/"$VM")
     if ! (ssh "$IP" exit >/dev/null 2>&1); then
@@ -719,6 +729,11 @@ UPDATE_VM_QEMU () {
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
+    # Backup
+    echo -e "${BL}[Info]${OR} Start snaphot and/or backup${CL}"
+    VM_BACKUP
+    echo
+    # Run Update
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       # Check Internet connection
