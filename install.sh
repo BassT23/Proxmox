@@ -7,13 +7,11 @@
 VERSION="1.7"
 
 # Branch
-#BRANCH="develop"
+BRANCH="develop"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
-CONFIG_FILE="$LOCAL_FILES/update.conf"
-BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 #Colors
