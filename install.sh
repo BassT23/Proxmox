@@ -149,9 +149,10 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
   rm -rf /etc/update-motd.d/01-updater.bak || true
   # Check an renew to new structure
   if [[ -f /usr/local/bin/update ]] && [[ ! -f /usr/local/sbin/update ]]; then
-    mv /usr/local/bin/update $LOCAL_FILES/update.sh
-    ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
-    echo -e "${RD}  Please reboot, to make The Ultimative Updater workable\n${CL}"
+    echo -e "${RD}  Need to renew files. This branch not working for now\n${CL}"
+#    mv /usr/local/bin/update $LOCAL_FILES/update.sh
+#    ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
+#    echo -e "${RD}  Please reboot, to make The Ultimative Updater workable\n${CL}"
     exit 0
   fi
 }
