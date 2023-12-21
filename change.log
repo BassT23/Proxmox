@@ -2,8 +2,9 @@ Changelog:
 ==========
 
 **v4.0.1** (develop)
-- name changing
 - disable/enable Snapshots and Backups in config file
+- name changing
+- move Program to correct folder system
 
 **v4.0** (18.12.2023)
 - fix loop through vms
