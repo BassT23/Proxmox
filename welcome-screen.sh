@@ -26,7 +26,7 @@ CL="\e[0m"
 VERSION_CHECK () {
   curl -s $SERVER_URL/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
-  LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
+  LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.sh)
   if [[ "$BRANCH" == beta ]]; then
     echo -e "${OR}*** The Ultimate Updater is on beta branch ***${CL}"
   elif [[ "$BRANCH" == develop ]]; then
