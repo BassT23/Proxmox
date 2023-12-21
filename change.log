@@ -1,7 +1,7 @@
 Changelog:
 ==========
 
-**v4.0.1** (develop)
+**v4.0.2** (develop)
 - disable/enable Snapshots and Backups in config file
 - name changing
 - move Program to correct folder system
