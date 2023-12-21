@@ -350,7 +350,7 @@ UNINSTALL () {
       rm /usr/local/sbin/update
       rm -r $LOCAL_FILES
       if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
-        chmod -x /etc/update-motd.d/01-welcome-screen
+        rm -rf /etc/update-motd.d/01-welcome-screen
         rm -rf /etc/motd
         if [[ -f /etc/motd.bak ]]; then
           mv /etc/motd.bak /etc/motd
