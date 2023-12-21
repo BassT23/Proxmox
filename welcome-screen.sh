@@ -7,11 +7,12 @@
 VERSION="1.3.5"
 
 # Branch
-BRANCH="develop"
+#BRANCH="develop"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
-CONFIG_FILE="/root/ultimate-updater/update.conf"
+CONFIG_FILE="$LOCAL_FILES/update.conf"
+BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 CHECK_OUTPUT=$(stat -c%s $LOCAL_FILES/check-output)
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
