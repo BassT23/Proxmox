@@ -26,13 +26,13 @@ CL="\e[0m"
 HEADER_INFO () {
   clear
   echo -e "\n \
-    https://github.com/BassT23/Proxmox"
+    https://github.com/BassT23/Proxmox\n"
   cat <<'EOF'
  The __  ______  _                 __
     / / / / / /_(_)___ ___  ____ _/ /____
    / / / / / __/ / __ `__ \/ __ `/ __/ _ \
   / /_/ / / /_/ / / / / / / /_/ / /_/  __/
-  \____/_/\__/_/_/ /_/ /_/\__,_/\__/\___/
+  \____/_/\__/_/_/ /_/ /_/\____/\__/\___/
      __  __          __      __
     / / / /___  ____/ /___ _/ /____  _____
    / / / / __ \/ __  / __ `/ __/ _ \/ ___/
@@ -231,7 +231,7 @@ VERSION_CHECK () {
     fi
     VERSION_NOT_SHOW=true
   elif [[ "$BRANCH" == master ]]; then
-      echo -e "\n             ${GN}Script is UpToDate${CL}"
+      echo -e "\n              ${GN}Script is UpToDate${CL}"
   fi
   if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "               Version: $VERSION"; fi
   rm -rf $LOCAL_FILES/temp/update.sh && echo
@@ -343,7 +343,7 @@ CONTAINER_BACKUP () {
   if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
-        echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
+        echo -e "${BL}[Info]${GN} Snapshot created${CL}"
       else
         echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${CL}"
       fi
@@ -354,14 +354,14 @@ CONTAINER_BACKUP () {
       echo -e "${BL}[Info]${GN} Backup created${CL}\n"
     fi
   else
-    echo -e "${BL}[Info]${OR} Snapshot and Backup skipped by user${CL}\n"
+    echo -e "${BL}[Info]${OR} Snapshot and Backup skipped by user${CL}"
   fi
 }
 VM_BACKUP () {
   if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
       if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
-        echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
+        echo -e "${BL}[Info]${GN} Snapshot created${CL}"
       else
         echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${CL}"
       fi
@@ -369,10 +369,10 @@ VM_BACKUP () {
     if [[ "$BACKUP" == true ]]; then
       echo -e "${BL}[Info] Create backup for VM (this will take some time - please wait)${CL}"
       vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
-      echo -e "${BL}[Info]${GN} Backup created${CL}\n"
+      echo -e "${BL}[Info]${GN} Backup created${CL}"
     fi
   else
-    echo -e "${BL}[Info]${OR} Snapshot and Backup skipped by user${CL}\n"
+    echo -e "${BL}[Info]${OR} Snapshot and Backup skipped by user${CL}"
   fi
 }
 
