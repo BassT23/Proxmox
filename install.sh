@@ -154,7 +154,7 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
     ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
     rm /usr/local/bin/update
     echo -e "${RD}  Please reboot, to make The Ultimative Updater workable\n${CL}"
-    exit 0
+    exit 2
   fi
 }
 
