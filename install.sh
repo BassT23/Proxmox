@@ -25,13 +25,13 @@ CL="\e[0m"
 HEADER_INFO () {
   clear
   echo -e "\n \
-      https://github.com/BassT23/Proxmox"
+      https://github.com/BassT23/Proxmox\n"
   cat <<'EOF'
  The __  ______  _                 __
     / / / / / /_(_)___ ___  ____ _/ /____
    / / / / / __/ / __ `__ \/ __ `/ __/ _ \
   / /_/ / / /_/ / / / / / / /_/ / /_/  __/
-  \____/_/\__/_/_/ /_/ /_/\__,_/\__/\___/
+  \____/_/\__/_/_/ /_/ /_/\____/\__/\___/
      __  __          __      __
     / / / /___  ____/ /___ _/ /____  _____
    / / / / __ \/ __  / __ `/ __/ _ \/ ___/
@@ -110,7 +110,7 @@ USAGE () {
 }
 
 isInstalled () {
-    if [ -f "/usr/local/bin/update" ]; then
+    if [ -f "/usr/local/sbin/update" ]; then
         true
     else
         false
@@ -147,11 +147,18 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
   # Delete old files (old filesystem)
   rm -rf /etc/update-motd.d/01-updater || true
   rm -rf /etc/update-motd.d/01-updater.bak || true
+  # Check an renew to new structure
+  if [[ -f /usr/local/bin/update ]] && [[ ! -f /usr/local/sbin/update ]] && [[ -f $LOCAL_FILES/update.sh ]]; then
+    mv /usr/local/bin/update $LOCAL_FILES/update.sh
+    ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
+    echo -e " Please reboot, to make The Ultimative Updater workable"
+    exit 0
+  fi
 }
 
 INSTALL () {
     echo -e "\n${BL}[Info]${GN} Installing The Ultimate Updater${CL}\n"
-    if [ -f "/usr/local/bin/update" ]; then
+    if [ -f "/usr/local/sbin/update" ]; then
       echo -e "${OR}The Ultimate Updater is already installed.${CL}"
       read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
@@ -170,8 +177,9 @@ INSTALL () {
         rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
         TEMP_FILES=$TEMP_FOLDER
       # Copy files
-      cp "$TEMP_FILES"/update.sh /usr/local/bin/update
-      chmod 750 /usr/local/bin/update
+      cp "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
+      chmod 750 $LOCAL_FILES/update.sh
+      ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
       cp "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
       cp "$TEMP_FILES"/exit/* $LOCAL_FILES/exit/
       chmod -R +x "$LOCAL_FILES"/exit/*.sh
@@ -190,7 +198,7 @@ INSTALL () {
 
 UPDATE () {
   OLD_FILESYSTEM_CHECK
-  if [ -f "/usr/local/bin/update" ]; then
+  if [ -f "/usr/local/sbin/update" ]; then
     # Update
     echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
     # Download files
@@ -210,8 +218,8 @@ UPDATE () {
       TEMP_FILES=$TEMP_FOLDER/$(ls $TEMP_FOLDER)
     fi
     # Copy files
-    mv "$TEMP_FILES"/update.sh /usr/local/bin/update
-    chmod 750 /usr/local/bin/update
+    mv "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
+    chmod 750 $LOCAL_FILES/update.sh
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
       chmod +x /etc/update-motd.d/01-welcome-screen
