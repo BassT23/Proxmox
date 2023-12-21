@@ -7,7 +7,7 @@
 VERSION="1.4.7"
 
 #Variable / Function
-LOCAL_FILES="/etc/Ultimate-Updater"
+LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 
 # Colors
