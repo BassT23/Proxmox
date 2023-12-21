@@ -149,7 +149,7 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
   rm -rf /etc/update-motd.d/01-updater.bak || true
   # Check an renew to new structure
   if [[ -f /usr/local/bin/update ]] && [[ ! -f /usr/local/sbin/update ]]; then
-    curl  -s -L https://github.com/BassT23/Proxmox/tarball/$BRANCH/update.sh > $LOCAL_FILES/update.sh
+    curl  -s -L https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/update.sh > $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
     ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
     rm /usr/local/bin/update
