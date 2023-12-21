@@ -4,10 +4,7 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.3.5"
-
-# Branch
-#BRANCH="develop"
+VERSION="1.3.6"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -17,15 +14,13 @@ CHECK_OUTPUT=$(stat -c%s $LOCAL_FILES/check-output)
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 # Colors
-# BL="\e[36m"
 OR="\e[1;33m"
-RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
 
 # Version Check
 VERSION_CHECK () {
-  curl -s $SERVER_URL/update.sh > /root/update.sh
+  curl -s "$SERVER_URL"/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.sh)
   if [[ "$BRANCH" == beta ]]; then
@@ -53,8 +48,6 @@ READ_WRITE_CONFIG () {
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
   RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
-#  EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
-#  ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   if [[ $ONLY != "" ]]; then
