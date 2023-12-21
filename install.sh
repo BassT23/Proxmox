@@ -90,7 +90,6 @@ ARGUMENTS () {
         exit 1;
         ;;
     esac
-#    shift
   done
 }
 
@@ -377,8 +376,6 @@ EXIT () {
   # Install Finish
   if  [[ $EXIT_CODE -lt 2 ]]; then
     exit 0
-#  elif [[ $EXIT_CODE == "1" ]]; then
-#    exit 0
   elif [[ $EXIT_CODE != "0" ]]; then
     rm -rf $TEMP_FOLDER || true
     echo -e "${RD}Error during install --- Exit Code: $EXIT_CODE${CL}\n"
