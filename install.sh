@@ -148,7 +148,7 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
   rm -rf /etc/update-motd.d/01-updater || true
   rm -rf /etc/update-motd.d/01-updater.bak || true
   # Check an renew to new structure
-  if [[ -f /usr/local/bin/update ]] && [[ ! -f /usr/local/sbin/update ]] && [[ -f $LOCAL_FILES/update.sh ]]; then
+  if [[ -f /usr/local/bin/update ]] && [[ ! -f /usr/local/sbin/update ]]; then
     mv /usr/local/bin/update $LOCAL_FILES/update.sh
     ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
     echo -e " Please reboot, to make The Ultimative Updater workable"
