@@ -4,13 +4,13 @@
 # Install #
 ###########
 
-VERSION="1.6.9"
+VERSION="1.7"
 
 # Branch
 BRANCH="develop"
 
 # Variable / Function
-LOCAL_FILES="/etc/Ultimate-Updater"
+LOCAL_FILES="/etc/ultimate-updater"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
@@ -101,10 +101,10 @@ USAGE () {
         echo -e "=========="
         echo -e "  -h --help            Show this help"
         echo -e "  status               Check current installation status"
-        echo -e "  install              Install Ultimate-Updater"
+        echo -e "  install              Install The Ultimate Updater"
         echo -e "  welcome              Install or Uninstall Welcome Screen"
-        echo -e "  uninstall            Uninstall Ultimate-Updater"
-        echo -e "  update               Update Ultimate-Updater\n"
+        echo -e "  uninstall            Uninstall The Ultimate Updater"
+        echo -e "  update               Update The Ultimate Updater\n"
         echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
     fi
 }
@@ -119,7 +119,7 @@ isInstalled () {
 
 STATUS () {
     if [[ $SILENT != true ]]; then
-        echo -e "Ultimate-Updater"
+        echo -e "The Ultimate Updater"
         if isInstalled; then
             echo -e "Status: ${GN}present${CL}\n"
         else
@@ -150,9 +150,9 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
 }
 
 INSTALL () {
-    echo -e "\n${BL}[Info]${GN} Installing Ultimate-Updater${CL}\n"
+    echo -e "\n${BL}[Info]${GN} Installing The Ultimate Updater${CL}\n"
     if [ -f "/usr/local/bin/update" ]; then
-      echo -e "${OR}Ultimate-Updater is already installed.${CL}"
+      echo -e "${OR}The Ultimate Updater is already installed.${CL}"
       read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         bash <(curl -s $SERVER_URL/install.sh) update
@@ -165,9 +165,9 @@ INSTALL () {
       mkdir -p $LOCAL_FILES/VMs
       # Download latest release
       if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-        curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/Ultimate-Updater.tar.gz
-        tar -zxf $TEMP_FOLDER/Ultimate-Updater.tar.gz -C $TEMP_FOLDER
-        rm -rf $TEMP_FOLDER/Ultimate-Updater.tar.gz || true
+        curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
+        tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
+        rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
         TEMP_FILES=$TEMP_FOLDER
       # Copy files
       cp "$TEMP_FILES"/update.sh /usr/local/bin/update
@@ -177,7 +177,7 @@ INSTALL () {
       chmod -R +x "$LOCAL_FILES"/exit/*.sh
       cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
       cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
-      echo -e "${OR}Finished. Run Ultimate-Updater with 'update'.${CL}"
+      echo -e "${OR}Finished. Run The Ultimate Updater with 'update'.${CL}"
       echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
       echo -e "${OR}Also want to install the Welcome-Screen?${CL}"
       read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
@@ -196,14 +196,14 @@ UPDATE () {
     # Download files
     if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
     if [[ "$BRANCH" == master ]]; then
-      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/Ultimate-Updater.tar.gz
+      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
     elif [[ "$BRANCH" == beta ]]; then
-      curl -s -L https://github.com/BassT23/Proxmox/tarball/beta > $TEMP_FOLDER/Ultimate-Updater.tar.gz
+      curl -s -L https://github.com/BassT23/Proxmox/tarball/beta > $TEMP_FOLDER/ultimate-updater.tar.gz
     elif [[ "$BRANCH" == develop ]]; then
-      curl -s -L https://github.com/BassT23/Proxmox/tarball/develop > $TEMP_FOLDER/Ultimate-Updater.tar.gz
+      curl -s -L https://github.com/BassT23/Proxmox/tarball/develop > $TEMP_FOLDER/ultimate-updater.tar.gz
     fi
-    tar -zxf $TEMP_FOLDER/Ultimate-Updater.tar.gz -C $TEMP_FOLDER
-    rm -rf $TEMP_FOLDER/Ultimate-Updater.tar.gz || true
+    tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
+    rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
     if [[ "$BRANCH" == master ]]; then
       TEMP_FILES=$TEMP_FOLDER
     else
@@ -237,12 +237,12 @@ UPDATE () {
      CHECK_DIFF
     done
     rm -rf $TEMP_FOLDER || true
-    echo -e "${GN}Ultimate-Updater updated successfully.${CL}"
+    echo -e "${GN}The Ultimate Updater updated successfully.${CL}"
     if [[ "$BRANCH" != master ]]; then echo -e "${OR}  Installed: $BRANCH version${CL}"; fi
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
   else
     # Install, because no installation found
-    echo -e "${RD}Ultimate-Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
+    echo -e "${RD}The Ultimate Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
     read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
       bash <(curl -s $SERVER_URL/install.sh)
@@ -280,7 +280,7 @@ CHECK_DIFF () {
 
 WELCOME_SCREEN () {
   if [[ $COMMAND != true ]]; then
-    echo -e "\n${BL}[Info]${GN} Installing Ultimate-Updater Welcome-Screen${CL}\n"
+    echo -e "\n${BL}[Info]${GN} Installing The Ultimate Updater Welcome-Screen${CL}\n"
     if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
     curl -s $SERVER_URL/welcome-screen.sh > $TEMP_FOLDER/welcome-screen.sh
     curl -s $SERVER_URL/check-updates.sh > $TEMP_FOLDER/check-updates.sh
@@ -333,8 +333,8 @@ WELCOME_SCREEN_INSTALL () {
 
 UNINSTALL () {
   if [ -f /usr/local/bin/update ]; then
-    echo -e "\n${BL}[Info]${GN} Uninstall Ultimate-Updater${CL}\n"
-    echo -e "${RD}Really want to remove Ultimate-Updater?${CL}"
+    echo -e "\n${BL}[Info]${GN} Uninstall The Ultimate Updater${CL}\n"
+    echo -e "${RD}Really want to remove The Ultimate Updater?${CL}"
     read -p "Type [Y/y] for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/bin/update
@@ -349,12 +349,12 @@ UNINSTALL () {
         mv /etc/crontab.bak /etc/crontab
         mv /etc/crontab.bak2 /etc/crontab.bak
       fi
-      echo -e "\n\n${BL} Ultimate-Updater removed${CL}\n\
+      echo -e "\n\n${BL} The Ultimate Updater has gone${CL}\n\
 ${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
       exit 0
     fi
   else
-    echo -e "${RD}Ultimate-Updater is not installed.${CL}\n"
+    echo -e "${RD}The Ultimate Updater is not installed.${CL}\n"
   fi
 }
 
