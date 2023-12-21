@@ -151,7 +151,7 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
   if [[ -f /usr/local/bin/update ]] && [[ ! -f /usr/local/sbin/update ]]; then
     mv /usr/local/bin/update $LOCAL_FILES/update.sh
     ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
-    echo -e " Please reboot, to make The Ultimative Updater workable"
+    echo -e "${RD}  Please reboot, to make The Ultimative Updater workable\n${CL}"
     exit 0
   fi
 }
