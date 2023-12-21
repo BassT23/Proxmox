@@ -11,7 +11,7 @@ BRANCH="develop"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
-LOCAL_FILES="/etc/Ultimate-Updater"
+LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
@@ -190,7 +190,7 @@ ARGUMENTS () {
 USAGE () {
   if [[ "$HEADLESS" != true ]]; then
     echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
-    echo -e "[OPTIONS] Manages the Ultimate-Updater:"
+    echo -e "[OPTIONS] Manages the Ultimate Updater:"
     echo -e "======================================"
     echo -e "  -s --silent          Silent / Headless Mode"
     echo -e "  master               Use master branch"
@@ -199,10 +199,10 @@ USAGE () {
     echo -e "{COMMAND}:"
     echo -e "========="
     echo -e "  -h --help            Show this help"
-    echo -e "  -v --version         Show Ultimate-Updater Version"
-    echo -e "  -up                  Update Ultimate-Updater"
+    echo -e "  -v --version         Show The Ultimate Updater Version"
+    echo -e "  -up                  Update The Ultimate Updater"
     echo -e "  status               Show Status (Version Infos)"
-    echo -e "  uninstall            Uninstall Ultimate-Updater\n"
+    echo -e "  uninstall            Uninstall The Ultimate Updater\n"
     echo -e "  host                 Host-Mode"
     echo -e "  cluster              Cluster-Mode\n"
     echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
@@ -222,7 +222,7 @@ VERSION_CHECK () {
     echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ "$HEADLESS" != true ]]; then
-      echo -e "${OR}Want to update Ultimate-Updater first?${CL}"
+      echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
       read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
       if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
         bash <(curl -s "$SERVER_URL"/install.sh) update
@@ -238,7 +238,7 @@ VERSION_CHECK () {
 }
 
 
-# Update Ultimate-Updater
+# Update The Ultimate Updater
 UPDATE () {
   echo -e "Update to $BRANCH branch?"
   read -p "Type [Y/y] or [Enter] for yes - anything else will exit: " -r
@@ -251,8 +251,8 @@ UPDATE () {
 
 # Uninstall
 UNINSTALL () {
-  echo -e "\n${BL}[Info]${OR} Uninstall Ultimate-Updater${CL}\n"
-  echo -e "${RD}Really want to remove Ultimate-Updater?${CL}"
+  echo -e "\n${BL}[Info]${OR} Uninstall The Ultimate Updater${CL}\n"
+  echo -e "${RD}Really want to remove The Ultimate Updater?${CL}"
   read -p "Type [Y/y] for yes - anything else will exit: " -r
   if [[ "$REPLY" =~ ^[Yy]$ ]]; then
     bash <(curl -s "$SERVER_URL"/install.sh) uninstall
@@ -456,7 +456,7 @@ UPDATE_HOST () {
         scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
       fi
     fi
-    scp /etc/Ultimate-Updater/temp/exec_host "$HOST":/etc/Ultimate-Updater/temp
+    scp /etc/ultimate-updater/temp/exec_host "$HOST":/etc/ultimate-updater/temp
     scp -r $LOCAL_FILES/VMs/ "$HOST":$LOCAL_FILES/
   fi
   if [[ "$HEADLESS" == true ]]; then
@@ -523,16 +523,16 @@ CONTAINER_UPDATE_START () {
       fi
     fi
   done
-  rm -rf /etc/Ultimate-Updater/temp/temp
+  rm -rf /etc/ultimate-updater/temp/temp
 }
 
 # Container Update
 UPDATE_CONTAINER () {
   CONTAINER=$1
   CCONTAINER="true"
-  echo 'CONTAINER="'"$CONTAINER"'"' > /etc/Ultimate-Updater/temp/var
-  pct config "$CONTAINER" > /etc/Ultimate-Updater/temp/temp
-  OS=$(awk '/^ostype/' /etc/Ultimate-Updater/temp/temp | cut -d' ' -f2)
+  echo 'CONTAINER="'"$CONTAINER"'"' > /etc/ultimate-updater/temp/var
+  pct config "$CONTAINER" > /etc/ultimate-updater/temp/temp
+  OS=$(awk '/^ostype/' /etc/ultimate-updater/temp/temp | cut -d' ' -f2)
   if [[ "$OS" =~ centos ]]; then
     NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
   else
@@ -652,7 +652,7 @@ UPDATE_VM () {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   CVM="true"
-  echo 'VM="'"$VM"'"' > /etc/Ultimate-Updater/temp/var
+  echo 'VM="'"$VM"'"' > /etc/ultimate-updater/temp/var
   echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
   # Backup
   echo -e "${BL}[Info]${OR} Start snaphot and/or backup${CL}"
@@ -799,7 +799,7 @@ OUTPUT_TO_FILE () {
     WELCOME_SCREEN=true
     if [[ "$RICM" != true ]]; then
       touch $LOCAL_FILES/check-output
-      echo 'EXEC_HOST="'"$HOSTNAME"'"' > /etc/Ultimate-Updater/temp/exec_host
+      echo 'EXEC_HOST="'"$HOSTNAME"'"' > /etc/ultimate-updater/temp/exec_host
     fi
   fi
 }
@@ -818,8 +818,8 @@ CLEAN_LOGFILE () {
 # Exit
 EXIT () {
   EXIT_CODE=$?
-  if [[ -f /etc/Ultimate-Updater/temp/exec_host ]]; then
-    EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' /etc/Ultimate-Updater/temp/exec_host)
+  if [[ -f /etc/ultimate-updater/temp/exec_host ]]; then
+    EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' /etc/ultimate-updater/temp/exec_host)
   fi
   if [[ "$WELCOME_SCREEN" == true ]]; then
     scp $LOCAL_FILES/check-output "$EXEC_HOST":$LOCAL_FILES/check-output
@@ -843,9 +843,9 @@ EXIT () {
     fi
   fi
   sleep 3
-  rm -rf /etc/Ultimate-Updater/temp/var
+  rm -rf /etc/ultimate-updater/temp/var
   rm -rf $LOCAL_FILES/update
-  if [[ -f /etc/Ultimate-Updater/temp/exec_host && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf $LOCAL_FILES; fi
+  if [[ -f /etc/ultimate-updater/temp/exec_host && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf $LOCAL_FILES; fi
 }
 set -e
 trap EXIT EXIT
@@ -861,7 +861,7 @@ fi
 # Run
 NAME_CHANGING
 export TERM=xterm-256color
-if ! [[ -d /etc/Ultimate-Updater/temp ]]; then mkdir /etc/Ultimate-Updater/temp; fi
+if ! [[ -d /etc/ultimate-updater/temp ]]; then mkdir /etc/ultimate-updater/temp; fi
 READ_CONFIG
 OUTPUT_TO_FILE
 IP=$(hostname -I)
