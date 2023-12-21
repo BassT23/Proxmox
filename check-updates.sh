@@ -22,10 +22,10 @@ ARGUMENTS () {
     ARGUMENT="$1"
     case "$ARGUMENT" in
       -c)
-        RICM=true  # Run In Cluster Mode
+        RICM=true
         ;;
       -u)
-        RDU=true  # Run During Update
+        RDU=true
         ;;
       chost)
         COMMAND=true
@@ -81,8 +81,6 @@ READ_WRITE_CONFIG () {
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
   RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
-#  EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
-#  ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
 }
@@ -252,7 +250,6 @@ CHECK_VM () {
     if ! (ssh "$IP" exit) >/dev/null 2>&1; then
       CHECK_VM_QEMU
     else
-#      SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
       if [[ "$OS_BASE" =~ l2 ]]; then
         OS=$(ssh "$IP" hostnamectl | grep System)
