@@ -340,12 +340,12 @@ WELCOME_SCREEN_INSTALL () {
 }
 
 UNINSTALL () {
-  if [ -f /usr/local/bin/update ]; then
+  if [ -f /usr/local/sbin/update ]; then
     echo -e "\n${BL}[Info]${GN} Uninstall The Ultimate Updater${CL}\n"
     echo -e "${RD}Really want to remove The Ultimate Updater?${CL}"
     read -p "Type [Y/y] for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-      rm /usr/local/bin/update
+      rm /usr/local/sbin/update
       rm -r $LOCAL_FILES
       if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
         chmod -x /etc/update-motd.d/01-welcome-screen
