@@ -153,8 +153,7 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
     chmod 750 $LOCAL_FILES/update.sh
     ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
     rm /usr/local/bin/update
-    echo -e "${RD}  Please reboot, to make The Ultimative Updater workable\n${CL}"
-    exit 1
+    NEED_REBOOT=true
   fi
 }
 
@@ -250,6 +249,9 @@ UPDATE () {
     echo -e "${GN}The Ultimate Updater updated successfully.${CL}"
     if [[ "$BRANCH" != master ]]; then echo -e "${OR}  Installed: $BRANCH version${CL}"; fi
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
+    if [[ $NEED_REBOOT == true ]]; then
+      echo -e "${RD}  Please reboot, to make The Ultimative Updater workable\n${CL}"
+    fi
   else
     # Install, because no installation found
     echo -e "${RD}The Ultimate Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
