@@ -4,14 +4,15 @@
 # Update #
 ##########
 
-VERSION="4.0.1"
+VERSION="4.0.2"
 
 # Branch
 BRANCH="develop"
 
 # Variable / Function
 LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
-CONFIG_FILE="/root/Ultimative-Updater/update.conf"
+LOCAL_FILES="/etc/Ultimate-Updater"
+CONFIG_FILE="$LOCAL_FILES/update.conf"
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 # Colors
@@ -27,17 +28,17 @@ HEADER_INFO () {
   echo -e "\n \
     https://github.com/BassT23/Proxmox"
   cat <<'EOF'
-   __  ______  _                 __  _
-  / / / / / /_(_)___ ___  ____ _/ /_(_)   _____
- / / / / / __/ / __ `__ \/ __ `/ __/ / | / / _ \
-/ /_/ / / /_/ / / / / / / /_/ / /_/ /| |/ /  __/
-\____/_/\__/_/_/ /_/ /_/\____/\__/_/ |___/\___/
-      __  __          __      __
-     / / / /___  ____/ /___ _/ /____  _____
-    / / / / __ \/ __  / __ `/ __/ _ \/ ___/
-   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
-   \____/ ____/\____/\____/\__/\___/_/
-       /_/     for Proxmox VE
+ The __  ______  _                 __
+    / / / / / /_(_)___ ___  ____ _/ /____
+   / / / / / __/ / __ `__ \/ __ `/ __/ _ \
+  / /_/ / / /_/ / / / / / / /_/ / /_/  __/
+  \____/_/\__/_/_/ /_/ /_/\__,_/\__/\___/
+     __  __          __      __
+    / / / /___  ____/ /___ _/ /____  _____
+   / / / / __ \/ __  / __ `/ __/ _ \/ ___/
+  / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
+  \____/ ____/\____/\____/\__/\___/_/
+      /_/     for Proxmox VE
 EOF
   if [[ "$INFO" != false ]]; then
     echo -e "\n \
@@ -55,7 +56,7 @@ EOF
 
 # Name Changing
 NAME_CHANGING () {
-if [[ -d /root/Proxmox-Updater/ ]]; then mv /root/Proxmox-Updater/ /root/Ultimative-Updater/; fi
+if [[ -d /root/Proxmox-Updater/ ]]; then mv /root/Proxmox-Updater/ $LOCAL_FILES/; fi
 }
 
 # Check root
@@ -189,7 +190,7 @@ ARGUMENTS () {
 USAGE () {
   if [[ "$HEADLESS" != true ]]; then
     echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
-    echo -e "[OPTIONS] Manages the Ultimative-Updater:"
+    echo -e "[OPTIONS] Manages the Ultimate-Updater:"
     echo -e "======================================"
     echo -e "  -s --silent          Silent / Headless Mode"
     echo -e "  master               Use master branch"
@@ -198,10 +199,10 @@ USAGE () {
     echo -e "{COMMAND}:"
     echo -e "========="
     echo -e "  -h --help            Show this help"
-    echo -e "  -v --version         Show Ultimative-Updater Version"
-    echo -e "  -up                  Update Ultimative-Updater"
+    echo -e "  -v --version         Show Ultimate-Updater Version"
+    echo -e "  -up                  Update Ultimate-Updater"
     echo -e "  status               Show Status (Version Infos)"
-    echo -e "  uninstall            Uninstall Ultimative-Updater\n"
+    echo -e "  uninstall            Uninstall Ultimate-Updater\n"
     echo -e "  host                 Host-Mode"
     echo -e "  cluster              Cluster-Mode\n"
     echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
@@ -210,8 +211,8 @@ USAGE () {
 
 # Version Check / Update Message in Header
 VERSION_CHECK () {
-  curl -s $SERVER_URL/update.sh > /root/Ultimative-Updater/temp/update.sh
-  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Ultimative-Updater/temp/update.sh)
+  curl -s $SERVER_URL/update.sh > $LOCAL_FILES/temp/update.sh
+  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update.sh)
   if [[ "$BRANCH" == beta ]]; then
     echo -e "\n${OR}       *** You are on beta branch ***${CL}"
   elif [[ "$BRANCH" == develop ]]; then
@@ -221,7 +222,7 @@ VERSION_CHECK () {
     echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
       Installed: $VERSION / Server: $SERVER_VERSION\n"
     if [[ "$HEADLESS" != true ]]; then
-      echo -e "${OR}Want to update Ultimative-Updater first?${CL}"
+      echo -e "${OR}Want to update Ultimate-Updater first?${CL}"
       read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
       if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
         bash <(curl -s "$SERVER_URL"/install.sh) update
@@ -233,11 +234,11 @@ VERSION_CHECK () {
       echo -e "\n             ${GN}Script is UpToDate${CL}"
   fi
   if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "               Version: $VERSION"; fi
-  rm -rf /root/Ultimative-Updater/temp/update.sh && echo
+  rm -rf $LOCAL_FILES/temp/update.sh && echo
 }
 
 
-# Update Ultimative-Updater
+# Update Ultimate-Updater
 UPDATE () {
   echo -e "Update to $BRANCH branch?"
   read -p "Type [Y/y] or [Enter] for yes - anything else will exit: " -r
@@ -250,8 +251,8 @@ UPDATE () {
 
 # Uninstall
 UNINSTALL () {
-  echo -e "\n${BL}[Info]${OR} Uninstall Ultimative-Updater${CL}\n"
-  echo -e "${RD}Really want to remove Ultimative-Updater?${CL}"
+  echo -e "\n${BL}[Info]${OR} Uninstall Ultimate-Updater${CL}\n"
+  echo -e "${RD}Really want to remove Ultimate-Updater?${CL}"
   read -p "Type [Y/y] for yes - anything else will exit: " -r
   if [[ "$REPLY" =~ ^[Yy]$ ]]; then
     bash <(curl -s "$SERVER_URL"/install.sh) uninstall
@@ -263,21 +264,21 @@ UNINSTALL () {
 
 STATUS () {
   # Get Server Versions
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.sh > /root/Ultimative-Updater/temp/update.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update-extras.sh > /root/Ultimative-Updater/temp/update-extras.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.conf > /root/Ultimative-Updater/temp/update.conf
-  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Ultimative-Updater/temp/update.sh)
-  SERVER_EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Ultimative-Updater/temp/update-extras.sh)
-  SERVER_CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Ultimative-Updater/temp/update.conf)
-  EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Ultimative-Updater/update-extras.sh)
-  CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Ultimative-Updater/update.conf)
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.sh > $LOCAL_FILES/temp/update.sh
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update-extras.sh > $LOCAL_FILES/temp/update-extras.sh
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.conf > $LOCAL_FILES/temp/update.conf
+  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update.sh)
+  SERVER_EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update-extras.sh)
+  SERVER_CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update.conf)
+  EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update-extras.sh)
+  CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.conf)
   if [[ "$WELCOME_SCREEN" == true ]]; then
-    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/welcome-screen.sh > /root/Ultimative-Updater/temp/welcome-screen.sh
-    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/check-updates.sh > /root/Ultimative-Updater/temp/check-updates.sh
-    SERVER_WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Ultimative-Updater/temp/welcome-screen.sh)
-    SERVER_CHECK_UPDATE_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Ultimative-Updater/temp/check-updates.sh)
+    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/welcome-screen.sh > $LOCAL_FILES/temp/welcome-screen.sh
+    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/check-updates.sh > $LOCAL_FILES/temp/check-updates.sh
+    SERVER_WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/welcome-screen.sh)
+    SERVER_CHECK_UPDATE_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/check-updates.sh)
     WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /etc/update-motd.d/01-welcome-screen)
-    CHECK_UPDATE_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/Ultimative-Updater/check-updates.sh)
+    CHECK_UPDATE_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/check-updates.sh)
   fi
   MODIFICATION=$(curl -s https://api.github.com/repos/BassT23/Proxmox | grep pushed_at | cut -d: -f2- | cut -c 3- | rev | cut -c 3- | rev)
   echo -e "Last modification (on GitHub): $MODIFICATION\n"
@@ -315,7 +316,7 @@ STATUS () {
     fi
   fi
   echo
-  rm -r /root/Ultimative-Updater/temp/*.*
+  rm -r $LOCAL_FILES/temp/*.*
 }
 
 # Read Config File
@@ -384,20 +385,20 @@ EXTRAS () {
   else
     echo -e "\n${OR}--- Searching for extra updates ---${CL}"
     if [[ "$SSH_CONNECTION" != true ]]; then
-      pct exec "$CONTAINER" -- bash -c "mkdir -p /root/Ultimative-Updater/"
-      pct push "$CONTAINER" -- /root/Ultimative-Updater/update-extras.sh /root/Ultimative-Updater/update-extras.sh
-      pct push "$CONTAINER" -- /root/Ultimative-Updater/update.conf /root/Ultimative-Updater/update.conf
-      pct exec "$CONTAINER" -- bash -c "chmod +x /root/Ultimative-Updater/update-extras.sh && \
-                                        /root/Ultimative-Updater/update-extras.sh && \
-                                        rm -rf /root/Ultimative-Updater"
+      pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/"
+      pct push "$CONTAINER" -- $LOCAL_FILES/update-extras.sh $LOCAL_FILES/update-extras.sh
+      pct push "$CONTAINER" -- $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf
+      pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/update-extras.sh && \
+                                        $LOCAL_FILES/update-extras.sh && \
+                                        rm -rf $LOCAL_FILES"
     else
       # Extras in VMS with SSH_CONNECTION
-      ssh "$IP" mkdir -p /root/Ultimative-Updater/
-      scp /root/Ultimative-Updater/update-extras.sh "$IP":/root/Ultimative-Updater/update-extras.sh
-      scp /root/Ultimative-Updater/update.conf "$IP":/root/Ultimative-Updater/update.conf
-      ssh "$IP" "chmod +x /root/Ultimative-Updater/update-extras.sh && \
-                /root/Ultimative-Updater/update-extras.sh && \
-                rm -rf /root/Ultimative-Updater"
+      ssh "$IP" mkdir -p $LOCAL_FILES/
+      scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
+      scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
+      ssh "$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
+                $LOCAL_FILES/update-extras.sh && \
+                rm -rf $LOCAL_FILES"
     fi
     echo -e "${GN}---   Finished extra updates    ---${CL}"
     if [[ "$WILL_STOP" != true ]] && [[ "$WELCOME_SCREEN" != true ]]; then
@@ -413,11 +414,11 @@ UPDATE_CHECK () {
   if [[ "$WELCOME_SCREEN" == true ]]; then
     echo -e "${OR}--- Check Status for Welcome-Screen ---${CL}"
     if [[ "$CHOST" == true ]]; then
-      ssh "$HOSTNAME" "/root/Ultimative-Updater/check-updates.sh -u chost" | tee -a /root/Ultimative-Updater/check-output
+      ssh "$HOSTNAME" "$LOCAL_FILES/check-updates.sh -u chost" | tee -a $LOCAL_FILES/check-output
     elif [[ "$CCONTAINER" == true ]]; then
-      ssh "$HOSTNAME" "/root/Ultimative-Updater/check-updates.sh -u ccontainer" | tee -a /root/Ultimative-Updater/check-output
+      ssh "$HOSTNAME" "$LOCAL_FILES/check-updates.sh -u ccontainer" | tee -a $LOCAL_FILES/check-output
     elif [[ "$CVM" == true ]]; then
-      ssh "$HOSTNAME" "/root/Ultimative-Updater/check-updates.sh -u cvm" | tee -a /root/Ultimative-Updater/check-output
+      ssh "$HOSTNAME" "$LOCAL_FILES/check-updates.sh -u cvm" | tee -a $LOCAL_FILES/check-output
     fi
     echo -e "${GN}---          Finished check         ---${CL}\n"
     if [[ "$WILL_STOP" != true ]]; then echo; fi
@@ -429,7 +430,7 @@ UPDATE_CHECK () {
 ## HOST ##
 # Host Update Start
 HOST_UPDATE_START () {
-  if [[ "$RICM" != true ]]; then true > /root/Ultimative-Updater/check-output; fi
+  if [[ "$RICM" != true ]]; then true > $LOCAL_FILES/check-output; fi
   for HOST in $HOSTS; do
     # Check if Host/Node is available
     if ssh "$HOST" test >/dev/null 2>&1; [ $? -eq 255 ]; then
@@ -445,18 +446,18 @@ UPDATE_HOST () {
   HOST=$1
   START_HOST=$(hostname -I | tr -d '[:space:]')
   if [[ "$HOST" != "$START_HOST" ]]; then
-    ssh "$HOST" mkdir -p /root/Ultimative-Updater/temp
-    scp "$0" "$HOST":/root/Ultimative-Updater/update
-    scp /root/Ultimative-Updater/update-extras.sh "$HOST":/root/Ultimative-Updater/update-extras.sh
-    scp /root/Ultimative-Updater/update.conf "$HOST":/root/Ultimative-Updater/update.conf
+    ssh "$HOST" mkdir -p $LOCAL_FILES/temp
+    scp "$0" "$HOST":$LOCAL_FILES/update
+    scp $LOCAL_FILES/update-extras.sh "$HOST":$LOCAL_FILES/update-extras.sh
+    scp $LOCAL_FILES/update.conf "$HOST":$LOCAL_FILES/update.conf
     if [[ "$WELCOME_SCREEN" == true ]]; then
-      scp /root/Ultimative-Updater/check-updates.sh "$HOST":/root/Ultimative-Updater/check-updates.sh
+      scp $LOCAL_FILES/check-updates.sh "$HOST":$LOCAL_FILES/check-updates.sh
       if [[ "$WELCOME_SCREEN" == true ]]; then
-        scp /root/Ultimative-Updater/check-output "$HOST":/root/Ultimative-Updater/check-output
+        scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
       fi
     fi
-    scp ~/Ultimative-Updater/temp/exec_host "$HOST":~/Ultimative-Updater/temp
-    scp -r /root/Ultimative-Updater/VMs/ "$HOST":/root/Ultimative-Updater/
+    scp /etc/Ultimate-Updater/temp/exec_host "$HOST":/etc/Ultimate-Updater/temp
+    scp -r $LOCAL_FILES/VMs/ "$HOST":$LOCAL_FILES/
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
@@ -522,16 +523,16 @@ CONTAINER_UPDATE_START () {
       fi
     fi
   done
-  rm -rf ~/Ultimative-Updater/temp/temp
+  rm -rf /etc/Ultimate-Updater/temp/temp
 }
 
 # Container Update
 UPDATE_CONTAINER () {
   CONTAINER=$1
   CCONTAINER="true"
-  echo 'CONTAINER="'"$CONTAINER"'"' > ~/Ultimative-Updater/temp/var
-  pct config "$CONTAINER" > ~/Ultimative-Updater/temp/temp
-  OS=$(awk '/^ostype/' ~/Ultimative-Updater/temp/temp | cut -d' ' -f2)
+  echo 'CONTAINER="'"$CONTAINER"'"' > /etc/Ultimate-Updater/temp/var
+  pct config "$CONTAINER" > /etc/Ultimate-Updater/temp/temp
+  OS=$(awk '/^ostype/' /etc/Ultimate-Updater/temp/temp | cut -d' ' -f2)
   if [[ "$OS" =~ centos ]]; then
     NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
   else
@@ -618,7 +619,7 @@ VM_UPDATE_START () {
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Check if update is possible
-        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f /root/Ultimative-Updater/VMs/"$VM" ]]; then
+        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
           # Start the VM
           WILL_STOP="true"
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
@@ -651,15 +652,15 @@ UPDATE_VM () {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   CVM="true"
-  echo 'VM="'"$VM"'"' > ~/Ultimative-Updater/temp/var
+  echo 'VM="'"$VM"'"' > /etc/Ultimate-Updater/temp/var
   echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
   # Backup
   echo -e "${BL}[Info]${OR} Start snaphot and/or backup${CL}"
   VM_BACKUP
   echo
   # Run Update
-  if [[ -f /root/Ultimative-Updater/VMs/"$VM" ]]; then
-    IP=$(awk -F'"' '/^IP=/ {print $2}' /root/Ultimative-Updater/VMs/"$VM")
+  if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
+    IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     if ! (ssh "$IP" exit >/dev/null 2>&1); then
       echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
   Please configure SSH Key-Based Authentication${CL}\n\
@@ -797,8 +798,8 @@ OUTPUT_TO_FILE () {
   if [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
     WELCOME_SCREEN=true
     if [[ "$RICM" != true ]]; then
-      touch /root/Ultimative-Updater/check-output
-      echo 'EXEC_HOST="'"$HOSTNAME"'"' > ~/Ultimative-Updater/temp/exec_host
+      touch $LOCAL_FILES/check-output
+      echo 'EXEC_HOST="'"$HOSTNAME"'"' > /etc/Ultimate-Updater/temp/exec_host
     fi
   fi
 }
@@ -817,11 +818,11 @@ CLEAN_LOGFILE () {
 # Exit
 EXIT () {
   EXIT_CODE=$?
-  if [[ -f ~/Ultimative-Updater/temp/exec_host ]]; then
-    EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' ~/Ultimative-Updater/temp/exec_host)
+  if [[ -f /etc/Ultimate-Updater/temp/exec_host ]]; then
+    EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' /etc/Ultimate-Updater/temp/exec_host)
   fi
   if [[ "$WELCOME_SCREEN" == true ]]; then
-    scp /root/Ultimative-Updater/check-output "$EXEC_HOST":/root/Ultimative-Updater/check-output
+    scp $LOCAL_FILES/check-output "$EXEC_HOST":$LOCAL_FILES/check-output
   fi
   # Exit without echo
   if [[ "$EXIT_CODE" == 2 ]]; then
@@ -830,21 +831,21 @@ EXIT () {
   elif [[ "$EXIT_CODE" == 0 ]]; then
     if [[ "$RICM" != true ]]; then
       echo -e "${GN}Finished, All Updates Done.${CL}\n"
-      /root/Ultimative-Updater/exit/passed.sh
+      $LOCAL_FILES/exit/passed.sh
       CLEAN_LOGFILE
     fi
   else
   # Update Error
     if [[ "$RICM" != true ]]; then
       echo -e "${RD}Error during Update --- Exit Code: $EXIT_CODE${CL}\n"
-      /root/Ultimative-Updater/exit/error.sh
+      $LOCAL_FILES/exit/error.sh
       CLEAN_LOGFILE
     fi
   fi
   sleep 3
-  rm -rf ~/Ultimative-Updater/temp/var
-  rm -rf /root/Ultimative-Updater/update
-  if [[ -f ~/Ultimative-Updater/temp/exec_host && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf /root/Ultimative-Updater; fi
+  rm -rf /etc/Ultimate-Updater/temp/var
+  rm -rf $LOCAL_FILES/update
+  if [[ -f /etc/Ultimate-Updater/temp/exec_host && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf $LOCAL_FILES; fi
 }
 set -e
 trap EXIT EXIT
@@ -860,7 +861,7 @@ fi
 # Run
 NAME_CHANGING
 export TERM=xterm-256color
-if ! [[ -d ~/Ultimative-Updater/temp ]]; then mkdir ~/Ultimative-Updater/temp; fi
+if ! [[ -d /etc/Ultimate-Updater/temp ]]; then mkdir /etc/Ultimate-Updater/temp; fi
 READ_CONFIG
 OUTPUT_TO_FILE
 IP=$(hostname -I)
