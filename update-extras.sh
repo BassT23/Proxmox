@@ -7,7 +7,7 @@
 VERSION="1.8.4"
 
 # Variables
-CONFIG_FILE="/root/Ultimative-Updater/update.conf"
+CONFIG_FILE="/etc/Ultimate-Updater/update.conf"
 PIHOLE=$(awk -F'"' '/^PIHOLE=/ {print $2}' $CONFIG_FILE)
 IOBROKER=$(awk -F'"' '/^IOBROKER=/ {print $2}' $CONFIG_FILE)
 PTERODACTYL=$(awk -F'"' '/^PTERODACTYL=/ {print $2}' $CONFIG_FILE)
