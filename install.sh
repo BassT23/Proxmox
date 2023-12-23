@@ -129,8 +129,21 @@ STATUS () {
 }
 
 OLD_FILESYSTEM_CHECK () {
-  if [[ -d /root/Proxmox-Updater/ ]]; then mv /root/Proxmox-Updater/ $LOCAL_FILES/; fi
-  if [[ -d /root/Ultimative-Updater/ ]]; then mv /root/Ultimative-Updater/ $LOCAL_FILES/; fi
+  if [[ -d /root/Proxmox-Updater/ ]]; then
+    mv /root/Proxmox-Updater/ $LOCAL_FILES/
+    if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
+      mv /etc/crontab /etc/crontab.bak_name_change
+      cp /etc/crontab.bak /etc/crontab
+      echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
+    fi
+  fi
+  if [[ -d /root/Ultimative-Updater/ ]]; then
+    if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
+      mv /etc/crontab /etc/crontab.bak_name_change
+      cp /etc/crontab.bak /etc/crontab
+      echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
+    fi
+  fi
   if [ -d "/root/Ultimative-Update-Scripts" ]; then
     echo -e "${RD}Ultimate-Updater has changed directorys, so the old directory\n\
 /root/Update-Scripts will be delete.${CL}\n\
