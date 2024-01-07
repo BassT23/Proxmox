@@ -1,6 +1,6 @@
 <div align="center">
 
-![Logo](https://github.com/BassT23/Proxmox/assets/30832786/00fa746d-3d65-4b01-8906-50ecb845a50d)
+![Logo](https://github.com/BassT23/Proxmox/assets/30832786/6400ed7f-71c6-486c-b5ed-249c2e0df19b)
 
 ![Screenshot_20230326_130709](https://user-images.githubusercontent.com/30832786/227771669-aae7e7f4-b27e-4095-950a-c6fa1f146503.png)
 
@@ -35,7 +35,7 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 - Snapshot / Backup support (for Snapshot, your system must prepared for it)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Logging to ``/var/log/update-"$HOSTNAME".log``
-- Exit tracking, so you can send additional commands for finish or failure (edit files in `/root/Proxmox-Updater/exit`)
+- Exit tracking, so you can send additional commands for finish or failure (edit files in `/etc/ultimate-updater/exit`)
 - [Config file](https://github.com/BassT23/Proxmox/tree/master#config-file)
 
 Info can be found with `update -h`
@@ -98,7 +98,7 @@ and install new
 
 
 # Extra Updates:
-If updater detects installation: (disable, if you want in `/root/Proxmox-Updater/update.conf`)
+If updater detects installation: (disable, if you want in `/etc/ultimate-updater/update.conf`)
 - PiHole
 - ioBroker
 - Pterodactyl
@@ -107,7 +107,7 @@ If updater detects installation: (disable, if you want in `/root/Proxmox-Updater
 
 
 # Config File:
-The config file is stored under `/root/Proxmox-Updater/update.conf`
+The config file is stored under `/etc/ultimate-updater/update.conf`
 
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
 
@@ -123,7 +123,7 @@ The Welcome Screen is an extra for you. Its optional!
 
 - The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
 - The update-checker also use the config file!
-- To force the check, you can run `/root/Proxmox-Updater/check-updates.sh` in Terminal.
+- To force the check, you can run `/etc/ultimate-updater/check-updates.sh` in Terminal.
 - You can choose, if neofetch will be show also (if neofetch is not installed, script will make it automatically)
 
 

@@ -1,7 +1,12 @@
 Changelog:
 ==========
 
-**v3.9.6** (beta)
+**v4.0.2** (develop)
+- disable/enable Snapshots and Backups in config file
+- name changing
+- move Program to correct folder system
+
+**v4.0** (18.12.2023)
 - fix loop through vms
 - fix new docker compose command
 - fix alpine issue (disable internet check for now)

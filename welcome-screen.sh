@@ -4,32 +4,29 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.3.4"
-
-# Branch
-BRANCH="beta"
+VERSION="1.3.6"
 
 # Variable / Function
-CONFIG_FILE="/root/Proxmox-Updater/update.conf"
-CHECK_OUTPUT=$(stat -c%s /root/Proxmox-Updater/check-output)
+LOCAL_FILES="/etc/ultimate-updater"
+CONFIG_FILE="$LOCAL_FILES/update.conf"
+BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
+CHECK_OUTPUT=$(stat -c%s $LOCAL_FILES/check-output)
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 # Colors
-# BL="\e[36m"
 OR="\e[1;33m"
-RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
 
 # Version Check
 VERSION_CHECK () {
-  curl -s $SERVER_URL/update.sh > /root/update.sh
+  curl -s "$SERVER_URL"/update.sh > /root/update.sh
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
-  LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /usr/local/bin/update)
+  LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.sh)
   if [[ "$BRANCH" == beta ]]; then
-    echo -e "${OR}*** Proxmox-Updater is on beta branch ***${CL}"
+    echo -e "${OR}*** The Ultimate Updater is on beta branch ***${CL}"
   elif [[ "$BRANCH" == develop ]]; then
-    echo -e "${OR}*** Proxmox-Updater is on develop branch ***${CL}"
+    echo -e "${OR}*** The Ultimate Updater is on develop branch ***${CL}"
   fi
   if [[ "$SERVER_VERSION" > "$LOCAL_VERSION" ]]; then
     echo -e "${OR}    *** A newer version is available ***${CL}\n\
@@ -39,7 +36,7 @@ VERSION_CHECK () {
   elif  [[ ! -s /root/update.sh ]]; then
     echo -e "${OR} *** You are offline - can't check version ***${CL}"
   elif [[ "$BRANCH" == master ]]; then
-      echo -e "${GN}       Proxmox-Updater is UpToDate${CL}"
+      echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
   fi
   if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "              Version: $LOCAL_VERSION\n"; fi
   rm -rf /root/update.sh
@@ -51,8 +48,6 @@ READ_WRITE_CONFIG () {
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
   RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
   STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
-#  EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' $CONFIG_FILE)
-#  ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   if [[ $ONLY != "" ]]; then
@@ -65,7 +60,7 @@ READ_WRITE_CONFIG () {
 }
 
 TIME_CALCULTION () {
-MOD=$(date -r "/root/Proxmox-Updater/check-output" +%s)
+MOD=$(date -r "$LOCAL_FILES/check-output" +%s)
 NOW=$(date +%s)
 DAYS=$(( (NOW - MOD) / 86400 ))
 HOURS=$(( (NOW - MOD) / 3600 ))
@@ -79,7 +74,7 @@ if [[ -f /etc/motd ]]; then
 fi
 VERSION_CHECK
 READ_WRITE_CONFIG
-if [[ -f /root/Proxmox-Updater/check-output ]]; then
+if [[ -f $LOCAL_FILES/check-output ]]; then
   TIME_CALCULTION
   if [[ $DAYS -gt 0 ]]; then
     echo -e "     Last Update Check: $DAYS day(s) ago\n"
@@ -88,10 +83,10 @@ if [[ -f /root/Proxmox-Updater/check-output ]]; then
   else
     echo -e "     Last Update Check: $MINUTES minute(s) ago\n"
   fi
-  if [[ -f /root/Proxmox-Updater/check-output ]] && [[ $CHECK_OUTPUT -gt 0 ]]; then
+  if [[ -f $LOCAL_FILES/check-output ]] && [[ $CHECK_OUTPUT -gt 0 ]]; then
     echo -e "${OR}Available Updates:${CL}"
     echo -e "S = Security / N = Normal"
-    cat /root/Proxmox-Updater/check-output
+    cat $LOCAL_FILES/check-output
   fi
   echo
 fi

@@ -4,10 +4,10 @@
 # Update-Extras #
 #################
 
-VERSION="1.8.3"
+VERSION="1.8.4"
 
 # Variables
-CONFIG_FILE="/root/Proxmox-Updater/update.conf"
+CONFIG_FILE="/etc/ultimate-updater/update.conf"
 PIHOLE=$(awk -F'"' '/^PIHOLE=/ {print $2}' $CONFIG_FILE)
 IOBROKER=$(awk -F'"' '/^IOBROKER=/ {print $2}' $CONFIG_FILE)
 PTERODACTYL=$(awk -F'"' '/^PTERODACTYL=/ {print $2}' $CONFIG_FILE)
