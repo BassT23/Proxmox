@@ -1,6 +1,6 @@
 <div align="center">
 
-![Logo](https://github.com/BassT23/Proxmox/assets/30832786/2f1d2bf3-5ec0-47fa-b93b-dab46f2fd088)
+![Logo](https://github.com/BassT23/Proxmox/assets/30832786/6400ed7f-71c6-486c-b5ed-249c2e0df19b)
 
 ![Screenshot_20230326_130709](https://user-images.githubusercontent.com/30832786/227771669-aae7e7f4-b27e-4095-950a-c6fa1f146503.png)
 
