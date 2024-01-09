@@ -731,10 +731,6 @@ UPDATE_VM_QEMU () {
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
-    # Backup
-    echo -e "${BL}[Info]${OR} Start snaphot and/or backup${CL}"
-    VM_BACKUP
-    echo
     # Run Update
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
