@@ -68,7 +68,7 @@ MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
 # Welcome
-if [[ -f /etc/motd ]]; then
+if [[ -f /usr/bin/neofetch ]]; then
   echo
   neofetch
 fi
