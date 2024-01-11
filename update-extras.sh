@@ -100,6 +100,7 @@ if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
     # Restart the container if the image is different by name
     if [[ ${RUNNING_IMAGE} != "${LATEST_IMAGE}" ]]; then
       echo "Updating ${CONTAINER} image ${CONTAINER_IMAGE}"
+      docker compose stop "$NAME"
       docker compose up -d --no-deps --build "$NAME"
     fi
   done
