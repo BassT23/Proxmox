@@ -1,10 +1,12 @@
 Changelog:
 ==========
 
-**v4.0.2** (beta)
+**v4.0.3** (develop)
 - disable/enable Snapshots and Backups in config file
 - name changing ("Proxmox Updater" is now "The Ultimate Updater for Proxmox VE")
 - move Program to correct folder system
+- edit config file, for better usage
+- update-check can now be better set (in config file)
 - bug fixing
 
 **v4.0** (18.12.2023)
