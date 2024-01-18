@@ -4,7 +4,7 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.3.6"
+VERSION="1.3.7"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
