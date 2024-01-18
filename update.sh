@@ -4,10 +4,9 @@
 # Update #
 ##########
 
-VERSION="4.0.2"
+VERSION="4.0.3"
 
 # Variable / Function
-LOG_FILE=/var/log/update-"$HOSTNAME".log    # <- change location for logfile if you want
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
@@ -319,13 +318,16 @@ STATUS () {
 
 # Read Config File
 READ_CONFIG () {
+  LOG_FILE=$(awk -F'"' '/^LOG_FILE=/ {print $2}' "$CONFIG_FILE")
   CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' "$CONFIG_FILE")
   CHECK_URL=$(awk -F'"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' "$CONFIG_FILE")
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' "$CONFIG_FILE")
-  RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' "$CONFIG_FILE")
-  STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
+  RUNNING_CONTAINER=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' "$CONFIG_FILE")
+  STOPPED_CONTAINER=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
+  RUNNING_VM=$(awk -F'"' '/^RUNNING_VM=/ {print $2}' "$CONFIG_FILE")
+  STOPPED_VM=$(awk -F'"' '/^STOPPED_VM=/ {print $2}' "$CONFIG_FILE")
 #  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
@@ -500,7 +502,7 @@ CONTAINER_UPDATE_START () {
       echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
     else
       STATUS=$(pct status "$CONTAINER")
-      if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
+      if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
         # Start the container
         WILL_STOP="true"
         echo -e "${BL}[Info]${GN} Starting LXC ${BL}$CONTAINER ${CL}"
@@ -512,11 +514,11 @@ CONTAINER_UPDATE_START () {
         echo -e "${BL}[Info]${GN} Shutting down LXC ${BL}$CONTAINER ${CL}\n\n"
         pct shutdown "$CONTAINER" &
         WILL_STOP="false"
-      elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
+      elif [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
-      elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
+      elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" == true ]]; then
         UPDATE_CONTAINER "$CONTAINER"
-      elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
+      elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
       fi
     fi
@@ -618,7 +620,7 @@ VM_UPDATE_START () {
       echo -e "${OR}  Windows is not supported for now.\n  I'm working on it ;)${CL}\n\n"
     else
       STATUS=$(qm status "$VM")
-      if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
+      if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
         # Check if update is possible
         if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
           # Start the VM
@@ -636,11 +638,11 @@ VM_UPDATE_START () {
         else
           echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH not initialized${CL}\n\n"
         fi
-      elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
+      elif [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
-      elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
+      elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
         UPDATE_VM "$VM"
-      elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
+      elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
       fi
     fi
