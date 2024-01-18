@@ -103,7 +103,7 @@ If updater detects installation: (disable, if you want in `/etc/ultimate-updater
 - ioBroker
 - Pterodactyl
 - Octoprint
-- Docker Container Images
+- Docker Compose (only >v2.0 is supported - [please look here](https://docs.docker.com/compose/migrate/))
 
 
 # Config File:
