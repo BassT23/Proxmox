@@ -45,9 +45,9 @@ ARGUMENTS () {
       host)
         COMMAND=true
         OUTPUT_TO_FILE
-        if [[ "$CHECK_WITH_HOST" == true ]]; then CHECK_HOST_ITSELF; fi
-        if [[ "$CHECK_WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
-        if [[ "$CHECK_WITH_VM" == true ]]; then VM_CHECK_START; fi
+        if [[ "$WITH_HOST" == true ]]; then CHECK_HOST_ITSELF; fi
+        if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
+        if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
         ;;
       cluster)
         COMMAND=true
@@ -76,13 +76,11 @@ USAGE () {
 
 
 READ_WRITE_CONFIG () {
-  CHECK_WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
-  CHECK_WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
-  CHECK_WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
-  CHECK_RUNNING_CONTAINER=$(awk -F'"' '/^CHECK_RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
-  CHECK_STOPPED_CONTAINER=$(awk -F'"' '/^CHECK_STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
-  CHECK_RUNNING_VM=$(awk -F'"' '/^CHECK_RUNNING_VM=/ {print $2}' $CONFIG_FILE)
-  CHECK_STOPPED_VM=$(awk -F'"' '/^CHECK_STOPPED_VM=/ {print $2}' $CONFIG_FILE)
+  WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
+  WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
+  WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
+  RUNNING=$(awk -F'"' '/^CHECK_RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
+  STOPPED=$(awk -F'"' '/^CHECK_STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
 }
@@ -136,14 +134,14 @@ CONTAINER_CHECK_START () {
       continue
     else
       STATUS=$(pct status "$CONTAINER")
-      if [[ "$STATUS" == "status: stopped" && "$CHECK_STOPPED_CONTAINER" == true ]]; then
+      if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
         pct start "$CONTAINER"
         sleep 5
         CHECK_CONTAINER "$CONTAINER"
         # Stop the container
         pct shutdown "$CONTAINER"
-      elif [[ "$STATUS" == "status: running" && "$CHECK_RUNNING_CONTAINER" == true ]]; then
+      elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
         CHECK_CONTAINER "$CONTAINER"
       fi
     fi
@@ -218,7 +216,7 @@ VM_CHECK_START () {
       continue
     else
       STATUS=$(qm status "$VM")
-      if [[ "$STATUS" == "status: stopped" && "$CHECK_STOPPED_VM" == true ]]; then
+      if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Check if connection is available
         if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
           # Start the VM
@@ -228,7 +226,7 @@ VM_CHECK_START () {
           # Stop the VM
           qm stop "$VM"
         fi
-      elif [[ "$STATUS" == "status: running" && "$CHECK_RUNNING_VM" == true ]]; then
+      elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
         CHECK_VM "$VM"
       fi
     fi
@@ -372,8 +370,8 @@ if [[ "$COMMAND" != true && "$RDU" == true ]]; then
 elif [[ "$COMMAND" != true ]]; then
   OUTPUT_TO_FILE
   if [[ "$MODE" =~ Cluster ]]; then HOST_CHECK_START; else
-    if [[ "$CHECK_WITH_HOST" == true ]]; then CHECK_HOST_ITSELF; fi
-    if [[ "$CHECK_WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
-    if [[ "$CHECK_WITH_VM" == true ]]; then VM_CHECK_START; fi
+    if [[ "$WITH_HOST" == true ]]; then CHECK_HOST_ITSELF; fi
+    if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
+    if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
   fi
 fi
