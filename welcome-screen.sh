@@ -71,6 +71,8 @@ MINUTES=$(( (NOW - MOD) / 60 ))
 if [[ -f /usr/bin/neofetch ]]; then
   echo
   neofetch
+else
+  echo
 fi
 VERSION_CHECK
 READ_WRITE_CONFIG
