@@ -7,6 +7,7 @@ Changelog:
 - move Program to correct folder system
 - edit config file, for better usage
 - update-check can now be better set (in config file)
+- support Docker Compose v1 and v2
 - bug fixing
 
 **v4.0** (18.12.2023)
