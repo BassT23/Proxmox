@@ -4,7 +4,7 @@
 # Update-Extras #
 #################
 
-VERSION="1.8.4"
+VERSION="1.8.5"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
