@@ -80,7 +80,6 @@ fi
 
 # Docker Compose detection
 if [[ -f /usr/local/bin/docker-compose ]]; then DOCKER_COMPOSE_V1=true; fi
-#if docker-compose --version &>/dev/null; then DOCKER_COMPOSE_V1=true; fi
 if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
 
 # Docker-Compose v1
