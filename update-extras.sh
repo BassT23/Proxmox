@@ -4,7 +4,7 @@
 # Update-Extras #
 #################
 
-VERSION="1.8.5"
+VERSION="1.8.4"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -79,7 +79,8 @@ if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
 fi
 
 # Docker Compose detection
-if docker-compose --version &>/dev/null; then DOCKER_COMPOSE_V1=true; fi
+if [[ -f /usr/local/bin/docker-compose ]]; then DOCKER_COMPOSE_V1=true; fi
+#if docker-compose --version &>/dev/null; then DOCKER_COMPOSE_V1=true; fi
 if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
 
 # Docker-Compose v1
