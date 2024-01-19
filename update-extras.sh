@@ -84,9 +84,13 @@ if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
 
 # Docker-Compose v1
 if [[ $DOCKER_COMPOSE_V1 == true && $DOCKER_COMPOSE == true ]]; then
-  COMPOSE=$(find /home -name "docker-compose.*" 2> /dev/null | rev | cut -c 20- | rev)
-  cd "$COMPOSE" || exit
   echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
+  if COMPOSE=$(find /home -name "docker-compose.yaml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
+    :
+  elif COMPOSE=$(find /home -name "docker-compose.yml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
+    :
+  fi
+  cd "$COMPOSE" || exit
   # Get the containers from first argument, else get all containers
   CONTAINER_LIST="${1:-$(docker ps -q)}"
   for CONTAINER in ${CONTAINER_LIST}; do
@@ -113,13 +117,13 @@ fi
 
 # Docker-Compose v2
 if [[ $DOCKER_COMPOSE_V2 == true && $DOCKER_COMPOSE == true ]]; then
+  echo -e "\n*** Updating Docker Compose ***"
   if COMPOSE=$(find /home -name "docker-compose.yaml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
     :
   elif COMPOSE=$(find /home -name "docker-compose.yml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
     :
   fi
   cd "$COMPOSE" || exit
-  echo -e "\n*** Updating Docker Compose ***"
   # Get the containers from first argument, else get all containers
   CONTAINER_LIST="${1:-$(docker ps -q)}"
   for CONTAINER in ${CONTAINER_LIST}; do
