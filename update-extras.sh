@@ -78,8 +78,6 @@ if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
   sudo service octoprint restart
 fi
 
-
-
 # Docker Compose detection
 if [[ $DOCKER_COMPOSE == true ]]; then
   if [[ -f /usr/local/bin/docker-compose ]]; then DOCKER_COMPOSE_V1=true; fi
