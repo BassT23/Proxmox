@@ -9,11 +9,9 @@
 [![downloads](https://img.shields.io/github/downloads/BassT23/Proxmox/total.svg)](https://github.com/BassT23/Proxmox/releases)
 [![Discord](https://img.shields.io/discord/1149671790864506882)](https://discord.gg/nVpUg6BKn8)
 
-
-
 Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
 
-I am no member of the Proxmox Server Solutions GmbH. This is not an official programm from Proxmox!
+I am no member of the Proxmox Server Solutions GmbH. This is not an official program from Proxmox!
 
 </div>
 
@@ -42,11 +40,10 @@ Info can be found with `update -h`
 
 Changelog: [here](https://github.com/BassT23/Proxmox/blob/master/change.log)
 
-
 ### What does the script do:
-- The script make system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
-- Make a snapshot befor update (if your storage support it - [look here](https://pve.proxmox.com/wiki/Storage)). If not supported, you can choose to make a real backup, but this must be enabled in `update.conf` by user (take long time!)
-- After all, the updater makes an little cleaning (like `apt autoremove`) 
+- The script makes system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
+- Make a snapshot before update (if your storage support it - [look here](https://pve.proxmox.com/wiki/Storage)). If not supported, you can choose to make a real backup, but this must be enabled in `update.conf` by user (take long time!)
+- After all, the updater makes a little cleaning (like `apt autoremove`) 
 - If the script detects "extra" installations, it could update this also. Look in config file, for that.
 
 ## 
@@ -59,7 +56,7 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 ## Cluster-Mode preparation:
 **! For Cluster Installation, you only need to install on one Host !**
 
-The nodes need to know each other. For that please edit the `/etc/hosts` file on each node. Otherwise you can use the GUI (NODE -> System -> Hosts)
+The nodes need to know each other. For that please edit the `/etc/hosts` file on each node. Otherwise, you can use the GUI. (NODE -> System -> Hosts)
 
 Example add:
 ```
@@ -76,7 +73,6 @@ After that make the fingerprints.
 The used sequence can be check, if you run `awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf"` from the host, on which Proxmox-Updater is installed.
 So connect from first node (on which you install the Proxmox-Updater) to node2 with `ssh pve2`. Then from node2 `ssh pve3`, and so on.
 
-
 ## If you want to update the VMs also, you have two choices:
 1. Use the "light and easy" QEMU option
 
@@ -85,7 +81,6 @@ So connect from first node (on which you install the Proxmox-Updater) to node2 w
 2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
 
      more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/master/ssh.md)
-
 
 # Update the script:
 `update -up`
@@ -96,7 +91,6 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 ```
 and install new
 
-
 # Extra Updates:
 If updater detects installation: (disable, if you want in `/root/Proxmox-Updater/update.conf`)
 - PiHole
@@ -104,7 +98,6 @@ If updater detects installation: (disable, if you want in `/root/Proxmox-Updater
 - Pterodactyl
 - Octoprint
 - Docker Container Images
-
 
 # Config File:
 The config file is stored under `/root/Proxmox-Updater/update.conf`
@@ -117,30 +110,34 @@ With this file, you can manage the updater. For example; if you don't want to up
 - "stopped" or "running" LXC/VM
 - "only" or "exclude" LXC/VM by ID
 
-
 # Welcome Screen:
-The Welcome Screen is an extra for you. Its optional!
+The Welcome Screen is an extra for you. It's optional!
 
 - The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
-- The update-checker also use the config file!
+- The update-checker also uses the config file!
 - To force the check, you can run `/root/Proxmox-Updater/check-updates.sh` in Terminal.
 - You can choose, if neofetch will be show also (if neofetch is not installed, script will make it automatically)
 
-
 # Beta Testing:
-If anybody want to help with failure search, please test our beta (if available).
+If anybody wants to help with failure search, please test our beta (if available).
 
 Install beta update with `update beta -up`
 
-To go back to master, choose `update -up`
-
+Go back to master, choose `update -up`
 
 # Q&A:
 [Discussion](https://github.com/BassT23/Proxmox/discussions/60)
 
-
 # Support:
 [![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
 
-# Credits:
-[@Gauvino](https://github.com/Gauvino) / [@elbim](https://github.com/elbim)
+# Contributors:
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="=https://github.com/BassT23"><img src="https://avatars.githubusercontent.com/u/30832786?v=4?s=100" width="100px;" alt="BassT23"/><br /><sub><b>BassT23</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=BassT23" title="Code">💻</a> <a href="#maintenance-BassT23" title="Maintenance">🚧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Gauvino"><img src="https://avatars.githubusercontent.com/u/68083474?v=4?s=100" width="100px;" alt="Gauvino"/><br /><sub><b>Gauvino</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=Gauvino" title="Code">💻</a> <a href="#translation-Gauvino" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/elbim"><img src="https://avatars.githubusercontent.com/u/28606318?v=4?s=100" width="100px;" alt="elbim"/><br /><sub><b>elbim</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=elbim" title="Code">💻</a> <a href="#translation-elbim"</a></td>
+    </tr>
+  </tbody>
+</table>
