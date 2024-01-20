@@ -4,7 +4,7 @@
 # Update-Extras #
 #################
 
-VERSION="1.8.6"
+VERSION="1.8.5"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -95,43 +95,12 @@ if [[ $DOCKER_COMPOSE == true ]]; then
   # Docker-Compose v1
   if [[ $DOCKER_COMPOSE_V1 == true ]]; then
     echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
-    # Get the containers from first argument, else get all containers
-    CONTAINER_LIST="${1:-$(docker ps -q)}"
-    for CONTAINER in ${CONTAINER_LIST}; do
-      # Get requirements
-      CONTAINER_IMAGE=$(docker inspect --format "{{.Config.Image}}" --type container "${CONTAINER}")
-      RUNNING_IMAGE=$(docker inspect --format "{{.Image}}" --type container "${CONTAINER}")
-      NAME=$(docker inspect --format "{{.Name}}" --type container "${CONTAINER}" | cut -c 2-)
-      # Pull in latest version of the container and get the hash
-      docker pull "${CONTAINER_IMAGE}" 2> /dev/null
-      LATEST_IMAGE=$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")
-      # Restart the container if the image is different by name
-      if [[ ${RUNNING_IMAGE} != "${LATEST_IMAGE}" ]]; then
-        echo "Updating ${CONTAINER} image ${CONTAINER_IMAGE}"
-        /usr/local/bin/docker-compose up -d --no-deps --build "$NAME"
-      fi
-    done
+    /usr/local/bin/docker-compose up -d
   fi
   # Docker-Compose v2
   if [[ $DOCKER_COMPOSE_V2 == true ]]; then
     echo -e "\n*** Updating Docker Compose ***"
-    # Get the containers from first argument, else get all containers
-    CONTAINER_LIST="${1:-$(docker ps -q)}"
-    for CONTAINER in ${CONTAINER_LIST}; do
-      # Get requirements
-      CONTAINER_IMAGE=$(docker inspect --format "{{.Config.Image}}" --type container "${CONTAINER}")
-      RUNNING_IMAGE=$(docker inspect --format "{{.Image}}" --type container "${CONTAINER}")
-      NAME=$(docker inspect --format "{{.Name}}" --type container "${CONTAINER}" | cut -c 2-)
-      # Pull in latest version of the container and get the hash
-      docker pull "${CONTAINER_IMAGE}" 2> /dev/null
-      LATEST_IMAGE=$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")
-      # Restart the container if the image is different by name
-      if [[ ${RUNNING_IMAGE} != "${LATEST_IMAGE}" ]]; then
-        echo "Updating ${CONTAINER} image ${CONTAINER_IMAGE}"
-        docker compose stop "$NAME"
-        docker compose up -d --no-deps --build "$NAME"
-      fi
-    done
+    docker compose up -d
   fi
   # Cleaning
   echo -e "\n*** Cleaning ***"
