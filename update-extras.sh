@@ -93,7 +93,7 @@ if [[ $DOCKER_COMPOSE == true ]]; then
     if [[ $DOCKER_COMPOSE_V1 == true ]]; then
       echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
       /usr/local/bin/docker-compose pull
-      /usr/local/bin/docker-compose up -d #--force-recreate --build
+      /usr/local/bin/docker-compose up --force-recreate --build -d
     fi
     # Docker-Compose v2
     if [[ $DOCKER_COMPOSE_V2 == true ]]; then
