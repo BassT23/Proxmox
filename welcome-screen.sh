@@ -4,7 +4,7 @@
 # Welcome-Screen #
 ##################
 
-VERSION="1.3.6"
+VERSION="1.3.7"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -43,11 +43,11 @@ VERSION_CHECK () {
 }
 
 READ_WRITE_CONFIG () {
-  WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' $CONFIG_FILE)
-  WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' $CONFIG_FILE)
-  WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' $CONFIG_FILE)
-  RUNNING=$(awk -F'"' '/^RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
-  STOPPED=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
+  WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
+  WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
+  WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
+  RUNNING=$(awk -F'"' '/^CHECK_RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
+  STOPPED=$(awk -F'"' '/^CHECK_STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   if [[ $ONLY != "" ]]; then
@@ -71,6 +71,8 @@ MINUTES=$(( (NOW - MOD) / 60 ))
 if [[ -f /usr/bin/neofetch ]]; then
   echo
   neofetch
+else
+  echo
 fi
 VERSION_CHECK
 READ_WRITE_CONFIG

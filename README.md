@@ -34,7 +34,7 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 - Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
 - Snapshot / Backup support (for Snapshot, your system must prepared for it)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
-- Logging to ``/var/log/update-"$HOSTNAME".log``
+- Logging - location can be change in config file
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/etc/ultimate-updater/exit`)
 - [Config file](https://github.com/BassT23/Proxmox/tree/master#config-file)
 
@@ -103,7 +103,7 @@ If updater detects installation: (disable, if you want in `/etc/ultimate-updater
 - ioBroker
 - Pterodactyl
 - Octoprint
-- Docker Container Images
+- Docker Compose (v1 and v2)
 
 
 # Config File:
