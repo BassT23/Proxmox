@@ -143,4 +143,4 @@ To go back to master, choose `update -up`
 [![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
 
 # Credits:
-[@Uruk](https://github.com/Uruknara) / [@elbim](https://github.com/elbim)
+[@Gauvino](https://github.com/Gauvino) / [@elbim](https://github.com/elbim)
