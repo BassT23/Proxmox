@@ -4,6 +4,7 @@
 # Update-Extras #
 #################
 
+# shellcheck disable=SC2034
 VERSION="1.8.5"
 
 # Variables
@@ -91,14 +92,14 @@ if [[ $DOCKER_COMPOSE_V1 == true && $DOCKER_COMPOSE == true ]]; then
     :
   fi
   cd "$COMPOSE" || exit
-  # Get the containers from first argument, else get all containers
+  # Get the containers from the first argument, else get all containers
   CONTAINER_LIST="${1:-$(docker ps -q)}"
   for CONTAINER in ${CONTAINER_LIST}; do
     # Get requirements
     CONTAINER_IMAGE=$(docker inspect --format "{{.Config.Image}}" --type container "${CONTAINER}")
     RUNNING_IMAGE=$(docker inspect --format "{{.Image}}" --type container "${CONTAINER}")
     NAME=$(docker inspect --format "{{.Name}}" --type container "${CONTAINER}" | cut -c 2-)
-    # Pull in latest version of the container and get the hash
+    # Pull in the latest version of the container and get the hash
     docker pull "${CONTAINER_IMAGE}" 2> /dev/null
     LATEST_IMAGE=$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")
     # Restart the container if the image is different by name
