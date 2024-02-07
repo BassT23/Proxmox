@@ -397,9 +397,9 @@ EXTRAS () {
       ssh "$IP" mkdir -p $LOCAL_FILES/
       scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
       scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
-      ssh "$IP" 'chmod +x $LOCAL_FILES/update-extras.sh && \
-                $LOCAL_FILES/update-extras.sh && \
-                rm -rf $LOCAL_FILES'
+      ssh "$IP" 'chmod +x $LOCAL_FILES/update-extras.sh &&' \
+                '$LOCAL_FILES/update-extras.sh &&' \
+                'rm -rf $LOCAL_FILES'
     fi
     echo -e "${GN}---   Finished extra updates    ---${CL}"
     if [[ "$WILL_STOP" != true ]] && [[ "$WELCOME_SCREEN" != true ]]; then
