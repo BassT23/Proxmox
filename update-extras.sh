@@ -4,6 +4,7 @@
 # Update-Extras #
 #################
 
+# shellcheck disable=SC2034
 VERSION="1.8.3"
 
 # Variables

@@ -4,6 +4,7 @@
 # Welcome-Screen #
 ##################
 
+# shellcheck disable=SC2034
 VERSION="1.3.4"
 
 # Branch
@@ -16,8 +17,8 @@ SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 # Colors
 # BL="\e[36m"
+# RD="\e[1;91m"
 OR="\e[1;33m"
-RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
 

@@ -4,6 +4,7 @@
 # Check Updates #
 #################
 
+# shellcheck disable=SC2034
 VERSION="1.4.6"
 
 #Variable / Function

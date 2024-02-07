@@ -4,6 +4,7 @@
 # Install #
 ###########
 
+# shellcheck disable=SC2034
 VERSION="1.6.8"
 
 # Branch
