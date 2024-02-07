@@ -105,17 +105,17 @@ ARGUMENTS () {
         if [[ "$WITH_HOST" == true ]]; then
           UPDATE_HOST_ITSELF
         else
-          echo -e "${BL}[Info] Skipped host itself by user${CL}\n\n"
+          echo -e "${BL}[Info] Skipped host itself by the user${CL}\n\n"
         fi
         if [[ "$WITH_LXC" == true ]]; then
           CONTAINER_UPDATE_START
         else
-          echo -e "${BL}[Info] Skipped all container by user${CL}\n"
+          echo -e "${BL}[Info] Skipped all containers by the user${CL}\n"
         fi
         if [[ "$WITH_VM" == true ]]; then
           VM_UPDATE_START
         else
-          echo -e "${BL}[Info] Skipped all VM by user${CL}\n"
+          echo -e "${BL}[Info] Skipped all VMs by the user${CL}\n"
         fi
         ;;
       cluster)
@@ -172,7 +172,7 @@ ARGUMENTS () {
         exit 2
         ;;
       *)
-        echo -e "\n${RD}  Error: Got an unexpected argument \"$ARGUMENT\"${CL}";
+        echo -e "\n${RD} Error: Got an unexpected argument \"$ARGUMENT\"${CL}";
         USAGE;
         exit 2;
         ;;
@@ -193,8 +193,8 @@ USAGE () {
     echo -e "  develop              Use develop branch\n"
     echo -e "{COMMAND}:"
     echo -e "========="
-    echo -e "  -h --help            Show this help"
-    echo -e "  -v --version         Show Proxmox-Updater Version"
+    echo -e "  -h --help            Show help menu"
+    echo -e "  -v --version         Show Proxmox-Updater version"
     echo -e "  -up                  Update Proxmox-Updater"
     echo -e "  status               Show Status (Version Infos)"
     echo -e "  uninstall            Uninstall Proxmox-Updater\n"
@@ -334,32 +334,32 @@ READ_CONFIG () {
 
 # Snapshot/Backup
 CONTAINER_BACKUP () {
-  echo -e "${BL}[Info]${OR} Try to create snapshot, otherwise could make a backup for container $CONTAINER${CL}"
+  echo -e "${BL}[Info]${OR} Try to create a snapshot, otherwise could make a backup for containers $CONTAINER${CL}"
   if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
     echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
   else
-    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${OR} - will make backup, if you want${CL}"
+    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${OR} - will make a backup, if you want${CL}"
     if [[ "$BACKUP" == true ]]; then
-      echo -e "${BL}[Info] Create backup for LXC (this will take some time - please wait)${CL}"
+      echo -e "${BL}[Info] Create a backup for LXC (this will take some time - please wait)${CL}"
       vzdump "$CONTAINER" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "${BL}[Info]${GN} Backup created${CL}\n"
     else
-      echo -e "${BL}[Info]${OR} Backup skipped by user${CL}\n"
+      echo -e "${BL}[Info]${OR} Backup skipped by the user${CL}\n"
     fi
   fi
 }
 VM_BACKUP () {
-  echo -e "${BL}[Info]${OR} Try to create snapshot, otherwise could make a backup for VM $VM${CL}"
+  echo -e "${BL}[Info]${OR} Try to create a snapshot, otherwise could make a backup for the VM $VM${CL}"
   if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
     echo -e "${BL}[Info]${GN} Snapshot created${CL}\n"
   else
-    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${OR} - will make backup, if you want${CL}"
+    echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${OR} - will make a backup, if you want${CL}"
     if [[ "$BACKUP" == true ]]; then
-      echo -e "${BL}[Info] Create backup for VM (this will take some time - please wait)${CL}"
+      echo -e "${BL}[Info] Create a backup for the VM (this will take some time - please wait)${CL}"
       vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "${BL}[Info]${GN} Backup created${CL}\n"
     else
-      echo -e "${BL}[Info]${OR} Backup skipped by user${CL}\n"
+      echo -e "${BL}[Info]${OR} Backup skipped by the user${CL}\n"
     fi
   fi
 }
@@ -367,9 +367,9 @@ VM_BACKUP () {
 # Extras
 EXTRAS () {
   if [[ "$EXTRA_GLOBAL" != true ]]; then
-    echo -e "\n${OR}--- Skip Extra Updates because of user settings ---${CL}\n"
+    echo -e "\n${OR}--- Skip Extra Updates because of the user settings ---${CL}\n"
   elif [[ "$HEADLESS" == true && "$EXTRA_IN_HEADLESS" == false ]]; then
-    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
+    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or the user settings ---${CL}\n"
   else
     echo -e "\n${OR}--- Searching for extra updates ---${CL}"
     if [[ "$SSH_CONNECTION" != true ]]; then
@@ -487,9 +487,9 @@ CONTAINER_UPDATE_START () {
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $CONTAINER ]]; then
-      echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
+      echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
-      echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
+      echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
     else
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
@@ -506,12 +506,12 @@ CONTAINER_UPDATE_START () {
         pct shutdown "$CONTAINER" &
         WILL_STOP="false"
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
-        echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
+        echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
         CONTAINER_BACKUP
         UPDATE_CONTAINER "$CONTAINER"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
-        echo -e "${BL}[Info] Skipped LXC $CONTAINER by user${CL}\n\n"
+        echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
       fi
     fi
   done
@@ -534,12 +534,12 @@ UPDATE_CONTAINER () {
   # Check Internet connection
   if [[ "$OS" != alpine ]]; then
     if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
-      echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+      echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
       return
     fi
 #  elif [[ "$OS" == alpine ]]; then
 #    if ! pct exec "$CONTAINER" -- ash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
-#      echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+#      echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
 #      return
 #    fi
   fi
@@ -597,9 +597,9 @@ VM_UPDATE_START () {
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
-      echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
+      echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
-      echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
+      echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
     elif [[ "$PRE_OS" =~ w ]]; then
       echo -e "${BL}[Info] Skipped VM $VM${CL}\n"
       echo -e "${OR}  Windows is not supported for now.\n  I'm working on it ;)${CL}\n\n"
@@ -614,7 +614,7 @@ VM_UPDATE_START () {
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
           qm start "$VM" >/dev/null 2>&1
           echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
-          echo -e "${OR}This will take some time, ... 45 secounds is set!${CL}"
+          echo -e "${OR}This will take some time, ... 45 seconds is set!${CL}"
           sleep 45
           UPDATE_VM "$VM"
           # Stop the VM
@@ -622,15 +622,15 @@ VM_UPDATE_START () {
           qm stop "$VM" &
           WILL_STOP="false"
         else
-          echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH not initialized${CL}\n\n"
+          echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH hasn't initialized${CL}\n\n"
         fi
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" != true ]]; then
-        echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
+        echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
         VM_BACKUP
         UPDATE_VM "$VM"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" != true ]]; then
-        echo -e "${BL}[Info] Skipped VM $VM by user${CL}\n\n"
+        echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
       fi
     fi
   done
@@ -660,7 +660,7 @@ UPDATE_VM () {
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
           if ! ssh "$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
-            echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+            echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
             return
           fi
           echo -e "${OR}--- APT UPDATE ---${CL}"
@@ -696,7 +696,7 @@ UPDATE_VM () {
           EXTRAS
           UPDATE_CHECK
         else
-          echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
+          echo -e "${RD}  The system is not supported.\n  Maybe with later version ;)\n${CL}"
           echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
         fi
         return
@@ -719,7 +719,7 @@ UPDATE_VM_QEMU () {
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       # Check Internet connection
       if ! qm guest exec "$VM" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
-        echo -e "${OR} Internet is not reachable - skip update${CL}\n"
+        echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
         return
       fi
       echo -e "${OR}--- APT UPDATE ---${CL}"
@@ -755,12 +755,12 @@ UPDATE_VM_QEMU () {
       echo
       UPDATE_CHECK
     else
-      echo -e "${RD}  System is not supported.\n  Maybe with later version ;)\n${CL}"
+      echo -e "${RD}  The system is not supported.\n  Maybe with later version ;)\n${CL}"
       echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
     fi
   else
     echo -e "${RD}  SSH or QEMU guest agent is not initialized on VM ${CL}\n\
-  ${OR}If you want to update VM, you must set up it by yourself!${CL}\n\
+  ${OR}If you want to update VMs, you must set up it by yourself!${CL}\n\
   For ssh (harder, but nicer output), check this: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n\
   For QEMU (easy connection), check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
   fi
@@ -856,17 +856,17 @@ if [[ "$COMMAND" != true ]]; then
     if [[ "$WITH_HOST" == true ]]; then
       UPDATE_HOST_ITSELF
     else
-      echo -e "${BL}[Info] Skipped host itself by user${CL}\n\n"
+      echo -e "${BL}[Info] Skipped host itself by the user${CL}\n\n"
     fi
     if [[ "$WITH_LXC" == true ]]; then
       CONTAINER_UPDATE_START
     else
-      echo -e "${BL}[Info] Skipped all container by user${CL}\n"
+      echo -e "${BL}[Info] Skipped all containers by the user${CL}\n"
     fi
     if [[ "$WITH_VM" == true ]]; then
       VM_UPDATE_START
     else
-      echo -e "${BL}[Info] Skipped all VMs by user${CL}\n"
+      echo -e "${BL}[Info] Skipped all VMs by the user${CL}\n"
     fi
   fi
 fi

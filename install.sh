@@ -99,7 +99,7 @@ USAGE () {
         echo -e "Usage: $0 {COMMAND}\n"
         echo -e "{COMMAND}:"
         echo -e "=========="
-        echo -e "  -h --help            Show this help"
+        echo -e "  -h --help            Show help menu"
         echo -e "  status               Check current installation status"
         echo -e "  install              Install Proxmox-Updater"
         echo -e "  welcome              Install or Uninstall Welcome Screen"
@@ -172,7 +172,7 @@ UPDATE () {
     if [ -f "/usr/local/bin/update" ]; then
       # Check for old filesystem
       if [ -d "/root/Proxmox-Update-Scripts" ]; then
-        echo -e "${RD}Proxmox-Updater has changed directorys, so the old directory\n\
+        echo -e "${RD}Proxmox-Updater has changed directory's, so the old directory\n\
 /root/Update-Scripts will be delete.${CL}\n\
 ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
         read -p "Type [Y/y] for DELETE - anything else will exit: " -r
@@ -253,8 +253,8 @@ CHECK_DIFF () {
   if ! cmp -s "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"; then
     echo -e "The file ${OR}$f${CL}\n \
  ==> Modified (by you or by a script) since installation.\n \
-   What would you like to do about it ?  Your options are:\n \
-    Y or y  : install the package maintainer's version (old file will be save as '$f.bak')\n \
+   What would you like to do about it?  Your options are:\n \
+    Y or y  : install the package maintainer's version (old file will be saved as '$f.bak')\n \
     N or n  : keep your currently-installed version\n \
     S or s  : show the differences between the versions\n \
  The default action is to install new version and backup current file."

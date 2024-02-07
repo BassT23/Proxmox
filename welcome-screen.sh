@@ -61,7 +61,7 @@ READ_WRITE_CONFIG () {
   elif [[ $ONLY == "" && $EXCLUDED != "" ]]; then
     echo -e "${OR}Exclude is set. Not all machines are checked.${CL}\n"
   elif [[ $WITH_HOST != true || $WITH_LXC != true || $WITH_VM != true ||$RUNNING != true || $STOPPED != true ]]; then
-    echo -e "${OR}Variable is set in config file. Some machines will not be checked!${CL}\n"
+    echo -e "${OR}The variable is set in config file. Some machines will not be checked!${CL}\n"
   fi
 }
 

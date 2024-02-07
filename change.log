@@ -10,7 +10,7 @@ Changelog:
 - code cleaning
 
 **v3.9** (07.11.2023)
-- make backup before update (must be enabled in config by user)
+- make backup before update (must be enabled in config by the user)
 - code cleaning
 - check internet connection on each LXC/VM
 - config file:
@@ -66,7 +66,7 @@ Changelog:
 **v3.3** (15.02.2023)
 - Add Update Info
 - Add extra Updates
-- Add version check by user
+- Add version check by the user
 
 **v3.1.1** (13.02.2023)
 - Fixed update failure with CentOS
