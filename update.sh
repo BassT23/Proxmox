@@ -427,11 +427,11 @@ UPDATE_CHECK () {
   if [[ "$WELCOME_SCREEN" == true ]]; then
     echo -e "${OR}--- Check Status for Welcome-Screen ---${CL}"
     if [[ "$CHOST" == true ]]; then
-      ssh "$HOSTNAME" '$LOCAL_FILES/check-updates.sh -u chost' | tee -a $LOCAL_FILES/check-output
+      ssh "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u chost | tee -a $LOCAL_FILES/check-output
     elif [[ "$CCONTAINER" == true ]]; then
-      ssh "$HOSTNAME" '$LOCAL_FILES/check-updates.sh -u ccontainer' | tee -a $LOCAL_FILES/check-output
+      ssh "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u ccontainer | tee -a $LOCAL_FILES/check-output
     elif [[ "$CVM" == true ]]; then
-      ssh "$HOSTNAME" '$LOCAL_FILES/check-updates.sh -u cvm' | tee -a $LOCAL_FILES/check-output
+      ssh "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u cvm | tee -a $LOCAL_FILES/check-output
     fi
     echo -e "${GN}---          Finished check         ---${CL}\n"
     if [[ "$WILL_STOP" != true ]]; then echo; fi
