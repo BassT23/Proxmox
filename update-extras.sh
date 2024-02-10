@@ -4,6 +4,7 @@
 # Update-Extras #
 #################
 
+# shellcheck disable=SC2034
 VERSION="1.8.5"
 
 # Variables
@@ -79,14 +80,32 @@ if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
 fi
 
 # Docker Compose detection
-if [[ $DOCKER_COMPOSE == true ]]; then
-  if [[ -f /usr/local/bin/docker-compose ]]; then DOCKER_COMPOSE_V1=true; fi
-  if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
-  if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]]; then
-    # find config file
-    COMPOSE=$(find /home -name "docker-compose.yml" 2>/dev/null | rev | cut -c 20- | rev | tail -n 1)
-    if [[ -z "$COMPOSE" ]]; then
-      COMPOSE=$(find /home -name "docker-compose.yaml" 2>/dev/null | rev | cut -c 20- | rev | tail -n 1)
+if [[ -f /usr/local/bin/docker-compose ]]; then DOCKER_COMPOSE_V1=true; fi
+if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
+
+# Docker-Compose v1
+if [[ $DOCKER_COMPOSE_V1 == true && $DOCKER_COMPOSE == true ]]; then
+  echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
+  if COMPOSE=$(find /home -name "docker-compose.yaml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
+    :
+  elif COMPOSE=$(find /home -name "docker-compose.yml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
+    :
+  fi
+  cd "$COMPOSE" || exit
+  # Get the containers from the first argument, else get all containers
+  CONTAINER_LIST="${1:-$(docker ps -q)}"
+  for CONTAINER in ${CONTAINER_LIST}; do
+    # Get requirements
+    CONTAINER_IMAGE=$(docker inspect --format "{{.Config.Image}}" --type container "${CONTAINER}")
+    RUNNING_IMAGE=$(docker inspect --format "{{.Image}}" --type container "${CONTAINER}")
+    NAME=$(docker inspect --format "{{.Name}}" --type container "${CONTAINER}" | cut -c 2-)
+    # Pull in the latest version of the container and get the hash
+    docker pull "${CONTAINER_IMAGE}" 2> /dev/null
+    LATEST_IMAGE=$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")
+    # Restart the container if the image is different by name
+    if [[ ${RUNNING_IMAGE} != "${LATEST_IMAGE}" ]]; then
+      echo "Updating ${CONTAINER} image ${CONTAINER_IMAGE}"
+      /usr/local/bin/docker-compose up -d --no-deps --build "$NAME"
     fi
     cd "$COMPOSE" || exit
     # Docker-Compose v1
@@ -108,5 +127,5 @@ if [[ $DOCKER_COMPOSE == true ]]; then
     docker system prune -a -f
     docker image prune -f
     docker system prune --volumes -f
-  fi
+  done
 fi
