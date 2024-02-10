@@ -127,5 +127,5 @@ if [[ $DOCKER_COMPOSE_V1 == true && $DOCKER_COMPOSE == true ]]; then
     docker system prune -a -f
     docker image prune -f
     docker system prune --volumes -f
-  fi
+  done
 fi
