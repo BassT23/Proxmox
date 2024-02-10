@@ -107,45 +107,25 @@ if [[ $DOCKER_COMPOSE_V1 == true && $DOCKER_COMPOSE == true ]]; then
       echo "Updating ${CONTAINER} image ${CONTAINER_IMAGE}"
       /usr/local/bin/docker-compose up -d --no-deps --build "$NAME"
     fi
-  done
-  # Cleaning
-  echo -e "\n*** Cleaning ***"
-  docker container prune -f
-  docker system prune -a -f
-  docker image prune -f
-  docker system prune --volumes -f
-fi
-
-# Docker-Compose v2
-if [[ $DOCKER_COMPOSE_V2 == true && $DOCKER_COMPOSE == true ]]; then
-  echo -e "\n*** Updating Docker Compose ***"
-  if COMPOSE=$(find /home -name "docker-compose.yaml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
-    :
-  elif COMPOSE=$(find /home -name "docker-compose.yml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
-    :
-  fi
-  cd "$COMPOSE" || exit
-  # Get the containers from first argument, else get all containers
-  CONTAINER_LIST="${1:-$(docker ps -q)}"
-  for CONTAINER in ${CONTAINER_LIST}; do
-    # Get requirements
-    CONTAINER_IMAGE=$(docker inspect --format "{{.Config.Image}}" --type container "${CONTAINER}")
-    RUNNING_IMAGE=$(docker inspect --format "{{.Image}}" --type container "${CONTAINER}")
-    NAME=$(docker inspect --format "{{.Name}}" --type container "${CONTAINER}" | cut -c 2-)
-    # Pull in latest version of the container and get the hash
-    docker pull "${CONTAINER_IMAGE}" 2> /dev/null
-    LATEST_IMAGE=$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")
-    # Restart the container if the image is different by name
-    if [[ ${RUNNING_IMAGE} != "${LATEST_IMAGE}" ]]; then
-      echo "Updating ${CONTAINER} image ${CONTAINER_IMAGE}"
-      docker compose stop "$NAME"
-      docker compose up -d --no-deps --build "$NAME"
+    cd "$COMPOSE" || exit
+    # Docker-Compose v1
+    if [[ $DOCKER_COMPOSE_V1 == true ]]; then
+      echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
+      /usr/local/bin/docker-compose pull
+      /usr/local/bin/docker-compose up --force-recreate --build -d
+      /usr/local/bin/docker-compose restart
     fi
-  done
-  # Cleaning
-  echo -e "\n*** Cleaning ***"
-  docker container prune -f
-  docker system prune -a -f
-  docker image prune -f
-  docker system prune --volumes -f
+    # Docker-Compose v2
+    if [[ $DOCKER_COMPOSE_V2 == true ]]; then
+      echo -e "\n*** Updating Docker Compose ***"
+      docker compose pull
+      docker compose up -d
+    fi
+    # Cleaning
+    echo -e "\n*** Cleaning ***"
+    docker container prune -f
+    docker system prune -a -f
+    docker image prune -f
+    docker system prune --volumes -f
+  fi
 fi

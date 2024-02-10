@@ -5,7 +5,7 @@
 ##########
 
 # shellcheck disable=SC2034
-VERSION="4.0.3"
+VERSION="4.0.4"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -345,6 +345,12 @@ CONTAINER_BACKUP () {
     if [[ "$SNAPSHOT" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
+        echo -e "${BL}[Info]${GN} delete old snapshots${CL}"
+        LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -1)
+        for SNAPSHOT in $LIST; do
+          pct delsnapshot "$CONTAINER" Update"$SNAPSHOT"
+        done
+      echo -e "${BL}[Info]${GN} done${CL}"
       else
         echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${CL}"
       fi
@@ -363,6 +369,12 @@ VM_BACKUP () {
     if [[ "$SNAPSHOT" == true ]]; then
       if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
+        echo -e "${BL}[Info]${GN} delete old snapshots${CL}"
+        LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -1)
+        for SNAPSHOT in $LIST; do
+          qm delsnapshot "$VM" Update"$SNAPSHOT"
+        done
+      echo -e "${BL}[Info]${GN} done${CL}"
       else
         echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${CL}"
       fi
