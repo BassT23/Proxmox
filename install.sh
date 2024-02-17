@@ -95,38 +95,38 @@ ARGUMENTS () {
 }
 
 USAGE () {
-    if [[ $SILENT != true ]]; then
-        echo -e "Usage: $0 {COMMAND}\n"
-        echo -e "{COMMAND}:"
-        echo -e "=========="
-        echo -e "  -h --help            Show help menu"
-        echo -e "  status               Check current installation status"
-        echo -e "  install              Install The Ultimate Updater"
-        echo -e "  welcome              Install or Uninstall Welcome Screen"
-        echo -e "  uninstall            Uninstall The Ultimate Updater"
-        echo -e "  update               Update The Ultimate Updater\n"
-        echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
-    fi
+  if [[ $SILENT != true ]]; then
+    echo -e "Usage: $0 {COMMAND}\n"
+    echo -e "{COMMAND}:"
+    echo -e "=========="
+    echo -e "  -h --help            Show help menu"
+    echo -e "  status               Check current installation status"
+    echo -e "  install              Install The Ultimate Updater"
+    echo -e "  welcome              Install or Uninstall Welcome Screen"
+    echo -e "  uninstall            Uninstall The Ultimate Updater"
+    echo -e "  update               Update The Ultimate Updater\n"
+    echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
+  fi
 }
 
 IS_INSTALLED () {
-    if [ -f "/usr/local/sbin/update" ]; then
-      true
-    else
-      false
-    fi
+  if [ -f "/usr/local/sbin/update" ]; then
+    true
+  else
+    false
+  fi
 }
 
 STATUS () {
-    if [[ $SILENT != true ]]; then
-        echo -e "The Ultimate Updater"
-        if IS_INSTALLED; then
-            echo -e "Status: ${GN}present${CL}\n"
-        else
-            echo -e "Status: ${RD}not present${CL}\n"
-        fi
+  if [[ $SILENT != true ]]; then
+    echo -e "The Ultimate Updater"
+    if IS_INSTALLED; then
+      echo -e "Status: ${GN}present${CL}\n"
+    else
+      echo -e "Status: ${RD}not present${CL}\n"
     fi
-    if IS_INSTALLED; then exit 0; else exit 1; fi
+  fi
+  if IS_INSTALLED; then exit 0; else exit 1; fi
 }
 
 INFORMATION () {
@@ -181,43 +181,43 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
 }
 
 INSTALL () {
-    echo -e "\n${BL}[Info]${GN} Installing The Ultimate Updater${CL}\n"
-    if [ -f "/usr/local/sbin/update" ]; then
-      echo -e "${OR}The Ultimate Updater is already installed.${CL}"
-      read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
-      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        bash <(curl -s $SERVER_URL/install.sh) update
-      else
-        echo -e "${OR}\nBye\n${CL}"
-        exit 0
-      fi
+  echo -e "\n${BL}[Info]${GN} Installing The Ultimate Updater${CL}\n"
+  if [ -f "/usr/local/sbin/update" ]; then
+    echo -e "${OR}The Ultimate Updater is already installed.${CL}"
+    read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
+    if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+      bash <(curl -s $SERVER_URL/install.sh) update
     else
-      mkdir -p $LOCAL_FILES/exit
-      mkdir -p $LOCAL_FILES/VMs
-      # Download latest release
-      if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-        curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
-        tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
-        rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
-        TEMP_FILES=$TEMP_FOLDER
-      # Copy files
-      cp "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
-      chmod 750 $LOCAL_FILES/update.sh
-      ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
-      cp "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
-      cp "$TEMP_FILES"/exit/* $LOCAL_FILES/exit/
-      chmod -R +x "$LOCAL_FILES"/exit/*.sh
-      cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
-      cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
-      echo -e "${OR}Finished. Run The Ultimate Updater with 'update'.${CL}"
-      echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
-      echo -e "${OR}Also want to install the Welcome-Screen?${CL}"
-      read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
-      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        WELCOME_SCREEN_INSTALL
-      fi
-      rm -rf $TEMP_FOLDER || true
+      echo -e "${OR}\nBye\n${CL}"
+      exit 0
     fi
+  else
+    mkdir -p $LOCAL_FILES/exit
+    mkdir -p $LOCAL_FILES/VMs
+    # Download latest release
+    if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
+      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
+      tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
+      rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
+      TEMP_FILES=$TEMP_FOLDER
+    # Copy files
+    cp "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
+    chmod 750 $LOCAL_FILES/update.sh
+    ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
+    cp "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
+    cp "$TEMP_FILES"/exit/* $LOCAL_FILES/exit/
+    chmod -R +x "$LOCAL_FILES"/exit/*.sh
+    cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
+    cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
+    echo -e "${OR}Finished. Run The Ultimate Updater with 'update'.${CL}"
+    echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
+    echo -e "${OR}Also want to install the Welcome-Screen?${CL}"
+    read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
+    if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+      WELCOME_SCREEN_INSTALL
+    fi
+    rm -rf $TEMP_FOLDER || true
+  fi
 }
 
 UPDATE () {
