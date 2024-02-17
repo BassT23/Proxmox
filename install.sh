@@ -131,8 +131,8 @@ STATUS () {
 
 INFORMATION () {
   if [[ -d /root/Proxmox-Updater/ ]]; then
-    echo -e "\n${RD} --- ATTENTION! ---\n Because of name and directory changing you will need an reboot of the node, after the update\n${BL} Do you want to proceed?${CL}"
-    read -p " Type [Y/y] or Enter for yes - anything else will exit: " -r
+    echo -e "\n${RD} --- ATTENTION ---\n Because of name and directory changing you will need an reboot of the node, after the update\n${BL} Do you want to proceed?${CL}"
+    read -p "\n Type [Y/y] or Enter for yes - anything else will exit: " -r
       if ! [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         exit 1
       fi
