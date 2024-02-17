@@ -109,7 +109,7 @@ USAGE () {
     fi
 }
 
-isInstalled () {
+IS_INSTALLED () {
     if [ -f "/usr/local/sbin/update" ]; then
         true
     else
@@ -120,13 +120,13 @@ isInstalled () {
 STATUS () {
     if [[ $SILENT != true ]]; then
         echo -e "The Ultimate Updater"
-        if isInstalled; then
+        if IS_INSTALLED; then
             echo -e "Status: ${GN}present${CL}\n"
         else
             echo -e "Status: ${RD}not present${CL}\n"
         fi
     fi
-    if isInstalled; then exit 0; else exit 1; fi
+    if IS_INSTALLED; then exit 0; else exit 1; fi
 }
 
 INFORMATION () {
