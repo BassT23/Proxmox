@@ -5,7 +5,7 @@
 ##########
 
 # shellcheck disable=SC2034
-VERSION="4.0.4"
+VERSION="4.0.5"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -322,6 +322,7 @@ READ_CONFIG () {
   LOG_FILE=$(awk -F'"' '/^LOG_FILE=/ {print $2}' "$CONFIG_FILE")
   CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' "$CONFIG_FILE")
   CHECK_URL=$(awk -F'"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
+  SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' "$CONFIG_FILE")
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' "$CONFIG_FILE")
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' "$CONFIG_FILE")
@@ -347,7 +348,7 @@ CONTAINER_BACKUP () {
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
         echo -e "${BL}[Info]${GN} delete old snapshots${CL}"
-        LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -1)
+        LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOT in $LIST; do
           pct delsnapshot "$CONTAINER" Update"$SNAPSHOT"
         done
@@ -371,7 +372,7 @@ VM_BACKUP () {
       if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
         echo -e "${BL}[Info]${GN} delete old snapshots${CL}"
-        LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -1)
+        LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOT in $LIST; do
           qm delsnapshot "$VM" Update"$SNAPSHOT"
         done
