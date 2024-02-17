@@ -6,7 +6,7 @@ Changelog:
 - set, how many snapshots will be keep, in config file
 - delete old (Update_) snapshots
 - name changing ("Proxmox Updater" is now "The Ultimate Updater for Proxmox VE")
-- move Program to correct folder system
+- move program to correct folder system
 - edit config file, for better usage
 - update-check can now be better set (in config file)
 - support Docker Compose v1 and v2
