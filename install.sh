@@ -111,9 +111,9 @@ USAGE () {
 
 IS_INSTALLED () {
     if [ -f "/usr/local/sbin/update" ]; then
-        true
+      true
     else
-        false
+      false
     fi
 }
 
