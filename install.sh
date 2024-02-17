@@ -5,7 +5,7 @@
 ###########
 
 # shellcheck disable=SC2034
-VERSION="1.7"
+VERSION="1.7.1"
 
 # Branch
 BRANCH="beta"
@@ -129,6 +129,16 @@ STATUS () {
     if isInstalled; then exit 0; else exit 1; fi
 }
 
+INFORMATION () {
+  if [[ -d /root/Proxmox-Updater/ ]]; then
+    echo -e "\n${RD} --- ATTENTION! ---\n Because of name and directory changing you will need an reboot of the node, after the update\n${BL} Do you want to proceed?${CL}"
+    read -p " Type [Y/y] or Enter for yes - anything else will exit: " -r
+      if ! [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+        exit 1
+      fi
+  fi
+}
+
 OLD_FILESYSTEM_CHECK () {
   if [[ -d /root/Proxmox-Updater/ ]]; then
     mv /root/Proxmox-Updater/ $LOCAL_FILES/
@@ -211,6 +221,7 @@ INSTALL () {
 }
 
 UPDATE () {
+  INFORMATION
   OLD_FILESYSTEM_CHECK
   if [ -f "/usr/local/sbin/update" ]; then
     # Update
