@@ -5,6 +5,8 @@
 ##########
 
 # shellcheck disable=SC2034
+# shellcheck disable=SC2029
+# shellcheck disable=SC2317
 VERSION="4.0.5"
 
 # Variable / Function
