@@ -86,9 +86,9 @@ if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
 # Docker-Compose v1
 if [[ $DOCKER_COMPOSE_V1 == true && $DOCKER_COMPOSE == true ]]; then
   echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
-  if COMPOSE=$(find /home -name "docker-compose.yaml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
+  if COMPOSE=$(find / -name "docker-compose.yaml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
     :
-  elif COMPOSE=$(find /home -name "docker-compose.yml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
+  elif COMPOSE=$(find / -name "docker-compose.yml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
     :
   fi
   cd "$COMPOSE" || exit
