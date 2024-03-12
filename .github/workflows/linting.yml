@@ -16,4 +16,4 @@ jobs:
           uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
         - name: (Lint) Run ShellCheck
-          uses: azohra/shell-linter@6bbeaa868df09c34ddc008e6030cfe89c03394a1 # v0.6.0
+          uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # v2.0.0

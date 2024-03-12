@@ -371,12 +371,12 @@ VM_BACKUP () {
     if [[ "$SNAPSHOT" == true ]]; then
       if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
-        echo -e "${BL}[Info]${GN} delete old snapshots${CL}"
+        echo -e "${BL}[Info]${GN} Deleting old snapshot(s)${CL}"
         LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOT in $LIST; do
           qm delsnapshot "$VM" Update"$SNAPSHOT"
         done
-      echo -e "${BL}[Info]${GN} done${CL}"
+      echo -e "${BL}[Info]${GN} Done${CL}"
       else
         echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${CL}"
       fi
@@ -387,7 +387,7 @@ VM_BACKUP () {
       echo -e "${BL}[Info]${GN} Backup created${CL}"
     fi
   else
-    echo -e "${BL}[Info]${OR} Snapshot and Backup skipped by the user${CL}"
+    echo -e "${BL}[Info]${OR} Snapshot and/or Backup skipped by the user${CL}"
   fi
 }
 
@@ -411,9 +411,9 @@ EXTRAS () {
       ssh "$IP" mkdir -p $LOCAL_FILES/
       scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
       scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
-      ssh "$IP" 'chmod +x $LOCAL_FILES/update-extras.sh &&' \
-                '$LOCAL_FILES/update-extras.sh &&' \
-                'rm -rf $LOCAL_FILES'
+      ssh "$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
+                $LOCAL_FILES/update-extras.sh && \
+                rm -rf $LOCAL_FILES"
     fi
     echo -e "${GN}---   Finished extra updates    ---${CL}"
     if [[ "$WILL_STOP" != true ]] && [[ "$WELCOME_SCREEN" != true ]]; then
