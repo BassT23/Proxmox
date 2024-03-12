@@ -835,7 +835,7 @@ CLEAN_LOGFILE () {
 # Exit
 EXIT () {
   EXIT_CODE=$?
-  if [[ -f /etc/ultimate-updater/temp/exec_host ]]; then
+  if [[ -f "/etc/ultimate-updater/temp/exec_host" ]]; then
     EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' /etc/ultimate-updater/temp/exec_host)
   fi
   if [[ "$WELCOME_SCREEN" == true ]]; then
@@ -862,13 +862,13 @@ EXIT () {
   sleep 3
   rm -rf /etc/ultimate-updater/temp/var
   rm -rf $LOCAL_FILES/update
-  if [[ -f /etc/ultimate-updater/temp/exec_host && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf $LOCAL_FILES; fi
+  if [[ -f "/etc/ultimate-updater/temp/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf $LOCAL_FILES; fi
 }
 set -e
 trap EXIT EXIT
 
 # Check Cluster Mode
-if [[ -f /etc/corosync/corosync.conf ]]; then
+if [[ -f "/etc/corosync/corosync.conf" ]]; then
   HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
   MODE="Cluster "
 else
@@ -878,7 +878,7 @@ fi
 # Run
 NAME_CHANGING
 export TERM=xterm-256color
-if ! [[ -d /etc/ultimate-updater/temp ]]; then mkdir /etc/ultimate-updater/temp; fi
+if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
 READ_CONFIG
 OUTPUT_TO_FILE
 IP=$(hostname -I)
