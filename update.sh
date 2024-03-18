@@ -349,12 +349,12 @@ CONTAINER_BACKUP () {
     if [[ "$SNAPSHOT" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
-        echo -e "${BL}[Info]${GN} delete old snapshots${CL}"
+        echo -e "${BL}[Info]${GN} Deleted old snapshots${CL}"
         LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOT in $LIST; do
           pct delsnapshot "$CONTAINER" Update"$SNAPSHOT"
         done
-      echo -e "${BL}[Info]${GN} done${CL}"
+      echo -e "${BL}[Info]${GN} Done${CL}"
       else
         echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${CL}"
       fi
