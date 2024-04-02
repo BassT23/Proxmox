@@ -7,7 +7,7 @@
 # shellcheck disable=SC2034
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
-VERSION="4.0.5"
+VERSION="4.0.6"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -351,8 +351,8 @@ CONTAINER_BACKUP () {
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
         echo -e "${BL}[Info]${GN} Deleted old snapshots${CL}"
         LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
-        for SNAPSHOT in $LIST; do
-          pct delsnapshot "$CONTAINER" Update"$SNAPSHOT"
+        for SNAPSHOTS in $LIST; do
+          pct delsnapshot "$CONTAINER" Update"$SNAPSHOTS"
         done
       echo -e "${BL}[Info]${GN} Done${CL}"
       else
@@ -375,8 +375,8 @@ VM_BACKUP () {
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
         echo -e "${BL}[Info]${GN} Deleting old snapshot(s)${CL}"
         LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
-        for SNAPSHOT in $LIST; do
-          qm delsnapshot "$VM" Update"$SNAPSHOT"
+        for SNAPSHOTS in $LIST; do
+          qm delsnapshot "$VM" Update"$SNAPSHOTS"
         done
       echo -e "${BL}[Info]${GN} Done${CL}"
       else
