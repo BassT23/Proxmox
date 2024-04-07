@@ -832,6 +832,7 @@ CLEAN_LOGFILE () {
   fi
 }
 
+# shellcheck disable=SC2086
 # Exit
 EXIT () {
   EXIT_CODE=$?
