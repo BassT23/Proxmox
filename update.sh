@@ -233,7 +233,7 @@ VERSION_CHECK () {
   elif [[ "$BRANCH" == master ]]; then
       echo -e "\n              ${GN}Script is UpToDate${CL}"
   fi
-  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "               Version: $VERSION"; fi
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "                 Version: $VERSION"; fi
   rm -rf $LOCAL_FILES/temp/update.sh && echo
 }
 
