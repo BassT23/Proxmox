@@ -1,6 +1,17 @@
 Changelog:
 ==========
 
+**v4.1** (07.04.2024)
+- disable/enable Snapshots and Backups in config file
+- set, how many snapshots will be keep, in config file
+- delete old (Update_) snapshots
+- name changing ("Proxmox Updater" is now "The Ultimate Updater for Proxmox VE")
+- move program to correct folder system
+- edit config file, for better usage
+- update-check can now be better set (in config file)
+- support Docker Compose v1 and v2
+- bug fixing
+
 **v4.0** (18.12.2023)
 - fix loop through vms
 - fix new docker compose command

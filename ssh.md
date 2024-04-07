@@ -30,7 +30,7 @@ PermitRootLogin yes
 
 
 ### IN HOST:
-- create one file per VM in `/root/Proxmox-Updater/VMs/<ID>` with content:
+- create one file per VM in `/etc/ultimate-updater/VMs/<ID>` with content:
 
 `IP="111.111.111.111"`   # use the IP from the VM!
 

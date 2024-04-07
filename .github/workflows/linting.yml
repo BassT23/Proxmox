@@ -1,0 +1,19 @@
+name: Linting Shell Scripts
+
+on:
+  push:
+    branches: [master, beta, develop]
+  pull_request:
+    branches: [master, beta, develop]
+  schedule:
+    - cron: "30 1 * * *"
+
+jobs:
+    lint:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+        - name: (Lint) Run ShellCheck
+          uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # v2.0.0
