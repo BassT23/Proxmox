@@ -1,7 +1,7 @@
 Changelog:
 ==========
 
-**v4.0.5** (beta)
+**v4.1** (07.04.2024)
 - disable/enable Snapshots and Backups in config file
 - set, how many snapshots will be keep, in config file
 - delete old (Update_) snapshots
