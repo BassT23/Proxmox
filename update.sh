@@ -7,7 +7,7 @@
 # shellcheck disable=SC2034
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
-VERSION="4.0.6"
+VERSION="4.1"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -34,8 +34,8 @@ HEADER_INFO () {
   / /_/ / / /_/ / / / / / / /_/ / /_/  __/
   \____/_/\__/_/_/ /_/ /_/\____/\__/\___/
      __  __          __      __
-    / / / /___  ____/ /___ _/ /____  _____
-   / / / / __ \/ __  / __ `/ __/ _ \/ ___/
+    / / / /___  ____/ /___ _/ /____  ____
+   / / / / __ \/ __  / __ `/ __/ _ \/ __/
   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
   \____/ ____/\____/\____/\__/\___/_/
       /_/     for Proxmox VE
@@ -233,7 +233,7 @@ VERSION_CHECK () {
   elif [[ "$BRANCH" == master ]]; then
       echo -e "\n              ${GN}Script is UpToDate${CL}"
   fi
-  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "               Version: $VERSION"; fi
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "                 Version: $VERSION"; fi
   rm -rf $LOCAL_FILES/temp/update.sh && echo
 }
 
