@@ -82,7 +82,7 @@ ARGUMENTS () {
     case "$ARGUMENT" in
       [0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9])
         echo -e "update only LXC/VM $ARGUMENT - in future :)"
-        EXIT
+        exit 2
         ;;
       -h|--help)
         USAGE
