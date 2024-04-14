@@ -79,10 +79,10 @@ ARGUMENTS () {
   while test $# -gt -0; do
     ARGUMENT="$1"
     case "$ARGUMENT" in
-#      [0-9]|[0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9])
-#        echo -e "$ARGUMENT"
-#        EXIT
-#        ;;
+      [0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9])
+        echo -e "update only LXC/VM $ARGUMENT - in future :)"
+        EXIT
+        ;;
       -h|--help)
         USAGE
         exit 2
