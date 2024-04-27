@@ -81,8 +81,12 @@ ARGUMENTS () {
     ARGUMENT="$1"
     case "$ARGUMENT" in
       [0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9])
-        echo -e "update only LXC/VM $ARGUMENT - in future :)"
-        exit 2
+        COMMAND=true
+        SINGLE_UPDATE=true
+        ONLY=$ARGUMENT
+        HEADER_INFO
+        CONTAINER_UPDATE_START
+#        echo -e "update only LXC/VM $ARGUMENT - in future :)"
         ;;
       -h|--help)
         USAGE
@@ -411,10 +415,10 @@ EXTRAS () {
                                         rm -rf $LOCAL_FILES"
     else
       # Extras in VMS with SSH_CONNECTION
-      ssh "$IP" mkdir -p $LOCAL_FILES/
+      ssh -q -p "$SSH_PORT" "$IP" mkdir -p $LOCAL_FILES/
       scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
       scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
-      ssh "$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
+      ssh -q -p "$SSH_PORT" "$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
                 $LOCAL_FILES/update-extras.sh && \
                 rm -rf $LOCAL_FILES"
     fi
@@ -432,11 +436,11 @@ UPDATE_CHECK () {
   if [[ "$WELCOME_SCREEN" == true ]]; then
     echo -e "${OR}--- Check Status for Welcome-Screen ---${CL}"
     if [[ "$CHOST" == true ]]; then
-      ssh "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u chost | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u chost | tee -a $LOCAL_FILES/check-output
     elif [[ "$CCONTAINER" == true ]]; then
-      ssh "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u ccontainer | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u ccontainer | tee -a $LOCAL_FILES/check-output
     elif [[ "$CVM" == true ]]; then
-      ssh "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u cvm | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u cvm | tee -a $LOCAL_FILES/check-output
     fi
     echo -e "${GN}---          Finished check         ---${CL}\n"
     if [[ "$WILL_STOP" != true ]]; then echo; fi
@@ -451,7 +455,7 @@ HOST_UPDATE_START () {
   if [[ "$RICM" != true ]]; then true > $LOCAL_FILES/check-output; fi
   for HOST in $HOSTS; do
     # Check if Host/Node is available
-    if ssh "$HOST" test >/dev/null 2>&1; [ $? -eq 255 ]; then
+    if ssh -q -p "$SSH_PORT" "$HOST" test >/dev/null 2>&1; [ $? -eq 255 ]; then
       echo -e "${BL}[Info] ${OR}Skip Host${CL} : ${GN}$HOST${CL} ${OR}- can't connect${CL}\n"
     else
      UPDATE_HOST "$HOST"
@@ -464,7 +468,7 @@ UPDATE_HOST () {
   HOST=$1
   START_HOST=$(hostname -I | tr -d '[:space:]')
   if [[ "$HOST" != "$START_HOST" ]]; then
-    ssh "$HOST" mkdir -p $LOCAL_FILES/temp
+    ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
     scp "$0" "$HOST":$LOCAL_FILES/update
     scp $LOCAL_FILES/update-extras.sh "$HOST":$LOCAL_FILES/update-extras.sh
     scp $LOCAL_FILES/update.conf "$HOST":$LOCAL_FILES/update.conf
@@ -478,11 +482,11 @@ UPDATE_HOST () {
     scp -r $LOCAL_FILES/VMs/ "$HOST":$LOCAL_FILES/
   fi
   if [[ "$HEADLESS" == true ]]; then
-    ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
+    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
   elif [[ "$WELCOME_SCREEN" == true ]]; then
-    ssh "$HOST" 'bash -s' < "$0" -- "-c -w host"
+    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c -w host"
   else
-    ssh "$HOST" 'bash -s' < "$0" -- "-c host"
+    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c host"
   fi
 }
 
@@ -682,7 +686,7 @@ UPDATE_VM () {
   # Run Update
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if ! (ssh "$IP" exit >/dev/null 2>&1); then
+    if ! (ssh -q -p "$SSH_PORT" "$IP" exit >/dev/null 2>&1); then
       echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
   Please configure SSH Key-Based Authentication${CL}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
@@ -692,43 +696,43 @@ UPDATE_VM () {
       SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
       if [[ "$OS_BASE" =~ l2 ]]; then
-        OS=$(ssh "$IP" hostnamectl | grep System)
+        OS=$(ssh -q -p "$SSH_PORT" "$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
-          if ! ssh "$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
+          if ! ssh -q -p "$SSH_PORT" "$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
             echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
             return
           fi
           echo -e "${OR}--- APT UPDATE ---${CL}"
-          ssh "$IP" apt-get update
+          ssh -q -p "$SSH_PORT" "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
           if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh -tt "$IP" apt-get upgrade -y
+            ssh -q -p "$SSH_PORT" -tt "$IP" apt-get upgrade -y
           else
-            ssh -tt "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+            ssh -q -p "$SSH_PORT" -tt "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh -tt "$IP" apt-get --purge autoremove -y
+          ssh -q -p "$SSH_PORT" -tt "$IP" apt-get --purge autoremove -y
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Fedora ]]; then
           echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-          ssh -tt "$IP" dnf -y upgrade
+          ssh -q -p "$SSH_PORT" -tt "$IP" dnf -y upgrade
           echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-          ssh "$IP" dnf -y --purge autoremove
+          ssh -q -p "$SSH_PORT" "$IP" dnf -y --purge autoremove
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Arch ]]; then
           echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh -tt "$IP" pacman -Syyu --noconfirm
+          ssh -q -p "$SSH_PORT" -tt "$IP" pacman -Syyu --noconfirm
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Alpine ]]; then
           echo -e "${OR}--- APK UPDATE ---${CL}"
-          ssh -tt "$IP" apk -U upgrade
+          ssh -q -p "$SSH_PORT" -tt "$IP" apk -U upgrade
         elif [[ "$OS" =~ CentOS ]]; then
           echo -e "${OR}--- YUM UPDATE ---${CL}"
-          ssh -tt "$IP" yum -y update
+          ssh -q -p "$SSH_PORT" -tt "$IP" yum -y update
           EXTRAS
           UPDATE_CHECK
         else
@@ -737,7 +741,7 @@ UPDATE_VM () {
         fi
         return
 #      elif [[ $OS_BASE == win10 ]]; then
-#        ssh "$USER"@"$IP" wuauclt /detectnow /updatenow
+#        ssh -q -p "$SSH_PORT" "$USER"@"$IP" wuauclt /detectnow /updatenow
 #        Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot # don't work
       fi
     fi
