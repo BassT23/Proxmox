@@ -83,31 +83,34 @@ fi
 if [[ -f /usr/local/bin/docker-compose ]]; then DOCKER_COMPOSE_V1=true; fi
 if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
 
-# Docker-Compose v1
-if [[ $DOCKER_COMPOSE_V1 == true && $DOCKER_COMPOSE == true ]]; then
-  echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
-  if COMPOSE=$(find / -name "docker-compose.yaml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
-    :
-  elif COMPOSE=$(find / -name "docker-compose.yml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
-    :
-  fi
-  cd "$COMPOSE" || exit
-  # Get the containers from the first argument, else get all containers
-  CONTAINER_LIST="${1:-$(docker ps -q)}"
-  for CONTAINER in ${CONTAINER_LIST}; do
-    # Get requirements
-    CONTAINER_IMAGE=$(docker inspect --format "{{.Config.Image}}" --type container "${CONTAINER}")
-    RUNNING_IMAGE=$(docker inspect --format "{{.Image}}" --type container "${CONTAINER}")
-    NAME=$(docker inspect --format "{{.Name}}" --type container "${CONTAINER}" | cut -c 2-)
-    # Pull in the latest version of the container and get the hash
-    docker pull "${CONTAINER_IMAGE}" 2> /dev/null
-    LATEST_IMAGE=$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")
-    # Restart the container if the image is different by name
-    if [[ ${RUNNING_IMAGE} != "${LATEST_IMAGE}" ]]; then
-      echo "Updating ${CONTAINER} image ${CONTAINER_IMAGE}"
-      /usr/local/bin/docker-compose up -d --no-deps --build "$NAME"
+# Docker-Compose new
+if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
+  declare -a COMPOSEFILES=("docker-compose.yaml" "docker-compose.yml" "compose.yaml" "compose.yml")
+  declare -a DIRLIST=()  # Use an array to store directories
+  for COMPOSEFILE in "${COMPOSEFILES[@]}"; do
+    echo "Searching for $COMPOSEFILE..."
+    while IFS= read -r line; do
+      DIRLIST+=("$line")
+    done < <(find /home -name $COMPOSEFILE -exec dirname {} \; 2> >(grep -v 'Permission denied'))
+  done
+
+  # Docker-Compose v2 
+    if [[ $DOCKER_COMPOSE_V2 == true ]]; then
+      echo -e "\n*** Updating Docker Compose ***"
+      if [[ ${#DIRLIST[@]} -gt 0 ]]; then
+      for dir in "${DIRLIST[@]}"; do
+        echo "Updating $dir..."
+        pushd "$dir" > /dev/null
+        docker compose pull && docker compose up -d
+        popd > /dev/null
+      done
+      echo "All projects have been updated."
+    else
+      echo "No Docker Compose files found anywhere."
+      fi
     fi
-    cd "$COMPOSE" || exit
+
+  
     # Docker-Compose v1
     if [[ $DOCKER_COMPOSE_V1 == true ]]; then
       echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
@@ -115,12 +118,7 @@ if [[ $DOCKER_COMPOSE_V1 == true && $DOCKER_COMPOSE == true ]]; then
       /usr/local/bin/docker-compose up --force-recreate --build -d
       /usr/local/bin/docker-compose restart
     fi
-    # Docker-Compose v2
-    if [[ $DOCKER_COMPOSE_V2 == true ]]; then
-      echo -e "\n*** Updating Docker Compose ***"
-      docker compose pull
-      docker compose up -d
-    fi
+
     # Cleaning
     echo -e "\n*** Cleaning ***"
     docker container prune -f
