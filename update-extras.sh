@@ -94,15 +94,15 @@ if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
     done < <(find /home -name "$COMPOSEFILE" -exec dirname {} \; 2> >(grep -v 'Permission denied'))
   done
 
-  # Docker-Compose v2 
+  # Docker-Compose v2
   if [[ $DOCKER_COMPOSE_V2 == true ]]; then
     echo -e "\n*** Updating Docker Compose ***"
     if [[ ${#DIRLIST[@]} -gt 0 ]]; then
       for dir in "${DIRLIST[@]}"; do
         echo "Updating $dir..."
-        pushd "$dir" > /dev/null
+        pushd "$dir" > /dev/null || return
         docker compose pull && docker compose up -d
-        popd > /dev/null
+        popd > /dev/null || return
       done
       echo "All projects have been updated."
       else
@@ -110,7 +110,7 @@ if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
     fi
   fi
 
-  
+
   # Docker-Compose v1
   if [[ $DOCKER_COMPOSE_V1 == true ]]; then
     echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
