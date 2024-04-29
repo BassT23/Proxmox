@@ -95,9 +95,9 @@ if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
   done
 
   # Docker-Compose v2 
-    if [[ $DOCKER_COMPOSE_V2 == true ]]; then
-      echo -e "\n*** Updating Docker Compose ***"
-      if [[ ${#DIRLIST[@]} -gt 0 ]]; then
+  if [[ $DOCKER_COMPOSE_V2 == true ]]; then
+    echo -e "\n*** Updating Docker Compose ***"
+    if [[ ${#DIRLIST[@]} -gt 0 ]]; then
       for dir in "${DIRLIST[@]}"; do
         echo "Updating $dir..."
         pushd "$dir" > /dev/null
@@ -105,19 +105,19 @@ if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
         popd > /dev/null
       done
       echo "All projects have been updated."
-    else
-      echo "No Docker Compose files found anywhere."
-      fi
+      else
+        echo "No Docker Compose files found anywhere."
     fi
+  fi
 
   
-    # Docker-Compose v1
-    if [[ $DOCKER_COMPOSE_V1 == true ]]; then
-      echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
-      /usr/local/bin/docker-compose pull
-      /usr/local/bin/docker-compose up --force-recreate --build -d
-      /usr/local/bin/docker-compose restart
-    fi
+  # Docker-Compose v1
+  if [[ $DOCKER_COMPOSE_V1 == true ]]; then
+    echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
+    /usr/local/bin/docker-compose pull
+    /usr/local/bin/docker-compose up --force-recreate --build -d
+    /usr/local/bin/docker-compose restart
+  fi
 
     # Cleaning
     echo -e "\n*** Cleaning ***"
@@ -125,5 +125,4 @@ if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
     docker system prune -a -f
     docker image prune -f
     docker system prune --volumes -f
-  done
 fi
