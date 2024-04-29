@@ -91,7 +91,7 @@ if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
     echo "Searching for $COMPOSEFILE..."
     while IFS= read -r line; do
       DIRLIST+=("$line")
-    done < <(find /home -name $COMPOSEFILE -exec dirname {} \; 2> >(grep -v 'Permission denied'))
+    done < <(find /home -name "$COMPOSEFILE" -exec dirname {} \; 2> >(grep -v 'Permission denied'))
   done
 
   # Docker-Compose v2 
