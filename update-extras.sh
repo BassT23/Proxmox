@@ -5,7 +5,7 @@
 #################
 
 # shellcheck disable=SC2034
-VERSION="1.8.5"
+VERSION="1.8.6"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -83,17 +83,23 @@ fi
 if [[ -f /usr/local/bin/docker-compose ]]; then DOCKER_COMPOSE_V1=true; fi
 if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
 
-# Docker-Compose new
-if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
+# Docker-Compose run
+if [[ $DOCKER_COMPOSE == true && $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]]; then
   declare -a COMPOSEFILES=("docker-compose.yaml" "docker-compose.yml" "compose.yaml" "compose.yml")
   declare -a DIRLIST=()  # Use an array to store directories
   for COMPOSEFILE in "${COMPOSEFILES[@]}"; do
-    echo "Searching for $COMPOSEFILE..."
+#    echo "Searching for $COMPOSEFILE..."
     while IFS= read -r line; do
       DIRLIST+=("$line")
     done < <(find /home -name "$COMPOSEFILE" -exec dirname {} \; 2> >(grep -v 'Permission denied'))
   done
-
+  # Docker-Compose v1
+  if [[ $DOCKER_COMPOSE_V1 == true ]]; then
+    echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
+    /usr/local/bin/docker-compose pull
+    /usr/local/bin/docker-compose up --force-recreate --build -d
+    /usr/local/bin/docker-compose restart
+  fi
   # Docker-Compose v2
   if [[ $DOCKER_COMPOSE_V2 == true ]]; then
     echo -e "\n*** Updating Docker Compose ***"
@@ -106,23 +112,13 @@ if [[ -d "/etc/docker" && $DOCKER_COMPOSE == true ]]; then
       done
       echo "All projects have been updated."
       else
-        echo "No Docker Compose files found anywhere."
+        echo "Ultimate-Updater asn't found any Docker Compose files."
     fi
   fi
-
-
-  # Docker-Compose v1
-  if [[ $DOCKER_COMPOSE_V1 == true ]]; then
-    echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
-    /usr/local/bin/docker-compose pull
-    /usr/local/bin/docker-compose up --force-recreate --build -d
-    /usr/local/bin/docker-compose restart
-  fi
-
-    # Cleaning
-    echo -e "\n*** Cleaning ***"
-    docker container prune -f
-    docker system prune -a -f
-    docker image prune -f
-    docker system prune --volumes -f
+  # Cleaning
+  echo -e "\n*** Cleaning ***"
+  docker container prune -f
+  docker system prune -a -f
+  docker image prune -f
+  docker system prune --volumes -f
 fi
