@@ -85,40 +85,46 @@ if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
 
 # Docker-Compose run
 if [[ $DOCKER_COMPOSE == true && $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]]; then
+  # Cleaning
+  DOCKER_EXIT () {
+    echo -e "\n*** Cleaning ***"
+    docker container prune -f
+    docker system prune -a -f
+    docker image prune -f
+    docker system prune --volumes -f
+  }
+  # Find Compose file
   declare -a COMPOSEFILES=("docker-compose.yaml" "docker-compose.yml" "compose.yaml" "compose.yml")
-  declare -a DIRLIST=()  # Use an array to store directories
+  declare -a DIRLIST=()
   for COMPOSEFILE in "${COMPOSEFILES[@]}"; do
-#    echo "Searching for $COMPOSEFILE..."
     while IFS= read -r line; do
       DIRLIST+=("$line")
     done < <(find /home -name "$COMPOSEFILE" -exec dirname {} \; 2> >(grep -v 'Permission denied'))
   done
   # Docker-Compose v1
-  if [[ $DOCKER_COMPOSE_V1 == true ]]; then
+  if [[ $DOCKER_COMPOSE_V1 == true && ${#DIRLIST[@]} -gt 0 ]]; then
     echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
-    /usr/local/bin/docker-compose pull
-    /usr/local/bin/docker-compose up --force-recreate --build -d
-    /usr/local/bin/docker-compose restart
+    for dir in "${DIRLIST[@]}"; do
+      echo "Updating $dir..."
+      pushd "$dir" > /dev/null || return
+      /usr/local/bin/docker-compose pull
+      /usr/local/bin/docker-compose up --force-recreate --build -d
+      /usr/local/bin/docker-compose restart
+      popd > /dev/null || return
+    done
+    echo "All projects have been updated."
+    DOCKER_EXIT
   fi
   # Docker-Compose v2
-  if [[ $DOCKER_COMPOSE_V2 == true ]]; then
+  if [[ $DOCKER_COMPOSE_V2 == true && ${#DIRLIST[@]} -gt 0 ]]; then
     echo -e "\n*** Updating Docker Compose ***"
-    if [[ ${#DIRLIST[@]} -gt 0 ]]; then
-      for dir in "${DIRLIST[@]}"; do
-        echo "Updating $dir..."
-        pushd "$dir" > /dev/null || return
-        docker compose pull && docker compose up -d
-        popd > /dev/null || return
-      done
-      echo "All projects have been updated."
-      else
-        echo "Ultimate-Updater asn't found any Docker Compose files."
-    fi
+    for dir in "${DIRLIST[@]}"; do
+      echo "Updating $dir..."
+      pushd "$dir" > /dev/null || return
+      docker compose pull && docker compose up -d
+      popd > /dev/null || return
+    done
+    echo "All projects have been updated."
+    DOCKER_EXIT
   fi
-  # Cleaning
-  echo -e "\n*** Cleaning ***"
-  docker container prune -f
-  docker system prune -a -f
-  docker image prune -f
-  docker system prune --volumes -f
 fi
