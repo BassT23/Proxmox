@@ -5,7 +5,7 @@
 #################
 
 # shellcheck disable=SC2034
-VERSION="1.8.6"
+VERSION="1.8.5"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -14,7 +14,6 @@ IOBROKER=$(awk -F'"' '/^IOBROKER=/ {print $2}' $CONFIG_FILE)
 PTERODACTYL=$(awk -F'"' '/^PTERODACTYL=/ {print $2}' $CONFIG_FILE)
 OCTOPRINT=$(awk -F'"' '/^OCTOPRINT=/ {print $2}' $CONFIG_FILE)
 DOCKER_COMPOSE=$(awk -F'"' '/^DOCKER_COMPOSE=/ {print $2}' $CONFIG_FILE)
-COMPOSE_PATH=$(awk -F'"' '/^COMPOSE_PATH=/ {print $2}' $CONFIG_FILE)
 
 # PiHole
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
@@ -84,47 +83,49 @@ fi
 if [[ -f /usr/local/bin/docker-compose ]]; then DOCKER_COMPOSE_V1=true; fi
 if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
 
-# Docker-Compose run
-if [[ $DOCKER_COMPOSE == true && $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]]; then
-  # Cleaning
-  DOCKER_EXIT () {
+# Docker-Compose v1
+if [[ $DOCKER_COMPOSE_V1 == true && $DOCKER_COMPOSE == true ]]; then
+  echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
+  if COMPOSE=$(find / -name "docker-compose.yaml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
+    :
+  elif COMPOSE=$(find / -name "docker-compose.yml" >/dev/null 2>&1 | rev | cut -c 20- | rev | tail -n 1); then
+    :
+  fi
+  cd "$COMPOSE" || exit
+  # Get the containers from the first argument, else get all containers
+  CONTAINER_LIST="${1:-$(docker ps -q)}"
+  for CONTAINER in ${CONTAINER_LIST}; do
+    # Get requirements
+    CONTAINER_IMAGE=$(docker inspect --format "{{.Config.Image}}" --type container "${CONTAINER}")
+    RUNNING_IMAGE=$(docker inspect --format "{{.Image}}" --type container "${CONTAINER}")
+    NAME=$(docker inspect --format "{{.Name}}" --type container "${CONTAINER}" | cut -c 2-)
+    # Pull in the latest version of the container and get the hash
+    docker pull "${CONTAINER_IMAGE}" 2> /dev/null
+    LATEST_IMAGE=$(docker inspect --format "{{.Id}}" --type image "${CONTAINER_IMAGE}")
+    # Restart the container if the image is different by name
+    if [[ ${RUNNING_IMAGE} != "${LATEST_IMAGE}" ]]; then
+      echo "Updating ${CONTAINER} image ${CONTAINER_IMAGE}"
+      /usr/local/bin/docker-compose up -d --no-deps --build "$NAME"
+    fi
+    cd "$COMPOSE" || exit
+    # Docker-Compose v1
+    if [[ $DOCKER_COMPOSE_V1 == true ]]; then
+      echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
+      /usr/local/bin/docker-compose pull
+      /usr/local/bin/docker-compose up --force-recreate --build -d
+      /usr/local/bin/docker-compose restart
+    fi
+    # Docker-Compose v2
+    if [[ $DOCKER_COMPOSE_V2 == true ]]; then
+      echo -e "\n*** Updating Docker Compose ***"
+      docker compose pull
+      docker compose up -d
+    fi
+    # Cleaning
     echo -e "\n*** Cleaning ***"
     docker container prune -f
     docker system prune -a -f
     docker image prune -f
     docker system prune --volumes -f
-  }
-  COMPOSEFILES=("docker-compose.yaml" "docker-compose.yml" "compose.yaml" "compose.yml")
-  DIRLIST=()
-  for COMPOSEFILE in "${COMPOSEFILES[@]}"; do
-    while IFS= read -r line; do
-      DIRLIST+=("$line")
-    done < <(find "$COMPOSE_PATH" -name "$COMPOSEFILE" -exec dirname {} \; 2> >(grep -v 'Permission denied'))
   done
-  # Docker-Compose v1
-  if [[ $DOCKER_COMPOSE_V1 == true && ${#DIRLIST[@]} -gt 0 ]]; then
-    echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
-    for dir in "${DIRLIST[@]}"; do
-      echo "Updating $dir..."
-      pushd "$dir" > /dev/null || return
-      /usr/local/bin/docker-compose pull
-      /usr/local/bin/docker-compose up --force-recreate --build -d
-      /usr/local/bin/docker-compose restart
-      popd > /dev/null || return
-    done
-    echo "All projects have been updated."
-    DOCKER_EXIT
-  fi
-  # Docker-Compose v2
-  if [[ $DOCKER_COMPOSE_V2 == true && ${#DIRLIST[@]} -gt 0 ]]; then
-    echo -e "\n*** Updating Docker Compose ***"
-    for dir in "${DIRLIST[@]}"; do
-      echo "Updating $dir..."
-      pushd "$dir" > /dev/null || return
-      docker compose pull && docker compose up -d
-      popd > /dev/null || return
-    done
-    echo "All projects have been updated."
-    DOCKER_EXIT
-  fi
 fi
