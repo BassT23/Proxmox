@@ -8,7 +8,7 @@
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
-VERSION="4.1.3"
+VERSION="4.1.4"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -556,13 +556,11 @@ UPDATE_CONTAINER () {
   pct config "$CONTAINER" > /etc/ultimate-updater/temp/temp
   OS=$(awk '/^ostype/' /etc/ultimate-updater/temp/temp | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
-
 #  if [[ "$OS" =~ centos ]]; then
 #    NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
 #  else
 #    NAME=$(pct exec "$CONTAINER" hostname)
 #  fi
-
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   # Check Internet connection
   if [[ "$OS" != alpine ]]; then
@@ -649,9 +647,6 @@ VM_UPDATE_START () {
           WILL_STOP="true"
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
           qm start "$VM" >/dev/null 2>&1
-          echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
-          echo -e "${OR}This will take some time, ... 45 seconds is set!${CL}"
-          sleep 45
           UPDATE_VM "$VM"
           # Stop the VM
           echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
@@ -672,7 +667,6 @@ VM_UPDATE_START () {
 }
 
 # VM Update
-# SSH
 UPDATE_VM () {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
@@ -683,7 +677,7 @@ UPDATE_VM () {
   echo -e "${BL}[Info]${OR} Start Snaphot and/or Backup${CL}"
   VM_BACKUP
   echo
-  # Run Update
+# Run Update - Tryout SSH first
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     if ! (ssh -q -p "$SSH_PORT" "$IP" exit >/dev/null 2>&1); then
@@ -693,6 +687,10 @@ UPDATE_VM () {
   Try to use QEMU insead\n"
       UPDATE_VM_QEMU
     else
+      echo -e "${BL}[Info]${GN} Try to connect via SSH${CL}"
+      echo -e "${OR}This will take some time, please wait${CL}"
+      echo -e "${OR}!!! During development, sleep time 45 seconds is set !!!${CL}"
+      sleep 45
       SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
       if [[ "$OS_BASE" =~ l2 ]]; then
@@ -752,6 +750,9 @@ UPDATE_VM () {
 
 # QEMU
 UPDATE_VM_QEMU () {
+  echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
+  echo -e "${OR}This will take some time, ... 45 seconds is set!\n${CL}"
+  sleep 45
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
