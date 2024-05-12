@@ -8,7 +8,7 @@
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
-VERSION="4.1.2"
+VERSION="4.1.3"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -811,6 +811,7 @@ UPDATE_VM_QEMU () {
 ## General ##
 # Logging
 OUTPUT_TO_FILE () {
+  echo 'EXEC_HOST="'"$HOSTNAME"'"' > /etc/ultimate-updater/temp/exec_host
   if [[ "$RICM" != true ]]; then
     touch "$LOG_FILE"
     exec &> >(tee "$LOG_FILE")
@@ -820,7 +821,6 @@ OUTPUT_TO_FILE () {
     WELCOME_SCREEN=true
     if [[ "$RICM" != true ]]; then
       touch $LOCAL_FILES/check-output
-      echo 'EXEC_HOST="'"$HOSTNAME"'"' > /etc/ultimate-updater/temp/exec_host
     fi
   fi
 }
