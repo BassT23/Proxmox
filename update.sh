@@ -8,7 +8,7 @@
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
-VERSION="4.1.4"
+VERSION="4.1.5"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -648,6 +648,7 @@ VM_UPDATE_START () {
           WILL_STOP="true"
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
           qm start "$VM" >/dev/null 2>&1
+          START_WAITING="true"
           UPDATE_VM "$VM"
           # Stop the VM
           echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
@@ -688,10 +689,12 @@ UPDATE_VM () {
   Try to use QEMU insead\n"
       UPDATE_VM_QEMU
     else
-      echo -e "${BL}[Info]${GN} Try to connect via SSH${CL}"
-      echo -e "${OR}This will take some time, please wait${CL}"
-      echo -e "${OR}!!! During development, sleep $VM_START_DELAY secounds - could be set in config !!!${CL}"
-      sleep "$VM_START_DELAY"
+      if [[ "$START_WAITING" == true ]]; then
+        echo -e "${BL}[Info]${GN} Try to connect via SSH${CL}"
+        echo -e "${OR}This will take some time, please wait${CL}"
+        echo -e "${OR}!!! During development, sleep $VM_START_DELAY secounds - could be set in config !!!${CL}"
+        sleep "$VM_START_DELAY"
+      fi
       SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
       if [[ "$OS_BASE" =~ l2 ]]; then
@@ -751,9 +754,11 @@ UPDATE_VM () {
 
 # QEMU
 UPDATE_VM_QEMU () {
-  echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
-  echo -e "${OR}$VM_START_DELAY secounds wait time - could be set in config\n${CL}"
-  sleep "$VM_START_DELAY"
+  if [[ "$START_WAITING" == true ]]; then
+    echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
+    echo -e "${OR}$VM_START_DELAY secounds wait time - could be set in config\n${CL}"
+    sleep "$VM_START_DELAY"
+  fi
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
