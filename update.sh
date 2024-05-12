@@ -342,6 +342,7 @@ READ_CONFIG () {
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
+  VM_START_DELAY=$(awk -F'"' '/^VM_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
@@ -689,8 +690,8 @@ UPDATE_VM () {
     else
       echo -e "${BL}[Info]${GN} Try to connect via SSH${CL}"
       echo -e "${OR}This will take some time, please wait${CL}"
-      echo -e "${OR}!!! During development, sleep time 45 seconds is set !!!${CL}"
-      sleep 45
+      echo -e "${OR}!!! During development, sleep time could be set in config !!!${CL}"
+      sleep "$VM_START_DELAY"
       SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
       if [[ "$OS_BASE" =~ l2 ]]; then
@@ -751,8 +752,8 @@ UPDATE_VM () {
 # QEMU
 UPDATE_VM_QEMU () {
   echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
-  echo -e "${OR}This will take some time, ... 45 seconds is set!\n${CL}"
-  sleep 45
+  echo -e "${OR}This will take some time, ... time could be set in config!\n${CL}"
+  sleep "$VM_START_DELAY"
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
