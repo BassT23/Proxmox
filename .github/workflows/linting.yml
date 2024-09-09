@@ -6,7 +6,8 @@ on:
   pull_request:
     branches: [master, beta, develop]
   schedule:
-    - cron: "30 1 * * *"
+
+permissions: {}
 
 jobs:
     lint:
@@ -16,4 +17,4 @@ jobs:
           uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
 
         - name: (Lint) Run ShellCheck
-          uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # v2.0.0
+          uses: ludeeus/action-shellcheck@master # v2.0.0
