@@ -1,8 +1,10 @@
 Changelog:
 ==========
 
-**v4.1.1** (beta)
-- go further
+**v4.1.6** (beta)
+- fix docker compose
+- fix node hopping without welcome screen installed
+- rebuild waiting for VM start (could now be set in config file)
 
 **v4.1** (07.04.2024)
 - disable/enable Snapshots and Backups in config file

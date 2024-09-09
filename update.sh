@@ -7,7 +7,8 @@
 # shellcheck disable=SC2034
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
-VERSION="4.1.1"
+# shellcheck disable=SC2320
+VERSION="4.1.6"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -79,10 +80,14 @@ ARGUMENTS () {
   while test $# -gt -0; do
     ARGUMENT="$1"
     case "$ARGUMENT" in
-#      [0-9]|[0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9])
-#        echo -e "$ARGUMENT"
-#        EXIT
-#        ;;
+      [0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9])
+        COMMAND=true
+        SINGLE_UPDATE=true
+        ONLY=$ARGUMENT
+        HEADER_INFO
+        CONTAINER_UPDATE_START
+#        echo -e "update only LXC/VM $ARGUMENT - in future :)"
+        ;;
       -h|--help)
         USAGE
         exit 2
@@ -337,6 +342,7 @@ READ_CONFIG () {
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
+  VM_START_DELAY=$(awk -F'"' '/^VM_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
@@ -410,10 +416,10 @@ EXTRAS () {
                                         rm -rf $LOCAL_FILES"
     else
       # Extras in VMS with SSH_CONNECTION
-      ssh "$IP" mkdir -p $LOCAL_FILES/
+      ssh -q -p "$SSH_PORT" "$IP" mkdir -p $LOCAL_FILES/
       scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
       scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
-      ssh "$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
+      ssh -q -p "$SSH_PORT" "$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
                 $LOCAL_FILES/update-extras.sh && \
                 rm -rf $LOCAL_FILES"
     fi
@@ -431,11 +437,11 @@ UPDATE_CHECK () {
   if [[ "$WELCOME_SCREEN" == true ]]; then
     echo -e "${OR}--- Check Status for Welcome-Screen ---${CL}"
     if [[ "$CHOST" == true ]]; then
-      ssh "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u chost | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u chost | tee -a $LOCAL_FILES/check-output
     elif [[ "$CCONTAINER" == true ]]; then
-      ssh "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u ccontainer | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u ccontainer | tee -a $LOCAL_FILES/check-output
     elif [[ "$CVM" == true ]]; then
-      ssh "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u cvm | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u cvm | tee -a $LOCAL_FILES/check-output
     fi
     echo -e "${GN}---          Finished check         ---${CL}\n"
     if [[ "$WILL_STOP" != true ]]; then echo; fi
@@ -450,7 +456,7 @@ HOST_UPDATE_START () {
   if [[ "$RICM" != true ]]; then true > $LOCAL_FILES/check-output; fi
   for HOST in $HOSTS; do
     # Check if Host/Node is available
-    if ssh "$HOST" test >/dev/null 2>&1; [ $? -eq 255 ]; then
+    if ssh -q -p "$SSH_PORT" "$HOST" test >/dev/null 2>&1; [ $? -eq 255 ]; then
       echo -e "${BL}[Info] ${OR}Skip Host${CL} : ${GN}$HOST${CL} ${OR}- can't connect${CL}\n"
     else
      UPDATE_HOST "$HOST"
@@ -463,7 +469,7 @@ UPDATE_HOST () {
   HOST=$1
   START_HOST=$(hostname -I | tr -d '[:space:]')
   if [[ "$HOST" != "$START_HOST" ]]; then
-    ssh "$HOST" mkdir -p $LOCAL_FILES/temp
+    ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
     scp "$0" "$HOST":$LOCAL_FILES/update
     scp $LOCAL_FILES/update-extras.sh "$HOST":$LOCAL_FILES/update-extras.sh
     scp $LOCAL_FILES/update.conf "$HOST":$LOCAL_FILES/update.conf
@@ -477,11 +483,11 @@ UPDATE_HOST () {
     scp -r $LOCAL_FILES/VMs/ "$HOST":$LOCAL_FILES/
   fi
   if [[ "$HEADLESS" == true ]]; then
-    ssh "$HOST" 'bash -s' < "$0" -- "-s -c host"
+    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
   elif [[ "$WELCOME_SCREEN" == true ]]; then
-    ssh "$HOST" 'bash -s' < "$0" -- "-c -w host"
+    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c -w host"
   else
-    ssh "$HOST" 'bash -s' < "$0" -- "-c host"
+    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c host"
   fi
 }
 
@@ -551,13 +557,11 @@ UPDATE_CONTAINER () {
   pct config "$CONTAINER" > /etc/ultimate-updater/temp/temp
   OS=$(awk '/^ostype/' /etc/ultimate-updater/temp/temp | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
-
 #  if [[ "$OS" =~ centos ]]; then
 #    NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
 #  else
 #    NAME=$(pct exec "$CONTAINER" hostname)
 #  fi
-
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   # Check Internet connection
   if [[ "$OS" != alpine ]]; then
@@ -572,7 +576,7 @@ UPDATE_CONTAINER () {
 #    fi
   fi
   # Backup
-  echo -e "${BL}[Info]${OR} Start Snaphot and/or Backup${CL}"
+  echo -e "${BL}[Info]${OR} Start Snapshot and/or Backup${CL}"
   CONTAINER_BACKUP
   echo
   # Run update
@@ -644,9 +648,7 @@ VM_UPDATE_START () {
           WILL_STOP="true"
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
           qm start "$VM" >/dev/null 2>&1
-          echo -e "${BL}[Info]${GN} Waiting for VM${BL} $VM${CL}${GN} to start${CL}"
-          echo -e "${OR}This will take some time, ... 45 seconds is set!${CL}"
-          sleep 45
+          START_WAITING="true"
           UPDATE_VM "$VM"
           # Stop the VM
           echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
@@ -667,7 +669,6 @@ VM_UPDATE_START () {
 }
 
 # VM Update
-# SSH
 UPDATE_VM () {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
@@ -675,59 +676,65 @@ UPDATE_VM () {
   echo 'VM="'"$VM"'"' > /etc/ultimate-updater/temp/var
   echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
   # Backup
-  echo -e "${BL}[Info]${OR} Start Snaphot and/or Backup${CL}"
+  echo -e "${BL}[Info]${OR} Start Snapshot and/or Backup${CL}"
   VM_BACKUP
   echo
-  # Run Update
+# Run Update - Tryout SSH first
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if ! (ssh "$IP" exit >/dev/null 2>&1); then
+    if ! (ssh -q -p "$SSH_PORT" "$IP" exit >/dev/null 2>&1); then
       echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
   Please configure SSH Key-Based Authentication${CL}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
   Try to use QEMU insead\n"
       UPDATE_VM_QEMU
     else
+      if [[ "$START_WAITING" == true ]]; then
+        echo -e "${BL}[Info]${GN} Try to connect via SSH${CL}"
+        echo -e "${OR}This will take some time, please wait${CL}"
+        echo -e "${OR}!!! During development, sleep $VM_START_DELAY secounds - could be set in config !!!${CL}"
+        sleep "$VM_START_DELAY"
+      fi
       SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
       if [[ "$OS_BASE" =~ l2 ]]; then
-        OS=$(ssh "$IP" hostnamectl | grep System)
+        OS=$(ssh -q -p "$SSH_PORT" "$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
-          if ! ssh "$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
+          if ! ssh -q -p "$SSH_PORT" "$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
             echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
             return
           fi
           echo -e "${OR}--- APT UPDATE ---${CL}"
-          ssh "$IP" apt-get update
+          ssh -q -p "$SSH_PORT" "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
           if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh -tt "$IP" apt-get upgrade -y
+            ssh -q -p "$SSH_PORT" -tt "$IP" apt-get upgrade -y
           else
-            ssh -tt "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+            ssh -q -p "$SSH_PORT" -tt "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh -tt "$IP" apt-get --purge autoremove -y
+          ssh -q -p "$SSH_PORT" -tt "$IP" apt-get --purge autoremove -y
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Fedora ]]; then
           echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-          ssh -tt "$IP" dnf -y upgrade
+          ssh -q -p "$SSH_PORT" -tt "$IP" dnf -y upgrade
           echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-          ssh "$IP" dnf -y --purge autoremove
+          ssh -q -p "$SSH_PORT" "$IP" dnf -y --purge autoremove
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Arch ]]; then
           echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh -tt "$IP" pacman -Syyu --noconfirm
+          ssh -q -p "$SSH_PORT" -tt "$IP" pacman -Syyu --noconfirm
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Alpine ]]; then
           echo -e "${OR}--- APK UPDATE ---${CL}"
-          ssh -tt "$IP" apk -U upgrade
+          ssh -q -p "$SSH_PORT" -tt "$IP" apk -U upgrade
         elif [[ "$OS" =~ CentOS ]]; then
           echo -e "${OR}--- YUM UPDATE ---${CL}"
-          ssh -tt "$IP" yum -y update
+          ssh -q -p "$SSH_PORT" -tt "$IP" yum -y update
           EXTRAS
           UPDATE_CHECK
         else
@@ -736,7 +743,7 @@ UPDATE_VM () {
         fi
         return
 #      elif [[ $OS_BASE == win10 ]]; then
-#        ssh "$USER"@"$IP" wuauclt /detectnow /updatenow
+#        ssh -q -p "$SSH_PORT" "$USER"@"$IP" wuauclt /detectnow /updatenow
 #        Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot # don't work
       fi
     fi
@@ -747,6 +754,11 @@ UPDATE_VM () {
 
 # QEMU
 UPDATE_VM_QEMU () {
+  if [[ "$START_WAITING" == true ]]; then
+    echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
+    echo -e "${OR}$VM_START_DELAY secounds wait time - could be set in config\n${CL}"
+    sleep "$VM_START_DELAY"
+  fi
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
@@ -806,6 +818,7 @@ UPDATE_VM_QEMU () {
 ## General ##
 # Logging
 OUTPUT_TO_FILE () {
+  echo 'EXEC_HOST="'"$HOSTNAME"'"' > /etc/ultimate-updater/temp/exec_host
   if [[ "$RICM" != true ]]; then
     touch "$LOG_FILE"
     exec &> >(tee "$LOG_FILE")
@@ -815,7 +828,6 @@ OUTPUT_TO_FILE () {
     WELCOME_SCREEN=true
     if [[ "$RICM" != true ]]; then
       touch $LOCAL_FILES/check-output
-      echo 'EXEC_HOST="'"$HOSTNAME"'"' > /etc/ultimate-updater/temp/exec_host
     fi
   fi
 }
