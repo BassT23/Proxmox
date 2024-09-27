@@ -572,7 +572,7 @@ UPDATE_CONTAINER () {
 #    fi
   fi
   # Backup
-  echo -e "${BL}[Info]${OR} Start Snaphot and/or Backup${CL}"
+  echo -e "${BL}[Info]${OR} Start Snapshot and/or Backup${CL}"
   CONTAINER_BACKUP
   echo
   # Run update
@@ -675,7 +675,7 @@ UPDATE_VM () {
   echo 'VM="'"$VM"'"' > /etc/ultimate-updater/temp/var
   echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
   # Backup
-  echo -e "${BL}[Info]${OR} Start Snaphot and/or Backup${CL}"
+  echo -e "${BL}[Info]${OR} Start Snapshot and/or Backup${CL}"
   VM_BACKUP
   echo
   # Run Update
