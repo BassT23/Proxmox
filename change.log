@@ -1,7 +1,8 @@
 Changelog:
 ==========
 
-**v4.1.6** (beta)
+**v4.1.7** (beta)
+- fix FreeBSD VM error
 - fix docker compose
 - fix node hopping without welcome screen installed
 - rebuild waiting for VM start (could now be set in config file)
