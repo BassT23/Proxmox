@@ -112,7 +112,7 @@ ARGUMENTS () {
           MODE="  Host  "
           HEADER_INFO
         fi
-        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP| ($HOSTNAME)${CL}\n"
+        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP | ($HOSTNAME)${CL}\n"
         if [[ "$WITH_HOST" == true ]]; then
           UPDATE_HOST_ITSELF
         else
@@ -468,7 +468,7 @@ HOST_UPDATE_START () {
 # Host Update
 UPDATE_HOST () {
   HOST=$1
-  START_HOST=$(hostname -I | tr -d '[:space:]')
+  START_HOST=$(hostname -I | cut -d ' ' -f1)
   if [[ "$HOST" != "$START_HOST" ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
     scp "$0" "$HOST":$LOCAL_FILES/update
@@ -588,7 +588,7 @@ UPDATE_CONTAINER () {
     if pct exec "$CONTAINER" -- bash -c "grep -rnw /etc/apt -e unifi >/dev/null 2>&1"; then
       UNIFI="true"
     fi
-    # Check END    
+    # Check END
     if [[ "$HEADLESS" == true || "$UNIFI" == true ]]; then
       echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}"
       pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
@@ -915,7 +915,7 @@ export TERM=xterm-256color
 if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
 READ_CONFIG
 OUTPUT_TO_FILE
-IP=$(hostname -I)
+IP=$(hostname -I | cut -d ' ' -f1)
 ARGUMENTS "$@"
 
 # Run without commands (Automatic Mode)
@@ -924,7 +924,7 @@ if [[ "$COMMAND" != true ]]; then
   if [[ "$MODE" =~ Cluster ]]; then
     HOST_UPDATE_START
   else
-    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP| ($HOSTNAME)${CL}\n"
+    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP | ($HOSTNAME)${CL}\n"
     if [[ "$WITH_HOST" == true ]]; then
       UPDATE_HOST_ITSELF
     else
