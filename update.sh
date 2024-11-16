@@ -584,9 +584,15 @@ UPDATE_CONTAINER () {
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "apt-get update"
-    if [[ "$HEADLESS" == true ]]; then
+    # Check APT in Container
+    if pct exec "$CONTAINER" -- bash -c "grep -rnw /etc/apt -e unifi >/dev/null 2>&1"; then
+      UNIFI="true"
+    fi
+    # Check END    
+    if [[ "$HEADLESS" == true || "$UNIFI" == true ]]; then
       echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}"
       pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
+      UNIFI=""
     else
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
