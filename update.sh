@@ -704,10 +704,14 @@ UPDATE_VM () {
       fi
       SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
+      IS_TEMPLATE=$(qm config "$VM" | grep template)
+      if [[ "$IS_TEMPLATE" =~ 1 ]]; then
+        echo -e "${OR}$VM is a template - skipping the update${CL}\n"
+        return
+      fi
       KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version)
       if [[ "$KERNEL" =~ FreeBSD ]]; then
-        echo -e  "${OR}FreeBSD is not supported for now${CL}"
-        echo
+        echo -e  "${OR}FreeBSD is not supported for now${CL}\n"
         return
       elif [[ "$OS_BASE" =~ l2 ]]; then
         OS=$(ssh -q -p "$SSH_PORT" "$IP" hostnamectl | grep System)
@@ -777,8 +781,7 @@ UPDATE_VM_QEMU () {
     # Run Update
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version)
     if [[ "$KERNEL" =~ FreeBSD ]]; then
-      echo -e  "${OR}  FreeBSD is not supported for now ${CL}"
-      echo
+      echo -e  "${OR}  FreeBSD is not supported for now ${CL}\n"
       return
     fi
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
