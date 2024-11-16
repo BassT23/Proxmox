@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **v4.1.7** (beta)
+- fix Unifi-Controller Container
 - fix FreeBSD VM error
 - fix docker compose
 - fix node hopping without welcome screen installed
