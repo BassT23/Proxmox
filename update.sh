@@ -8,7 +8,8 @@
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
-VERSION="4.1.6"
+
+VERSION="4.1.7"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -697,7 +698,12 @@ UPDATE_VM () {
       fi
       SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
-      if [[ "$OS_BASE" =~ l2 ]]; then
+      KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version)
+      if [[ "$KERNEL" =~ FreeBSD ]]; then
+        echo -e  "${OR}FreeBSD is not supported for now${CL}"
+        echo
+        return
+      elif [[ "$OS_BASE" =~ l2 ]]; then
         OS=$(ssh -q -p "$SSH_PORT" "$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
@@ -763,6 +769,12 @@ UPDATE_VM_QEMU () {
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
     # Run Update
+    KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version)
+    if [[ "$KERNEL" =~ FreeBSD ]]; then
+      echo -e  "${OR}  FreeBSD is not supported for now ${CL}"
+      echo
+      return
+    fi
     OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       # Check Internet connection
