@@ -1,7 +1,7 @@
 Changelog:
 ==========
 
-**v4.1.7** (beta)
+**v4.2** (01.12.2024)
 - fix VM Template error
 - fix Unifi-Controller Container
 - fix FreeBSD VM error
