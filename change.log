@@ -1,6 +1,14 @@
 Changelog:
 ==========
 
+**v4.2** (01.12.2024)
+- fix VM Template error
+- fix Unifi-Controller Container
+- fix FreeBSD VM error
+- fix docker compose
+- fix node hopping without welcome screen installed
+- rebuild waiting for VM start (could now be set in config file)
+
 **v4.1** (07.04.2024)
 - disable/enable Snapshots and Backups in config file
 - set, how many snapshots will be keep, in config file
