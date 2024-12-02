@@ -9,7 +9,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.2"
+VERSION="4.2.1"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -704,8 +704,7 @@ UPDATE_VM () {
       fi
       SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
-      IS_TEMPLATE=$(qm config "$VM" | grep template)
-      if [[ "$IS_TEMPLATE" =~ 1 ]]; then
+      if (qm config "$VM" | grep template); then
         echo -e "${OR}$VM is a template - skipping the update${CL}\n"
         return
       fi
