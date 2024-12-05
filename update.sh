@@ -9,7 +9,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.2.1"
+VERSION="4.2.2"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -699,7 +699,7 @@ UPDATE_VM () {
       if [[ "$START_WAITING" == true ]]; then
         echo -e "${BL}[Info]${GN} Try to connect via SSH${CL}"
         echo -e "${OR}This will take some time, please wait${CL}"
-        echo -e "${OR}!!! During development, sleep $VM_START_DELAY secounds - could be set in config !!!${CL}"
+        echo -e "${OR}Sleep $VM_START_DELAY secounds - could be set in config !!!${CL}"
         sleep "$VM_START_DELAY"
       fi
       SSH_CONNECTION=true
@@ -708,11 +708,10 @@ UPDATE_VM () {
         echo -e "${OR}$VM is a template - skipping the update${CL}\n"
         return
       fi
-      KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version)
-      if [[ "$KERNEL" =~ FreeBSD ]]; then
-        echo -e  "${OR}FreeBSD is not supported for now${CL}\n"
-        return
-      elif [[ "$OS_BASE" =~ l2 ]]; then
+      if (ssh -q -p "$SSH_PORT" "$IP" "cat /etc/os-release" >/dev/null 2>&1); then
+#        echo -e  "${OR}FreeBSD is not supported for now${CL}\n"
+#        return
+#        if [[ "$OS_BASE" =~ l2 ]]; then
         OS=$(ssh -q -p "$SSH_PORT" "$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
