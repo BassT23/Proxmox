@@ -348,7 +348,7 @@ READ_CONFIG () {
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
-#  INCLUDE_FSTRIM=$(awk -F'"' '/^INCLUDE_FSTRIM=/ {print $2}' "$CONFIG_FILE")
+  INCLUDE_FSTRIM=$(awk -F'"' '/^INCLUDE_FSTRIM=/ {print $2}' "$CONFIG_FILE")
 #  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
 #  INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
 }
@@ -451,6 +451,22 @@ UPDATE_CHECK () {
     if [[ "$WILL_STOP" != true ]]; then echo; fi
   else
     echo
+  fi
+}
+
+# Trim Filesystem
+TRIM_FILESYSTEM () {
+  if [[ "INCLUDE_FSTRIM" == true ]]; then
+    ROOT_FS=$(df -Th "/" | awk 'NR==2 {print $2}')
+    if [ "$ROOT_FS" = "ext4" ]; then
+      echo -e "${OR}--- Trimming filesystem ---${CL}"
+      local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+      echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
+      pct fstrim $CONTAINER
+      local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+      echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
+      sleep 1.5
+    fi
   fi
 }
 
@@ -607,6 +623,7 @@ UPDATE_CONTAINER () {
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
       pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
       EXTRAS
+      TRIM_FILESYSTEM
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
     echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
@@ -614,11 +631,13 @@ UPDATE_CONTAINER () {
     echo -e "\n${OR}--- DNF CLEANING ---${CL}"
     pct exec "$CONTAINER" -- bash -c "dnf -y autoremove"
     EXTRAS
+    TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ archlinux ]]; then
     echo -e "${OR}--- PACMAN UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "pacman -Su --noconfirm"
     EXTRAS
+    TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ alpine ]]; then
     echo -e "${OR}--- APK UPDATE ---${CL}"
@@ -629,6 +648,7 @@ UPDATE_CONTAINER () {
     echo -e "${OR}--- YUM UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "yum -y update"
     EXTRAS
+    TRIM_FILESYSTEM
     UPDATE_CHECK
   fi
   CCONTAINER=""
