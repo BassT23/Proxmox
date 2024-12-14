@@ -8,7 +8,7 @@
 VERSION="1.8"
 
 # Branch
-BRANCH="master"
+BRANCH="develop"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
