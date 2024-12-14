@@ -4,6 +4,7 @@
 # Install #
 ###########
 
+# shellcheck disable=SC1017
 # shellcheck disable=SC2034
 VERSION="1.8.1"
 
@@ -262,14 +263,14 @@ UPDATE () {
     rm -rf "$TEMP_FILES"/change.log || true
     rm -rf "$TEMP_FILES"/install.sh || true
     rm -rf "$TEMP_FILES"/ssh.md || true
+    rm -rf "$TEMP_FILES"/CODE_OF_CONDUCT.md || true
+    rm -rf "$TEMP_FILES"/SECURITY.md || true
     chmod -R +x "$TEMP_FILES"/exit/*.sh
     cd "$TEMP_FILES"
     FILES="*.* **/*.*"
     for f in $FILES
     do
-      if  [ -f "$LOCAL_FILES"/"$f" ]; then
-       CHECK_DIFF
-      fi
+     CHECK_DIFF
     done
     rm -rf $TEMP_FOLDER || true
     echo -e "${GN}The Ultimate Updater updated successfully.${CL}"
