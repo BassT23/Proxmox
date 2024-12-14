@@ -2,7 +2,8 @@ Changelog:
 ==========
 
 **v4.2.5** (develop)
-- prepare next steps
+- fix ioBroker Upgrade
+- fix arch upgrade
 
 **v4.2** (01.12.2024)
 - fix VM Template error

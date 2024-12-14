@@ -348,7 +348,6 @@ READ_CONFIG () {
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
-#  INCLUDE_LXC_CLEAN=$(awk -F'"' '/^INCLUDE_LXC_CLEAN=/ {print $2}' "$CONFIG_FILE")
 #  INCLUDE_FSTRIM=$(awk -F'"' '/^INCLUDE_FSTRIM=/ {print $2}' "$CONFIG_FILE")
 #  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
 #  INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
@@ -606,7 +605,7 @@ UPDATE_CONTAINER () {
       fi
     fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y"
+      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
       EXTRAS
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
@@ -618,7 +617,7 @@ UPDATE_CONTAINER () {
     UPDATE_CHECK
   elif [[ "$OS" =~ archlinux ]]; then
     echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm"
+    pct exec "$CONTAINER" -- bash -c "pacman -Su --noconfirm"
     EXTRAS
     UPDATE_CHECK
   elif [[ "$OS" =~ alpine ]]; then
@@ -732,7 +731,7 @@ UPDATE_VM () {
             ssh -q -p "$SSH_PORT" -tt "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" apt-get --purge autoremove -y
+          ssh -q -p "$SSH_PORT" -tt "$IP" apt-get --purge autoremove -y && apt-get autoclean -y
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Fedora ]]; then
@@ -744,7 +743,7 @@ UPDATE_VM () {
           UPDATE_CHECK
         elif [[ "$OS" =~ Arch ]]; then
           echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" pacman -Syyu --noconfirm
+          ssh -q -p "$SSH_PORT" -tt "$IP" pacman -Su --noconfirm
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Alpine ]]; then
@@ -802,7 +801,7 @@ UPDATE_VM_QEMU () {
         qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
       fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
-      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
+      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17-
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Fedora ]]; then
@@ -814,7 +813,7 @@ UPDATE_VM_QEMU () {
       UPDATE_CHECK
     elif [[ "$OS" =~ Arch ]]; then
       echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-      qm guest exec "$VM" -- bash -c "pacman -Syyu --noconfirm" | tail -n +2 | head -n -1
+      qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Alpine ]]; then
