@@ -339,8 +339,6 @@ READ_CONFIG () {
   STOPPED_CONTAINER=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   RUNNING_VM=$(awk -F'"' '/^RUNNING_VM=/ {print $2}' "$CONFIG_FILE")
   STOPPED_VM=$(awk -F'"' '/^STOPPED_VM=/ {print $2}' "$CONFIG_FILE")
-#  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
-  INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
@@ -349,6 +347,11 @@ READ_CONFIG () {
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
+  INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
+#  INCLUDE_LXC_CLEAN=$(awk -F'"' '/^INCLUDE_LXC_CLEAN=/ {print $2}' "$CONFIG_FILE")
+#  INCLUDE_FSTRIM=$(awk -F'"' '/^INCLUDE_FSTRIM=/ {print $2}' "$CONFIG_FILE")
+#  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
+#  INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
 }
 
 # Snapshot/Backup
