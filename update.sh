@@ -712,7 +712,9 @@ UPDATE_VM () {
 # Run Update - Tryout SSH first
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if ! (ssh -q -p "$SSH_PORT" "$IP" exit >/dev/null 2>&1); then
+    USER=$(awk -F'"' '/^USER=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+    SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+    if ! (ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
       echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
   Please configure SSH Key-Based Authentication${CL}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
@@ -731,14 +733,14 @@ UPDATE_VM () {
         echo -e "${OR}$VM is a template - skipping the update${CL}\n"
         return
       fi
-      if (ssh -q -p "$SSH_PORT" "$IP" "cat /etc/os-release" >/dev/null 2>&1); then
+      if (ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "cat /etc/os-release" >/dev/null 2>&1); then
 #        echo -e  "${OR}FreeBSD is not supported for now${CL}\n"
 #        return
 #        if [[ "$OS_BASE" =~ l2 ]]; then
-        OS=$(ssh -q -p "$SSH_PORT" "$IP" hostnamectl | grep System)
+        OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
-          if ! ssh -q -p "$SSH_PORT" "$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
+          if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
             echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
             return
           fi
@@ -746,32 +748,32 @@ UPDATE_VM () {
           ssh -q -p "$SSH_PORT" "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
           if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh -q -p "$SSH_PORT" -tt "$IP" apt-get upgrade -y
+            ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apt-get upgrade -y
           else
-            ssh -q -p "$SSH_PORT" -tt "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+            ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" apt-get --purge autoremove -y && apt-get autoclean -y
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apt-get --purge autoremove -y && apt-get autoclean -y
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Fedora ]]; then
           echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" dnf -y upgrade
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade
           echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-          ssh -q -p "$SSH_PORT" "$IP" dnf -y --purge autoremove
+          ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Arch ]]; then
           echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" pacman -Su --noconfirm
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Alpine ]]; then
           echo -e "${OR}--- APK UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" apk -U upgrade
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade
         elif [[ "$OS" =~ CentOS ]]; then
           echo -e "${OR}--- YUM UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" yum -y update
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update
           EXTRAS
           UPDATE_CHECK
         else
