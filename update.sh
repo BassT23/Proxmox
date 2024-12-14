@@ -4,6 +4,7 @@
 # Update #
 ##########
 
+# shellcheck disable=SC1017
 # shellcheck disable=SC2034
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
