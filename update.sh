@@ -436,6 +436,22 @@ EXTRAS () {
   fi
 }
 
+# Trim Filesystem
+TRIM_FILESYSTEM () {
+  if [[ "INCLUDE_FSTRIM" == true ]]; then
+    ROOT_FS=$(df -Th "/" | awk 'NR==2 {print $2}')
+    if [ "$ROOT_FS" = "ext4" ]; then
+      echo -e "${OR}--- Trimming filesystem ---${CL}"
+      local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+      echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
+      pct fstrim $CONTAINER
+      local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+      echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
+      sleep 1.5
+    fi
+  fi
+}
+
 # Check Updates for Welcome-Screen
 UPDATE_CHECK () {
   if [[ "$WELCOME_SCREEN" == true ]]; then
@@ -451,22 +467,6 @@ UPDATE_CHECK () {
     if [[ "$WILL_STOP" != true ]]; then echo; fi
   else
     echo
-  fi
-}
-
-# Trim Filesystem
-TRIM_FILESYSTEM () {
-  if [[ "INCLUDE_FSTRIM" == true ]]; then
-    ROOT_FS=$(df -Th "/" | awk 'NR==2 {print $2}')
-    if [ "$ROOT_FS" = "ext4" ]; then
-      echo -e "${OR}--- Trimming filesystem ---${CL}"
-      local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-      echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
-      pct fstrim $CONTAINER
-      local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-      echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
-      sleep 1.5
-    fi
   fi
 }
 
