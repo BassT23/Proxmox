@@ -267,7 +267,9 @@ UPDATE () {
     FILES="*.* **/*.*"
     for f in $FILES
     do
-     CHECK_DIFF
+      if  [ -f "$LOCAL_FILES"/"$f" ]; then
+       CHECK_DIFF
+      fi
     done
     rm -rf $TEMP_FOLDER || true
     echo -e "${GN}The Ultimate Updater updated successfully.${CL}"
@@ -290,29 +292,27 @@ UPDATE () {
 }
 
 CHECK_DIFF () {
-  if  [ -f "$LOCAL_FILES"/"$f" ]; then
-    if ! cmp -s "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"; then
-      echo -e "The file ${OR}$f${CL}\n \
+  if ! cmp -s "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"; then
+    echo -e "The file ${OR}$f${CL}\n \
  ==> Modified (by you or by a script) since installation.\n \
    What would you like to do about it ?  Your options are:\n \
     Y or y  : install the package maintainer's version (old file will be saved as '$f.bak')\n \
     N or n  : keep your currently-installed version\n \
     S or s  : show the differences between the versions\n \
  The default action is to install new version and backup current file."
-      read -p "*** $f (Y/y/N/n/S/s) [default=Y] ?" -r
-        if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-          echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
-          cp -f "$LOCAL_FILES"/"$f" "$LOCAL_FILES"/"$f".bak
-          mv "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"
-        elif [[ $REPLY =~ ^[Nn]$ ]]; then
-          echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
-        elif [[ $REPLY =~ ^[Ss]$ ]]; then
-          echo
-          diff "$TEMP_FILES"/"$f" "$LOCAL_FILES/$f"
-        else
-          echo -e "\n${BL}[Info]${OR} Skip this file${CL}\n"
-        fi
-    fi
+    read -p "*** $f (Y/y/N/n/S/s) [default=Y] ?" -r
+      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+        echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
+        cp -f "$LOCAL_FILES"/"$f" "$LOCAL_FILES"/"$f".bak
+        mv "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"
+      elif [[ $REPLY =~ ^[Nn]$ ]]; then
+        echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
+      elif [[ $REPLY =~ ^[Ss]$ ]]; then
+        echo
+        diff "$TEMP_FILES"/"$f" "$LOCAL_FILES/$f"
+      else
+        echo -e "\n${BL}[Info]${OR} Skip this file${CL}\n"
+      fi
   fi
 }
 
