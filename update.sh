@@ -363,7 +363,7 @@ CONTAINER_BACKUP () {
         echo -e "${BL}[Info]${GN} Deleted old snapshots${CL}"
         LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
-          pct delsnapshot "$CONTAINER" Update"$SNAPSHOTS"
+          pct delsnapshot "$CONTAINER" Update"$SNAPSHOTS" >/dev/null 2>&1
         done
       echo -e "${BL}[Info]${GN} Done${CL}"
       else
@@ -387,7 +387,7 @@ VM_BACKUP () {
         echo -e "${BL}[Info]${GN} Deleting old snapshot(s)${CL}"
         LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
-          qm delsnapshot "$VM" Update"$SNAPSHOTS"
+          qm delsnapshot "$VM" Update"$SNAPSHOTS" >/dev/null 2>&1
         done
       echo -e "${BL}[Info]${GN} Done${CL}"
       else
@@ -418,7 +418,7 @@ EXTRAS () {
       pct push "$CONTAINER" -- $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf
       pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/update-extras.sh && \
                                         $LOCAL_FILES/update-extras.sh && \
-                                        rm -rf $LOCAL_FILES"
+                                        rm -rf $LOCAL_FILES || true"
     else
       # Extras in VMS with SSH_CONNECTION
       ssh -q -p "$SSH_PORT" "$IP" mkdir -p $LOCAL_FILES/
@@ -426,7 +426,7 @@ EXTRAS () {
       scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
       ssh -q -p "$SSH_PORT" "$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
                 $LOCAL_FILES/update-extras.sh && \
-                rm -rf $LOCAL_FILES"
+                rm -rf $LOCAL_FILES || true"
     fi
     echo -e "${GN}---   Finished extra updates    ---${CL}"
     if [[ "$WILL_STOP" != true ]] && [[ "$WELCOME_SCREEN" != true ]]; then
