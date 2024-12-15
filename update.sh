@@ -363,7 +363,7 @@ CONTAINER_BACKUP () {
         echo -e "${BL}[Info]${GN} Deleted old snapshots${CL}"
         LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
-          pct delsnapshot "$CONTAINER" Update"$SNAPSHOTS"
+          pct delsnapshot "$CONTAINER" Update"$SNAPSHOTS" >/dev/null 2>&1
         done
       echo -e "${BL}[Info]${GN} Done${CL}"
       else
@@ -387,7 +387,7 @@ VM_BACKUP () {
         echo -e "${BL}[Info]${GN} Deleting old snapshot(s)${CL}"
         LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
-          qm delsnapshot "$VM" Update"$SNAPSHOTS"
+          qm delsnapshot "$VM" Update"$SNAPSHOTS" >/dev/null 2>&1
         done
       echo -e "${BL}[Info]${GN} Done${CL}"
       else
@@ -418,7 +418,7 @@ EXTRAS () {
       pct push "$CONTAINER" -- $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf
       pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/update-extras.sh && \
                                         $LOCAL_FILES/update-extras.sh && \
-                                        rm -rf $LOCAL_FILES"
+                                        rm -rf $LOCAL_FILES || true"
     else
       # Extras in VMS with SSH_CONNECTION
       ssh -q -p "$SSH_PORT" "$IP" mkdir -p $LOCAL_FILES/
@@ -426,7 +426,7 @@ EXTRAS () {
       scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
       ssh -q -p "$SSH_PORT" "$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
                 $LOCAL_FILES/update-extras.sh && \
-                rm -rf $LOCAL_FILES"
+                rm -rf $LOCAL_FILES || true"
     fi
     echo -e "${GN}---   Finished extra updates    ---${CL}"
     if [[ "$WILL_STOP" != true ]] && [[ "$WELCOME_SCREEN" != true ]]; then
@@ -441,14 +441,16 @@ EXTRAS () {
 TRIM_FILESYSTEM () {
   if [[ "$INCLUDE_FSTRIM" == true ]]; then
     ROOT_FS=$(df -Th "/" | awk 'NR==2 {print $2}')
-    if [ "$ROOT_FS" = "ext4" ]; then
-      echo -e "${OR}--- Trimming filesystem ---${CL}"
-      local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-      echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
-      pct fstrim $CONTAINER --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
-      local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-      echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
-      sleep 1.5
+    if [[ $(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}') ]]; then
+      if [ "$ROOT_FS" = "ext4" ]; then
+        echo -e "${OR}--- Trimming filesystem ---${CL}"
+        local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
+        pct fstrim $CONTAINER --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
+        local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
+        sleep 1.5
+      fi
     fi
   fi
 }
