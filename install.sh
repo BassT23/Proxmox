@@ -10,7 +10,7 @@
 VERSION="1.8.1"
 
 # Branch
-BRANCH="beta"
+BRANCH="develop"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
