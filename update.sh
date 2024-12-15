@@ -441,14 +441,16 @@ EXTRAS () {
 TRIM_FILESYSTEM () {
   if [[ "$INCLUDE_FSTRIM" == true ]]; then
     ROOT_FS=$(df -Th "/" | awk 'NR==2 {print $2}')
-    if [ "$ROOT_FS" = "ext4" ]; then
-      echo -e "${OR}--- Trimming filesystem ---${CL}"
-      local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-      echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
-      pct fstrim $CONTAINER --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
-      local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-      echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
-      sleep 1.5
+    if [[ $(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}') ]]; then
+      if [ "$ROOT_FS" = "ext4" ]; then
+        echo -e "${OR}--- Trimming filesystem ---${CL}"
+        local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
+        pct fstrim $CONTAINER --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
+        local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
+        sleep 1.5
+      fi
     fi
   fi
 }
