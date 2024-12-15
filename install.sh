@@ -6,10 +6,11 @@
 
 # shellcheck disable=SC1017
 # shellcheck disable=SC2034
+
 VERSION="1.8.1"
 
 # Branch
-BRANCH="develop"
+BRANCH="beta"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"

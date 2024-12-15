@@ -349,6 +349,7 @@ READ_CONFIG () {
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_FSTRIM=$(awk -F'"' '/^INCLUDE_FSTRIM=/ {print $2}' "$CONFIG_FILE")
+  FSTRIM_WITH_MOUNTPOINT=$(awk -F'"' '/^FSTRIM_WITH_MOUNTPOINT=/ {print $2}' "$CONFIG_FILE")
 #  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
 #  INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
 }
@@ -438,13 +439,13 @@ EXTRAS () {
 
 # Trim Filesystem
 TRIM_FILESYSTEM () {
-  if [[ "INCLUDE_FSTRIM" == true ]]; then
+  if [[ "$INCLUDE_FSTRIM" == true ]]; then
     ROOT_FS=$(df -Th "/" | awk 'NR==2 {print $2}')
     if [ "$ROOT_FS" = "ext4" ]; then
       echo -e "${OR}--- Trimming filesystem ---${CL}"
       local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
       echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
-      pct fstrim $CONTAINER
+      pct fstrim $CONTAINER --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
       local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
       echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
       sleep 1.5

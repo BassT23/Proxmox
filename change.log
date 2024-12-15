@@ -1,7 +1,7 @@
 Changelog:
 ==========
 
-**v4.2.5** (develop)
+**v4.2.5** (beta)
 - fix ioBroker Upgrade
 - fix arch upgrade
 - add autoclean for debian based systems

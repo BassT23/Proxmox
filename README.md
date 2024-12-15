@@ -35,6 +35,7 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 - Logging - location can be change in config file
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/etc/ultimate-updater/exit`)
 - [Config file](https://github.com/BassT23/Proxmox/tree/master#config-file)
+- Trim filesystem on ext4 nodes - 
 
 Info can be found with `update -h`
 
@@ -52,6 +53,11 @@ In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
+
+## Usage:
+ - If you want to run the updater globally for all nodes/lxc/vm only run `update`
+ - If you want to update only one specific lxc/vm run `update <ID>`
+
 ## Cluster-Mode preparation:
 **! For Cluster Installation, you only need to install on one Host !**
 
