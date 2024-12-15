@@ -33,11 +33,19 @@ PermitRootLogin yes
 - create one file per VM in `/etc/ultimate-updater/VMs/<ID>` with content:
 
 `IP="111.111.111.111"`   # use the IP from the VM!
+`USER="root"`
+`SSH_VM_PORT="22`
 
 (IP can be found in VM with command: `hostname -I`)
+
+## if user is NOT root you need to prepare the user to run update commands like `apt` without sudo. 
+for example look here: `https://askubuntu.com/questions/74054/run-apt-get-without-sudo`
 
 - Copy ssh key to VM:
 
 You need to make this step on the Host, who hosted the VM. If pve2 host VMxyz, you need to make the copy from pve2, not from the pve, on which you run the script ;)
 
 `ssh-copy-id -i /root/.ssh/id_rsa.pub root@<VM-IP>`
+or
+`ssh-copy-id -i /root/.ssh/id_rsa.pub user@<VM-IP>`
+

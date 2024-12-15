@@ -4,12 +4,13 @@
 # Update #
 ##########
 
+# shellcheck disable=SC1017
 # shellcheck disable=SC2034
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.2"
+VERSION="4.2.5"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -338,8 +339,6 @@ READ_CONFIG () {
   STOPPED_CONTAINER=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   RUNNING_VM=$(awk -F'"' '/^RUNNING_VM=/ {print $2}' "$CONFIG_FILE")
   STOPPED_VM=$(awk -F'"' '/^STOPPED_VM=/ {print $2}' "$CONFIG_FILE")
-#  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
-  INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
@@ -348,6 +347,10 @@ READ_CONFIG () {
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
+  INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
+  INCLUDE_FSTRIM=$(awk -F'"' '/^INCLUDE_FSTRIM=/ {print $2}' "$CONFIG_FILE")
+#  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
+#  INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
 }
 
 # Snapshot/Backup
@@ -429,6 +432,22 @@ EXTRAS () {
       echo
     elif [[ "$WELCOME_SCREEN" == true ]]; then
       echo
+    fi
+  fi
+}
+
+# Trim Filesystem
+TRIM_FILESYSTEM () {
+  if [[ "INCLUDE_FSTRIM" == true ]]; then
+    ROOT_FS=$(df -Th "/" | awk 'NR==2 {print $2}')
+    if [ "$ROOT_FS" = "ext4" ]; then
+      echo -e "${OR}--- Trimming filesystem ---${CL}"
+      local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+      echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
+      pct fstrim $CONTAINER
+      local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+      echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
+      sleep 1.5
     fi
   fi
 }
@@ -602,8 +621,9 @@ UPDATE_CONTAINER () {
       fi
     fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y"
+      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
       EXTRAS
+      TRIM_FILESYSTEM
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
     echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
@@ -611,11 +631,13 @@ UPDATE_CONTAINER () {
     echo -e "\n${OR}--- DNF CLEANING ---${CL}"
     pct exec "$CONTAINER" -- bash -c "dnf -y autoremove"
     EXTRAS
+    TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ archlinux ]]; then
     echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm"
+    pct exec "$CONTAINER" -- bash -c "pacman -Su --noconfirm"
     EXTRAS
+    TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ alpine ]]; then
     echo -e "${OR}--- APK UPDATE ---${CL}"
@@ -626,6 +648,7 @@ UPDATE_CONTAINER () {
     echo -e "${OR}--- YUM UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "yum -y update"
     EXTRAS
+    TRIM_FILESYSTEM
     UPDATE_CHECK
   fi
   CCONTAINER=""
@@ -689,7 +712,9 @@ UPDATE_VM () {
 # Run Update - Tryout SSH first
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if ! (ssh -q -p "$SSH_PORT" "$IP" exit >/dev/null 2>&1); then
+    USER=$(awk -F'"' '/^USER=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+    SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+    if ! (ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
       echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
   Please configure SSH Key-Based Authentication${CL}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
@@ -699,25 +724,23 @@ UPDATE_VM () {
       if [[ "$START_WAITING" == true ]]; then
         echo -e "${BL}[Info]${GN} Try to connect via SSH${CL}"
         echo -e "${OR}This will take some time, please wait${CL}"
-        echo -e "${OR}!!! During development, sleep $VM_START_DELAY secounds - could be set in config !!!${CL}"
+        echo -e "${OR}Sleep $VM_START_DELAY secounds - could be set in config !!!${CL}"
         sleep "$VM_START_DELAY"
       fi
       SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
-      IS_TEMPLATE=$(qm config "$VM" | grep template)
-      if [[ "$IS_TEMPLATE" =~ 1 ]]; then
+      if (qm config "$VM" | grep template); then
         echo -e "${OR}$VM is a template - skipping the update${CL}\n"
         return
       fi
-      KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version)
-      if [[ "$KERNEL" =~ FreeBSD ]]; then
-        echo -e  "${OR}FreeBSD is not supported for now${CL}\n"
-        return
-      elif [[ "$OS_BASE" =~ l2 ]]; then
-        OS=$(ssh -q -p "$SSH_PORT" "$IP" hostnamectl | grep System)
+      if (ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "cat /etc/os-release" >/dev/null 2>&1); then
+#        echo -e  "${OR}FreeBSD is not supported for now${CL}\n"
+#        return
+#        if [[ "$OS_BASE" =~ l2 ]]; then
+        OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl | grep System)
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           # Check Internet connection
-          if ! ssh -q -p "$SSH_PORT" "$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
+          if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
             echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
             return
           fi
@@ -725,32 +748,32 @@ UPDATE_VM () {
           ssh -q -p "$SSH_PORT" "$IP" apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
           if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh -q -p "$SSH_PORT" -tt "$IP" apt-get upgrade -y
+            ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apt-get upgrade -y
           else
-            ssh -q -p "$SSH_PORT" -tt "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+            ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" apt-get --purge autoremove -y
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apt-get --purge autoremove -y && apt-get autoclean -y
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Fedora ]]; then
           echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" dnf -y upgrade
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade
           echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-          ssh -q -p "$SSH_PORT" "$IP" dnf -y --purge autoremove
+          ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Arch ]]; then
           echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" pacman -Syyu --noconfirm
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Alpine ]]; then
           echo -e "${OR}--- APK UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" apk -U upgrade
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade
         elif [[ "$OS" =~ CentOS ]]; then
           echo -e "${OR}--- YUM UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" yum -y update
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update
           EXTRAS
           UPDATE_CHECK
         else
@@ -800,7 +823,7 @@ UPDATE_VM_QEMU () {
         qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
       fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
-      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
+      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17-
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Fedora ]]; then
@@ -812,7 +835,7 @@ UPDATE_VM_QEMU () {
       UPDATE_CHECK
     elif [[ "$OS" =~ Arch ]]; then
       echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-      qm guest exec "$VM" -- bash -c "pacman -Syyu --noconfirm" | tail -n +2 | head -n -1
+      qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Alpine ]]; then

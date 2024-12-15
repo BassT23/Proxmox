@@ -1,6 +1,12 @@
 Changelog:
 ==========
 
+**v4.2.5** (develop)
+- fix ioBroker Upgrade
+- fix arch upgrade
+- add autoclean for debian based systems
+- add filesystem trim for ext4 systems
+
 **v4.2** (01.12.2024)
 - fix VM Template error
 - fix Unifi-Controller Container

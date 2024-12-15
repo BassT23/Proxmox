@@ -1,1 +1,9 @@
+############################################################
+# - This file must be in the node who hosted the vm.       #
+# - If user is not root please look here:                  #
+#   https://github.com/BassT23/Proxmox/blob/develop/ssh.md #
+############################################################
+
 IP="111.111.111.111"
+USER="root"
+SSH_VM_PORT="22

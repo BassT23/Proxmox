@@ -4,11 +4,12 @@
 # Install #
 ###########
 
+# shellcheck disable=SC1017
 # shellcheck disable=SC2034
-VERSION="1.8"
+VERSION="1.8.1"
 
 # Branch
-BRANCH="master"
+BRANCH="develop"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -262,6 +263,8 @@ UPDATE () {
     rm -rf "$TEMP_FILES"/change.log || true
     rm -rf "$TEMP_FILES"/install.sh || true
     rm -rf "$TEMP_FILES"/ssh.md || true
+    rm -rf "$TEMP_FILES"/CODE_OF_CONDUCT.md || true
+    rm -rf "$TEMP_FILES"/SECURITY.md || true
     chmod -R +x "$TEMP_FILES"/exit/*.sh
     cd "$TEMP_FILES"
     FILES="*.* **/*.*"
