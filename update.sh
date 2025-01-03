@@ -10,7 +10,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.2.6"
+VERSION="4.2.7"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -689,7 +689,6 @@ VM_UPDATE_START () {
           echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
           qm stop "$VM" &
           WILL_STOP="false"
-          START_WAITING="false"
         else
           echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH hasn't initialized${CL}\n\n"
         fi
@@ -715,25 +714,30 @@ UPDATE_VM () {
   echo -e "${BL}[Info]${OR} Start Snapshot and/or Backup${CL}"
   VM_BACKUP
   echo
-  if [[ "$START_WAITING" == true ]]; then
-    echo -e "${BL}[Info]${OR} Wait for bootup${CL}"
-    echo -e "${BL}[Info]${OR} Sleep $VM_START_DELAY secounds - time could be set in config file${CL}\n"
-    sleep "$VM_START_DELAY"
-  fi
   # Run Update - Tryout SSH first
-  echo -e "${BL}[Info]${GN} Try to connect via SSH first${CL}\n"
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     USER=$(awk -F'"' '/^USER=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+    if [[ -z "$USER" ]]; then USER="root"; fi
     SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+    if [[ -z "$SSH_VM_PORT" ]]; then SSH_VM_PORT="22"; fi
+    SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+    if [[ -z "$SSH_START_DELAY_TIME" ]]; then SSH_START_DELAY_TIME="45"; fi
+    if [[ "$START_WAITING" == true ]]; then
+      echo -e "${BL}[Info]${OR} Wait for bootup${CL}"
+      echo -e "${BL}[Info]${OR} Sleep $SSH_START_DELAY_TIME secounds - time could be set in SSH-VM config file${CL}\n"
+      sleep "$SSH_START_DELAY_TIME"
+      START_WAITING="false"
+    fi
     if ! (ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
       echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
-  Please configure SSH Key-Based Authentication${CL}\n\
+  ${OR}Or need more start delay time.\n\
+  ${BL}Please check SSH Key-Based Authentication${CL}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
   Try to use QEMU insead\n"
       UPDATE_VM_QEMU
     else
-      SSH_CONNECTION=true
+      SSH_CONNECTION="true"
       OS_BASE=$(qm config "$VM" | grep ostype)
       if (qm config "$VM" | grep template); then
         echo -e "${OR}$VM is a template - skipping the update${CL}\n"
@@ -805,6 +809,12 @@ UPDATE_VM_QEMU () {
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
+    if [[ "$START_WAITING" == true ]]; then
+      echo -e "${BL}[Info]${OR} Wait for bootup${CL}"
+      echo -e "${BL}[Info]${OR} Sleep $VM_START_DELAY secounds - time could be set in update.conf file${CL}\n"
+      sleep "$VM_START_DELAY"
+      START_WAITING="false"
+    fi
     # Run Update
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version)
     if [[ "$KERNEL" =~ FreeBSD ]]; then
