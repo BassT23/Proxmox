@@ -6,4 +6,4 @@
 
 IP="111.111.111.111"
 USER="root"
-SSH_VM_PORT="22
+SSH_VM_PORT="22"
