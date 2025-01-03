@@ -384,7 +384,7 @@ VM_BACKUP () {
     if [[ "$SNAPSHOT" == true ]]; then
       if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
-        echo -e "${BL}[Info]${GN} Deleting old snapshot(s)${CL}"
+        echo -e "${BL}[Info]${GN} Delete old snapshot(s)${CL}"
         LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
           qm delsnapshot "$VM" Update"$SNAPSHOTS" >/dev/null 2>&1
