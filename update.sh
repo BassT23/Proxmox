@@ -10,7 +10,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.2.5"
+VERSION="4.2.6"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -419,12 +419,14 @@ EXTRAS () {
       pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/update-extras.sh && \
                                         $LOCAL_FILES/update-extras.sh && \
                                         rm -rf $LOCAL_FILES || true"
+    # Extras in VMS with SSH_CONNECTION
+    elif [[ "$USER" != root ]]; then
+      echo -e "${RD}--- You need root user for extra updates - maybe in later relaeses possible ---${CL}"
     else
-      # Extras in VMS with SSH_CONNECTION
-      ssh -q -p "$SSH_PORT" "$IP" mkdir -p $LOCAL_FILES/
+      ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/
       scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
       scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
-      ssh -q -p "$SSH_PORT" "$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
+      ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
                 $LOCAL_FILES/update-extras.sh && \
                 rm -rf $LOCAL_FILES || true"
     fi
@@ -747,16 +749,19 @@ UPDATE_VM () {
             echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
             return
           fi
+          if [[ "$USER" != root ]]; then
+            UPDATE_USER="sudo "
+          fi 
           echo -e "${OR}--- APT UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" "$IP" apt-get update
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
           if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apt-get upgrade -y
+            ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y
           else
-            ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+            ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           fi
           echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apt-get --purge autoremove -y && apt-get autoclean -y
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get --purge autoremove -y && apt-get autoclean -y
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Fedora ]]; then

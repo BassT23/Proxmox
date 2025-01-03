@@ -1,6 +1,9 @@
 Changelog:
 ==========
 
+**v4.2.6** (develop)
+- add non root user update in VMs
+
 **v4.2.5** (beta)
 - fix ioBroker Upgrade
 - fix arch upgrade

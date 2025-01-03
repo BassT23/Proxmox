@@ -38,14 +38,25 @@ PermitRootLogin yes
 
 (IP can be found in VM with command: `hostname -I`)
 
-## if user is NOT root you need to prepare the user to run update commands like `apt` without sudo. 
-for example look here: `https://askubuntu.com/questions/74054/run-apt-get-without-sudo`
-
 - Copy ssh key to VM:
 
 You need to make this step on the Host, who hosted the VM. If pve2 host VMxyz, you need to make the copy from pve2, not from the pve, on which you run the script ;)
 
 `ssh-copy-id -i /root/.ssh/id_rsa.pub root@<VM-IP>`
-or
+or, if used user is not root:
 `ssh-copy-id -i /root/.ssh/id_rsa.pub user@<VM-IP>`
 
+
+## If user is NOT root, you need to prepare the user, to run admin commands - like `apt`
+
+Example for Ubuntu/Debian - with sudo (change in VM):
+
+- `sudo visudo`
+- add this to file:
+
+`%sudo ALL=(root) NOPASSWD: /usr/bin/apt-get update, /usr/bin/apt-get upgrade -y, /usr/bin/apt-get --purge autoremove -y, /usr/bin/apt-get autoclean -y`
+- save and exit file
+
+Sources:
+- easy, but unsafe -> look [here](https://askubuntu.com/questions/74054/run-apt-get-without-sudo)
+- for more safety -> look [here](https://stackoverflow.com/questions/73397309/how-do-i-enable-passwordless-sudo-for-all-options-for-a-command):
