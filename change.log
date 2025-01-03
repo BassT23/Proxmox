@@ -1,8 +1,9 @@
 Changelog:
 ==========
 
-**v4.2.6** (develop)
+**v4.2.7** (develop)
 - fix START/STOP/WAITING for stopped VMs
+- fic compatibility with "old" ssh connection
 - add non root user update in VMs
 
 **v4.2.5** (beta)
