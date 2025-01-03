@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **v4.2.6** (develop)
+- fix START/STOP/WAITING for stopped VMs
 - add non root user update in VMs
 
 **v4.2.5** (beta)
