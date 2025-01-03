@@ -689,6 +689,7 @@ VM_UPDATE_START () {
           echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
           qm stop "$VM" &
           WILL_STOP="false"
+          START_WAITING="false"
         else
           echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH hasn't initialized${CL}\n\n"
         fi
@@ -714,7 +715,13 @@ UPDATE_VM () {
   echo -e "${BL}[Info]${OR} Start Snapshot and/or Backup${CL}"
   VM_BACKUP
   echo
-# Run Update - Tryout SSH first
+  if [[ "$START_WAITING" == true ]]; then
+    echo -e "${BL}[Info]${OR} Wait for bootup${CL}"
+    echo -e "${BL}[Info]${OR} Sleep $VM_START_DELAY secounds - time could be set in config file${CL}\n"
+    sleep "$VM_START_DELAY"
+  fi
+  # Run Update - Tryout SSH first
+  echo -e "${BL}[Info]${GN} Try to connect via SSH first${CL}\n"
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     USER=$(awk -F'"' '/^USER=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
@@ -726,12 +733,6 @@ UPDATE_VM () {
   Try to use QEMU insead\n"
       UPDATE_VM_QEMU
     else
-      if [[ "$START_WAITING" == true ]]; then
-        echo -e "${BL}[Info]${GN} Try to connect via SSH${CL}"
-        echo -e "${OR}This will take some time, please wait${CL}"
-        echo -e "${OR}Sleep $VM_START_DELAY secounds - could be set in config !!!${CL}"
-        sleep "$VM_START_DELAY"
-      fi
       SSH_CONNECTION=true
       OS_BASE=$(qm config "$VM" | grep ostype)
       if (qm config "$VM" | grep template); then
@@ -756,7 +757,7 @@ UPDATE_VM () {
           ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update
           echo -e "\n${OR}--- APT UPGRADE ---${CL}"
           if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y
+            ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y
           else
             ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
           fi
@@ -766,22 +767,22 @@ UPDATE_VM () {
           UPDATE_CHECK
         elif [[ "$OS" =~ Fedora ]]; then
           echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade
+          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade
           echo -e "\n${OR}--- DNF CLEANING ---${CL}"
           ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Arch ]]; then
           echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm
+          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm
           EXTRAS
           UPDATE_CHECK
         elif [[ "$OS" =~ Alpine ]]; then
           echo -e "${OR}--- APK UPDATE ---${CL}"
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade
+          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade
         elif [[ "$OS" =~ CentOS ]]; then
           echo -e "${OR}--- YUM UPDATE ---${CL}"
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update
+          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update
           EXTRAS
           UPDATE_CHECK
         else
@@ -801,11 +802,6 @@ UPDATE_VM () {
 
 # QEMU
 UPDATE_VM_QEMU () {
-  if [[ "$START_WAITING" == true ]]; then
-    echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
-    echo -e "${OR}$VM_START_DELAY secounds wait time - could be set in config\n${CL}"
-    sleep "$VM_START_DELAY"
-  fi
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
