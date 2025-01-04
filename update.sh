@@ -689,6 +689,7 @@ VM_UPDATE_START () {
           echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
           qm stop "$VM" &
           WILL_STOP="false"
+          START_WAITING="false"
         else
           echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH hasn't initialized${CL}\n\n"
         fi
@@ -727,7 +728,6 @@ UPDATE_VM () {
       echo -e "${BL}[Info]${OR} Wait for bootup${CL}"
       echo -e "${BL}[Info]${OR} Sleep $SSH_START_DELAY_TIME secounds - time could be set in SSH-VM config file${CL}\n"
       sleep "$SSH_START_DELAY_TIME"
-      START_WAITING="false"
     fi
     if ! (ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
       echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
