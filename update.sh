@@ -10,7 +10,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.2.7"
+VERSION="4.2.8"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -492,7 +492,7 @@ HOST_UPDATE_START () {
 # Host Update
 UPDATE_HOST () {
   HOST=$1
-  START_HOST=$(hostname -I | cut -d ' ' -f1)
+  START_HOST=$(hostname -i | cut -d ' ' -f1)
   if [[ "$HOST" != "$START_HOST" ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
     scp "$0" "$HOST":$LOCAL_FILES/update
@@ -952,7 +952,7 @@ export TERM=xterm-256color
 if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
 READ_CONFIG
 OUTPUT_TO_FILE
-IP=$(hostname -I | cut -d ' ' -f1)
+IP=$(hostname -i | cut -d ' ' -f1)
 ARGUMENTS "$@"
 
 # Run without commands (Automatic Mode)
