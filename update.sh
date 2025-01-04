@@ -738,7 +738,7 @@ UPDATE_VM () {
       UPDATE_VM_QEMU
     else
       SSH_CONNECTION="true"
-      OS_BASE=$(qm config "$VM" | grep ostype)
+#      OS_BASE=$(qm config "$VM" | grep ostype)
       if (qm config "$VM" | grep template); then
         echo -e "${OR}$VM is a template - skipping the update${CL}\n"
         return
