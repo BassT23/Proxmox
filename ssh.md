@@ -39,11 +39,12 @@ or, if used user is not root:
 ### IN HOST where ultimate-updater start:
 - create one file per VM in `/etc/ultimate-updater/VMs/<ID>` with content:
 
-`IP="111.111.111.111"`   # use the IP from the VM!
-`USER="root"`
-`SSH_VM_PORT="22`
-`SSH_START_DELAY_TIME="45"`
-
+```
+IP="111.111.111.111"   # use the IP from the VM!
+USER="root"
+SSH_VM_PORT="22"
+SSH_START_DELAY_TIME="45"
+```
 (IP can be found in VM with command: `hostname -I`)
 
 
