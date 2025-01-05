@@ -631,7 +631,7 @@ UPDATE_CONTAINER () {
       TRIM_FILESYSTEM
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
-    echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
+    echo -e "\n${OR}--- DNF UPGRADE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "dnf -y upgrade"
     echo -e "\n${OR}--- DNF CLEANING ---${CL}"
     pct exec "$CONTAINER" -- bash -c "dnf -y autoremove"
@@ -744,23 +744,23 @@ UPDATE_VM () {
       SSH_CONNECTION="true"
       KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
       OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl | grep System || true)
+      # Check Internet connection
+      if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" ping -q -c1 "$CHECK_URL" &>/dev/null || true; then
+        echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
+        return
+      fi
       if [[ "$KERNEL" =~ FreeBSD ]]; then
         echo -e "${OR}--- PKG UPDATE ---${CL}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update
-        echo -e "\n${OR}--- PKG UPGRATE ---${CL}"
+        echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y
         echo -e "\n${OR}--- PKG CLEANING ---${CL}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y
         echo
-#        UPDATE_CHECK
+        UPDATE_CHECK
         return
       fi
       if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
-        # Check Internet connection
-        if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
-          echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
-          return
-        fi
         if [[ "$USER" != root ]]; then
           UPDATE_USER="sudo "
         fi 
@@ -777,7 +777,7 @@ UPDATE_VM () {
         EXTRAS
         UPDATE_CHECK
       elif [[ "$OS" =~ Fedora ]]; then
-        echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
+        echo -e "\n${OR}--- DNF UPGRADE ---${CL}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade
         echo -e "\n${OR}--- DNF CLEANING ---${CL}"
         ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y autoremove
@@ -822,23 +822,23 @@ UPDATE_VM_QEMU () {
     # Run Update
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
     OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
+    # Check Internet connection
+    if ! qm guest exec "$VM" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null || true"; then
+      echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
+      return
+    fi
     if [[ "$KERNEL" =~ FreeBSD ]]; then
       echo -e "${OR}--- PKG UPDATE ---${CL}"
       qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17-
-      echo -e "\n${OR}--- PKG UPGRATE ---${CL}"
+      echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
       qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1
       echo -e "\n${OR}--- PKG CLEANING ---${CL}"
       qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
       echo
-#      UPDATE_CHECK
+      UPDATE_CHECK
       return
     fi
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
-      # Check Internet connection
-      if ! qm guest exec "$VM" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
-        echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
-        return
-      fi
       echo -e "${OR}--- APT UPDATE ---${CL}"
       qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
@@ -852,7 +852,7 @@ UPDATE_VM_QEMU () {
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Fedora ]]; then
-      echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
+      echo -e "\n${OR}--- DNF UPGRADE ---${CL}"
       qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1
       echo -e "\n${OR}--- DNF CLEANING ---${CL}"
       qm guest exec "$VM" -- bash -c "dnf -y autoremove" | tail -n +4 | head -n -1 | cut -c 17-

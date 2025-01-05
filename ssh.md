@@ -32,7 +32,8 @@ PermitRootLogin yes
 ### IN HOST who hosted the VM:
 - Copy ssh key to VM:
 `ssh-copy-id -i /root/.ssh/id_rsa.pub root@<VM-IP>`
-or, if used user is not root:
+
+- or, if used user is not root:
 `ssh-copy-id -i /root/.ssh/id_rsa.pub <user>@<VM-IP>`
 
 
