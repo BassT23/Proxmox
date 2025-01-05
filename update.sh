@@ -768,7 +768,7 @@ UPDATE_VM () {
         echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade
         echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-        ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove
+        ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y autoremove
         EXTRAS
         UPDATE_CHECK
       elif [[ "$OS" =~ Arch ]]; then
@@ -836,7 +836,7 @@ UPDATE_VM_QEMU () {
       echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
       qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1
       echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-      qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17-
+      qm guest exec "$VM" -- bash -c "dnf -y autoremove" | tail -n +4 | head -n -1 | cut -c 17-
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Arch ]]; then
