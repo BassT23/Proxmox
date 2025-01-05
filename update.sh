@@ -641,7 +641,7 @@ UPDATE_CONTAINER () {
       TRIM_FILESYSTEM
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
-    echo -e "\n${OR}--- DNF UPGRADE ---${CL}"
+    echo -e "${OR}--- DNF UPGRADE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" 2>/dev/null
     echo -e "\n${OR}--- DNF CLEANING ---${CL}"
     pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" 2>/dev/null
@@ -743,7 +743,7 @@ UPDATE_VM () {
       sleep "$SSH_START_DELAY_TIME"
     fi
 #    if ! (ssh -o BatchMode -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit); then
-    if ! (ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1 || true); then
+    if ! (ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
       echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
   ${OR}Or need more start delay time.\n\
   ${BL}Please check SSH Key-Based Authentication${CL}\n\
