@@ -732,7 +732,8 @@ UPDATE_VM () {
       echo -e "${BL}[Info]${OR} Sleep $SSH_START_DELAY_TIME secounds - time could be set in SSH-VM config file${CL}\n"
       sleep "$SSH_START_DELAY_TIME"
     fi
-    if ! (ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
+#    if ! (ssh -o BatchMode -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit); then
+    if ! (ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1 || true); then
       echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
   ${OR}Or need more start delay time.\n\
   ${BL}Please check SSH Key-Based Authentication${CL}\n\
@@ -742,8 +743,8 @@ UPDATE_VM () {
     else
       # Run SSH Update
       SSH_CONNECTION="true"
-      KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
-      OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl | grep System || true)
+      KERNEL=$(qm guest cmd "$VM" get-osinfo >/dev/null 2>&1 | grep kernel-version || true)
+      OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl >/dev/null 2>&1 | grep System || true)
       # Check Internet connection
       if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" ping -q -c1 "$CHECK_URL" &>/dev/null || true; then
         echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
@@ -820,8 +821,8 @@ UPDATE_VM_QEMU () {
       sleep "$VM_START_DELAY"
     fi
     # Run Update
-    KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
-    OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
+    KERNEL=$(qm guest cmd "$VM" get-osinfo >/dev/null 2>&1 | grep kernel-version || true)
+    OS=$(qm guest cmd "$VM" get-osinfo >/dev/null 2>&1 | grep name || true)
     # Check Internet connection
     if ! qm guest exec "$VM" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null || true"; then
       echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
