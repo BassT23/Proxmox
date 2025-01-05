@@ -5,7 +5,11 @@ Changelog:
 - fix START/STOP/WAITING for stopped VMs
 - fix compatibility with "old" ssh connection
 - fix IP output by nodes
+- fix fedora autoremove
+- fix missing kernel infos
+- fix template detection
 - add non root user update in VMs
+- code cleaning
 
 **v4.2.5** (beta)
 - fix ioBroker Upgrade
