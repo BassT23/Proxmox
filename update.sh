@@ -666,7 +666,7 @@ VM_UPDATE_START () {
   VMS=$(qm list | tail -n +2 | cut -c -10)
   # Loop through the VMs
   for VM in $VMS; do
-    PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
+    PRE_OS=$(qm config "$VM" | grep ostype || true)
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
       echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
@@ -678,7 +678,10 @@ VM_UPDATE_START () {
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
         # Check if update is possible
-        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
+        if [[ $(qm config "$VM" | grep 'template:' | sed 's/template:\s*//') == 1 ]]; then
+          echo -e "${BL}[Info] Skipped VM $VM - template detected${CL}\n"
+          return
+        elif [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
           # Start the VM
           WILL_STOP="true"
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
@@ -715,7 +718,7 @@ UPDATE_VM () {
   echo -e "${BL}[Info]${OR} Start Snapshot and/or Backup${CL}"
   VM_BACKUP
   echo
-  # Run Update - Tryout SSH first
+  # Read SSH config file - check how update is possible
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     USER=$(awk -F'"' '/^USER=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
@@ -737,66 +740,56 @@ UPDATE_VM () {
   Try to use QEMU insead\n"
       UPDATE_VM_QEMU
     else
+      # Run SSH Update
       SSH_CONNECTION="true"
-#      OS_BASE=$(qm config "$VM" | grep ostype)
-      if (qm config "$VM" | grep template); then
-        echo -e "${OR}$VM is a template - skipping the update${CL}\n"
-        return
-      fi
-      if (ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "cat /etc/os-release" >/dev/null 2>&1); then
-#        echo -e  "${OR}FreeBSD is not supported for now${CL}\n"
-#        return
-#        if [[ "$OS_BASE" =~ l2 ]]; then
-        OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl | grep System)
-        if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
-          # Check Internet connection
-          if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
-            echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
-            return
-          fi
-          if [[ "$USER" != root ]]; then
-            UPDATE_USER="sudo "
-          fi 
-          echo -e "${OR}--- APT UPDATE ---${CL}"
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update
-          echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-          if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y
-          else
-            ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
-          fi
-          echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get --purge autoremove -y && apt-get autoclean -y
-          EXTRAS
-          UPDATE_CHECK
-        elif [[ "$OS" =~ Fedora ]]; then
-          echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade
-          echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-          ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove
-          EXTRAS
-          UPDATE_CHECK
-        elif [[ "$OS" =~ Arch ]]; then
-          echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm
-          EXTRAS
-          UPDATE_CHECK
-        elif [[ "$OS" =~ Alpine ]]; then
-          echo -e "${OR}--- APK UPDATE ---${CL}"
-          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade
-        elif [[ "$OS" =~ CentOS ]]; then
-          echo -e "${OR}--- YUM UPDATE ---${CL}"
-          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update
-          EXTRAS
-          UPDATE_CHECK
-        else
-          echo -e "${RD}  The system is not supported.\n  Maybe with later version ;)\n${CL}"
-          echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
+      OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl | grep System)
+      if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+        # Check Internet connection
+        if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
+          echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
+          return
         fi
-        return
-#      elif [[ $OS_BASE == win10 ]]; then
+        if [[ "$USER" != root ]]; then
+          UPDATE_USER="sudo "
+        fi 
+        echo -e "${OR}--- APT UPDATE ---${CL}"
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update
+        echo -e "\n${OR}--- APT UPGRADE ---${CL}"
+        if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y
+        else
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+        fi
+        echo -e "\n${OR}--- APT CLEANING ---${CL}"
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get --purge autoremove -y && apt-get autoclean -y
+        EXTRAS
+        UPDATE_CHECK
+      elif [[ "$OS" =~ Fedora ]]; then
+        echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade
+        echo -e "\n${OR}--- DNF CLEANING ---${CL}"
+        ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove
+        EXTRAS
+        UPDATE_CHECK
+      elif [[ "$OS" =~ Arch ]]; then
+        echo -e "${OR}--- PACMAN UPDATE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm
+        EXTRAS
+        UPDATE_CHECK
+      elif [[ "$OS" =~ Alpine ]]; then
+        echo -e "${OR}--- APK UPDATE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade
+      elif [[ "$OS" =~ CentOS ]]; then
+        echo -e "${OR}--- YUM UPDATE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update
+        EXTRAS
+        UPDATE_CHECK
+#      elif [[ $OS == win10 ]]; then
 #        ssh -q -p "$SSH_PORT" "$USER"@"$IP" wuauclt /detectnow /updatenow
 #        Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot # don't work
+      else
+        echo -e "${RD}  The system is not supported.\n  Maybe with later version ;)\n${CL}"
+        echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
       fi
     fi
   else
@@ -813,7 +806,6 @@ UPDATE_VM_QEMU () {
       echo -e "${BL}[Info]${OR} Wait for bootup${CL}"
       echo -e "${BL}[Info]${OR} Sleep $VM_START_DELAY secounds - time could be set in update.conf file${CL}\n"
       sleep "$VM_START_DELAY"
-      START_WAITING="false"
     fi
     # Run Update
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version)
