@@ -72,7 +72,7 @@ CHECK_ROOT () {
 
 # Check internet status
 CHECK_INTERNET () {
-  if ! ping -q -c1 "$CHECK_URL" &>/dev/null; then
+  if ! (ping -q -c1 "$CHECK_URL" >/dev/null 2>&1); then
     echo -e "\n${OR} You are offline - Can't update without internet${CL}\n"
     exit 2
   fi
@@ -354,16 +354,26 @@ READ_CONFIG () {
 #  INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
 }
 
+# Check if internet is reachable
+CHECK_INTERNET_NEW () {
+    if [[ "$OS" != alpine ]]; then
+      if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 $CHECK_URL >/dev/null 2>&1"; then
+        echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
+        return
+      fi
+    fi
+}
+
 # Snapshot/Backup
 CONTAINER_BACKUP () {
   if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
-      if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
+      if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" 2>/dev/null; then
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
         echo -e "${BL}[Info]${GN} Delete old snapshots${CL}"
-        LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
+        LIST=$(pct listsnapshot "$CONTAINER" 2>/dev/null | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
-          pct delsnapshot "$CONTAINER" Update"$SNAPSHOTS" >/dev/null 2>&1
+          pct delsnapshot "$CONTAINER" Update"$SNAPSHOTS" 2>/dev/null
         done
       echo -e "${BL}[Info]${GN} Done${CL}"
       else
@@ -382,10 +392,10 @@ CONTAINER_BACKUP () {
 VM_BACKUP () {
   if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
-      if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
+      if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" >/dev/null 2>&1; then
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
         echo -e "${BL}[Info]${GN} Delete old snapshot(s)${CL}"
-        LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
+        LIST=$(qm listsnapshot "$VM" 2>/dev/null | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
           qm delsnapshot "$VM" Update"$SNAPSHOTS" >/dev/null 2>&1
         done
@@ -413,12 +423,12 @@ EXTRAS () {
   else
     echo -e "\n${OR}--- Searching for extra updates ---${CL}"
     if [[ "$SSH_CONNECTION" != true ]]; then
-      pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/"
-      pct push "$CONTAINER" -- $LOCAL_FILES/update-extras.sh $LOCAL_FILES/update-extras.sh
-      pct push "$CONTAINER" -- $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf
+      pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/" 2>/dev/null
+      pct push "$CONTAINER" -- $LOCAL_FILES/update-extras.sh $LOCAL_FILES/update-extras.sh 2>/dev/null
+      pct push "$CONTAINER" -- $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf 2>/dev/null
       pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/update-extras.sh && \
                                         $LOCAL_FILES/update-extras.sh && \
-                                        rm -rf $LOCAL_FILES || true"
+                                        rm -rf $LOCAL_FILES || true" 2>/dev/null
     # Extras in VMS with SSH_CONNECTION
     elif [[ "$USER" != root ]]; then
       echo -e "${RD}--- You need root user for extra updates - maybe in later relaeses possible ---${CL}"
@@ -541,7 +551,7 @@ UPDATE_HOST_ITSELF () {
 # Container Update Start
 CONTAINER_UPDATE_START () {
   # Get the list of containers
-  CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
+  CONTAINERS=$(pct list 2>/dev/null | tail -n +2 | cut -f1 -d' ')
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $CONTAINER ]]; then
@@ -549,18 +559,18 @@ CONTAINER_UPDATE_START () {
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
       echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
     else
-      STATUS=$(pct status "$CONTAINER")
+      STATUS=$(pct status "$CONTAINER" 2>/dev/null)
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
         # Start the container
         WILL_STOP="true"
         echo -e "${BL}[Info]${GN} Starting LXC ${BL}$CONTAINER ${CL}"
-        pct start "$CONTAINER"
+        pct start "$CONTAINER" 2>/dev/null
         echo -e "${BL}[Info]${GN} Waiting for LXC ${BL}$CONTAINER${CL}${GN} to start ${CL}"
         sleep 5
         UPDATE_CONTAINER "$CONTAINER"
         # Stop the container
         echo -e "${BL}[Info]${GN} Shutting down LXC ${BL}$CONTAINER ${CL}\n\n"
-        pct shutdown "$CONTAINER" &
+        pct shutdown "$CONTAINER" 2>/dev/null &
         WILL_STOP="false"
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
@@ -579,9 +589,9 @@ UPDATE_CONTAINER () {
   CONTAINER=$1
   CCONTAINER="true"
   echo 'CONTAINER="'"$CONTAINER"'"' > /etc/ultimate-updater/temp/var
-  pct config "$CONTAINER" > /etc/ultimate-updater/temp/temp
-  OS=$(awk '/^ostype/' /etc/ultimate-updater/temp/temp | cut -d' ' -f2)
-  NAME=$(pct exec "$CONTAINER" hostname)
+  pct config "$CONTAINER" > /etc/ultimate-updater/temp/temp 2>/dev/null
+  OS=$(awk '/^ostype/' /etc/ultimate-updater/temp/temp 2>/dev/null | cut -d' ' -f2)
+  NAME=$(pct exec "$CONTAINER" hostname 2>/dev/null)
 #  if [[ "$OS" =~ centos ]]; then
 #    NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
 #  else
@@ -590,12 +600,12 @@ UPDATE_CONTAINER () {
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   # Check Internet connection
   if [[ "$OS" != alpine ]]; then
-    if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
+    if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 $CHECK_URL" >/dev/null 2>&1; then
       echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
       return
     fi
 #  elif [[ "$OS" == alpine ]]; then
-#    if ! pct exec "$CONTAINER" -- ash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
+#    if ! pct exec "$CONTAINER" -- ash -c "ping -q -c1 $CHECK_URL 2>/dev/null"; then
 #      echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
 #      return
 #    fi
@@ -607,51 +617,51 @@ UPDATE_CONTAINER () {
   # Run update
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "apt-get update"
+    pct exec "$CONTAINER" -- bash -c "apt-get update" 2>/dev/null
     # Check APT in Container
-    if pct exec "$CONTAINER" -- bash -c "grep -rnw /etc/apt -e unifi >/dev/null 2>&1"; then
+    if pct exec "$CONTAINER" -- bash -c "grep -rnw /etc/apt -e unifi" 2>/dev/null; then
       UNIFI="true"
     fi
     # Check END
     if [[ "$HEADLESS" == true || "$UNIFI" == true ]]; then
       echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y"
+      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y" 2>/dev/null
       UNIFI=""
     else
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-        pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+        pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y" 2>/dev/null
       else
-        pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y"
+        pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" 2>/dev/null
       fi
     fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
+      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" 2>/dev/null
       EXTRAS
       TRIM_FILESYSTEM
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
     echo -e "\n${OR}--- DNF UPGRADE ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "dnf -y upgrade"
+    pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" 2>/dev/null
     echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "dnf -y autoremove"
+    pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" 2>/dev/null
     EXTRAS
     TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ archlinux ]]; then
     echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "pacman -Su --noconfirm"
+    pct exec "$CONTAINER" -- bash -c "pacman -Su --noconfirm" 2>/dev/null
     EXTRAS
     TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ alpine ]]; then
     echo -e "${OR}--- APK UPDATE ---${CL}"
-    pct exec "$CONTAINER" -- ash -c "apk -U upgrade"
+    pct exec "$CONTAINER" -- ash -c "apk -U upgrade" 2>/dev/null
     if [[ "$WILL_STOP" != true ]]; then echo; fi
     echo
   else
     echo -e "${OR}--- YUM UPDATE ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "yum -y update"
+    pct exec "$CONTAINER" -- bash -c "yum -y update" 2>/dev/null
     EXTRAS
     TRIM_FILESYSTEM
     UPDATE_CHECK
@@ -663,10 +673,10 @@ UPDATE_CONTAINER () {
 # VM Update Start
 VM_UPDATE_START () {
   # Get the list of VMs
-  VMS=$(qm list | tail -n +2 | cut -c -10)
+  VMS=$(qm list 2>/dev/null | tail -n +2 | cut -c -10)
   # Loop through the VMs
   for VM in $VMS; do
-    PRE_OS=$(qm config "$VM" | grep ostype || true)
+    PRE_OS=$(qm config "$VM" 2>/dev/null | grep ostype || true)
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
       echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
@@ -675,13 +685,13 @@ VM_UPDATE_START () {
       echo -e "${BL}[Info] Skipped VM $VM${CL}\n"
       echo -e "${OR}  Windows is not supported for now.\n  I'm working on it ;)${CL}\n\n"
     else
-      STATUS=$(qm status "$VM")
+      STATUS=$(qm status "$VM" 2>/dev/null)
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
         # Check if update is possible
-        if [[ $(qm config "$VM" | grep 'template:' | sed 's/template:\s*//') == 1 ]]; then
+        if [[ $(qm config "$VM" 2>/dev/null | grep 'template:' | sed 's/template:\s*//') == 1 ]]; then
           echo -e "${BL}[Info] Skipped VM $VM - template detected${CL}\n"
           return
-        elif [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
+        elif [[ $(qm config "$VM" 2>/dev/null | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
           # Start the VM
           WILL_STOP="true"
           echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
@@ -710,7 +720,7 @@ VM_UPDATE_START () {
 # VM Update
 UPDATE_VM () {
   VM=$1
-  NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
+  NAME=$(qm config "$VM" 2>/dev/null | grep 'name:' | sed 's/name:\s*//')
   CVM="true"
   echo 'VM="'"$VM"'"' > /etc/ultimate-updater/temp/var
   echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
@@ -743,10 +753,10 @@ UPDATE_VM () {
     else
       # Run SSH Update
       SSH_CONNECTION="true"
-      KERNEL=$(qm guest cmd "$VM" get-osinfo >/dev/null 2>&1 | grep kernel-version || true)
-      OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl >/dev/null 2>&1 | grep System || true)
+      KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
+      OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
       # Check Internet connection
-      if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" ping -q -c1 "$CHECK_URL" &>/dev/null || true; then
+      if ! (ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" ping -q -c1 "$CHECK_URL" >/dev/null 2>&1 || true); then
         echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
         return
       fi
@@ -821,10 +831,10 @@ UPDATE_VM_QEMU () {
       sleep "$VM_START_DELAY"
     fi
     # Run Update
-    KERNEL=$(qm guest cmd "$VM" get-osinfo >/dev/null 2>&1 | grep kernel-version || true)
-    OS=$(qm guest cmd "$VM" get-osinfo >/dev/null 2>&1 | grep name || true)
+    KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
+    OS=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep name || true)
     # Check Internet connection
-    if ! qm guest exec "$VM" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null || true"; then
+    if ! (qm guest exec "$VM" -- bash -c "ping -q -c1 $CHECK_URL >/dev/null 2>&1 || true"); then
       echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
       return
     fi
