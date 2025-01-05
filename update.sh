@@ -742,7 +742,19 @@ UPDATE_VM () {
     else
       # Run SSH Update
       SSH_CONNECTION="true"
-      OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl | grep System)
+      KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
+      OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl | grep System || true)
+      if [[ "$KERNEL" =~ FreeBSD ]]; then
+        echo -e "${OR}--- PKG UPDATE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update
+        echo -e "\n${OR}--- PKG UPGRATE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y
+        echo -e "\n${OR}--- PKG CLEANING ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y
+        echo
+#        UPDATE_CHECK
+        return
+      fi
       if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
         # Check Internet connection
         if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
@@ -808,12 +820,19 @@ UPDATE_VM_QEMU () {
       sleep "$VM_START_DELAY"
     fi
     # Run Update
-    KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version)
+    KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
+    OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
     if [[ "$KERNEL" =~ FreeBSD ]]; then
-      echo -e  "${OR}  FreeBSD is not supported for now ${CL}\n"
+      echo -e "${OR}--- PKG UPDATE ---${CL}"
+      qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17-
+      echo -e "\n${OR}--- PKG UPGRATE ---${CL}"
+      qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1
+      echo -e "\n${OR}--- PKG CLEANING ---${CL}"
+      qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
+      echo
+#      UPDATE_CHECK
       return
     fi
-    OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       # Check Internet connection
       if ! qm guest exec "$VM" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
