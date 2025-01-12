@@ -249,9 +249,14 @@ CHECK_VM () {
     if ! (ssh "$IP" exit) >/dev/null 2>&1; then
       CHECK_VM_QEMU
     else
-      OS_BASE=$(qm config "$VM" | grep ostype)
+      OS_BASE=$(qm config "$VM" | grep ostype || true)
       if [[ "$OS_BASE" =~ l2 ]]; then
-        OS=$(ssh "$IP" hostnamectl | grep System)
+        KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
+        OS=$(ssh "$IP" hostnamectl | grep System || true)
+#        if [[ "$KERNEL" =~ FreeBSD ]]; then
+#          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update
+#          return
+#        fi
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           ssh "$IP" "apt-get update" >/dev/null 2>&1
           SECURITY_APT_UPDATES=$(ssh "$IP" "apt-get -s upgrade | grep -ci ^inst.*security")
@@ -299,7 +304,12 @@ CHECK_VM () {
 
 CHECK_VM_QEMU () {
   if qm guest exec "$VM" test >/dev/null 2>&1; then
-    OS=$(qm guest cmd "$VM" get-osinfo | grep name)
+    KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
+    OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
+#    if [[ "$KERNEL" =~ FreeBSD ]]; then
+#      qm guest exec "$VM" -- tcsh -c "pkg update"
+#      return
+#    fi
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       qm guest exec "$VM" -- bash -c "apt-get update" >/dev/null 2>&1
       SECURITY_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)

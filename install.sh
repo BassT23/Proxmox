@@ -7,7 +7,7 @@
 # shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.8.1"
+VERSION="1.8.2"
 
 # Branch
 BRANCH="beta"
@@ -247,6 +247,7 @@ UPDATE () {
     # Copy files
     mv "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
+    mv "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
       chmod +x /etc/update-motd.d/01-welcome-screen
