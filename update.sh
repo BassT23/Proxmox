@@ -699,7 +699,7 @@ UPDATE_VM () {
       if [[ "$START_WAITING" == true ]]; then
         echo -e "${BL}[Info]${GN} Try to connect via SSH${CL}"
         echo -e "${OR}This will take some time, please wait${CL}"
-        echo -e "${OR}Sleep $VM_START_DELAY secounds - could be set in config !!!${CL}"
+        echo -e "${OR}Sleep $VM_START_DELAY seconds - could be set in config !!!${CL}"
         sleep "$VM_START_DELAY"
       fi
       SSH_CONNECTION=true
@@ -770,7 +770,7 @@ UPDATE_VM () {
 UPDATE_VM_QEMU () {
   if [[ "$START_WAITING" == true ]]; then
     echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
-    echo -e "${OR}$VM_START_DELAY secounds wait time - could be set in config\n${CL}"
+    echo -e "${OR}$VM_START_DELAY seconds wait time - could be set in config\n${CL}"
     sleep "$VM_START_DELAY"
   fi
   if qm guest exec "$VM" test >/dev/null 2>&1; then
