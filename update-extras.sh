@@ -4,8 +4,10 @@
 # Update-Extras #
 #################
 
+# shellcheck disable=SC1017
 # shellcheck disable=SC2034
-VERSION="1.9"
+
+VERSION="1.9.1"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -25,9 +27,9 @@ fi
 # ioBroker
 if [[ -d "/opt/iobroker" && $IOBROKER == true ]]; then
   echo -e "\n*** Updating ioBroker ***\n"
-  echo "*** Stop ioBroker ***" && iob stop && echo
-  echo "*** Update/Upgrade ioBroker ***" && iob update && iob upgrade -y && iob upgrade self -y && echo
-  echo "*** Start ioBroker ***" && iob start && echo
+  echo "*** Stop ioBroker ***" &&  sudo -u iobroker bash -c "iob stop" && echo
+  echo "*** Update/Upgrade ioBroker ***" && sudo -u iobroker bash -c "iob update" && sudo -u iobroker bash -c "iob upgrade -y" && sudo -u iobroker bash -c "iob upgrade self -y" && echo
+  echo "*** Start ioBroker ***" && sudo -u iobroker bash -c "iob start" && echo
   if [[ -d "/opt/iobroker/iobroker-data/radar2.admin" ]]; then
     setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip "$(eval readlink -f '$(which arp-scan)')"
     setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+eip "$(eval readlink -f '$(which node)')"

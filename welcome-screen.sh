@@ -4,7 +4,9 @@
 # Welcome-Screen #
 ##################
 
+# shellcheck disable=SC1017
 # shellcheck disable=SC2034
+
 VERSION="1.4"
 
 # Variable / Function

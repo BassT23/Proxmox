@@ -29,15 +29,36 @@ PermitRootLogin yes
 `sudo service sshd restart`
 
 
-### IN HOST:
+### IN HOST who hosted the VM:
+- Copy ssh key to VM:
+`ssh-copy-id -i /root/.ssh/id_rsa.pub root@<VM-IP>`
+
+- or, if used user is not root:
+`ssh-copy-id -i /root/.ssh/id_rsa.pub <user>@<VM-IP>`
+
+
+### IN HOST where ultimate-updater start:
 - create one file per VM in `/etc/ultimate-updater/VMs/<ID>` with content:
 
-`IP="111.111.111.111"`   # use the IP from the VM!
-
+```
+IP="111.111.111.111"   # use the IP from the VM!
+USER="root"
+SSH_VM_PORT="22"
+SSH_START_DELAY_TIME="45"
+```
 (IP can be found in VM with command: `hostname -I`)
 
-- Copy ssh key to VM:
 
-You need to make this step on the Host, who hosted the VM. If pve2 host VMxyz, you need to make the copy from pve2, not from the pve, on which you run the script ;)
+## If user is NOT root, you need to prepare the user, to run admin commands - like `apt` - but user MUST be part of group `sudo`
 
-`ssh-copy-id -i /root/.ssh/id_rsa.pub root@<VM-IP>`
+Example for Ubuntu/Debian - with sudo (change in VM):
+
+- `sudo visudo`
+- add this to file:
+
+`%sudo ALL=(root) NOPASSWD: /usr/bin/apt-get update, /usr/bin/apt-get upgrade -y, /usr/bin/apt-get --purge autoremove -y, /usr/bin/apt-get autoclean -y`
+- save and exit file
+
+Sources:
+- easy, but unsafe -> look [here](https://askubuntu.com/questions/74054/run-apt-get-without-sudo)
+- for more safety -> look [here](https://stackoverflow.com/questions/73397309/how-do-i-enable-passwordless-sudo-for-all-options-for-a-command):

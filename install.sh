@@ -4,11 +4,13 @@
 # Install #
 ###########
 
+# shellcheck disable=SC1017
 # shellcheck disable=SC2034
-VERSION="1.8"
+
+VERSION="1.8.2"
 
 # Branch
-BRANCH="master"
+BRANCH="beta"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -245,6 +247,7 @@ UPDATE () {
     # Copy files
     mv "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
+    mv "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
       chmod +x /etc/update-motd.d/01-welcome-screen
@@ -262,6 +265,8 @@ UPDATE () {
     rm -rf "$TEMP_FILES"/change.log || true
     rm -rf "$TEMP_FILES"/install.sh || true
     rm -rf "$TEMP_FILES"/ssh.md || true
+    rm -rf "$TEMP_FILES"/CODE_OF_CONDUCT.md || true
+    rm -rf "$TEMP_FILES"/SECURITY.md || true
     chmod -R +x "$TEMP_FILES"/exit/*.sh
     cd "$TEMP_FILES"
     FILES="*.* **/*.*"
