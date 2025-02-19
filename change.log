@@ -1,11 +1,14 @@
 Changelog:
 ==========
 
-**v4.2.8** (beta)
+**v4.2.9** (beta)
 - add freebsd VM (QEMO and SSH Connection)
 - add non root user update in VMs
 - add autoclean for debian based systems
 - add filesystem trim for ext4 systems
+- add curl for internet check
+- add env settings for arch in config file
+- add kernel kleaning (disabled by default in config file)
 - fix ioBroker Upgrade
 - fix arch upgrade
 - fix START/STOP/WAITING for stopped VMs
@@ -15,6 +18,7 @@ Changelog:
 - fix missing kernel infos
 - fix template detection
 - fix internet check
+- modify config file - checker settings now on the buttom
 - code cleaning
 
 **v4.2** (01.12.2024)
