@@ -1,5 +1,5 @@
 ############################################################
-# - This file must be in the node who hosted the vm.       #
+# - This file must be in the node who start the script.    #
 # - If user is not root please look here:                  #
 #   https://github.com/BassT23/Proxmox/blob/develop/ssh.md #
 ############################################################

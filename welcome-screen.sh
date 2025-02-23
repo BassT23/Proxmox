@@ -7,7 +7,7 @@
 # shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.4"
+VERSION="1.5"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -23,26 +23,72 @@ CL="\e[0m"
 
 # Version Check
 VERSION_CHECK () {
-  curl -s "$SERVER_URL"/update.sh > /root/update.sh
-  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update.sh)
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update_master.sh
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/update.sh > /root/update_beta.sh
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/update.sh > /root/update_develop.sh
+  MASTER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_master.sh)
+  BETA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_beta.sh)
+  DEVELOP_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_develop.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.sh)
+  if [[ "$BRANCH" == develop ]]; then
+    echo -e "${OR}*** The Ultimate Updater is on develop branch ***${CL}"
+    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+       Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION\n\
+        ${OR}You can update with <update -up>${CL}\n"
+      VERSION_NOT_SHOW=true
+    elif [[ "$LOCAL_VERSION" < "$BETA_VERSION" ]]; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+       Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION\n\
+         ${OR}You can update with <update -up>${CL}\n"
+      VERSION_NOT_SHOW=true
+    elif [[ "$LOCAL_VERSION" < "$DEVELOP_VERSION" ]]; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+     Installed: $LOCAL_VERSION / Github-Develop: $DEVELOP_VERSION\n\
+        ${OR}You can update with <update -up>${CL}\n"
+      VERSION_NOT_SHOW=true
+    else
+      echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
+    fi
+  fi
   if [[ "$BRANCH" == beta ]]; then
     echo -e "${OR}*** The Ultimate Updater is on beta branch ***${CL}"
-  elif [[ "$BRANCH" == develop ]]; then
-    echo -e "${OR}*** The Ultimate Updater is on develop branch ***${CL}"
+    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+       Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION\n\
+        ${OR}You can update with <update -up>${CL}\n"
+      VERSION_NOT_SHOW=true
+    elif [[ "$LOCAL_VERSION" < "$BETA_VERSION" ]]; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+       Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION\n\
+         ${OR}You can update with <update -up>${CL}\n"
+      VERSION_NOT_SHOW=true
+    elif [[ "$LOCAL_VERSION" < "$DEVELOP_VERSION" ]]; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+     Installed: $LOCAL_VERSION / Github-Develop: $DEVELOP_VERSION\n\
+        ${OR}You can update with <update -up>${CL}\n"
+      VERSION_NOT_SHOW=true
+    else
+      echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
+    fi
   fi
-  if [[ "$SERVER_VERSION" > "$LOCAL_VERSION" ]]; then
-    echo -e "${OR}    *** A newer version is available ***${CL}\n\
-      Installed: $LOCAL_VERSION / Server: $SERVER_VERSION\n\
-      ${OR}You can update with <update -up>${CL}\n"
-    VERSION_NOT_SHOW=true
-  elif  [[ ! -s /root/update.sh ]]; then
+  if [[ "$BRANCH" == master ]]; then
+    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+      echo -e "${OR}    *** A newer version is available ***${CL}\n\
+        Installed: $LOCAL_VERSION / Server: $MASTER_VERSION\n\
+        ${OR}You can update with <update -up>${CL}\n"
+      VERSION_NOT_SHOW=true
+    fi
+  fi
+  elif  [[ ! -s /root/update_master.sh ]]; then
     echo -e "${OR} *** You are offline - can't check version ***${CL}"
   elif [[ "$BRANCH" == master ]]; then
       echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
   fi
   if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "              Version: $LOCAL_VERSION\n"; fi
-  rm -rf /root/update.sh
+  rm -rf /root/update_master.sh
+  rm -rf /root/update_beta.sh
+  rm -rf /root/update_develop.sh
 }
 
 READ_WRITE_CONFIG () {
