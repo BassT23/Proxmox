@@ -7,7 +7,7 @@
 # shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.5"
+VERSION="1.5.1"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -31,8 +31,10 @@ VERSION_CHECK () {
   DEVELOP_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_develop.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.sh)
   if [[ "$BRANCH" == develop ]]; then
-    echo -e "${OR}*** The Ultimate Updater is on develop branch ***${CL}"
-    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+    if  [[ ! -s /root/update_develop.sh ]]; then
+      echo -e "${OR}*** You are offline - can't check version ***${CL}\n"
+      echo -e "${OR}*** The Ultimate Updater is on develop branch ***${CL}"
+    elif [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
       echo -e "${OR}       *** A newer version is available ***${CL}\n\
        Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION\n\
         ${OR}You can update with <update -up>${CL}\n"
@@ -52,8 +54,10 @@ VERSION_CHECK () {
     fi
   fi
   if [[ "$BRANCH" == beta ]]; then
-    echo -e "${OR}*** The Ultimate Updater is on beta branch ***${CL}"
-    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+    if  [[ ! -s /root/update_beta.sh ]]; then
+      echo -e "${OR}*** You are offline - can't check version ***${CL}\n"
+      echo -e "${OR}*** The Ultimate Updater is on beta branch ***${CL}"
+    elif [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
       echo -e "${OR}       *** A newer version is available ***${CL}\n\
        Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION\n\
         ${OR}You can update with <update -up>${CL}\n"
@@ -73,17 +77,16 @@ VERSION_CHECK () {
     fi
   fi
   if [[ "$BRANCH" == master ]]; then
-    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+    if  [[ ! -s /root/update_master.sh ]]; then
+      echo -e "${OR}*** You are offline - can't check version ***${CL}\n"
+    elif [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
       echo -e "${OR}    *** A newer version is available ***${CL}\n\
         Installed: $LOCAL_VERSION / Server: $MASTER_VERSION\n\
         ${OR}You can update with <update -up>${CL}\n"
       VERSION_NOT_SHOW=true
+    else
+        echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
     fi
-  fi
-  elif  [[ ! -s /root/update_master.sh ]]; then
-    echo -e "${OR} *** You are offline - can't check version ***${CL}"
-  elif [[ "$BRANCH" == master ]]; then
-      echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
   fi
   if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "              Version: $LOCAL_VERSION\n"; fi
   rm -rf /root/update_master.sh
