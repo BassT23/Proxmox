@@ -10,7 +10,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.3"
+VERSION="4.3.1"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
