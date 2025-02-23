@@ -4,12 +4,13 @@
 # Update #
 ##########
 
+# shellcheck disable=SC1017
 # shellcheck disable=SC2034
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.2.3"
+VERSION="4.3"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -71,8 +72,8 @@ CHECK_ROOT () {
 
 # Check internet status
 CHECK_INTERNET () {
-  if ! ping -q -c1 "$CHECK_URL" &>/dev/null; then
-    echo -e "\n${OR} You are offline - Can't update without internet${CL}\n"
+  if ! "$CHECK_URL_EXE" -q -c1 "$CHECK_URL" &>/dev/null; then
+    echo -e "\n${OR} Internet check fail - Can't update without internet${CL}\n"
     exit 2
   fi
 }
@@ -86,8 +87,9 @@ ARGUMENTS () {
         SINGLE_UPDATE=true
         ONLY=$ARGUMENT
         HEADER_INFO
+        echo -e "${BL}[Info]${OR} Update only LXC/VM $ARGUMENT - work only on main host!${CL}\n"
         CONTAINER_UPDATE_START
-#        echo -e "update only LXC/VM $ARGUMENT - in future :)"
+        VM_UPDATE_START
         ;;
       -h|--help)
         USAGE
@@ -217,29 +219,106 @@ USAGE () {
 
 # Version Check / Update Message in Header
 VERSION_CHECK () {
-  curl -s "$SERVER_URL"/update.sh > $LOCAL_FILES/temp/update.sh
-  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update.sh)
-  if [[ "$BRANCH" == beta ]]; then
-    echo -e "\n${OR}       *** You are on beta branch ***${CL}"
-  elif [[ "$BRANCH" == develop ]]; then
-    echo -e "\n${OR}     *** You are on develop branch ***${CL}"
-  fi
-  if [[ "$SERVER_VERSION" > "$VERSION" ]]; then
-    echo -e "\n${OR}    *** A newer version is available ***${CL}\n\
-      Installed: $VERSION / Server: $SERVER_VERSION\n"
-    if [[ "$HEADLESS" != true ]]; then
-      echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
-      read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
-      if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-        bash <(curl -s "$SERVER_URL"/install.sh) update
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > $LOCAL_FILES/temp/update_master.sh
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/update.sh > $LOCAL_FILES/temp/update_beta.sh
+  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/update.sh > $LOCAL_FILES/temp/update_develop.sh
+  MASTER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update_master.sh)
+  BETA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update_beta.sh)
+  DEVELOP_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update_develop.sh)
+  LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.sh)
+  if [[ "$BRANCH" == develop ]]; then
+    echo -e "${OR}*** The Ultimate Updater is on develop branch ***${CL}"
+    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+       Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION"
+      if [[ "$HEADLESS" != true ]]; then
+        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
+        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
+          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+        fi
+        echo
       fi
-      echo
+      VERSION_NOT_SHOW=true
+    elif [[ "$LOCAL_VERSION" < "$BETA_VERSION" ]]; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+       Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION"
+      if [[ "$HEADLESS" != true ]]; then
+        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
+        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
+          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
+        fi
+        echo
+      fi
+      VERSION_NOT_SHOW=true
+    elif [[ "$LOCAL_VERSION" < "$DEVELOP_VERSION" ]]; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+       Installed: $LOCAL_VERSION / Github-Develop: $DEVELOP_VERSION"
+      if [[ "$HEADLESS" != true ]]; then
+        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
+        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
+          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/install.sh) update
+        fi
+        echo
+      fi
+      VERSION_NOT_SHOW=true
+    else
+      echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
     fi
-    VERSION_NOT_SHOW=true
-  elif [[ "$BRANCH" == master ]]; then
+  fi
+  if [[ "$BRANCH" == beta ]]; then
+    echo -e "${OR}*** The Ultimate Updater is on beta branch ***${CL}"
+    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+       Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION"
+      if [[ "$HEADLESS" != true ]]; then
+        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
+        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
+          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+        fi
+        echo
+      fi
+      VERSION_NOT_SHOW=true
+    elif [[ "$LOCAL_VERSION" < "$BETA_VERSION" ]]; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+       Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION"
+      if [[ "$HEADLESS" != true ]]; then
+        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
+        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
+          bash <(curl -s "$SERVER_URL"/install.sh) update
+        fi
+        echo
+      fi
+      VERSION_NOT_SHOW=true
+    else
       echo -e "\n              ${GN}Script is UpToDate${CL}"
+    fi
+  fi
+  if [[ "$BRANCH" == master ]]; then
+    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+      echo -e "${OR}    *** A newer version is available ***${CL}\n\
+        Installed: $LOCAL_VERSION / Server: $MASTER_VERSION"
+      if [[ "$HEADLESS" != true ]]; then
+        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
+        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
+          bash <(curl -s "$SERVER_URL"/install.sh) update
+        fi
+        echo
+      fi
+      VERSION_NOT_SHOW=true
+    else
+      echo -e "\n              ${GN}Script is UpToDate${CL}"
+    fi
   fi
   if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "                 Version: $VERSION"; fi
+  rm -rf $LOCAL_FILES/temp/update_master.sh
+  rm -rf $LOCAL_FILES/temp/update_beta.sh
+  rm -rf $LOCAL_FILES/temp/update_develop.sh
   rm -rf $LOCAL_FILES/temp/update.sh && echo
 }
 
@@ -330,6 +409,7 @@ READ_CONFIG () {
   LOG_FILE=$(awk -F'"' '/^LOG_FILE=/ {print $2}' "$CONFIG_FILE")
   CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' "$CONFIG_FILE")
   CHECK_URL=$(awk -F'"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
+  CHECK_URL_EXE=$(awk -F'"' '/^EXE_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' "$CONFIG_FILE")
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' "$CONFIG_FILE")
@@ -338,8 +418,6 @@ READ_CONFIG () {
   STOPPED_CONTAINER=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   RUNNING_VM=$(awk -F'"' '/^RUNNING_VM=/ {print $2}' "$CONFIG_FILE")
   STOPPED_VM=$(awk -F'"' '/^STOPPED_VM=/ {print $2}' "$CONFIG_FILE")
-#  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
-  INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
@@ -348,6 +426,12 @@ READ_CONFIG () {
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
+  INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
+  INCLUDE_FSTRIM=$(awk -F'"' '/^INCLUDE_FSTRIM=/ {print $2}' "$CONFIG_FILE")
+  FSTRIM_WITH_MOUNTPOINT=$(awk -F'"' '/^FSTRIM_WITH_MOUNTPOINT=/ {print $2}' "$CONFIG_FILE")
+  PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
+  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
+  INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
 }
 
 # Snapshot/Backup
@@ -356,10 +440,10 @@ CONTAINER_BACKUP () {
     if [[ "$SNAPSHOT" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
-        echo -e "${BL}[Info]${GN} Deleted old snapshots${CL}"
+        echo -e "${BL}[Info]${GN} Delete old snapshots${CL}"
         LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
-          pct delsnapshot "$CONTAINER" Update"$SNAPSHOTS"
+          pct delsnapshot "$CONTAINER" Update"$SNAPSHOTS" >/dev/null 2>&1
         done
       echo -e "${BL}[Info]${GN} Done${CL}"
       else
@@ -380,10 +464,10 @@ VM_BACKUP () {
     if [[ "$SNAPSHOT" == true ]]; then
       if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "${BL}[Info]${GN} Snapshot created${CL}"
-        echo -e "${BL}[Info]${GN} Deleting old snapshot(s)${CL}"
+        echo -e "${BL}[Info]${GN} Delete old snapshot(s)${CL}"
         LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
-          qm delsnapshot "$VM" Update"$SNAPSHOTS"
+          qm delsnapshot "$VM" Update"$SNAPSHOTS" >/dev/null 2>&1
         done
       echo -e "${BL}[Info]${GN} Done${CL}"
       else
@@ -414,21 +498,41 @@ EXTRAS () {
       pct push "$CONTAINER" -- $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf
       pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/update-extras.sh && \
                                         $LOCAL_FILES/update-extras.sh && \
-                                        rm -rf $LOCAL_FILES"
-    else
+                                        rm -rf $LOCAL_FILES || true"
       # Extras in VMS with SSH_CONNECTION
-      ssh -q -p "$SSH_PORT" "$IP" mkdir -p $LOCAL_FILES/
+    elif [[ "$USER" != root ]]; then
+      echo -e "${RD}--- You need root user for extra updates - maybe in later relaeses possible ---${CL}"
+    else
+      ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/
       scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
       scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
-      ssh -q -p "$SSH_PORT" "$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
+      ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
                 $LOCAL_FILES/update-extras.sh && \
-                rm -rf $LOCAL_FILES"
+                rm -rf $LOCAL_FILES || true"
     fi
     echo -e "${GN}---   Finished extra updates    ---${CL}"
     if [[ "$WILL_STOP" != true ]] && [[ "$WELCOME_SCREEN" != true ]]; then
       echo
     elif [[ "$WELCOME_SCREEN" == true ]]; then
       echo
+    fi
+  fi
+}
+
+# Trim Filesystem
+TRIM_FILESYSTEM () {
+  if [[ "$INCLUDE_FSTRIM" == true ]]; then
+    ROOT_FS=$(df -Th "/" | awk 'NR==2 {print $2}')
+    if [[ $(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}') ]]; then
+      if [ "$ROOT_FS" = "ext4" ]; then
+        echo -e "${OR}--- Trimming filesystem ---${CL}"
+        local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
+        pct fstrim $CONTAINER --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
+        local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
+        sleep 1.5
+      fi
     fi
   fi
 }
@@ -468,7 +572,7 @@ HOST_UPDATE_START () {
 # Host Update
 UPDATE_HOST () {
   HOST=$1
-  START_HOST=$(hostname -I | cut -d ' ' -f1)
+  START_HOST=$(hostname -i | cut -d ' ' -f1)
   if [[ "$HOST" != "$START_HOST" ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
     scp "$0" "$HOST":$LOCAL_FILES/update
@@ -566,12 +670,12 @@ UPDATE_CONTAINER () {
   echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
   # Check Internet connection
   if [[ "$OS" != alpine ]]; then
-    if ! pct exec "$CONTAINER" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
-      echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
+    if ! pct exec "$CONTAINER" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"; then
+      echo -e "${OR} Internet check fail - skip this container${CL}\n"
       return
     fi
 #  elif [[ "$OS" == alpine ]]; then
-#    if ! pct exec "$CONTAINER" -- ash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
+#    if ! pct exec "$CONTAINER" -- ash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"; then
 #      echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
 #      return
 #    fi
@@ -583,7 +687,7 @@ UPDATE_CONTAINER () {
   # Run update
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "apt-get update"
+    pct exec "$CONTAINER" -- bash -c "apt-get update -y"
     # Check APT in Container
     if pct exec "$CONTAINER" -- bash -c "grep -rnw /etc/apt -e unifi >/dev/null 2>&1"; then
       UNIFI="true"
@@ -602,8 +706,9 @@ UPDATE_CONTAINER () {
       fi
     fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y"
+      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
       EXTRAS
+      TRIM_FILESYSTEM
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
     echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
@@ -611,11 +716,13 @@ UPDATE_CONTAINER () {
     echo -e "\n${OR}--- DNF CLEANING ---${CL}"
     pct exec "$CONTAINER" -- bash -c "dnf -y autoremove"
     EXTRAS
+    TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ archlinux ]]; then
     echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-    pct exec "$CONTAINER" -- bash -c "pacman -Syyu --noconfirm"
+    pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm"
     EXTRAS
+    TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ alpine ]]; then
     echo -e "${OR}--- APK UPDATE ---${CL}"
@@ -626,6 +733,7 @@ UPDATE_CONTAINER () {
     echo -e "${OR}--- YUM UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "yum -y update"
     EXTRAS
+    TRIM_FILESYSTEM
     UPDATE_CHECK
   fi
   CCONTAINER=""
@@ -638,11 +746,14 @@ VM_UPDATE_START () {
   VMS=$(qm list | tail -n +2 | cut -c -10)
   # Loop through the VMs
   for VM in $VMS; do
-    PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
+    PRE_OS=$(qm config "$VM" | grep ostype || true)
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
       echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
       echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
+    elif (qm config "$VM" | grep template >/dev/null 2>&1); then
+      echo -e "${BL}[Info] ${OR}VM $VM is a template - skip update${CL}\n\n"
+      return
     elif [[ "$PRE_OS" =~ w ]]; then
       echo -e "${BL}[Info] Skipped VM $VM${CL}\n"
       echo -e "${OR}  Windows is not supported for now.\n  I'm working on it ;)${CL}\n\n"
@@ -661,6 +772,7 @@ VM_UPDATE_START () {
           echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
           qm stop "$VM" &
           WILL_STOP="false"
+          START_WAITING="false"
         else
           echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH hasn't initialized${CL}\n\n"
         fi
@@ -686,80 +798,92 @@ UPDATE_VM () {
   echo -e "${BL}[Info]${OR} Start Snapshot and/or Backup${CL}"
   VM_BACKUP
   echo
-# Run Update - Tryout SSH first
+  # Read SSH config file - check how update is possible
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if ! (ssh -q -p "$SSH_PORT" "$IP" exit >/dev/null 2>&1); then
+    USER=$(awk -F'"' '/^USER=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+    if [[ -z "$USER" ]]; then USER="root"; fi
+    SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+    if [[ -z "$SSH_VM_PORT" ]]; then SSH_VM_PORT="22"; fi
+    SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+    if [[ -z "$SSH_START_DELAY_TIME" ]]; then SSH_START_DELAY_TIME="45"; fi
+    if [[ "$START_WAITING" == true ]]; then
+      echo -e "${BL}[Info]${OR} Wait for bootup${CL}"
+      echo -e "${BL}[Info]${OR} Sleep $SSH_START_DELAY_TIME secounds - time could be set in SSH-VM config file${CL}\n"
+      sleep "$SSH_START_DELAY_TIME"
+    fi
+    if ! (ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
       echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
-  Please configure SSH Key-Based Authentication${CL}\n\
+  ${OR}Or need more start delay time.\n\
+  ${BL}Please check SSH Key-Based Authentication${CL}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
   Try to use QEMU insead\n"
       UPDATE_VM_QEMU
     else
-      if [[ "$START_WAITING" == true ]]; then
-        echo -e "${BL}[Info]${GN} Try to connect via SSH${CL}"
-        echo -e "${OR}This will take some time, please wait${CL}"
-        echo -e "${OR}Sleep $VM_START_DELAY secounds - could be set in config !!!${CL}"
-        sleep "$VM_START_DELAY"
-      fi
-      SSH_CONNECTION=true
-      OS_BASE=$(qm config "$VM" | grep ostype)
-      if (qm config "$VM" | grep template); then
-        echo -e "${OR}$VM is a template - skipping the update${CL}\n"
+      # Run SSH Update
+      SSH_CONNECTION="true"
+      KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
+      OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
+      if [[ "$KERNEL" =~ FreeBSD ]]; then
+        echo -e "${OR}--- PKG UPDATE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update
+        echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y
+        echo -e "\n${OR}--- PKG CLEANING ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y
+        echo
+        UPDATE_CHECK
         return
       fi
-      if (ssh -q -p "$SSH_PORT" "$IP" "cat /etc/os-release" >/dev/null 2>&1); then
-#        echo -e  "${OR}FreeBSD is not supported for now${CL}\n"
-#        return
-#        if [[ "$OS_BASE" =~ l2 ]]; then
-        OS=$(ssh -q -p "$SSH_PORT" "$IP" hostnamectl | grep System)
-        if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
-          # Check Internet connection
-          if ! ssh -q -p "$SSH_PORT" "$IP" ping -q -c1 "$CHECK_URL" &>/dev/null; then
-            echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
-            return
-          fi
-          echo -e "${OR}--- APT UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" "$IP" apt-get update
-          echo -e "\n${OR}--- APT UPGRADE ---${CL}"
-          if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-            ssh -q -p "$SSH_PORT" -tt "$IP" apt-get upgrade -y
-          else
-            ssh -q -p "$SSH_PORT" -tt "$IP" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
-          fi
-          echo -e "\n${OR}--- APT CLEANING ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" apt-get --purge autoremove -y
-          EXTRAS
-          UPDATE_CHECK
-        elif [[ "$OS" =~ Fedora ]]; then
-          echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" dnf -y upgrade
-          echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-          ssh -q -p "$SSH_PORT" "$IP" dnf -y --purge autoremove
-          EXTRAS
-          UPDATE_CHECK
-        elif [[ "$OS" =~ Arch ]]; then
-          echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" pacman -Syyu --noconfirm
-          EXTRAS
-          UPDATE_CHECK
-        elif [[ "$OS" =~ Alpine ]]; then
-          echo -e "${OR}--- APK UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" apk -U upgrade
-        elif [[ "$OS" =~ CentOS ]]; then
-          echo -e "${OR}--- YUM UPDATE ---${CL}"
-          ssh -q -p "$SSH_PORT" -tt "$IP" yum -y update
-          EXTRAS
-          UPDATE_CHECK
-        else
-          echo -e "${RD}  The system is not supported.\n  Maybe with later version ;)\n${CL}"
-          echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
+      if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+        # Check Internet connection
+        if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
+          echo -e "${OR} Internet check fail - skip this VM${CL}\n"
+          return
         fi
-        return
+        if [[ "$USER" != root ]]; then
+          UPDATE_USER="sudo "
+        fi
+        echo -e "${OR}--- APT UPDATE ---${CL}"
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y
+        echo -e "\n${OR}--- APT UPGRADE ---${CL}"
+        if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y
+        else
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y
+        fi
+        echo -e "\n${OR}--- APT CLEANING ---${CL}"
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get --purge autoremove -y && apt-get autoclean -y
+        EXTRAS
+        UPDATE_CHECK
+      elif [[ "$OS" =~ Fedora ]]; then
+        echo -e "\n${OR}--- DNF UPGRADE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade
+        echo -e "\n${OR}--- DNF CLEANING ---${CL}"
+        ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove
+        EXTRAS
+        UPDATE_CHECK
+      elif [[ "$OS" =~ Arch ]]; then
+        echo -e "${OR}--- PACMAN UPDATE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm
+        EXTRAS
+        UPDATE_CHECK
+      elif [[ "$OS" =~ Alpine ]]; then
+        echo -e "${OR}--- APK UPDATE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade
+      elif [[ "$OS" =~ CentOS ]]; then
+        echo -e "${OR}--- YUM UPDATE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update
+        EXTRAS
+        UPDATE_CHECK
+      else
+        echo -e "${RD}  The system is not supported.\n  Maybe with later version ;)\n${CL}"
+        echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
+      fi
+      return
 #      elif [[ $OS_BASE == win10 ]]; then
 #        ssh -q -p "$SSH_PORT" "$USER"@"$IP" wuauclt /detectnow /updatenow
 #        Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot # don't work
-      fi
     fi
   else
     UPDATE_VM_QEMU
@@ -770,27 +894,34 @@ UPDATE_VM () {
 UPDATE_VM_QEMU () {
   if [[ "$START_WAITING" == true ]]; then
     echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
-    echo -e "${OR}$VM_START_DELAY secounds wait time - could be set in config\n${CL}"
+    echo -e "${OR}$VM_START_DELAY seconds wait time - could be set in config\n${CL}"
     sleep "$VM_START_DELAY"
   fi
   if qm guest exec "$VM" test >/dev/null 2>&1; then
     echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
     # Run Update
-    KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version)
+    KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
+    OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
     if [[ "$KERNEL" =~ FreeBSD ]]; then
-      echo -e  "${OR}  FreeBSD is not supported for now ${CL}\n"
+      echo -e "${OR}--- PKG UPDATE ---${CL}"
+      qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17-
+      echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
+      qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1
+      echo -e "\n${OR}--- PKG CLEANING ---${CL}"
+      qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
+      echo
+      UPDATE_CHECK
       return
     fi
-    OS=$(qm guest cmd "$VM" get-osinfo | grep name)
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       # Check Internet connection
-      if ! qm guest exec "$VM" -- bash -c "ping -q -c1 $CHECK_URL &>/dev/null"; then
+      if ! (qm guest exec "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"); then
         echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
         return
       fi
       echo -e "${OR}--- APT UPDATE ---${CL}"
-      qm guest exec "$VM" -- bash -c "apt-get update" | tail -n +4 | head -n -1 | cut -c 17-
+      qm guest exec "$VM" -- bash -c "apt-get update -y" | tail -n +4 | head -n -1 | cut -c 17-
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
         qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1
@@ -798,11 +929,11 @@ UPDATE_VM_QEMU () {
         qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1
       fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
-      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17-
+      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17-
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Fedora ]]; then
-      echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
+      echo -e "\n${OR}--- DNF UPGRADE ---${CL}"
       qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1
       echo -e "\n${OR}--- DNF CLEANING ---${CL}"
       qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17-
@@ -810,7 +941,7 @@ UPDATE_VM_QEMU () {
       UPDATE_CHECK
     elif [[ "$OS" =~ Arch ]]; then
       echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-      qm guest exec "$VM" -- bash -c "pacman -Syyu --noconfirm" | tail -n +2 | head -n -1
+      qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Alpine ]]; then
@@ -913,7 +1044,7 @@ export TERM=xterm-256color
 if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
 READ_CONFIG
 OUTPUT_TO_FILE
-IP=$(hostname -I | cut -d ' ' -f1)
+IP=$(hostname -i | cut -d ' ' -f1)
 ARGUMENTS "$@"
 
 # Run without commands (Automatic Mode)
