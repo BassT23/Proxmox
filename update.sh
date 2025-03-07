@@ -858,7 +858,7 @@ UPDATE_VM () {
         echo
         UPDATE_CHECK
         return
-      elif [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" != true ]]; then
+      elif [[ "$KERNEL" =~ FreeBSD ]]; then
         echo -e "${OR} Free BSD skipped by user${CL}\n"
         return
       elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
