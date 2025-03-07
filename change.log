@@ -1,6 +1,11 @@
 Changelog:
 ==========
 
+**v4.3.2** (develop)
+- add LXC start delay option in config file
+- fix YUM Update - used now only for centos
+- fix VM shutdown errors
+
 **v4.3** (23.02.2025)
 - add freebsd VM (QEMU and SSH Connection)
 - add non root user update in VMs

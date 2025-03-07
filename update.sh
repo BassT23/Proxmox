@@ -10,7 +10,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.3.1"
+VERSION="4.3.2"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -421,6 +421,7 @@ READ_CONFIG () {
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
+  LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   VM_START_DELAY=$(awk -F'"' '/^VM_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
@@ -636,7 +637,7 @@ CONTAINER_UPDATE_START () {
         echo -e "${BL}[Info]${GN} Starting LXC ${BL}$CONTAINER ${CL}"
         pct start "$CONTAINER"
         echo -e "${BL}[Info]${GN} Waiting for LXC ${BL}$CONTAINER${CL}${GN} to start ${CL}"
-        sleep 5
+        sleep "$LXC_START_DELAY"
         UPDATE_CONTAINER "$CONTAINER"
         # Stop the container
         echo -e "${BL}[Info]${GN} Shutting down LXC ${BL}$CONTAINER ${CL}\n\n"
@@ -729,12 +730,15 @@ UPDATE_CONTAINER () {
     pct exec "$CONTAINER" -- ash -c "apk -U upgrade"
     if [[ "$WILL_STOP" != true ]]; then echo; fi
     echo
-  else
+  elif [[ "$OS" =~ centos ]]; then
     echo -e "${OR}--- YUM UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "yum -y update"
     EXTRAS
     TRIM_FILESYSTEM
     UPDATE_CHECK
+  else
+    echo -e "${OR}--- NOT SUPPORTED ---${CL}"
+    TRIM_FILESYSTEM
   fi
   CCONTAINER=""
 }
@@ -770,7 +774,7 @@ VM_UPDATE_START () {
           UPDATE_VM "$VM"
           # Stop the VM
           echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
-          qm stop "$VM" &
+          qm shutdown "$VM" &+
           WILL_STOP="false"
           START_WAITING="false"
         else
