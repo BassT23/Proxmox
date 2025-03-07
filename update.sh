@@ -931,7 +931,7 @@ UPDATE_VM_QEMU () {
     # Run Update
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
     OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
-    if [[ "$KERNEL" =~ FreeBSD ]]; then
+    if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
       echo -e "${OR}--- PKG UPDATE ---${CL}"
       qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17-
       echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
@@ -941,8 +941,10 @@ UPDATE_VM_QEMU () {
       echo
       UPDATE_CHECK
       return
-    fi
-    if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+    elif [[ "$KERNEL" =~ FreeBSD ]]; then
+      echo -e "${OR} Free BSD skipped by user${CL}\n"
+      return
+    elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       # Check Internet connection
       if ! (qm guest exec "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"); then
         echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
