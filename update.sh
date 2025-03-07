@@ -858,7 +858,7 @@ UPDATE_VM () {
         echo -e "\n${OR}--- PKG CLEANING ---${CL}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y
         echo
-        UPDATE_CHECK
+#        UPDATE_CHECK
         return
       elif [[ "$KERNEL" =~ FreeBSD ]]; then
         echo -e "${OR} Free BSD skipped by user${CL}\n"
