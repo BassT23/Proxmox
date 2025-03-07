@@ -598,7 +598,7 @@ UPDATE_HOST () {
 }
 
 UPDATE_HOST_ITSELF () {
-  echo -e "${OR}--- APT UPDATE ---${CL}" && apt-get update
+  echo -e "${OR}--- APT UPDATE ---${CL}" && pveupdate
   if [[ "$HEADLESS" == true ]]; then
     echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}" && \
     DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y
