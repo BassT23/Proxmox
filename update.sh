@@ -437,6 +437,21 @@ READ_CONFIG () {
   INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
 }
 
+# ID range support
+ID_CONVERT () {
+  expand_ranges() {
+    local IFS=,
+    set -- $1
+    for range; do
+      case $range in 
+        *-*) for (( i=${range%-*}; i<=${range#*-}; i++ )); do echo $i; done ;;
+        *)   echo $range ;;
+      esac
+    done
+  }
+numbers=( $(expand_ranges 11-14,17,20) )
+}
+
 # Snapshot/Backup
 CONTAINER_BACKUP () {
   if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
@@ -833,22 +848,20 @@ UPDATE_VM () {
       SSH_CONNECTION="true"
       KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
       OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
-      if [[ "$KERNEL" =~ FreeBSD ]]; then
-        if [[ "$FREEBSD_UPDATES" == true ]]; then
-          echo -e "${OR}--- PKG UPDATE ---${CL}"
-          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update
-          echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
-          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y
-          echo -e "\n${OR}--- PKG CLEANING ---${CL}"
-          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y
-          echo
-          UPDATE_CHECK
-          return
-        else
-          echo -e "${OR} Free BSD skipped by user${CL}\n"
-        fi
-      fi
-      if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+      if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
+        echo -e "${OR}--- PKG UPDATE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update
+        echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y
+        echo -e "\n${OR}--- PKG CLEANING ---${CL}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y
+        echo
+        UPDATE_CHECK
+        return
+      elif [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" != true ]]; then
+        echo -e "${OR} Free BSD skipped by user${CL}\n"
+        return
+      elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
         # Check Internet connection
         if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
           echo -e "${OR} Internet check fail - skip this VM${CL}\n"

@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **v4.3.2** (develop)
+- FreeBSD is disabled by default in config file
 - add LXC start delay option in config file
 - fix YUM Update - used now only for centos
 - fix VM shutdown errors
