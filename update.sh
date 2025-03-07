@@ -842,6 +842,7 @@ UPDATE_VM () {
   ${BL}Please check SSH Key-Based Authentication${CL}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
   Try to use QEMU insead\n"
+      START_WAITING=false
       UPDATE_VM_QEMU
     else
       # Run SSH Update
@@ -918,9 +919,10 @@ UPDATE_VM () {
 
 # QEMU
 UPDATE_VM_QEMU () {
+  echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
   if [[ "$START_WAITING" == true ]]; then
-    echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
-    echo -e "${OR}$VM_START_DELAY seconds wait time - could be set in config\n${CL}"
+    echo -e "${BL}[Info]${OR} Wait for bootup${CL}"
+    echo -e "${BL}[Info]${OR} Sleep $VM_START_DELAY secounds - time could be set in config file${CL}\n"
     sleep "$VM_START_DELAY"
   fi
   if qm guest exec "$VM" test >/dev/null 2>&1; then
