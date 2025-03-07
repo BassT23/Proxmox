@@ -615,7 +615,7 @@ UPDATE_HOST () {
 }
 
 UPDATE_HOST_ITSELF () {
-  echo -e "${OR}--- APT UPDATE ---${CL}" && pveupdate
+  echo -e "${OR}--- PVE UPDATE ---${CL}" && pveupdate
   if [[ "$HEADLESS" == true ]]; then
     echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}" && \
     DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y
@@ -792,7 +792,7 @@ VM_UPDATE_START () {
           UPDATE_VM "$VM"
           # Stop the VM
           echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
-          qm shutdown "$VM" &+
+          qm shutdown "$VM" &
           WILL_STOP="false"
           START_WAITING="false"
         else
