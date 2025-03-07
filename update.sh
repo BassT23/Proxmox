@@ -649,6 +649,8 @@ CONTAINER_UPDATE_START () {
         UPDATE_CONTAINER "$CONTAINER"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
+      else
+        echo -e "${BL}[Info] Can't find status, please report this issue ${CL}\n\n"
       fi
     fi
   done
@@ -737,8 +739,7 @@ UPDATE_CONTAINER () {
     TRIM_FILESYSTEM
     UPDATE_CHECK
   else
-    echo -e "${OR}--- NOT SUPPORTED ---${CL}"
-    TRIM_FILESYSTEM
+    echo -e "${OR}The system could not be idetified.${CL}"
   fi
   CCONTAINER=""
 }
@@ -786,6 +787,8 @@ VM_UPDATE_START () {
         UPDATE_VM "$VM"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
+      else
+        echo -e "${BL}[Info] Can't find status, please report this issue ${CL}\n\n"
       fi
     fi
   done
