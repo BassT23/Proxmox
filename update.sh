@@ -407,10 +407,11 @@ STATUS () {
 # Read Config File
 READ_CONFIG () {
   LOG_FILE=$(awk -F'"' '/^LOG_FILE=/ {print $2}' "$CONFIG_FILE")
+  ERROR_LOG_FILE=$(awk -F'"' '/^ERROR_LOG_FILE=/ {print $2}' "$CONFIG_FILE")
   CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' "$CONFIG_FILE")
   CHECK_URL=$(awk -F'"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
   CHECK_URL_EXE=$(awk -F'"' '/^EXE_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
-  # if variable is not set: -> foobar
+  if [[ "$CHECK_URL_EXE" == '' ]]; then CHECK_URL_EXE="ping"; fi
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' "$CONFIG_FILE")
   EXIT_ON_ERROR=$(awk -F'"' '/^EXIT_ON_ERROR=/ {print $2}' "$CONFIG_FILE")
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
@@ -668,7 +669,7 @@ CONTAINER_UPDATE_START () {
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
       else
-        echo -e "${BL}[Info] Can't find status, please report this issue ${CL}\n\n"
+        echo -e "${BL}[Info] Can't find status, please report this issue${CL}\n\n"
       fi
     fi
   done
@@ -806,7 +807,7 @@ VM_UPDATE_START () {
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
       else
-        echo -e "${BL}[Info] Can't find status, please report this issue ${CL}\n\n"
+        echo -e "${BL}[Info] Can't find status, please report this issue${CL}\n\n"
       fi
     fi
   done
@@ -997,6 +998,8 @@ UPDATE_VM_QEMU () {
 }
 
 ## General ##
+READ_CONFIG
+
 # Logging
 OUTPUT_TO_FILE () {
   echo 'EXEC_HOST="'"$HOSTNAME"'"' > /etc/ultimate-updater/temp/exec_host
@@ -1013,11 +1016,15 @@ OUTPUT_TO_FILE () {
   fi
 }
 
+ERROR_LOGGING () {
+  touch "$ERROR_LOG_FILE"
+  exec 2> >(tee "$ERROR_LOG_FILE")
+}
+
 CLEAN_LOGFILE () {
   if [[ "$RICM" != true ]]; then
     tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
-    # shellcheck disable=SC2002
-    cat "$LOG_FILE" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE" >/dev/null 2>&1
+        cat "$LOG_FILE" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE" >/dev/null 2>&1
     chmod 640 "$LOG_FILE"
     if [[ -f ./tmp.log ]]; then
       rm -rf ./tmp.log
@@ -1025,7 +1032,6 @@ CLEAN_LOGFILE () {
   fi
 }
 
-# shellcheck disable=SC2086
 # Exit
 EXIT () {
   EXIT_CODE=$?
@@ -1058,8 +1064,14 @@ EXIT () {
   rm -rf $LOCAL_FILES/update
   if [[ -f "/etc/ultimate-updater/temp/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf $LOCAL_FILES; fi
 }
-set -e
 trap EXIT EXIT
+if [[ $EXIT_ON_ERROR == false ]]; then
+  echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n"
+  ERROR_LOGGING
+# cat $ERROR_LOG_FILE
+else
+  set -e
+fi
 
 # Check Cluster Mode
 if [[ -f "/etc/corosync/corosync.conf" ]]; then
@@ -1073,7 +1085,6 @@ fi
 NAME_CHANGING
 export TERM=xterm-256color
 if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
-READ_CONFIG
 OUTPUT_TO_FILE
 IP=$(hostname -i | cut -d ' ' -f1)
 ARGUMENTS "$@"
