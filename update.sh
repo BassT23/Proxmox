@@ -1015,12 +1015,11 @@ OUTPUT_TO_FILE () {
     fi
   fi
 }
-
 ERROR_LOGGING () {
   touch "$ERROR_LOG_FILE"
   exec 2> >(tee "$ERROR_LOG_FILE")
+# cat $ERROR_LOG_FILE
 }
-
 CLEAN_LOGFILE () {
   if [[ "$RICM" != true ]]; then
     tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
@@ -1065,10 +1064,11 @@ EXIT () {
   if [[ -f "/etc/ultimate-updater/temp/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf $LOCAL_FILES; fi
 }
 trap EXIT EXIT
+
+# Error handling
 if [[ $EXIT_ON_ERROR == false ]]; then
   echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n"
   ERROR_LOGGING
-# cat $ERROR_LOG_FILE
 else
   set -e
 fi
