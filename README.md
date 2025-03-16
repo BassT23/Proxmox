@@ -125,7 +125,7 @@ In "/etc/ultimate-updater/scripts.d" create an folder for each LXC/VM who should
 
 /etc/ultimate-updater/scripts.d/000/
 
-here you can put in a symlink from file, which should be used during update also.
+here you can put in any script you like, which will be run during update also.
 !!! DON'T use free spaces in file name!!! ("file 1.sh" -> "file-1.sh")
 
 these files are used in the "extra update" section at the end of the LXC/VM
