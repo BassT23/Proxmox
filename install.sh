@@ -255,6 +255,7 @@ UPDATE () {
     if ! [[ -d "$LOCAL_FILES"/scripts.d/ ]]; then
       mkdir -p $LOCAL_FILES/scripts.d/000
       mv "$TEMP_FILES"/scripts.d/000/* $LOCAL_FILES/scripts.d/000/
+      rm -rf "$TEMP_FILES"/scripts.d/ || true
     fi
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
