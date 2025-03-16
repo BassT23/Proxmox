@@ -256,6 +256,8 @@ UPDATE () {
       mkdir -p $LOCAL_FILES/scripts.d/000
       mv "$TEMP_FILES"/scripts.d/000/* $LOCAL_FILES/scripts.d/000/
       rm -rf "$TEMP_FILES"/scripts.d/ || true
+    else
+      rm -rf "$TEMP_FILES"/scripts.d/ || true
     fi
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
@@ -321,7 +323,9 @@ CHECK_DIFF () {
         echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
       elif [[ $REPLY =~ ^[Ss]$ ]]; then
         echo
+        set +e
         diff "$TEMP_FILES"/"$FILE" "$LOCAL_FILES/$FILE"
+        set -e
         echo -e "   What would you like to do about it ?  Your options are:\n \
     Y or y  : install the package maintainer's version (old file will be saved as '$FILE.bak')\n \
     N or n  : keep your currently-installed version\n \
