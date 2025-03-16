@@ -10,7 +10,7 @@
 VERSION="1.8.4"
 
 # Branch
-BRANCH="develop"
+BRANCH="beta"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -326,7 +326,7 @@ CHECK_DIFF () {
         set +e
         diff "$TEMP_FILES"/"$FILE" "$LOCAL_FILES/$FILE"
         set -e
-        echo -e "   What would you like to do about it ?  Your options are:\n \
+        echo -e "\n   What would you like to do about it ?  Your options are:\n \
     Y or y  : install the package maintainer's version (old file will be saved as '$FILE.bak')\n \
     N or n  : keep your currently-installed version\n \
  The default action is to install new version and backup current file."
