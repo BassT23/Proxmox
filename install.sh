@@ -251,7 +251,7 @@ UPDATE () {
     mv "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
     mv "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
-    mv "$TEMP_FILES"/scripts.d/* $LOCAL_FILES/scripts.d/ || true
+    mv "$TEMP_FILES"/scripts.d/* $LOCAL_FILES/scripts.d/
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
       chmod +x /etc/update-motd.d/01-welcome-screen
@@ -274,7 +274,7 @@ UPDATE () {
     chmod -R +x "$TEMP_FILES"/exit/*.sh
     cd "$TEMP_FILES"
     FILES="*.* **/*.*"
-    for f in $FILES
+    for FILE in $FILES
     do
      CHECK_DIFF
     done
@@ -299,29 +299,55 @@ UPDATE () {
 }
 
 CHECK_DIFF () {
-  if ! cmp -s "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"; then
-    echo -e "The file ${OR}$f${CL}\n \
- ==> Modified (by you or by a script) since installation.\n \
+  if ! cmp -s "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"; then
+    echo -e "The file ${OR}$FILE${CL}\n \
+ was modified (by you or by a script) since installation.\n \
    What would you like to do about it ?  Your options are:\n \
-    Y or y  : install the package maintainer's version (old file will be saved as '$f.bak')\n \
+    Y or y  : install the package maintainer's version (old file will be saved as '$FILE.bak')\n \
     N or n  : keep your currently-installed version\n \
     S or s  : show the differences between the versions\n \
  The default action is to install new version and backup current file."
-    read -p "*** $f (Y/y/N/n/S/s) [default=Y] ?" -r
+    read -p "*** $FILE (Y/y/N/n/S/s) [default=Y] ?" -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
-        cp -f "$LOCAL_FILES"/"$f" "$LOCAL_FILES"/"$f".bak
-        mv "$TEMP_FILES"/"$f" "$LOCAL_FILES"/"$f"
+        cp -f "$LOCAL_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE".bak
+        mv "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"
       elif [[ $REPLY =~ ^[Nn]$ ]]; then
         echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
       elif [[ $REPLY =~ ^[Ss]$ ]]; then
         echo
-        diff "$TEMP_FILES"/"$f" "$LOCAL_FILES/$f"
+        diff "$TEMP_FILES"/"$FILE" "$LOCAL_FILES/$FILE"
+        echo -e "   What would you like to do about it ?  Your options are:\n \
+    Y or y  : install the package maintainer's version (old file will be saved as '$FILE.bak')\n \
+    N or n  : keep your currently-installed version\n \
+ The default action is to install new version and backup current file."
+        read -p "*** $FILE (Y/y/N/n) [default=Y] ?" -r
+          if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+            echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
+            cp -f "$LOCAL_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE".bak
+            mv "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"
+          elif [[ $REPLY =~ ^[Nn]$ ]]; then
+            echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
+          fi
       else
         echo -e "\n${BL}[Info]${OR} Skip this file${CL}\n"
       fi
   fi
 }
+
+
+
+    read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
+    if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+      bash <(curl -s $SERVER_URL/install.sh) update
+    else
+      echo -e "${OR}\nBye\n${CL}"
+      exit 0
+
+
+
+
+
 
 WELCOME_SCREEN () {
   if [[ $COMMAND != true ]]; then
