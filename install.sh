@@ -230,7 +230,7 @@ UPDATE () {
     # Update
     echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
     # Cleaning
-    rm -rf $TEMP_FOLDER || true
+    rm -rf "$TEMP_FOLDER" || true
     # Download files
     if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
     if [[ "$BRANCH" == master ]]; then
@@ -251,7 +251,7 @@ UPDATE () {
     mv "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
     mv "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
-    mv "$TEMP_FILES"/scripts.d/* $LOCAL_FILES/scripts.d/ || true
+    mv "$TEMP_FILES"/scripts.d/ $LOCAL_FILES/scripts.d/ || true
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
       chmod +x /etc/update-motd.d/01-welcome-screen
