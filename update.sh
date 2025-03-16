@@ -88,6 +88,7 @@ ARGUMENTS () {
         SINGLE_UPDATE=true
         ONLY=$ARGUMENT
         HEADER_INFO
+        if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n*** Logging for now not work here - need to fix***\n"; fi
         echo -e "${BL}[Info]${OR} Update only LXC/VM $ARGUMENT - work only on main host!${CL}\n"
         CONTAINER_UPDATE_START
         VM_UPDATE_START
@@ -114,6 +115,7 @@ ARGUMENTS () {
         if [[ "$RICM" != true ]]; then
           MODE="  Host  "
           HEADER_INFO
+          if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n*** Logging for now not work here - need to fix***\n"; fi
         fi
         echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP | ($HOSTNAME)${CL}\n"
         if [[ "$WITH_HOST" == true ]]; then
@@ -520,7 +522,8 @@ USER_SCRIPTS () {
     pct exec "$CONTAINER" -- bash -c "rm -rf $LOCAL_FILES || true"
     echo -e "\n*** User scripts finished ***\n"
   else
-    echo -e "\n*** Script now can run user scripts - look here: <https://github.com/BassT23/Proxmox/tree/develop#user-scripts> ***\n"
+    echo -e "\n*** Script now can run user scripts also ***\n\
+Infos here: <https://github.com/BassT23/Proxmox/tree/develop#user-scripts>\n"
   fi
 }
 USER_SCRIPTS_VM () {
@@ -536,7 +539,8 @@ USER_SCRIPTS_VM () {
     ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "rm -rf $LOCAL_FILES || true"
     echo -e "\n*** User scripts finished ***\n"
   else
-    echo -e "\n*** Script now can run user scripts - look here: <https://github.com/BassT23/Proxmox/tree/develop#user-scripts> ***\n"
+    echo -e "\n*** Script now can run user scripts also ***\n\
+Infos here: <https://github.com/BassT23/Proxmox/tree/develop#user-scripts>\n"
   fi
 }
 EXTRAS () {
@@ -1104,9 +1108,7 @@ EXIT () {
 trap EXIT EXIT
 
 # Error handling
-# show only once on start not work, ...
-if [[ $EXIT_ON_ERROR == false && "$HOST" == "$START_HOST" ]]; then
-  echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n"
+if [[ $EXIT_ON_ERROR == false ]]; then
   ERROR_LOGGING
 else
   set -e
@@ -1131,6 +1133,7 @@ ARGUMENTS "$@"
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true ]]; then
   HEADER_INFO
+  if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n*** Logging for now not work here - need to fix***\n"; fi
   if [[ "$MODE" =~ Cluster ]]; then
     HOST_UPDATE_START
   else
