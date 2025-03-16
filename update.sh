@@ -15,6 +15,7 @@ VERSION="4.3.2"
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
+USER_SCRIPTS="/etc/ultimate-updater/scripts.d"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
@@ -505,12 +506,26 @@ VM_BACKUP () {
   fi
 }
 
-# Extras
+# Extras / User scripts
+USER_SCRIPTS () {
+  if [[ -d $USER_SCRIPTS/$CONTAINER ]]; then
+    echo -e "\n*** Run user scripts now (under development) ***\n"
+  else
+    echo -e "\n*** Script now can run user scripts (under development) ***\n"
+  fi
+}
+USER_SCRIPTS_VM () {
+  if [[ -d $USER_SCRIPTS/$VM ]]; then
+    echo -e "\n*** Run user scripts now (under development) ***\n"
+  else
+    echo -e "\n*** Script now can run user scripts (under development) ***\n"
+  fi
+}
 EXTRAS () {
   if [[ "$EXTRA_GLOBAL" != true ]]; then
     echo -e "\n${OR}--- Skip Extra Updates because of the user settings ---${CL}\n"
   elif [[ "$HEADLESS" == true && "$EXTRA_IN_HEADLESS" == false ]]; then
-    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or the user settings ---${CL}\n"
+    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
   else
     echo -e "\n${OR}--- Searching for extra updates ---${CL}"
     if [[ "$SSH_CONNECTION" != true ]]; then
@@ -520,7 +535,8 @@ EXTRAS () {
       pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/update-extras.sh && \
                                         $LOCAL_FILES/update-extras.sh && \
                                         rm -rf $LOCAL_FILES || true"
-      # Extras in VMS with SSH_CONNECTION
+      USER_SCRIPTS
+    # Extras in VMS with SSH_CONNECTION
     elif [[ "$USER" != root ]]; then
       echo -e "${RD}--- You need root user for extra updates - maybe in later relaeses possible ---${CL}"
     else
@@ -530,6 +546,7 @@ EXTRAS () {
       ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
                 $LOCAL_FILES/update-extras.sh && \
                 rm -rf $LOCAL_FILES || true"
+      USER_SCRIPTS_VM
     fi
     echo -e "${GN}---   Finished extra updates    ---${CL}"
     if [[ "$WILL_STOP" != true ]] && [[ "$WELCOME_SCREEN" != true ]]; then
@@ -1069,7 +1086,8 @@ EXIT () {
 trap EXIT EXIT
 
 # Error handling
-if [[ $EXIT_ON_ERROR == false ]]; then
+# show only once on start not work, ...
+if [[ $EXIT_ON_ERROR == false && "$HOST" == "$START_HOST" ]]; then
   echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n"
   ERROR_LOGGING
 else
