@@ -335,20 +335,6 @@ CHECK_DIFF () {
   fi
 }
 
-
-
-    read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
-    if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-      bash <(curl -s $SERVER_URL/install.sh) update
-    else
-      echo -e "${OR}\nBye\n${CL}"
-      exit 0
-
-
-
-
-
-
 WELCOME_SCREEN () {
   if [[ $COMMAND != true ]]; then
     echo -e "\n${BL}[Info]${GN} Installing The Ultimate Updater Welcome-Screen${CL}\n"
