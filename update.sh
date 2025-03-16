@@ -10,11 +10,12 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.3.1"
+VERSION="4.3.3"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
+USER_SCRIPTS="/etc/ultimate-updater/scripts.d"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
@@ -87,6 +88,7 @@ ARGUMENTS () {
         SINGLE_UPDATE=true
         ONLY=$ARGUMENT
         HEADER_INFO
+        if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n*** Logging for now not work here - need to fix***\n"; fi
         echo -e "${BL}[Info]${OR} Update only LXC/VM $ARGUMENT - work only on main host!${CL}\n"
         CONTAINER_UPDATE_START
         VM_UPDATE_START
@@ -113,6 +115,7 @@ ARGUMENTS () {
         if [[ "$RICM" != true ]]; then
           MODE="  Host  "
           HEADER_INFO
+          if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n*** Logging for now not work here - need to fix***\n"; fi
         fi
         echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP | ($HOSTNAME)${CL}\n"
         if [[ "$WITH_HOST" == true ]]; then
@@ -407,10 +410,13 @@ STATUS () {
 # Read Config File
 READ_CONFIG () {
   LOG_FILE=$(awk -F'"' '/^LOG_FILE=/ {print $2}' "$CONFIG_FILE")
+  ERROR_LOG_FILE=$(awk -F'"' '/^ERROR_LOG_FILE=/ {print $2}' "$CONFIG_FILE")
   CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' "$CONFIG_FILE")
   CHECK_URL=$(awk -F'"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
   CHECK_URL_EXE=$(awk -F'"' '/^EXE_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
+  if [[ "$CHECK_URL_EXE" == '' ]]; then CHECK_URL_EXE="ping"; fi
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' "$CONFIG_FILE")
+  EXIT_ON_ERROR=$(awk -F'"' '/^EXIT_ON_ERROR=/ {print $2}' "$CONFIG_FILE")
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' "$CONFIG_FILE")
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' "$CONFIG_FILE")
@@ -418,9 +424,11 @@ READ_CONFIG () {
   STOPPED_CONTAINER=$(awk -F'"' '/^STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   RUNNING_VM=$(awk -F'"' '/^RUNNING_VM=/ {print $2}' "$CONFIG_FILE")
   STOPPED_VM=$(awk -F'"' '/^STOPPED_VM=/ {print $2}' "$CONFIG_FILE")
+  FREEBSD_UPDATES=$(awk -F'"' '/^FREEBSD_UPDATES=/ {print $2}' "$CONFIG_FILE")
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
+  LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   VM_START_DELAY=$(awk -F'"' '/^VM_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
@@ -432,6 +440,22 @@ READ_CONFIG () {
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
+}
+
+# ID range support
+# need testing
+ID_CONVERT () {
+  expand_ranges() {
+    local IFS=,
+    set -- $1
+    for range; do
+      case $range in 
+        *-*) for (( i=${range%-*}; i<=${range#*-}; i++ )); do echo $i; done ;;
+        *)   echo $range ;;
+      esac
+    done
+  }
+numbers=( $(expand_ranges 11-14,17,20) )
 }
 
 # Snapshot/Backup
@@ -484,12 +508,46 @@ VM_BACKUP () {
   fi
 }
 
-# Extras
+# Extras / User scripts
+USER_SCRIPTS () {
+  if [[ -d $USER_SCRIPTS/$CONTAINER ]]; then
+    echo -e "\n*** Run user scripts now ***\n"
+    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/$CONTAINER)
+    pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/user-scripts"
+    for SCRIPT in $USER_SCRIPTS_LS; do
+      pct push "$CONTAINER" -- $USER_SCRIPTS/$CONTAINER/$SCRIPT $LOCAL_FILES/user-scripts/$SCRIPT
+      pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
+                                        $LOCAL_FILES/user-scripts/$SCRIPT"
+    done
+    pct exec "$CONTAINER" -- bash -c "rm -rf $LOCAL_FILES || true"
+    echo -e "\n*** User scripts finished ***\n"
+  else
+    echo -e "\n*** Script now can run user scripts also ***\n\
+Infos here: <https://github.com/BassT23/Proxmox/tree/develop#user-scripts>\n"
+  fi
+}
+USER_SCRIPTS_VM () {
+  if [[ -d $USER_SCRIPTS/$VM ]]; then
+    echo -e "\n*** Run user scripts now ***\n"
+    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/$VM)
+    ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/user-scripts/
+    for SCRIPT in $USER_SCRIPTS_LS; do
+      scp $USER_SCRIPTS/$CONTAINER/$SCRIPT "$IP":$LOCAL_FILES/user-scripts/$SCRIPT
+      ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
+                $LOCAL_FILES/user-scripts/$SCRIPT"
+    done
+    ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "rm -rf $LOCAL_FILES || true"
+    echo -e "\n*** User scripts finished ***\n"
+  else
+    echo -e "\n*** Script now can run user scripts also ***\n\
+Infos here: <https://github.com/BassT23/Proxmox/tree/develop#user-scripts>\n"
+  fi
+}
 EXTRAS () {
   if [[ "$EXTRA_GLOBAL" != true ]]; then
     echo -e "\n${OR}--- Skip Extra Updates because of the user settings ---${CL}\n"
   elif [[ "$HEADLESS" == true && "$EXTRA_IN_HEADLESS" == false ]]; then
-    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or the user settings ---${CL}\n"
+    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
   else
     echo -e "\n${OR}--- Searching for extra updates ---${CL}"
     if [[ "$SSH_CONNECTION" != true ]]; then
@@ -499,7 +557,8 @@ EXTRAS () {
       pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/update-extras.sh && \
                                         $LOCAL_FILES/update-extras.sh && \
                                         rm -rf $LOCAL_FILES || true"
-      # Extras in VMS with SSH_CONNECTION
+      USER_SCRIPTS
+    # Extras in VMS with SSH_CONNECTION
     elif [[ "$USER" != root ]]; then
       echo -e "${RD}--- You need root user for extra updates - maybe in later relaeses possible ---${CL}"
     else
@@ -509,6 +568,7 @@ EXTRAS () {
       ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
                 $LOCAL_FILES/update-extras.sh && \
                 rm -rf $LOCAL_FILES || true"
+      USER_SCRIPTS_VM
     fi
     echo -e "${GN}---   Finished extra updates    ---${CL}"
     if [[ "$WILL_STOP" != true ]] && [[ "$WELCOME_SCREEN" != true ]]; then
@@ -597,7 +657,7 @@ UPDATE_HOST () {
 }
 
 UPDATE_HOST_ITSELF () {
-  echo -e "${OR}--- APT UPDATE ---${CL}" && apt-get update
+  echo -e "${OR}--- PVE UPDATE ---${CL}" && pveupdate
   if [[ "$HEADLESS" == true ]]; then
     echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}" && \
     DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y
@@ -627,7 +687,7 @@ CONTAINER_UPDATE_START () {
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $CONTAINER ]]; then
       echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
-      echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
+      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"; else continue; fi
     else
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
@@ -636,7 +696,7 @@ CONTAINER_UPDATE_START () {
         echo -e "${BL}[Info]${GN} Starting LXC ${BL}$CONTAINER ${CL}"
         pct start "$CONTAINER"
         echo -e "${BL}[Info]${GN} Waiting for LXC ${BL}$CONTAINER${CL}${GN} to start ${CL}"
-        sleep 5
+        sleep "$LXC_START_DELAY"
         UPDATE_CONTAINER "$CONTAINER"
         # Stop the container
         echo -e "${BL}[Info]${GN} Shutting down LXC ${BL}$CONTAINER ${CL}\n\n"
@@ -648,6 +708,8 @@ CONTAINER_UPDATE_START () {
         UPDATE_CONTAINER "$CONTAINER"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" != true ]]; then
         echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
+      else
+        echo -e "${BL}[Info] Can't find status, please report this issue${CL}\n\n"
       fi
     fi
   done
@@ -659,8 +721,8 @@ UPDATE_CONTAINER () {
   CONTAINER=$1
   CCONTAINER="true"
   echo 'CONTAINER="'"$CONTAINER"'"' > /etc/ultimate-updater/temp/var
-  pct config "$CONTAINER" > /etc/ultimate-updater/temp/temp
-  OS=$(awk '/^ostype/' /etc/ultimate-updater/temp/temp | cut -d' ' -f2)
+#  pct config "$CONTAINER" > /etc/ultimate-updater/temp/temp
+  OS=$(pct config "$CONTAINER" | awk '/^ostype/' - | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
 #  if [[ "$OS" =~ centos ]]; then
 #    NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
@@ -729,12 +791,14 @@ UPDATE_CONTAINER () {
     pct exec "$CONTAINER" -- ash -c "apk -U upgrade"
     if [[ "$WILL_STOP" != true ]]; then echo; fi
     echo
-  else
+  elif [[ "$OS" =~ centos ]]; then
     echo -e "${OR}--- YUM UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "yum -y update"
     EXTRAS
     TRIM_FILESYSTEM
     UPDATE_CHECK
+  else
+    echo -e "${OR}The system could not be idetified.${CL}"
   fi
   CCONTAINER=""
 }
@@ -750,7 +814,7 @@ VM_UPDATE_START () {
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
       echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
-      echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
+      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"; else continue; fi
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
       echo -e "${BL}[Info] ${OR}VM $VM is a template - skip update${CL}\n\n"
       return
@@ -770,7 +834,7 @@ VM_UPDATE_START () {
           UPDATE_VM "$VM"
           # Stop the VM
           echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
-          qm stop "$VM" &
+          qm shutdown "$VM" &
           WILL_STOP="false"
           START_WAITING="false"
         else
@@ -782,6 +846,8 @@ VM_UPDATE_START () {
         UPDATE_VM "$VM"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" != true ]]; then
         echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
+      else
+        echo -e "${BL}[Info] Can't find status, please report this issue${CL}\n\n"
       fi
     fi
   done
@@ -818,13 +884,14 @@ UPDATE_VM () {
   ${BL}Please check SSH Key-Based Authentication${CL}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
   Try to use QEMU insead\n"
+      START_WAITING=false
       UPDATE_VM_QEMU
     else
       # Run SSH Update
       SSH_CONNECTION="true"
       KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
       OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
-      if [[ "$KERNEL" =~ FreeBSD ]]; then
+      if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
         echo -e "${OR}--- PKG UPDATE ---${CL}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update
         echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
@@ -832,10 +899,12 @@ UPDATE_VM () {
         echo -e "\n${OR}--- PKG CLEANING ---${CL}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y
         echo
-        UPDATE_CHECK
+#        UPDATE_CHECK
         return
-      fi
-      if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+      elif [[ "$KERNEL" =~ FreeBSD ]]; then
+        echo -e "${OR} Free BSD skipped by user${CL}\n"
+        return
+      elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
         # Check Internet connection
         if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
           echo -e "${OR} Internet check fail - skip this VM${CL}\n"
@@ -892,9 +961,10 @@ UPDATE_VM () {
 
 # QEMU
 UPDATE_VM_QEMU () {
+  echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
   if [[ "$START_WAITING" == true ]]; then
-    echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
-    echo -e "${OR}$VM_START_DELAY seconds wait time - could be set in config\n${CL}"
+    echo -e "${BL}[Info]${OR} Wait for bootup${CL}"
+    echo -e "${BL}[Info]${OR} Sleep $VM_START_DELAY secounds - time could be set in config file${CL}\n"
     sleep "$VM_START_DELAY"
   fi
   if qm guest exec "$VM" test >/dev/null 2>&1; then
@@ -903,7 +973,7 @@ UPDATE_VM_QEMU () {
     # Run Update
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
     OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
-    if [[ "$KERNEL" =~ FreeBSD ]]; then
+    if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
       echo -e "${OR}--- PKG UPDATE ---${CL}"
       qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17-
       echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
@@ -913,8 +983,10 @@ UPDATE_VM_QEMU () {
       echo
       UPDATE_CHECK
       return
-    fi
-    if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+    elif [[ "$KERNEL" =~ FreeBSD ]]; then
+      echo -e "${OR} Free BSD skipped by user${CL}\n"
+      return
+    elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       # Check Internet connection
       if ! (qm guest exec "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"); then
         echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
@@ -966,6 +1038,8 @@ UPDATE_VM_QEMU () {
 }
 
 ## General ##
+READ_CONFIG
+
 # Logging
 OUTPUT_TO_FILE () {
   echo 'EXEC_HOST="'"$HOSTNAME"'"' > /etc/ultimate-updater/temp/exec_host
@@ -981,12 +1055,15 @@ OUTPUT_TO_FILE () {
     fi
   fi
 }
-
+ERROR_LOGGING () {
+  touch "$ERROR_LOG_FILE"
+  exec 2> >(tee "$ERROR_LOG_FILE")
+# cat $ERROR_LOG_FILE
+}
 CLEAN_LOGFILE () {
   if [[ "$RICM" != true ]]; then
     tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
-    # shellcheck disable=SC2002
-    cat "$LOG_FILE" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE" >/dev/null 2>&1
+        cat "$LOG_FILE" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE" >/dev/null 2>&1
     chmod 640 "$LOG_FILE"
     if [[ -f ./tmp.log ]]; then
       rm -rf ./tmp.log
@@ -994,15 +1071,16 @@ CLEAN_LOGFILE () {
   fi
 }
 
-# shellcheck disable=SC2086
 # Exit
 EXIT () {
   EXIT_CODE=$?
   if [[ -f "/etc/ultimate-updater/temp/exec_host" ]]; then
     EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' /etc/ultimate-updater/temp/exec_host)
+  else
+    echo "no exec host file exist"
   fi
   if [[ "$WELCOME_SCREEN" == true ]]; then
-    scp $LOCAL_FILES/check-output "$EXEC_HOST":$LOCAL_FILES/check-output
+    scp "$LOCAL_FILES"/check-output "$EXEC_HOST":"$LOCAL_FILES"/check-output
   fi
   # Exit without echo
   if [[ "$EXIT_CODE" == 2 ]]; then
@@ -1027,8 +1105,14 @@ EXIT () {
   rm -rf $LOCAL_FILES/update
   if [[ -f "/etc/ultimate-updater/temp/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf $LOCAL_FILES; fi
 }
-set -e
 trap EXIT EXIT
+
+# Error handling
+if [[ $EXIT_ON_ERROR == false ]]; then
+  ERROR_LOGGING
+else
+  set -e
+fi
 
 # Check Cluster Mode
 if [[ -f "/etc/corosync/corosync.conf" ]]; then
@@ -1042,7 +1126,6 @@ fi
 NAME_CHANGING
 export TERM=xterm-256color
 if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
-READ_CONFIG
 OUTPUT_TO_FILE
 IP=$(hostname -i | cut -d ' ' -f1)
 ARGUMENTS "$@"
@@ -1050,6 +1133,7 @@ ARGUMENTS "$@"
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true ]]; then
   HEADER_INFO
+  if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n*** Logging for now not work here - need to fix***\n"; fi
   if [[ "$MODE" =~ Cluster ]]; then
     HOST_UPDATE_START
   else

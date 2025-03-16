@@ -33,6 +33,7 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 - Make a snapshot before update (if your storage support it - [look here](https://pve.proxmox.com/wiki/Storage)). If not supported, you can choose to make a real backup, but this must be enabled in `update.conf` by user (take long time!)
 - After all, the updater makes a little cleaning (like `apt autoremove`) 
 - If the script detects "extra" installations, it could update this also. Look in config file, for that.
+- NEW: use your own scripts during update if you like. [Look here](https://github.com/BassT23/Proxmox/tree/develop#user-scripts)
 
 ### Features:
 - Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
@@ -97,14 +98,6 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 ```
 and install new
 
-# Extra Updates:
-If updater detects installation: (disable, if you want in `/etc/ultimate-updater/update.conf`)
-- PiHole
-- ioBroker
-- Pterodactyl
-- Octoprint
-- Docker Compose (v1 and v2)
-
 # Config File:
 The config file is stored under `/etc/ultimate-updater/update.conf`
 
@@ -115,6 +108,27 @@ With this file, you can manage the updater. For example; if you don't want to up
 - Extra updates
 - "stopped" or "running" LXC/VM
 - "only" or "exclude" LXC/VM by ID
+
+# Extra Updates:
+If updater detects installation: (disable, if you want in `/etc/ultimate-updater/update.conf`)
+- PiHole
+- ioBroker
+- Pterodactyl
+- Octoprint
+- Docker Compose (v1 and v2)
+
+# User scripts
+How to use user scripts:
+
+In "/etc/ultimate-updater/scripts.d" create an folder for each LXC/VM who should use it like this:
+(000 is the example ID)
+
+/etc/ultimate-updater/scripts.d/000/
+
+here you can put in any script you like, which will be run during update also.
+!!! DON'T use free spaces in file name !!! ("file 1.sh" -> "file-1.sh")
+
+these files are used in the "extra update" section at the end of the LXC/VM
 
 # Welcome Screen:
 The Welcome Screen is an extra for you. It's optional!

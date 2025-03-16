@@ -1,6 +1,16 @@
 Changelog:
 ==========
 
+**v4.3.2** (develop)
+- add user scripts folder
+- add "error hopping option" in config file --- need to fix logging
+- add LXC start delay option in config file
+- fix YUM Update - used now only for centos
+- fix VM shutdown errors
+- FreeBSD is disabled by default in config file
+- modify "update <ID>" - disable skip output
+- code cleaning
+
 **v4.3** (23.02.2025)
 - add freebsd VM (QEMU and SSH Connection)
 - add non root user update in VMs

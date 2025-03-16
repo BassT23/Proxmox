@@ -251,8 +251,8 @@ CHECK_VM () {
     else
       OS_BASE=$(qm config "$VM" | grep ostype || true)
       if [[ "$OS_BASE" =~ l2 ]]; then
-        KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
-        OS=$(ssh "$IP" hostnamectl | grep System || true)
+        KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
+        OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
 #        if [[ "$KERNEL" =~ FreeBSD ]]; then
 #          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update
 #          return
