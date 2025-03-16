@@ -196,6 +196,7 @@ INSTALL () {
   else
     mkdir -p $LOCAL_FILES/exit
     mkdir -p $LOCAL_FILES/VMs
+    mkdir -p $LOCAL_FILES/scripts.d/000
     # Download latest release
     if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
       curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
@@ -209,7 +210,7 @@ INSTALL () {
     cp "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
     cp "$TEMP_FILES"/exit/* $LOCAL_FILES/exit/
     chmod -R +x "$LOCAL_FILES"/exit/*.sh
-    cp "$TEMP_FILES"/scripts.d/* $LOCAL_FILES/scripts.d/
+    cp "$TEMP_FILES"/scripts.d/000/* $LOCAL_FILES/scripts.d/000/
     cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
     echo -e "${OR}Finished. Run The Ultimate Updater with 'update'.${CL}"
@@ -251,7 +252,10 @@ UPDATE () {
     mv "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
     mv "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
-    if ! [[ -d "$LOCAL_FILES"/scripts.d/ ]]; then mv "$TEMP_FILES"/scripts.d/* $LOCAL_FILES/scripts.d/; fi
+    if ! [[ -d "$LOCAL_FILES"/scripts.d/ ]]; then
+      mkdir -p $LOCAL_FILES/scripts.d/000
+      mv "$TEMP_FILES"/scripts.d/000/* $LOCAL_FILES/scripts.d/000/
+    fi
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
       chmod +x /etc/update-motd.d/01-welcome-screen
