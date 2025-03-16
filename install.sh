@@ -208,6 +208,10 @@ INSTALL () {
     ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
     cp "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
     cp "$TEMP_FILES"/exit/* $LOCAL_FILES/exit/
+    cp "$TEMP_FILES"/script.d/* $LOCAL_FILES/exit/
+
+
+
     chmod -R +x "$LOCAL_FILES"/exit/*.sh
     cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
