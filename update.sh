@@ -440,6 +440,7 @@ READ_CONFIG () {
 }
 
 # ID range support
+# need testing
 ID_CONVERT () {
   expand_ranges() {
     local IFS=,
@@ -647,7 +648,7 @@ CONTAINER_UPDATE_START () {
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $CONTAINER ]]; then
       echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
-      echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
+      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"; else continue; fi
     else
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
@@ -774,7 +775,7 @@ VM_UPDATE_START () {
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
       echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
-      echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
+      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"; else continue; fi
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
       echo -e "${BL}[Info] ${OR}VM $VM is a template - skip update${CL}\n\n"
       return
@@ -1036,9 +1037,11 @@ EXIT () {
   EXIT_CODE=$?
   if [[ -f "/etc/ultimate-updater/temp/exec_host" ]]; then
     EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' /etc/ultimate-updater/temp/exec_host)
+  else
+    echo "no exec host file exist"
   fi
   if [[ "$WELCOME_SCREEN" == true ]]; then
-    scp $LOCAL_FILES/check-output "$EXEC_HOST":$LOCAL_FILES/check-output
+    scp "$LOCAL_FILES"/check-output "$EXEC_HOST":"$LOCAL_FILES"/check-output
   fi
   # Exit without echo
   if [[ "$EXIT_CODE" == 2 ]]; then
