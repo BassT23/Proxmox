@@ -229,6 +229,8 @@ UPDATE () {
   if [ -f "/usr/local/sbin/update" ]; then
     # Update
     echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
+    # Cleaning
+    rm -rf $TEMP_FOLDER || true
     # Download files
     if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
     if [[ "$BRANCH" == master ]]; then
