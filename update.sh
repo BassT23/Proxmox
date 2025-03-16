@@ -509,16 +509,34 @@ VM_BACKUP () {
 # Extras / User scripts
 USER_SCRIPTS () {
   if [[ -d $USER_SCRIPTS/$CONTAINER ]]; then
-    echo -e "\n*** Run user scripts now (under development) ***\n"
+    echo -e "\n*** Run user scripts now ***\n"
+    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/$CONTAINER)
+    pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/user-scripts"
+    for SCRIPT in $USER_SCRIPTS_LS; do
+      pct push "$CONTAINER" -- $USER_SCRIPTS/$CONTAINER/$SCRIPT $LOCAL_FILES/user-scripts/$SCRIPT
+      pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
+                                        $LOCAL_FILES/user-scripts/$SCRIPT"
+    done
+    pct exec "$CONTAINER" -- bash -c "rm -rf $LOCAL_FILES || true"
+    echo -e "\n*** User scripts finished ***\n"
   else
-    echo -e "\n*** Script now can run user scripts (under development) ***\n"
+    echo -e "\n*** Script now can run user scripts - look here: <https://github.com/BassT23/Proxmox/tree/develop#user-scripts> ***\n"
   fi
 }
 USER_SCRIPTS_VM () {
   if [[ -d $USER_SCRIPTS/$VM ]]; then
-    echo -e "\n*** Run user scripts now (under development) ***\n"
+    echo -e "\n*** Run user scripts now ***\n"
+    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/$VM)
+    ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/user-scripts/
+    for SCRIPT in $USER_SCRIPTS_LS; do
+      scp $USER_SCRIPTS/$CONTAINER/$SCRIPT "$IP":$LOCAL_FILES/user-scripts/$SCRIPT
+      ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
+                $LOCAL_FILES/user-scripts/$SCRIPT"
+    done
+    ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "rm -rf $LOCAL_FILES || true"
+    echo -e "\n*** User scripts finished ***\n"
   else
-    echo -e "\n*** Script now can run user scripts (under development) ***\n"
+    echo -e "\n*** Script now can run user scripts - look here: <https://github.com/BassT23/Proxmox/tree/develop#user-scripts> ***\n"
   fi
 }
 EXTRAS () {
