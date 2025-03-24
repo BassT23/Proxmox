@@ -7,7 +7,7 @@
 # shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.9.1"
+VERSION="1.9.2"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -130,3 +130,6 @@ if [[ $DOCKER_COMPOSE == true && $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V
     DOCKER_EXIT
   fi
 fi
+
+# Tryout "Proxmox VE Helper-Scripts" Update command
+if [[ -f /usr/bin/update ]];then update; fi
