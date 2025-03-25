@@ -17,6 +17,7 @@ PTERODACTYL=$(awk -F'"' '/^PTERODACTYL=/ {print $2}' $CONFIG_FILE)
 OCTOPRINT=$(awk -F'"' '/^OCTOPRINT=/ {print $2}' $CONFIG_FILE)
 DOCKER_COMPOSE=$(awk -F'"' '/^DOCKER_COMPOSE=/ {print $2}' $CONFIG_FILE)
 COMPOSE_PATH=$(awk -F'"' '/^COMPOSE_PATH=/ {print $2}' $CONFIG_FILE)
+INCLUDE_HELPER_SCRIPTS=$(awk -F'"' '/^INCLUDE_HELPER_SCRIPTS=/ {print $2}' $CONFIG_FILE)
 
 # PiHole
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
@@ -132,4 +133,4 @@ if [[ $DOCKER_COMPOSE == true && $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V
 fi
 
 # Tryout "Proxmox VE Helper-Scripts" Update command
-if [[ -f /usr/bin/update ]];then bash -c "update"; fi
+if [[ -f /usr/bin/update && $INCLUDE_HELPER_SCRIPTS == true ]];then bash -c "update"; fi
