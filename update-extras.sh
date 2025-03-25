@@ -132,4 +132,4 @@ if [[ $DOCKER_COMPOSE == true && $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V
 fi
 
 # Tryout "Proxmox VE Helper-Scripts" Update command
-if [[ -f /usr/bin/update ]];then update; fi
+if [[ -f /usr/bin/update ]];then bash -c "update"; fi
