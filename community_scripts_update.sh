@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# shellcheck disable=SC1017
+
 echo "Listing all LXC containers..."
 pct list
 

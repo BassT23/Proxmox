@@ -132,5 +132,16 @@ if [[ $DOCKER_COMPOSE == true && $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V
   fi
 fi
 
-# Tryout "Proxmox VE Helper-Scripts" Update command
-if [[ -f /usr/bin/update && $INCLUDE_HELPER_SCRIPTS == true ]];then bash -c "update"; fi
+# Community / Helper Scripts
+if grep -q "community-scripts" /usr/bin/update 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]];then
+  stdbuf -oL -eL expect <<EOF | grep -v "whiptail"
+set timeout 3
+spawn update
+expect "Choose an option:"
+send "2\r"
+expect "<Ok>"
+send "\r"
+expect eof
+EOF
+  echo "✅ Update process completed"
+fi
