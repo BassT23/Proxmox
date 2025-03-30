@@ -86,6 +86,7 @@ ARGUMENTS () {
       [0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9])
         COMMAND=true
         SINGLE_UPDATE=true
+        MODE=" Single "
         ONLY=$ARGUMENT
         HEADER_INFO
         if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n*** Error-Log-Output not work for now ***\n"; fi
@@ -188,7 +189,7 @@ ARGUMENTS () {
         exit 2
         ;;
       *)
-        echo -e "\n${RD} Error: Got an unexpected argument \"$ARGUMENT\"${CL}";
+        echo -e "\n${RD} ❌ Error: Got an unexpected argument \"$ARGUMENT\"${CL}";
         USAGE;
         exit 2;
         ;;
@@ -463,7 +464,7 @@ CONTAINER_BACKUP () {
   if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
-        echo -e "${BL}[Info]${GN} Snapshot created${CL}"
+        echo -e "${BL}[Info]${GN} ✅ Snapshot created${CL}"
         echo -e "${BL}[Info]${GN} Delete old snapshots${CL}"
         LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
@@ -471,13 +472,13 @@ CONTAINER_BACKUP () {
         done
       echo -e "${BL}[Info]${GN} Done${CL}"
       else
-        echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${CL}"
+        echo -e "${BL}[Info]${RD} ❌ Snapshot is not possible on your storage${CL}"
       fi
     fi
     if [[ "$BACKUP" == true ]]; then
       echo -e "${BL}[Info] Create a backup for LXC (this will take some time - please wait)${CL}"
       vzdump "$CONTAINER" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
-      echo -e "${BL}[Info]${GN} Backup created${CL}\n"
+      echo -e "${BL}[Info]${GN} ✅ Backup created${CL}\n"
     fi
   else
     echo -e "${BL}[Info]${OR} Snapshot and Backup skipped by the user${CL}"
@@ -487,7 +488,7 @@ VM_BACKUP () {
   if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
       if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
-        echo -e "${BL}[Info]${GN} Snapshot created${CL}"
+        echo -e "${BL}[Info]${GN} ✅ Snapshot created${CL}"
         echo -e "${BL}[Info]${GN} Delete old snapshot(s)${CL}"
         LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
@@ -495,13 +496,13 @@ VM_BACKUP () {
         done
       echo -e "${BL}[Info]${GN} Done${CL}"
       else
-        echo -e "${BL}[Info]${RD} Snapshot is not possible on your storage${CL}"
+        echo -e "${BL}[Info]${RD} ❌ Snapshot is not possible on your storage${CL}"
       fi
     fi
     if [[ "$BACKUP" == true ]]; then
       echo -e "${BL}[Info] Create a backup for the VM (this will take some time - please wait)${CL}"
       vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
-      echo -e "${BL}[Info]${GN} Backup created${CL}"
+      echo -e "${BL}[Info]${GN} ✅ Backup created${CL}"
     fi
   else
     echo -e "${BL}[Info]${OR} Snapshot and/or Backup skipped by the user${CL}"
@@ -879,7 +880,7 @@ UPDATE_VM () {
       sleep "$SSH_START_DELAY_TIME"
     fi
     if ! (ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
-      echo -e "${RD}  File for ssh connection found, but not correctly set?\n\
+      echo -e "${RD}  ❌ File for ssh connection found, but not correctly set?\n\
   ${OR}Or need more start delay time.\n\
   ${BL}Please check SSH Key-Based Authentication${CL}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
@@ -946,7 +947,7 @@ UPDATE_VM () {
         EXTRAS
         UPDATE_CHECK
       else
-        echo -e "${RD}  The system is not supported.\n  Maybe with later version ;)\n${CL}"
+        echo -e "${RD}  ❌ The system is not supported.\n  Maybe with later version ;)\n${CL}"
         echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
       fi
       return
