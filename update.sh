@@ -10,7 +10,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.3.5"
+VERSION="4.3.6"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -524,7 +524,7 @@ USER_SCRIPTS () {
     echo -e "\n*** User scripts finished ***\n"
   else
     echo -e "\n*** Script now can run user scripts also ***\n\
-Infos here: <https://github.com/BassT23/Proxmox/tree/develop#user-scripts>\n"
+Infos here: <https://github.com/BassT23/Proxmox/tree/beta#user-scripts>\n"
   fi
 }
 USER_SCRIPTS_VM () {
@@ -541,7 +541,7 @@ USER_SCRIPTS_VM () {
     echo -e "\n*** User scripts finished ***\n"
   else
     echo -e "\n*** Script now can run user scripts also ***\n\
-Infos here: <https://github.com/BassT23/Proxmox/tree/develop#user-scripts>\n"
+Infos here: <https://github.com/BassT23/Proxmox/tree/beta#user-scripts>\n"
   fi
 }
 EXTRAS () {
@@ -1070,7 +1070,7 @@ UPDATE_VM_QEMU () {
       echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
     fi
   else
-    echo -e "${RD}  SSH or QEMU guest agent is not initialized on VM ${CL}\n\
+    echo -e "${RD}  ❌ SSH or QEMU guest agent is not initialized on VM ${CL}\n\
   ${OR}If you want to update VMs, you must set up it by yourself!${CL}\n\
   For ssh (harder, but nicer output), check this: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n\
   For QEMU (easy connection), check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
