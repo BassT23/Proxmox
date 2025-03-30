@@ -2,8 +2,9 @@ Changelog:
 ==========
 
 **v4.3.5** (develop)
+- add symbolic
 - add user scripts folder
-- add "error hopping option" in config file --- need to fix logging
+- add "error hopping option" in config file
 - add LXC start delay option in config file
 - add "update" command for "Proxmox VE Helper-Scripts" in extra section
 - fix YUM Update - used now only for centos
