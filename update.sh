@@ -88,7 +88,7 @@ ARGUMENTS () {
         SINGLE_UPDATE=true
         ONLY=$ARGUMENT
         HEADER_INFO
-        if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n*** Logging for now not work here - need to fix***\n"; fi
+        if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n*** Error-Log-Output not work for now ***\n"; fi
         echo -e "${BL}[Info]${OR} Update only LXC/VM $ARGUMENT - work only on main host!${CL}\n"
         CONTAINER_UPDATE_START
         VM_UPDATE_START
@@ -115,7 +115,7 @@ ARGUMENTS () {
         if [[ "$RICM" != true ]]; then
           MODE="  Host  "
           HEADER_INFO
-          if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n*** Logging for now not work here - need to fix***\n"; fi
+          if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit, if error come up, is disabled${CL}\n*** Error-Log-Output not work for now ***\n"; fi
         fi
         echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP | ($HOSTNAME)${CL}\n"
         if [[ "$WITH_HOST" == true ]]; then
@@ -1057,8 +1057,7 @@ OUTPUT_TO_FILE () {
 }
 ERROR_LOGGING () {
   touch "$ERROR_LOG_FILE"
-  exec 2> >(tee "$ERROR_LOG_FILE")
-# cat $ERROR_LOG_FILE
+#  log errors in file here - not work now
 }
 CLEAN_LOGFILE () {
   if [[ "$RICM" != true ]]; then
@@ -1070,6 +1069,13 @@ CLEAN_LOGFILE () {
     fi
   fi
 }
+
+# Error handling
+if [[ $EXIT_ON_ERROR == false ]]; then
+  ERROR_LOGGING
+else
+  set -e
+fi
 
 # Exit
 EXIT () {
@@ -1088,14 +1094,14 @@ EXIT () {
   # Update Finish
   elif [[ "$EXIT_CODE" == 0 ]]; then
     if [[ "$RICM" != true ]]; then
-      echo -e "${GN}Finished, All Updates Done.${CL}\n"
+      echo -e "${GN}✅ Finished, all updates done.${CL}\n"
       $LOCAL_FILES/exit/passed.sh
       CLEAN_LOGFILE
     fi
   else
   # Update Error
     if [[ "$RICM" != true ]]; then
-      echo -e "${RD}Error during Update --- Exit Code: $EXIT_CODE${CL}\n"
+      echo -e "${RD}❌ Error during update --- Exit Code: $EXIT_CODE${CL}\n"
       $LOCAL_FILES/exit/error.sh
       CLEAN_LOGFILE
     fi
@@ -1106,13 +1112,6 @@ EXIT () {
   if [[ -f "/etc/ultimate-updater/temp/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf $LOCAL_FILES; fi
 }
 trap EXIT EXIT
-
-# Error handling
-if [[ $EXIT_ON_ERROR == false ]]; then
-  ERROR_LOGGING
-else
-  set -e
-fi
 
 # Check Cluster Mode
 if [[ -f "/etc/corosync/corosync.conf" ]]; then
@@ -1133,7 +1132,7 @@ ARGUMENTS "$@"
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true ]]; then
   HEADER_INFO
-  if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit if error come up is disabled${CL}\n*** Logging for now not work here - need to fix***\n"; fi
+  if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit, if error come up, is disabled${CL}\n*** Error-Log-Output not work for now ***\n"; fi
   if [[ "$MODE" =~ Cluster ]]; then
     HOST_UPDATE_START
   else
