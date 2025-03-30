@@ -1,11 +1,12 @@
 Changelog:
 ==========
 
-**v4.3.2** (develop)
+**v4.3.6** (beta)
+- add symbolic
 - add user scripts folder
-- add "error hopping option" in config file --- need to fix logging
+- add "error hopping option" in config file
 - add LXC start delay option in config file
-- fix "show diff" during update
+- add "update" command for "Proxmox VE Helper-Scripts" in extra section
 - fix YUM Update - used now only for centos
 - fix VM shutdown errors
 - FreeBSD is disabled by default in config file
