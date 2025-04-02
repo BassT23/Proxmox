@@ -7,7 +7,7 @@
 # shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.9.2"
+VERSION="1.9.3"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -88,7 +88,7 @@ if [[ -f /usr/local/bin/docker-compose ]]; then DOCKER_COMPOSE_V1=true; fi
 if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
 
 # Docker-Compose run
-if [[ $DOCKER_COMPOSE == true && $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]]; then
+if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]] && [[ $DOCKER_COMPOSE == true ]]; then
   # Cleaning
   DOCKER_EXIT () {
     echo -e "\n*** Cleaning ***"
