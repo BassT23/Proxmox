@@ -79,6 +79,7 @@ USAGE () {
 
 
 READ_WRITE_CONFIG () {
+  SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}'$CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
@@ -99,10 +100,9 @@ HOST_CHECK_START () {
 # Host Check
 CHECK_HOST () {
   HOST=$1
-  ssh "$HOST" mkdir -p $LOCAL_FILES
+  ssh "$HOST" -p "$SSH_PORT" mkdir -p $LOCAL_FILES
   scp $LOCAL_FILES/update.conf "$HOST":$LOCAL_FILES/update.conf >/dev/null 2>&1
-  ssh "$HOST" 'bash -s' < "$0" -- "-c host"
-
+  ssh "$HOST" -p "$SSH_PORT" 'bash -s' < "$0" -- "-c host"
 }
 
 CHECK_HOST_ITSELF () {
@@ -179,7 +179,7 @@ CHECK_CONTAINER () {
     fi
   elif [[ "$OS" =~ fedora ]]; then
     pct exec "$CONTAINER" -- bash -c "dnf update" >/dev/null 2>&1
-    UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update| grep -Ec ' updates$'")
+    UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update | grep -Ec ' updates$'")
     if [[ "$UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
