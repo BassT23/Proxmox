@@ -7,7 +7,7 @@
 # shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.5"
+VERSION="1.6"
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -79,6 +79,7 @@ USAGE () {
 
 
 READ_WRITE_CONFIG () {
+  SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}'$CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
@@ -99,10 +100,9 @@ HOST_CHECK_START () {
 # Host Check
 CHECK_HOST () {
   HOST=$1
-  ssh "$HOST" mkdir -p $LOCAL_FILES
+  ssh "$HOST" -p "$SSH_PORT" mkdir -p $LOCAL_FILES
   scp $LOCAL_FILES/update.conf "$HOST":$LOCAL_FILES/update.conf >/dev/null 2>&1
-  ssh "$HOST" 'bash -s' < "$0" -- "-c host"
-
+  ssh "$HOST" -p "$SSH_PORT" 'bash -s' < "$0" -- "-c host"
 }
 
 CHECK_HOST_ITSELF () {
@@ -179,7 +179,7 @@ CHECK_CONTAINER () {
     fi
   elif [[ "$OS" =~ fedora ]]; then
     pct exec "$CONTAINER" -- bash -c "dnf update" >/dev/null 2>&1
-    UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update| grep -Ec ' updates$'")
+    UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update | grep -Ec ' updates$'")
     if [[ "$UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
@@ -251,8 +251,8 @@ CHECK_VM () {
     else
       OS_BASE=$(qm config "$VM" | grep ostype || true)
       if [[ "$OS_BASE" =~ l2 ]]; then
-        KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
-        OS=$(ssh "$IP" hostnamectl | grep System || true)
+        KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
+        OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
 #        if [[ "$KERNEL" =~ FreeBSD ]]; then
 #          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update
 #          return

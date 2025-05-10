@@ -7,7 +7,7 @@
 # shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.9.1"
+VERSION="2.0"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -17,6 +17,7 @@ PTERODACTYL=$(awk -F'"' '/^PTERODACTYL=/ {print $2}' $CONFIG_FILE)
 OCTOPRINT=$(awk -F'"' '/^OCTOPRINT=/ {print $2}' $CONFIG_FILE)
 DOCKER_COMPOSE=$(awk -F'"' '/^DOCKER_COMPOSE=/ {print $2}' $CONFIG_FILE)
 COMPOSE_PATH=$(awk -F'"' '/^COMPOSE_PATH=/ {print $2}' $CONFIG_FILE)
+INCLUDE_HELPER_SCRIPTS=$(awk -F'"' '/^INCLUDE_HELPER_SCRIPTS=/ {print $2}' $CONFIG_FILE)
 
 # PiHole
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
@@ -87,7 +88,7 @@ if [[ -f /usr/local/bin/docker-compose ]]; then DOCKER_COMPOSE_V1=true; fi
 if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
 
 # Docker-Compose run
-if [[ $DOCKER_COMPOSE == true && $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]]; then
+if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]] && [[ $DOCKER_COMPOSE == true ]]; then
   # Cleaning
   DOCKER_EXIT () {
     echo -e "\n*** Cleaning ***"
@@ -129,4 +130,18 @@ if [[ $DOCKER_COMPOSE == true && $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V
     echo "All projects have been updated."
     DOCKER_EXIT
   fi
+fi
+
+# Community / Helper Scripts
+if grep -q "community-scripts" /usr/bin/update 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]];then
+  stdbuf -oL -eL expect <<EOF | grep -v "whiptail"
+set timeout 3
+spawn update
+expect "Choose an option:"
+send "2\r"
+expect "<Ok>"
+send "\r"
+expect eof
+EOF
+  echo "✅ Update process completed"
 fi
