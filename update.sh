@@ -10,7 +10,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.3.6"
+VERSION="4.4"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -524,7 +524,7 @@ USER_SCRIPTS () {
     echo -e "\n*** User scripts finished ***\n"
   else
     echo -e "\n*** Script now can run user scripts also ***\n\
-Infos here: <https://github.com/BassT23/Proxmox/tree/beta#user-scripts>\n"
+Infos here: <https://github.com/BassT23/Proxmox/tree/master#user-scripts>\n"
   fi
 }
 USER_SCRIPTS_VM () {
@@ -541,7 +541,7 @@ USER_SCRIPTS_VM () {
     echo -e "\n*** User scripts finished ***\n"
   else
     echo -e "\n*** Script now can run user scripts also ***\n\
-Infos here: <https://github.com/BassT23/Proxmox/tree/beta#user-scripts>\n"
+Infos here: <https://github.com/BassT23/Proxmox/tree/master#user-scripts>\n"
   fi
 }
 EXTRAS () {
