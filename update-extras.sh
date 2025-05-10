@@ -9,7 +9,6 @@
 
 VERSION="2.0"
 
-
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
 PIHOLE=$(awk -F'"' '/^PIHOLE=/ {print $2}' $CONFIG_FILE)
