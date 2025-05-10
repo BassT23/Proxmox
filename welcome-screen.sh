@@ -9,6 +9,7 @@
 
 VERSION="1.6"
 
+
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
