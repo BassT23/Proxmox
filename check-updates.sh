@@ -79,7 +79,7 @@ USAGE () {
 
 
 READ_WRITE_CONFIG () {
-  SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}'$CONFIG_FILE)
+  SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' $CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
