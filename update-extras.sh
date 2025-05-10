@@ -7,7 +7,7 @@
 # shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.9.3"
+VERSION="2.0"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
