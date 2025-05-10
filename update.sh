@@ -10,7 +10,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.4"
+VERSION="4.4.1"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -1116,7 +1116,7 @@ ERROR () {
 }
 ERROR_LOGGING () {
   touch "$ERROR_LOG_FILE"
-  > "$ERROR_LOG_FILE"
+  true > "$ERROR_LOG_FILE"
 }
 if [[ $EXIT_ON_ERROR == false ]]; then
   ERROR_LOGGING

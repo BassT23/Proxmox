@@ -1,6 +1,9 @@
 Changelog:
 ==========
 
+**v4.4.1** (develop)
+- fix shell check
+
 **v4.4** (10.05.2025)
 - add symbolic
 - add user scripts folder
