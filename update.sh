@@ -834,7 +834,7 @@ VM_UPDATE_START () {
       if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"; else continue; fi
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
       echo -e "${BL}[Info] ${OR}VM $VM is a template - skip update${CL}\n\n"
-      return
+      continue
     elif [[ "$PRE_OS" =~ w ]]; then
       echo -e "${BL}[Info] Skipped VM $VM${CL}\n"
       echo -e "${OR}  Windows is not supported for now.\n  I'm working on it ;)${CL}\n\n"
