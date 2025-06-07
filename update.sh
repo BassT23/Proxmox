@@ -728,7 +728,6 @@ UPDATE_CONTAINER () {
   CONTAINER=$1
   CCONTAINER="true"
   echo 'CONTAINER="'"$CONTAINER"'"' > /etc/ultimate-updater/temp/var
-#  pct config "$CONTAINER" > /etc/ultimate-updater/temp/temp
   OS=$(pct config "$CONTAINER" | awk '/^ostype/' - | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
 #  if [[ "$OS" =~ centos ]]; then

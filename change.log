@@ -2,6 +2,8 @@ Changelog:
 ==========
 
 **v4.4.1** (develop)
+- check "paused" VMs during update-check and bring them back in pause
+- fix #201 (abbort after template detection)
 - fix VM ID in error-log-file
 - fix shell check
 
