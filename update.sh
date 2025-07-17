@@ -58,11 +58,6 @@ EOF
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
 }
 
-# Name Changing
-NAME_CHANGING () {
-if [[ -d /root/Proxmox-Updater/ ]]; then mv /root/Proxmox-Updater/ $LOCAL_FILES/; fi
-}
-
 # Check root
 CHECK_ROOT () {
   if [[ "$RICM" != true && "$EUID" -ne 0 ]]; then
@@ -326,7 +321,6 @@ VERSION_CHECK () {
   rm -rf $LOCAL_FILES/temp/update.sh && echo
 }
 
-
 # Update The Ultimate Updater
 UPDATE () {
   echo -e "Update to $BRANCH branch?"
@@ -351,8 +345,8 @@ UNINSTALL () {
   fi
 }
 
+# Get Server Versions
 STATUS () {
-  # Get Server Versions
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.sh > $LOCAL_FILES/temp/update.sh
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update-extras.sh > $LOCAL_FILES/temp/update-extras.sh
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.conf > $LOCAL_FILES/temp/update.conf
