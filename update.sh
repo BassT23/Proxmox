@@ -10,7 +10,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.4.1"
+VERSION="4.4.2"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -914,7 +914,7 @@ UPDATE_VM () {
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo
-#        UPDATE_CHECK
+        # UPDATE_CHECK
         return
       elif [[ "$KERNEL" =~ FreeBSD ]]; then
         echo -e "${OR} Free BSD skipped by user${CL}\n"
@@ -1143,7 +1143,6 @@ EXIT () {
       if [[ -f "$ERROR_LOG_FILE" ]] && [[ -s "$ERROR_LOG_FILE" ]]; then
         echo -e "${OR}❌ Finished, with errors.${CL}\n"
         echo -e "Please checkout $ERROR_LOG_FILE"
-        #$LOCAL_FILES/exit/error.sh
         echo
         CLEAN_LOGFILE
       else
