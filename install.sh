@@ -387,13 +387,13 @@ WELCOME_SCREEN_INSTALL () {
   if ! grep -q "check-updates.sh" /etc/crontab; then
     echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
   fi
-  echo -e "${OR}  with or without neofetch?${CL}"
-  read -p "  Type [Y/y] or Enter for install neofetch - anything else will install without neofetch: " -r
+  echo -e "${OR}  with or without hyfetch?${CL}"
+  read -p "  Type [Y/y] or Enter for install hyfetch - anything else will install without hyfetch: " -r
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-    if ! [[ -f /usr/bin/neofetch ]]; then apt-get install neofetch -y; fi
-    echo -e "\n${GN} Welcome-Screen installed with neofetch${CL}"
+    if ! [[ -f /usr/bin/hyfetch ]]; then apt-get install hyfetch -y; fi
+    echo -e "\n${GN} Welcome-Screen installed with hyfetch${CL}"
   else
-    echo -e "\n${GN} Welcome-Screen installed without neofetch${CL}"
+    echo -e "\n${GN} Welcome-Screen installed without hyfetch${CL}"
   fi
 }
 
