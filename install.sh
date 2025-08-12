@@ -387,13 +387,13 @@ WELCOME_SCREEN_INSTALL () {
   if ! grep -q "check-updates.sh" /etc/crontab; then
     echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
   fi
-  echo -e "${OR}  with or without hyfetch?${CL}"
-  read -p "  Type [Y/y] or Enter for install hyfetch - anything else will install without hyfetch: " -r
+  echo -e "${OR}  with or without fastfetch?${CL}"
+  read -p "  Type [Y/y] or Enter for install fastfetch - anything else will without fastfetch: " -r
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-    if ! [[ -f /usr/bin/hyfetch ]]; then apt-get install hyfetch -y; fi
-    echo -e "\n${GN} Welcome-Screen installed with hyfetch${CL}"
+    if ! [[ -f /usr/bin/fastfetch ]]; then apt-get install fastfetch -y; fi
+    echo -e "\n${GN} Welcome-Screen installed with fastfetch${CL}"
   else
-    echo -e "\n${GN} Welcome-Screen installed without hyfetch${CL}"
+    echo -e "\n${GN} Welcome-Screen installed without fastfetch${CL}"
   fi
 }
 
