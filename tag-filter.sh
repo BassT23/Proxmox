@@ -44,7 +44,6 @@ apply_only_exclude_tags() {
   # Indirect expansion: read caller-provided variables.
   local _ONLY_VALUE="${!_only_var_name}" _EXCLUDE_VALUE="${!_exclude_var_name}"
   [[ -z $_ONLY_VALUE && -z $_EXCLUDE_VALUE ]] && return 0
-  echo -e "$_ONLY_VALUE"
 
   # ------------------------------------------------------------------------
   # Helper: gather all relevant Proxmox config files (unique list)
