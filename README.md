@@ -107,7 +107,7 @@ With this file, you can manage the updater. For example; if you don't want to up
 - Headless Mode
 - Extra updates
 - "stopped" or "running" LXC/VM
-- "only" or "exclude" LXC/VM by ID
+- "only" or "exclude" LXC/VM by ID/TAG/range
 
 # Extra Updates:
 If updater detects installation: (disable, if you want in `/etc/ultimate-updater/update.conf`)
