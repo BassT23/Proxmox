@@ -12,6 +12,11 @@ VERSION="1.7.1"
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
+# Tag helper (if installed)
+if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then
+  # shellcheck disable=SC1091
+  . "$LOCAL_FILES/tag-filter.sh"
+fi
 
 # Colors
 BL="\e[36m"
@@ -90,6 +95,9 @@ READ_WRITE_CONFIG () {
   PAUSED_VM=$(awk -F'"' '/^CHECK_PAUSED_VM=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
+  if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
+    apply_only_exclude_tags ONLY EXCLUDED
+  fi
 }
 
 ## HOST ##

@@ -25,6 +25,11 @@ OR="\e[1;33m"
 RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
+# Tag helper (if installed)
+if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then
+  # shellcheck disable=SC1091
+  . "$LOCAL_FILES/tag-filter.sh"
+fi
 
 # Header
 HEADER_INFO () {
@@ -435,6 +440,9 @@ READ_CONFIG () {
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
+  if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
+    apply_only_exclude_tags ONLY EXCLUDED
+  fi
 }
 
 # ID range support
@@ -636,11 +644,16 @@ UPDATE_HOST () {
     if [[ "$WELCOME_SCREEN" == true ]]; then
       scp $LOCAL_FILES/check-updates.sh "$HOST":$LOCAL_FILES/check-updates.sh
       if [[ "$WELCOME_SCREEN" == true ]]; then
-        scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
+      scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
       fi
     fi
     scp /etc/ultimate-updater/temp/exec_host "$HOST":/etc/ultimate-updater/temp
     scp -r $LOCAL_FILES/VMs/ "$HOST":$LOCAL_FILES/
+    if [[ -f $LOCAL_FILES/tag-filter.sh ]]; then
+      scp $LOCAL_FILES/tag-filter.sh "$HOST":$LOCAL_FILES/tag-filter.sh
+    fi
+    # shellcheck disable=SC2086
+    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c host"
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
