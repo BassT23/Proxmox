@@ -5,6 +5,7 @@
 ##########
 
 # shellcheck disable=SC1017
+# shellcheck disable=SC2015
 # shellcheck disable=SC2034
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
@@ -501,7 +502,7 @@ VM_BACKUP () {
 USER_SCRIPTS () {
   if [[ -d $USER_SCRIPTS/$CONTAINER ]]; then
     echo -e "\n*** Run user scripts now ***\n"
-    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/$CONTAINER)
+    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/"$CONTAINER")
     pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/user-scripts"
     for SCRIPT in $USER_SCRIPTS_LS; do
       pct push "$CONTAINER" -- "$USER_SCRIPTS"/"$CONTAINER"/"$SCRIPT" "$LOCAL_FILES"/user-scripts/"$SCRIPT"
