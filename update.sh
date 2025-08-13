@@ -10,7 +10,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.4.2"
+VERSION="4.4.3"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -443,22 +443,6 @@ READ_CONFIG () {
   if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
     apply_only_exclude_tags ONLY EXCLUDED
   fi
-}
-
-# ID range support
-# need testing
-ID_CONVERT () {
-  expand_ranges() {
-    local IFS=,
-    set -- $1
-    for range; do
-      case $range in 
-        *-*) for (( i=${range%-*}; i<=${range#*-}; i++ )); do echo $i; done ;;
-        *)   echo $range ;;
-      esac
-    done
-  }
-numbers=( $(expand_ranges 11-14,17,20) )
 }
 
 # Snapshot/Backup

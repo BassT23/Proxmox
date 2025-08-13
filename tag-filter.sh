@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Proxmox VM/CT Tag & ID Expansion Helper
 #
 # apply_only_exclude_tags ONLY_VAR_NAME EXCLUDE_VAR_NAME
