@@ -26,6 +26,7 @@ OR="\e[1;33m"
 RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
+
 # Tag helper (if installed)
 if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then
   # shellcheck disable=SC1091
@@ -503,7 +504,7 @@ USER_SCRIPTS () {
     USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/$CONTAINER)
     pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/user-scripts"
     for SCRIPT in $USER_SCRIPTS_LS; do
-      pct push "$CONTAINER" -- $USER_SCRIPTS/$CONTAINER/$SCRIPT $LOCAL_FILES/user-scripts/$SCRIPT
+      pct push "$CONTAINER" -- "$USER_SCRIPTS"/"$CONTAINER"/"$SCRIPT" "$LOCAL_FILES"/user-scripts/"$SCRIPT"
       pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
                                         $LOCAL_FILES/user-scripts/$SCRIPT"
     done
@@ -517,10 +518,10 @@ Infos here: <https://github.com/BassT23/Proxmox/tree/master#user-scripts>\n"
 USER_SCRIPTS_VM () {
   if [[ -d $USER_SCRIPTS/$VM ]]; then
     echo -e "\n*** Run user scripts now ***\n"
-    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/$VM)
+    USER_SCRIPTS_LS=$(ls "$USER_SCRIPTS"/"$VM")
     ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/user-scripts/
     for SCRIPT in $USER_SCRIPTS_LS; do
-      scp $USER_SCRIPTS/$CONTAINER/$SCRIPT "$IP":$LOCAL_FILES/user-scripts/$SCRIPT
+      scp "$USER_SCRIPTS"/"$CONTAINER"/"$SCRIPT" "$IP":$LOCAL_FILES/user-scripts/"$SCRIPT"
       ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
                 $LOCAL_FILES/user-scripts/$SCRIPT"
     done
@@ -574,10 +575,12 @@ TRIM_FILESYSTEM () {
     if [[ $(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}') ]]; then
       if [ "$ROOT_FS" = "ext4" ]; then
         echo -e "${OR}--- Trimming filesystem ---${CL}"
-        local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        local "$BEFORE_TRIM"
         echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
-        pct fstrim $CONTAINER --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
-        local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        pct fstrim "$CONTAINER" --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
+        AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        local "$AFTER_TRIM"
         echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
         sleep 1.5
       fi
@@ -1148,7 +1151,7 @@ EXIT () {
         CLEAN_LOGFILE
       else
         echo -e "${GN}✅ Finished, all updates done.${CL}\n"
-        $LOCAL_FILES/exit/passed.sh
+        "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
       fi
     fi
@@ -1156,13 +1159,13 @@ EXIT () {
   # Update Error
     if [[ "$RICM" != true ]]; then
       echo -e "${RD}❌ Error during update --- Exit Code: $EXIT_CODE${CL}\n"
-      $LOCAL_FILES/exit/error.sh
+      "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
     fi
   fi
   sleep 3
   rm -rf /etc/ultimate-updater/temp/var
-  rm -rf $LOCAL_FILES/update
+  rm -rf "$LOCAL_FILES"/update
   if [[ -f "/etc/ultimate-updater/temp/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf "$LOCAL_FILES"; fi
 }
 trap EXIT EXIT

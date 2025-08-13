@@ -30,6 +30,7 @@
 #   export ONLY="" EXCLUDE="old 300-302"; apply_only_exclude_tags ONLY EXCLUDE; echo "$EXCLUDE"
 #
 # Notes: Always returns 0. Bash-only (arrays, process substitution). Inherits repo license.
+#
 # shellcheck shell=bash
 # shellcheck disable=SC2155  # Command substitution in local assignment is intentional
 # shellcheck disable=SC2086  # Intended word splitting for tag token arrays
