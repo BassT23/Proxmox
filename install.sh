@@ -212,6 +212,9 @@ INSTALL () {
     chmod -R +x "$LOCAL_FILES"/exit/*.sh
     cp "$TEMP_FILES"/scripts.d/000/* $LOCAL_FILES/scripts.d/000/
     cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
+    if [[ -f "$TEMP_FILES/tag-filter.sh" ]]; then
+      cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
+    fi
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
     echo -e "${OR}Finished. Run The Ultimate Updater with 'update'.${CL}"
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
@@ -267,6 +270,9 @@ UPDATE () {
     else
       rm -rf "$TEMP_FILES"/welcome-screen.sh || true
       rm -rf "$TEMP_FILES"/check-updates.sh || true
+    fi
+    if [[ -f "$TEMP_FILES/tag-filter.sh" ]]; then
+      mv "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
     fi
     # Check if files are different
     rm -rf "$TEMP_FILES"/.github || true
