@@ -9,6 +9,7 @@
 # shellcheck disable=SC2029
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
+# shellcheck disable=SC2329
 
 VERSION="4.4.3"
 
@@ -1172,7 +1173,6 @@ else
 fi
 
 # Run
-NAME_CHANGING
 export TERM=xterm-256color
 if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
 OUTPUT_TO_FILE
