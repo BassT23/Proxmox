@@ -687,6 +687,9 @@ CONTAINER_UPDATE_START () {
       echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
       if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"; else continue; fi
+    elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
+      echo -e "${BL}[Info] ${OR}LXC $CONTAINER is a template - skip update${CL}\n\n"
+      continue
     else
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
