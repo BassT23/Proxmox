@@ -110,11 +110,12 @@ apply_only_exclude_tags() {
     done < <(_build_tag_map)
 
     # De-duplicate while preserving original encounter order.
-    local out=() seen=""
+    local out=()
+    declare -A _seen_ids=()
     for id in "${matched[@]}"; do
-      if [[ ! $seen =~ (\s|^)$id(\s|$) ]]; then
+      if [[ -z ${_seen_ids[$id]} ]]; then
         out+=("$id")
-        seen+=" $id"
+        _seen_ids[$id]=1
       fi
     done
     echo "${out[*]}"
@@ -159,15 +160,16 @@ apply_only_exclude_tags() {
     fi
 
     # Merge numeric IDs (in user order & range expansion order) + tag IDs (discovery order)
-    local final=() seen=""
+    local final=()
+    declare -A _seen_final=()
     for n in "${numbers[@]}"; do
-      if [[ ! $seen =~ (\s|^)$n(\s|$) ]]; then final+=("$n"); seen+=" $n"; fi
+      if [[ -z ${_seen_final[$n]} ]]; then final+=("$n"); _seen_final[$n]=1; fi
     done
     if [[ -n $resolved_ids ]]; then
       # shellcheck disable=SC2206
       local tag_ids=( $resolved_ids ) id
       for id in "${tag_ids[@]}"; do
-        if [[ ! $seen =~ (\s|^)$id(\s|$) ]]; then final+=("$id"); seen+=" $id"; fi
+        if [[ -z ${_seen_final[$id]} ]]; then final+=("$id"); _seen_final[$id]=1; fi
       done
     fi
 
