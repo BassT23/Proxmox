@@ -4,14 +4,6 @@
 # Update #
 ##########
 
-# shellcheck disable=SC1017
-# shellcheck disable=SC2015
-# shellcheck disable=SC2034
-# shellcheck disable=SC2029
-# shellcheck disable=SC2317
-# shellcheck disable=SC2320
-# shellcheck disable=SC2329
-
 VERSION="4.4.3"
 
 # Variable / Function
@@ -147,6 +139,7 @@ ARGUMENTS () {
       uninstall)
         COMMAND=true
         UNINSTALL
+        # shellcheck disable=SC2317
         exit 2
         ;;
       master)
@@ -1100,6 +1093,7 @@ OUTPUT_TO_FILE () {
     fi
   fi
 }
+# shellcheck disable=SC2329
 CLEAN_LOGFILE () {
   if [[ "$RICM" != true ]]; then
     tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
@@ -1128,7 +1122,8 @@ else
   set -e
 fi
 
-# Exit
+# 
+# shellcheck disable=SC2329
 EXIT () {
   EXIT_CODE=$?
   if [[ -f "/etc/ultimate-updater/temp/exec_host" ]]; then

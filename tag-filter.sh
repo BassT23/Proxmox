@@ -180,9 +180,9 @@ apply_only_exclude_tags() {
     _expanded_only=$(_expand_mixed_spec "$_ONLY_VALUE")
     printf -v "$_only_var_name" '%s' "$_expanded_only"
     if [[ -n $_expanded_only ]]; then
-      echo -e "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> IDs: $_expanded_only${CL:-}" 2>/dev/null || true
+      echo -e "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> IDs: $_expanded_only${CL:-}\n" 2>/dev/null || true
     else
-      echo -e "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no IDs${CL:-}" 2>/dev/null || true
+      echo -e "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no IDs${CL:-}\n" 2>/dev/null || true
     fi
     return 0
   fi
@@ -193,9 +193,9 @@ apply_only_exclude_tags() {
     _expanded_exclude=$(_expand_mixed_spec "$_EXCLUDE_VALUE")
     printf -v "$_exclude_var_name" '%s' "$_expanded_exclude"
     if [[ -n $_expanded_exclude ]]; then
-      echo -e "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> IDs: $_expanded_exclude${CL:-}" 2>/dev/null || true
+      echo -e "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> IDs: $_expanded_exclude${CL:-}\n" 2>/dev/null || true
     else
-      echo -e "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') matched no IDs${CL:-}" 2>/dev/null || true
+      echo -e "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') matched no IDs${CL:-}\n" 2>/dev/null || true
     fi
   fi
 }
