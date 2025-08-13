@@ -10,7 +10,7 @@
 # shellcheck disable=SC2317
 # shellcheck disable=SC2320
 
-VERSION="4.4"
+VERSION="4.4.2"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -56,11 +56,6 @@ EOF
   CHECK_ROOT
   CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
-}
-
-# Name Changing
-NAME_CHANGING () {
-if [[ -d /root/Proxmox-Updater/ ]]; then mv /root/Proxmox-Updater/ $LOCAL_FILES/; fi
 }
 
 # Check root
@@ -326,7 +321,6 @@ VERSION_CHECK () {
   rm -rf $LOCAL_FILES/temp/update.sh && echo
 }
 
-
 # Update The Ultimate Updater
 UPDATE () {
   echo -e "Update to $BRANCH branch?"
@@ -351,8 +345,8 @@ UNINSTALL () {
   fi
 }
 
+# Get Server Versions
 STATUS () {
-  # Get Server Versions
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.sh > $LOCAL_FILES/temp/update.sh
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update-extras.sh > $LOCAL_FILES/temp/update-extras.sh
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.conf > $LOCAL_FILES/temp/update.conf
@@ -524,7 +518,7 @@ USER_SCRIPTS () {
     echo -e "\n*** User scripts finished ***\n"
   else
     echo -e "\n*** Script now can run user scripts also ***\n\
-Infos here: <https://github.com/BassT23/Proxmox/tree/beta#user-scripts>\n"
+Infos here: <https://github.com/BassT23/Proxmox/tree/master#user-scripts>\n"
   fi
 }
 USER_SCRIPTS_VM () {
@@ -541,7 +535,7 @@ USER_SCRIPTS_VM () {
     echo -e "\n*** User scripts finished ***\n"
   else
     echo -e "\n*** Script now can run user scripts also ***\n\
-Infos here: <https://github.com/BassT23/Proxmox/tree/beta#user-scripts>\n"
+Infos here: <https://github.com/BassT23/Proxmox/tree/master#user-scripts>\n"
   fi
 }
 EXTRAS () {
@@ -728,7 +722,6 @@ UPDATE_CONTAINER () {
   CONTAINER=$1
   CCONTAINER="true"
   echo 'CONTAINER="'"$CONTAINER"'"' > /etc/ultimate-updater/temp/var
-#  pct config "$CONTAINER" > /etc/ultimate-updater/temp/temp
   OS=$(pct config "$CONTAINER" | awk '/^ostype/' - | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
 #  if [[ "$OS" =~ centos ]]; then
@@ -779,7 +772,9 @@ UPDATE_CONTAINER () {
       fi
     fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" 2>&1) || ERROR
+      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y" 2>&1) || ERROR
+      if [[ $ERROR_CODE != "" ]]; then return; fi
+      pct exec "$CONTAINER" -- bash -c "apt-get autoclean -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get autoclean -y" 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       EXTRAS
       TRIM_FILESYSTEM
@@ -834,7 +829,7 @@ VM_UPDATE_START () {
       if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"; else continue; fi
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
       echo -e "${BL}[Info] ${OR}VM $VM is a template - skip update${CL}\n\n"
-      return
+      continue
     elif [[ "$PRE_OS" =~ w ]]; then
       echo -e "${BL}[Info] Skipped VM $VM${CL}\n"
       echo -e "${OR}  Windows is not supported for now.\n  I'm working on it ;)${CL}\n\n"
@@ -910,16 +905,16 @@ UPDATE_VM () {
       OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
       if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
         echo -e "${OR}--- PKG UPDATE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update 2>&1) || ERROR
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y 2>&1) || ERROR
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR}--- PKG CLEANING ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y 2>&1) || ERROR
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo
-#        UPDATE_CHECK
+        # UPDATE_CHECK
         return
       elif [[ "$KERNEL" =~ FreeBSD ]]; then
         echo -e "${OR} Free BSD skipped by user${CL}\n"
@@ -934,43 +929,45 @@ UPDATE_VM () {
           UPDATE_USER="sudo "
         fi
         echo -e "${OR}--- APT UPDATE ---${CL}"
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y 2>&1) || ERROR
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR}--- APT UPGRADE ---${CL}"
         if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y 2>&1) || ERROR
+          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y 2>&1) || ERROR
           if [[ $ERROR_CODE != "" ]]; then return; fi
         else
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y 2>&1) || ERROR
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y 2>&1) || ERROR
           if [[ $ERROR_CODE != "" ]]; then return; fi
         fi
         echo -e "\n${OR}--- APT CLEANING ---${CL}"
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" "apt-get --purge autoremove -y && apt-get autoclean -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get --purge autoremove -y 2>&1) || ERROR
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" "apt-get --purge autoremove -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get --purge autoremove -y 2>&1) || ERROR
+        if [[ $ERROR_CODE != "" ]]; then return; fi
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" "apt-get autoclean -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get autoclean -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
       elif [[ "$OS" =~ Fedora ]]; then
         echo -e "\n${OR}--- DNF UPGRADE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade 2>&1) || ERROR
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-        ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove 2>&1) || ERROR
+        ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
       elif [[ "$OS" =~ Arch ]]; then
         echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm 2>&1) || ERROR
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
       elif [[ "$OS" =~ Alpine ]]; then
         echo -e "${OR}--- APK UPDATE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade 2>&1) || ERROR
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
       elif [[ "$OS" =~ CentOS ]]; then
         echo -e "${OR}--- YUM UPDATE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update 2>&1) || ERROR
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
@@ -1004,13 +1001,13 @@ UPDATE_VM_QEMU () {
     OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
     if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
       echo -e "${OR}--- PKG UPDATE ---${CL}"
-      qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
-      qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
+      qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo -e "\n${OR}--- PKG CLEANING ---${CL}"
-      qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
@@ -1025,43 +1022,45 @@ UPDATE_VM_QEMU () {
         return
       fi
       echo -e "${OR}--- APT UPDATE ---${CL}"
-      qm guest exec "$VM" -- bash -c "apt-get update -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get update -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      qm guest exec "$VM" -- bash -c "apt-get update -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get update -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo -e "\n${OR}--- APT UPGRADE ---${CL}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
+        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
       else
-        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
+        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
       fi
       echo -e "\n${OR}--- APT CLEANING ---${CL}"
-      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      if [[ $ERROR_CODE != "" ]]; then return; fi
+      qm guest exec "$VM" -- bash -c "apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Fedora ]]; then
       echo -e "\n${OR}--- DNF UPGRADE ---${CL}"
-      qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1 2>&1) || ERROR
+      qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-      qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Arch ]]; then
       echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-      qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1 2>&1) || ERROR
+      qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Alpine ]]; then
       echo -e "${OR}--- APK UPDATE ---${CL}"
-      qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1 2>&1) || ERROR
+      qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
     elif [[ "$OS" =~ CentOS ]]; then
       echo -e "${OR}--- YUM UPDATE ---${CL}"
-      qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1 2>&1) || ERROR
+      qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
@@ -1116,7 +1115,7 @@ ERROR () {
 }
 ERROR_LOGGING () {
   touch "$ERROR_LOG_FILE"
-  > "$ERROR_LOG_FILE"
+  true > "$ERROR_LOG_FILE"
 }
 if [[ $EXIT_ON_ERROR == false ]]; then
   ERROR_LOGGING
@@ -1144,7 +1143,6 @@ EXIT () {
       if [[ -f "$ERROR_LOG_FILE" ]] && [[ -s "$ERROR_LOG_FILE" ]]; then
         echo -e "${OR}❌ Finished, with errors.${CL}\n"
         echo -e "Please checkout $ERROR_LOG_FILE"
-        #$LOCAL_FILES/exit/error.sh
         echo
         CLEAN_LOGFILE
       else

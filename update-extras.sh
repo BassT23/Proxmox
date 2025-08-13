@@ -133,6 +133,7 @@ if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]] && [[ $DOCKER_
 fi
 
 # Community / Helper Scripts
+  #188
 if grep -q "community-scripts" /usr/bin/update 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]];then
   stdbuf -oL -eL expect <<EOF | grep -v "whiptail"
 set timeout 3

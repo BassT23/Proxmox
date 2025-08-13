@@ -10,7 +10,7 @@
 VERSION="1.8.5"
 
 # Branch
-BRANCH="master"
+BRANCH="beta"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -387,13 +387,13 @@ WELCOME_SCREEN_INSTALL () {
   if ! grep -q "check-updates.sh" /etc/crontab; then
     echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
   fi
-  echo -e "${OR}  with or without neofetch?${CL}"
-  read -p "  Type [Y/y] or Enter for install neofetch - anything else will install without neofetch: " -r
+  echo -e "${OR}  with or without fastfetch?${CL}"
+  read -p "  Type [Y/y] or Enter for install fastfetch - anything else will without fastfetch: " -r
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-    if ! [[ -f /usr/bin/neofetch ]]; then apt-get install neofetch -y; fi
-    echo -e "\n${GN} Welcome-Screen installed with neofetch${CL}"
+    if ! [[ -f /usr/bin/fastfetch ]]; then apt-get install fastfetch -y; fi
+    echo -e "\n${GN} Welcome-Screen installed with fastfetch${CL}"
   else
-    echo -e "\n${GN} Welcome-Screen installed without neofetch${CL}"
+    echo -e "\n${GN} Welcome-Screen installed without fastfetch${CL}"
   fi
 }
 

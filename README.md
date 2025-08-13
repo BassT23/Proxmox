@@ -117,7 +117,7 @@ If updater detects installation: (disable, if you want in `/etc/ultimate-updater
 - Octoprint
 - Docker Compose (v1 and v2)
 
-# User scripts
+# User scripts:
 How to use user scripts:
 
 In "/etc/ultimate-updater/scripts.d" create an folder for each LXC/VM who should use it like this:

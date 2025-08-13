@@ -7,7 +7,7 @@
 # shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.6"
+VERSION="1.7.1"
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -79,12 +79,15 @@ USAGE () {
 
 
 READ_WRITE_CONFIG () {
-  SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}'$CONFIG_FILE)
+  SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' $CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
   RUNNING=$(awk -F'"' '/^CHECK_RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
   STOPPED=$(awk -F'"' '/^CHECK_STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
+  RUNNING_VM=$(awk -F'"' '/^CHECK_RUNNING_VM=/ {print $2}' $CONFIG_FILE)
+  STOPPED_VM=$(awk -F'"' '/^CHECK_STOPPED_VM=/ {print $2}' $CONFIG_FILE)
+  PAUSED_VM=$(awk -F'"' '/^CHECK_PAUSED_VM=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
 }
@@ -166,7 +169,6 @@ CHECK_CONTAINER () {
     pct exec "$CONTAINER" -- bash -c "apt-get update" >/dev/null 2>&1
     SECURITY_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'")
     NORMAL_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'")
-#    NOT_INSTALLED=$(apt-get -s upgrade | grep -ci "^inst.*not")
     if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" != 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
     fi
@@ -208,29 +210,44 @@ CHECK_CONTAINER () {
 VM_CHECK_START () {
   # Get the list of VMs
   VMS=$(qm list | tail -n +2 | cut -c -10)
-  # Loop through the VMs
+  # Loop through VMs
   for VM in $VMS; do
-    PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-    if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
-      continue
-    elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
-      continue
-    elif [[ "$PRE_OS" =~ w ]]; then
-      continue
-    else
-      STATUS=$(qm status "$VM")
-      if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
-        # Check if connection is available
-        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
-          # Start the VM
+    # Check if connection is available
+    if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
+      # Check VM
+      PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
+      if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
+        continue
+      elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
+        continue
+      elif [[ "$PRE_OS" =~ w ]]; then
+        continue
+      else
+        STATUS=$(qm status "$VM")
+        if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
+          # Check suspend mode
+          if [[ $(qm config "$VM" | grep 'lock:' | sed 's/lock:\s*//') == "suspend" ]]; then 
+            SUSPEND=true
+            echo -e "${OR}skip suspend VM${CL}"
+            continue
+          fi
+          # Start VM
           qm start "$VM" >/dev/null 2>&1
           sleep 45
           CHECK_VM "$VM"
-          # Stop the VM
+          # Stop/Suspend VM
           qm stop "$VM"
+          SUSPEND=
+        elif [[ "$STATUS" == "status: paused" && "$PAUSED_VM" == true ]]; then
+          # Start VM
+          qm resume "$VM" >/dev/null 2>&1
+          sleep 45
+          CHECK_VM "$VM"
+          # Suspend VM
+          qm suspend "$VM"
+        elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
+          CHECK_VM "$VM"
         fi
-      elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
-        CHECK_VM "$VM"
       fi
     fi
   done

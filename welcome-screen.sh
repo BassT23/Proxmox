@@ -120,9 +120,9 @@ MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
 # Welcome
-if [[ -f /usr/bin/neofetch ]]; then
+if [[ -f /usr/bin/fastfetch ]]; then
   echo
-  neofetch
+  fastfetch
 else
   echo
 fi
