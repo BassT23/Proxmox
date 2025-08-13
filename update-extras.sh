@@ -4,7 +4,6 @@
 # Update-Extras #
 #################
 
-# shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
 VERSION="2.0"
