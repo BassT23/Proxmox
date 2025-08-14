@@ -406,6 +406,7 @@ STATUS () {
 }
 
 # Read Config File
+# shellcheck disable=SC2034
 READ_CONFIG () {
   LOG_FILE=$(awk -F'"' '/^LOG_FILE=/ {print $2}' "$CONFIG_FILE")
   ERROR_LOG_FILE=$(awk -F'"' '/^ERROR_LOG_FILE=/ {print $2}' "$CONFIG_FILE")
@@ -648,6 +649,7 @@ UPDATE_HOST () {
   fi
 }
 
+# shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
   echo -e "${OR}--- PVE UPDATE ---${CL}" && pveupdate
   if [[ "$HEADLESS" == true ]]; then
@@ -747,6 +749,7 @@ UPDATE_CONTAINER () {
   CONTAINER_BACKUP
   echo
   # Run update
+  # shellcheck disable=SC2015
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "apt-get update -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update -y" 2>&1) || ERROR
@@ -866,6 +869,7 @@ VM_UPDATE_START () {
 }
 
 # VM Update
+# shellcheck disable=SC2015
 UPDATE_VM () {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
@@ -986,6 +990,7 @@ UPDATE_VM () {
 }
 
 # QEMU
+# shellcheck disable=SC2015
 UPDATE_VM_QEMU () {
   echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
   if [[ "$START_WAITING" == true ]]; then
@@ -1177,6 +1182,7 @@ else
 fi
 
 # Run
+
 export TERM=xterm-256color
 if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
 OUTPUT_TO_FILE

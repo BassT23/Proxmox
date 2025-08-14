@@ -180,28 +180,33 @@ apply_only_exclude_tags() {
     echo "${final[*]}"
   }
 
+  # EXCLUDE processing (only when ONLY was empty/no matches)
+  EXCLUDE_TAG () {
+    if [[ -n $_EXCLUDE_VALUE ]]; then
+      local _expanded_exclude
+      _expanded_exclude=$(_expand_mixed_spec "$_EXCLUDE_VALUE")
+      printf -v "$_exclude_var_name" '%s' "$_expanded_exclude"
+      if [[ -n $_expanded_exclude ]]; then
+        _record_tag_log_exclude "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> VMIDs: $_expanded_exclude${CL:-}"
+      else
+        _record_tag_log_exclude "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') matched no VMIDs${CL:-}"
+      fi
+    fi
+  }
+
   # ONLY processing (takes precedence). Always parse mixed spec.
   if [[ -n $_ONLY_VALUE ]]; then
     local _expanded_only
     _expanded_only=$(_expand_mixed_spec "$_ONLY_VALUE")
     printf -v "$_only_var_name" '%s' "$_expanded_only"
     if [[ -n $_expanded_only ]]; then
-      _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> VMIDs: $_expanded_only${CL:-}\n"
+      _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> VMIDs: $_expanded_only${CL:-}"
     else
-      _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no VMIDs${CL:-}\n"
+      _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no VMIDs${CL:-}"
+      EXCLUDE_TAG
     fi
-    return 0
-  fi
-
-  # EXCLUDE processing (only when ONLY was empty)
-  if [[ -n $_EXCLUDE_VALUE ]]; then
-    local _expanded_exclude
-    _expanded_exclude=$(_expand_mixed_spec "$_EXCLUDE_VALUE")
-    printf -v "$_exclude_var_name" '%s' "$_expanded_exclude"
-    if [[ -n $_expanded_exclude ]]; then
-      _record_tag_log "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> VMIDs: $_expanded_exclude${CL:-}\n"
-    else
-      _record_tag_log "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') matched no VMIDs${CL:-}\n"
-    fi
+  else
+    # If ONLY was empty, process EXCLUDE
+    EXCLUDE_TAG
   fi
 }
