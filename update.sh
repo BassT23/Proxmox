@@ -57,7 +57,7 @@ EOF
   CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
   # Print any tag selection summary captured during config parse
-  if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi
+  if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log && echo; fi
 }
 
 # Check root
@@ -1124,7 +1124,7 @@ else
   set -e
 fi
 
-# 
+# Exit
 # shellcheck disable=SC2329
 EXIT () {
   EXIT_CODE=$?
