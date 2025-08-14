@@ -35,6 +35,10 @@
 # shellcheck disable=SC2155  # Command substitution in local assignment is intentional
 # shellcheck disable=SC2086  # Intended word splitting for tag token arrays
 
+# Store the last processed message; caller prints when desired.
+_record_tag_log() { TAG_FILTER_LAST_LOG="$*"; }
+print_tag_log() { [[ -n ${TAG_FILTER_LAST_LOG:-} ]] && printf "%b" "$TAG_FILTER_LAST_LOG"; }
+
 apply_only_exclude_tags() {
   local _only_var_name=$1 _exclude_var_name=$2
 
@@ -110,11 +114,12 @@ apply_only_exclude_tags() {
     done < <(_build_tag_map)
 
     # De-duplicate while preserving original encounter order.
-    local out=() seen=""
+    local out=()
+    declare -A _seen_ids=()
     for id in "${matched[@]}"; do
-      if [[ ! $seen =~ (\s|^)$id(\s|$) ]]; then
+      if [[ -z ${_seen_ids[$id]} ]]; then
         out+=("$id")
-        seen+=" $id"
+        _seen_ids[$id]=1
       fi
     done
     echo "${out[*]}"
@@ -159,15 +164,16 @@ apply_only_exclude_tags() {
     fi
 
     # Merge numeric IDs (in user order & range expansion order) + tag IDs (discovery order)
-    local final=() seen=""
+    local final=()
+    declare -A _seen_final=()
     for n in "${numbers[@]}"; do
-      if [[ ! $seen =~ (\s|^)$n(\s|$) ]]; then final+=("$n"); seen+=" $n"; fi
+      if [[ -z ${_seen_final[$n]} ]]; then final+=("$n"); _seen_final[$n]=1; fi
     done
     if [[ -n $resolved_ids ]]; then
       # shellcheck disable=SC2206
       local tag_ids=( $resolved_ids ) id
       for id in "${tag_ids[@]}"; do
-        if [[ ! $seen =~ (\s|^)$id(\s|$) ]]; then final+=("$id"); seen+=" $id"; fi
+        if [[ -z ${_seen_final[$id]} ]]; then final+=("$id"); _seen_final[$id]=1; fi
       done
     fi
 
@@ -180,9 +186,9 @@ apply_only_exclude_tags() {
     _expanded_only=$(_expand_mixed_spec "$_ONLY_VALUE")
     printf -v "$_only_var_name" '%s' "$_expanded_only"
     if [[ -n $_expanded_only ]]; then
-      echo -e "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> IDs: $_expanded_only${CL:-}\n" 2>/dev/null || true
+      _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> VMIDs: $_expanded_only${CL:-}\n"
     else
-      echo -e "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no IDs${CL:-}\n" 2>/dev/null || true
+      _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no VMIDs${CL:-}\n"
     fi
     return 0
   fi
@@ -193,9 +199,9 @@ apply_only_exclude_tags() {
     _expanded_exclude=$(_expand_mixed_spec "$_EXCLUDE_VALUE")
     printf -v "$_exclude_var_name" '%s' "$_expanded_exclude"
     if [[ -n $_expanded_exclude ]]; then
-      echo -e "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> IDs: $_expanded_exclude${CL:-}\n" 2>/dev/null || true
+      _record_tag_log "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> VMIDs: $_expanded_exclude${CL:-}\n"
     else
-      echo -e "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') matched no IDs${CL:-}\n" 2>/dev/null || true
+      _record_tag_log "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') matched no VMIDs${CL:-}\n"
     fi
   fi
 }
