@@ -56,6 +56,8 @@ EOF
   CHECK_ROOT
   CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
+  # Print any tag selection summary captured during config parse
+  if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi
 }
 
 # Check root
@@ -86,7 +88,7 @@ ARGUMENTS () {
         HEADER_INFO
         if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit, if error come up, is disabled${CL}\n"; fi
         echo -e "${BL}[Info]${OR} Update only LXC/VM $ARGUMENT - work only on main host!${CL}\n"
-        CONTAINER_UPDATE_START
+          CONTAINER_UPDATE_START
         VM_UPDATE_START
         ;;
       -h|--help)
@@ -609,7 +611,7 @@ HOST_UPDATE_START () {
     if ssh -q -p "$SSH_PORT" "$HOST" test >/dev/null 2>&1; [ $? -eq 255 ]; then
       echo -e "${BL}[Info] ${OR}Skip Host${CL} : ${GN}$HOST${CL} ${OR}- can't connect${CL}\n"
     else
-     UPDATE_HOST "$HOST"
+      UPDATE_HOST "$HOST"
     fi
   done
 }
@@ -1194,8 +1196,8 @@ if [[ "$COMMAND" != true ]]; then
     else
       echo -e "${BL}[Info] Skipped host itself by the user${CL}\n\n"
     fi
-    if [[ "$WITH_LXC" == true ]]; then
-      CONTAINER_UPDATE_START
+        if [[ "$WITH_LXC" == true ]]; then
+          CONTAINER_UPDATE_START
     else
       echo -e "${BL}[Info] Skipped all containers by the user${CL}\n"
     fi
