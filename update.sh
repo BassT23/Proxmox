@@ -1196,8 +1196,8 @@ if [[ "$COMMAND" != true ]]; then
     else
       echo -e "${BL}[Info] Skipped host itself by the user${CL}\n\n"
     fi
-      if [[ "$WITH_LXC" == true ]]; then
-        CONTAINER_UPDATE_START
+    if [[ "$WITH_LXC" == true ]]; then
+      CONTAINER_UPDATE_START
     else
       echo -e "${BL}[Info] Skipped all containers by the user${CL}\n"
     fi
