@@ -201,6 +201,7 @@ apply_only_exclude_tags() {
     printf -v "$_only_var_name" '%s' "$_expanded_only"
     if [[ -n $_expanded_only ]]; then
       _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> VMIDs: $_expanded_only${CL:-}"
+      return 0
     else
       _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no VMIDs${CL:-}"
       EXCLUDE_TAG

@@ -1,7 +1,7 @@
 Changelog:
 ==========
 
-**v4.4.x** (beta)
+**v4.4.x** (beta/develop)
 - add LXC template detection
 - "only" or "exclude" LXC/VM by ID/TAG/range #thx to @AdamSutch
 - check "paused" VMs during update-check and bring them back in pause
@@ -11,6 +11,7 @@ Changelog:
 - fix VM ID in error-log-file
 - fix shell check
 - fix typo and code cleaning
+- code cleaning
 
 **v4.4** (10.05.2025)
 - add symbolic
@@ -21,7 +22,7 @@ Changelog:
 - fix docker-compose v2 skipping
 - fix YUM Update - used now only for centos
 - fix VM shutdown errors
-- FreeBSD is disabled by default in config file
+- FreeBSD is disabled by default - in config file
 - modify "update <ID>" - disable skip output
 - code cleaning
 
