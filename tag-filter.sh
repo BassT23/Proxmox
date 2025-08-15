@@ -187,9 +187,10 @@ apply_only_exclude_tags() {
       _expanded_exclude=$(_expand_mixed_spec "$_EXCLUDE_VALUE")
       printf -v "$_exclude_var_name" '%s' "$_expanded_exclude"
       if [[ -n $_expanded_exclude ]]; then
-        _record_tag_log_exclude "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> VMIDs: $_expanded_exclude${CL:-}"
+        _record_tag_log "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> VMIDs: $_expanded_exclude${CL:-}\n"
       else
-        _record_tag_log_exclude "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') matched no VMIDs${CL:-}"
+        # _record_tag_log "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') matched no VMIDs${CL:-}"
+        return 0
       fi
     fi
   }
@@ -200,10 +201,10 @@ apply_only_exclude_tags() {
     _expanded_only=$(_expand_mixed_spec "$_ONLY_VALUE")
     printf -v "$_only_var_name" '%s' "$_expanded_only"
     if [[ -n $_expanded_only ]]; then
-      _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> VMIDs: $_expanded_only${CL:-}"
+      _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> VMIDs: $_expanded_only${CL:-}\n"
       return 0
     else
-      _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no VMIDs${CL:-}"
+      # _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no VMIDs${CL:-}"
       EXCLUDE_TAG
     fi
   else
