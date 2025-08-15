@@ -110,7 +110,7 @@ With this file, you can manage the updater. For example; if you don't want to up
 - "only" or "exclude" LXC/VM - see below
 
 # New Only/Exclude handling in config file:
-Expands ONLY (or if empty, EXCLUDE) into a space-separated list of numeric VMIDs.
+Expands ONLY/EXCLUDE into a space-separated list of numeric VMIDs.
 Supports:
   - Plain VMIDs: 101 202
   - Delimiters: commas / semicolons / pipes / spaces intermixed (e.g. 101,202;203|204)
@@ -121,7 +121,7 @@ Supports:
   - OR matching across tag tokens.
 
 Behavior summary:
-  1. Tokenize ONLY if set; else tokenized EXCLUDE.
+  1. Tokenize ONLY if set/matched; else tokenized EXCLUDE.
   2. For each token:
        number        -> add as VMID
        range a-b     -> expand (a..b)
@@ -132,10 +132,10 @@ Behavior summary:
   5. If ONLY provided, EXCLUDE is ignored (legacy behavior).
 
 Usage examples:
-  export ONLY="backup,windows"; apply_only_exclude_tags ONLY EXCLUDE; echo "$ONLY"
-  export ONLY="101,102,105-107"; apply_only_exclude_tags ONLY EXCLUDE; echo "$ONLY"
-  export ONLY="110 testtag 111 120-121"; apply_only_exclude_tags ONLY EXCLUDE; echo "$ONLY"
-  export ONLY="" EXCLUDE="old 300-302"; apply_only_exclude_tags ONLY EXCLUDE; echo "$EXCLUDE"
+ - ONLY="backup,windows"
+ - ONLY="101,102,105-107"
+ - ONLY="110 testtag 111 120-121"
+ - ONLY="" EXCLUDE="old 300-302"
 
 # Extra Updates:
 If updater detects installation: (disable, if you want in `/etc/ultimate-updater/update.conf`)
