@@ -4,9 +4,7 @@
 # Tag-filter #
 ##############
 
-# shellcheck disable=SC2034
-
-VERSION="1.0.0"
+# VERSION="1.0.0"
 
 # Proxmox VM/CT Tag & ID Expansion Helper
 #
