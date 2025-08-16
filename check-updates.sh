@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="1.7.2"
+VERSION="1.7.3"
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
