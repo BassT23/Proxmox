@@ -6,7 +6,7 @@ Changelog:
 - "only" or "exclude" LXC/VM by ID/TAG/range #thx to @AdamSutch
 - check "paused" VMs during update-check and bring them back in pause
 - fix #203 Error on apt clean
-- fix unsupported neofetch under trixie - change to fastfetch
+- fix unsupported neofetch under trixie - change to screenfetch
 - fix #201 (abbort after template detection)
 - fix VM ID in error-log-file
 - fix shell check

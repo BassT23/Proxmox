@@ -164,7 +164,7 @@ The Welcome Screen is an extra for you. It's optional!
 - The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
 - The update-checker also uses the config file!
 - To force the check, you can run `/etc/ultimate-updater/check-updates.sh` in Terminal.
-- You can choose, if neofetch will be show also (if neofetch is not installed, script will make it automatically)
+- You can choose, if screenfetch will be show also (if screenfetch is not installed, script will make it automatically)
 
 # Beta Testing:
 If anybody wants to help with failure search, please test our beta (if available).
