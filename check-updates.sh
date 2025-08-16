@@ -4,14 +4,18 @@
 # Check Updates #
 #################
 
-# shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.7.1"
+VERSION="1.7.3"
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
+# Tag helper (if installed)
+if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then
+  # shellcheck disable=SC1091
+  . "$LOCAL_FILES/tag-filter.sh"
+fi
 
 # Colors
 BL="\e[36m"
@@ -90,6 +94,10 @@ READ_WRITE_CONFIG () {
   PAUSED_VM=$(awk -F'"' '/^CHECK_PAUSED_VM=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
+  CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
+  if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
+    apply_only_exclude_tags ONLY EXCLUDED
+  fi
 }
 
 ## HOST ##
@@ -384,9 +392,14 @@ else
   MODE="Host"
 fi
 
+# Read config first so we can use URL_FOR_INTERNET_CHECK for connectivity test
+READ_WRITE_CONFIG
+
 # Run
-if [[ "$(wget -q --spider http://google.com)" -eq 0 ]]; then
-  READ_WRITE_CONFIG
+CHECK_URL=${CHECK_URL:-"http://google.com"}
+if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
+  # Print any tag selection summary captured during config parse
+  if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi
   ARGUMENTS "$@"
 else
   echo -e "${OR} You are offline${CL}"
@@ -396,7 +409,6 @@ fi
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true && "$RDU" == true ]]; then
   OUTPUT_TO_FILE
-  CHECK_RUNNUNG_MACHINE
 elif [[ "$COMMAND" != true ]]; then
   OUTPUT_TO_FILE
   if [[ "$MODE" =~ Cluster ]]; then HOST_CHECK_START; else

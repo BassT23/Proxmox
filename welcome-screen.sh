@@ -4,10 +4,9 @@
 # Welcome-Screen #
 ##################
 
-# shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.6"
+VERSION="1.9"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -102,6 +101,13 @@ READ_WRITE_CONFIG () {
   STOPPED=$(awk -F'"' '/^CHECK_STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
+  if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then
+    # shellcheck disable=SC1091
+    . "$LOCAL_FILES/tag-filter.sh"
+    if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
+      apply_only_exclude_tags ONLY EXCLUDED
+    fi
+  fi
   if [[ $ONLY != "" ]]; then
     echo -e "${OR}Only is set. Not all machines are checked.${CL}\n"
   elif [[ $ONLY == "" && $EXCLUDED != "" ]]; then

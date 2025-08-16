@@ -107,7 +107,35 @@ With this file, you can manage the updater. For example; if you don't want to up
 - Headless Mode
 - Extra updates
 - "stopped" or "running" LXC/VM
-- "only" or "exclude" LXC/VM by ID
+- "only" or "exclude" LXC/VM - see below
+
+# New Only/Exclude handling in config file:
+Expands ONLY/EXCLUDE into a space-separated list of numeric VMIDs.
+Supports:
+  - Plain VMIDs: 101 202
+  - Delimiters: commas / semicolons / pipes / spaces intermixed (e.g. 101,202;203|204)
+  - Ranges: 120-125 (inclusive)
+  - Mixed IDs + ranges + tags: 110 testing 111 200-202
+  - Uppercase user tag input (config tags assumed already lowercase)
+    Tag tokens are any token not matching ^[0-9]+$ or ^[0-9]+-[0-9]+$.
+  - OR matching across tag tokens.
+
+Behavior summary:
+  1. Tokenize ONLY if set/matched; else tokenized EXCLUDE.
+  2. For each token:
+       number        -> add as VMID
+       range a-b     -> expand (a..b)
+       tag           -> collect tag for later resolution
+  3. Resolve tags to IDs (any tag match) and append, de-duplicating while
+     preserving first-seen order (input order then discovery order for tags).
+  4. Assign final space-separated list back to ONLY / EXCLUDE variable.
+  5. If ONLY provided, EXCLUDE is ignored (legacy behavior).
+
+Usage examples:
+ - ONLY="backup,windows"
+ - ONLY="101,102,105-107"
+ - ONLY="110 testtag 111 120-121"
+ - ONLY="" EXCLUDE="old 300-302"
 
 # Extra Updates:
 If updater detects installation: (disable, if you want in `/etc/ultimate-updater/update.conf`)

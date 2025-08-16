@@ -4,13 +4,7 @@
 # Update #
 ##########
 
-# shellcheck disable=SC1017
-# shellcheck disable=SC2034
-# shellcheck disable=SC2029
-# shellcheck disable=SC2317
-# shellcheck disable=SC2320
-
-VERSION="4.4.2"
+VERSION="4.4.4"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -25,6 +19,12 @@ OR="\e[1;33m"
 RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
+
+# Tag helper (if installed)
+if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then
+  # shellcheck disable=SC1091
+  . "$LOCAL_FILES/tag-filter.sh"
+fi
 
 # Header
 HEADER_INFO () {
@@ -56,6 +56,8 @@ EOF
   CHECK_ROOT
   CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
+  # Print any tag selection summary captured during config parse
+  if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log && echo; fi
 }
 
 # Check root
@@ -139,6 +141,7 @@ ARGUMENTS () {
       uninstall)
         COMMAND=true
         UNINSTALL
+        # shellcheck disable=SC2317
         exit 2
         ;;
       master)
@@ -403,6 +406,7 @@ STATUS () {
 }
 
 # Read Config File
+# shellcheck disable=SC2034
 READ_CONFIG () {
   LOG_FILE=$(awk -F'"' '/^LOG_FILE=/ {print $2}' "$CONFIG_FILE")
   ERROR_LOG_FILE=$(awk -F'"' '/^ERROR_LOG_FILE=/ {print $2}' "$CONFIG_FILE")
@@ -435,22 +439,9 @@ READ_CONFIG () {
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
-}
-
-# ID range support
-# need testing
-ID_CONVERT () {
-  expand_ranges() {
-    local IFS=,
-    set -- $1
-    for range; do
-      case $range in 
-        *-*) for (( i=${range%-*}; i<=${range#*-}; i++ )); do echo $i; done ;;
-        *)   echo $range ;;
-      esac
-    done
-  }
-numbers=( $(expand_ranges 11-14,17,20) )
+  if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
+    apply_only_exclude_tags ONLY EXCLUDED
+  fi
 }
 
 # Snapshot/Backup
@@ -507,10 +498,10 @@ VM_BACKUP () {
 USER_SCRIPTS () {
   if [[ -d $USER_SCRIPTS/$CONTAINER ]]; then
     echo -e "\n*** Run user scripts now ***\n"
-    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/$CONTAINER)
+    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/"$CONTAINER")
     pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/user-scripts"
     for SCRIPT in $USER_SCRIPTS_LS; do
-      pct push "$CONTAINER" -- $USER_SCRIPTS/$CONTAINER/$SCRIPT $LOCAL_FILES/user-scripts/$SCRIPT
+      pct push "$CONTAINER" -- "$USER_SCRIPTS"/"$CONTAINER"/"$SCRIPT" "$LOCAL_FILES"/user-scripts/"$SCRIPT"
       pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
                                         $LOCAL_FILES/user-scripts/$SCRIPT"
     done
@@ -524,10 +515,10 @@ Infos here: <https://github.com/BassT23/Proxmox/tree/master#user-scripts>\n"
 USER_SCRIPTS_VM () {
   if [[ -d $USER_SCRIPTS/$VM ]]; then
     echo -e "\n*** Run user scripts now ***\n"
-    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/$VM)
+    USER_SCRIPTS_LS=$(ls "$USER_SCRIPTS"/"$VM")
     ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/user-scripts/
     for SCRIPT in $USER_SCRIPTS_LS; do
-      scp $USER_SCRIPTS/$CONTAINER/$SCRIPT "$IP":$LOCAL_FILES/user-scripts/$SCRIPT
+      scp "$USER_SCRIPTS"/"$CONTAINER"/"$SCRIPT" "$IP":$LOCAL_FILES/user-scripts/"$SCRIPT"
       ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
                 $LOCAL_FILES/user-scripts/$SCRIPT"
     done
@@ -581,10 +572,12 @@ TRIM_FILESYSTEM () {
     if [[ $(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}') ]]; then
       if [ "$ROOT_FS" = "ext4" ]; then
         echo -e "${OR}--- Trimming filesystem ---${CL}"
-        local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        local "$BEFORE_TRIM"
         echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
-        pct fstrim $CONTAINER --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
-        local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        pct fstrim "$CONTAINER" --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
+        AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        local "$AFTER_TRIM"
         echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
         sleep 1.5
       fi
@@ -619,7 +612,7 @@ HOST_UPDATE_START () {
     if ssh -q -p "$SSH_PORT" "$HOST" test >/dev/null 2>&1; [ $? -eq 255 ]; then
       echo -e "${BL}[Info] ${OR}Skip Host${CL} : ${GN}$HOST${CL} ${OR}- can't connect${CL}\n"
     else
-     UPDATE_HOST "$HOST"
+      UPDATE_HOST "$HOST"
     fi
   done
 }
@@ -636,11 +629,16 @@ UPDATE_HOST () {
     if [[ "$WELCOME_SCREEN" == true ]]; then
       scp $LOCAL_FILES/check-updates.sh "$HOST":$LOCAL_FILES/check-updates.sh
       if [[ "$WELCOME_SCREEN" == true ]]; then
-        scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
+      scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
       fi
     fi
     scp /etc/ultimate-updater/temp/exec_host "$HOST":/etc/ultimate-updater/temp
     scp -r $LOCAL_FILES/VMs/ "$HOST":$LOCAL_FILES/
+    if [[ -f $LOCAL_FILES/tag-filter.sh ]]; then
+      scp $LOCAL_FILES/tag-filter.sh "$HOST":$LOCAL_FILES/tag-filter.sh
+    fi
+    # shellcheck disable=SC2086
+    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c host"
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
@@ -651,6 +649,7 @@ UPDATE_HOST () {
   fi
 }
 
+# shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
   echo -e "${OR}--- PVE UPDATE ---${CL}" && pveupdate
   if [[ "$HEADLESS" == true ]]; then
@@ -689,6 +688,9 @@ CONTAINER_UPDATE_START () {
       echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
       if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"; else continue; fi
+    elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
+      echo -e "${BL}[Info] ${OR}LXC $CONTAINER is a template - skip update${CL}\n\n"
+      continue
     else
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
@@ -747,6 +749,7 @@ UPDATE_CONTAINER () {
   CONTAINER_BACKUP
   echo
   # Run update
+  # shellcheck disable=SC2015
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     echo -e "${OR}--- APT UPDATE ---${CL}"
     pct exec "$CONTAINER" -- bash -c "apt-get update -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update -y" 2>&1) || ERROR
@@ -866,6 +869,7 @@ VM_UPDATE_START () {
 }
 
 # VM Update
+# shellcheck disable=SC2015
 UPDATE_VM () {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
@@ -986,6 +990,7 @@ UPDATE_VM () {
 }
 
 # QEMU
+# shellcheck disable=SC2015
 UPDATE_VM_QEMU () {
   echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
   if [[ "$START_WAITING" == true ]]; then
@@ -1095,6 +1100,7 @@ OUTPUT_TO_FILE () {
     fi
   fi
 }
+# shellcheck disable=SC2329
 CLEAN_LOGFILE () {
   if [[ "$RICM" != true ]]; then
     tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
@@ -1124,6 +1130,7 @@ else
 fi
 
 # Exit
+# shellcheck disable=SC2329
 EXIT () {
   EXIT_CODE=$?
   if [[ -f "/etc/ultimate-updater/temp/exec_host" ]]; then
@@ -1147,7 +1154,7 @@ EXIT () {
         CLEAN_LOGFILE
       else
         echo -e "${GN}✅ Finished, all updates done.${CL}\n"
-        $LOCAL_FILES/exit/passed.sh
+        "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
       fi
     fi
@@ -1155,13 +1162,13 @@ EXIT () {
   # Update Error
     if [[ "$RICM" != true ]]; then
       echo -e "${RD}❌ Error during update --- Exit Code: $EXIT_CODE${CL}\n"
-      $LOCAL_FILES/exit/error.sh
+      "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
     fi
   fi
   sleep 3
   rm -rf /etc/ultimate-updater/temp/var
-  rm -rf $LOCAL_FILES/update
+  rm -rf "$LOCAL_FILES"/update
   if [[ -f "/etc/ultimate-updater/temp/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf "$LOCAL_FILES"; fi
 }
 trap EXIT EXIT
@@ -1175,7 +1182,7 @@ else
 fi
 
 # Run
-NAME_CHANGING
+
 export TERM=xterm-256color
 if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
 OUTPUT_TO_FILE
