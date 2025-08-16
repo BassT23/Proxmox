@@ -622,17 +622,13 @@ UPDATE_HOST () {
     scp $LOCAL_FILES/update.conf "$HOST":$LOCAL_FILES/update.conf
     if [[ "$WELCOME_SCREEN" == true ]]; then
       scp $LOCAL_FILES/check-updates.sh "$HOST":$LOCAL_FILES/check-updates.sh
-      if [[ "$WELCOME_SCREEN" == true ]]; then
       scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
-      fi
     fi
     scp /etc/ultimate-updater/temp/exec_host "$HOST":/etc/ultimate-updater/temp
     scp -r $LOCAL_FILES/VMs/ "$HOST":$LOCAL_FILES/
     if [[ -f $LOCAL_FILES/tag-filter.sh ]]; then
       scp $LOCAL_FILES/tag-filter.sh "$HOST":$LOCAL_FILES/tag-filter.sh
     fi
-    # shellcheck disable=SC2086
-    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c host"
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
@@ -645,7 +641,7 @@ UPDATE_HOST () {
 
 # shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
-  echo -e "${OR:-}--- PVE UPDATE ---${CL:-}" && pveupdate
+  echo -e "${OR:-}--- PVE UPDATE ---${CL:-}" && pveupdate || true
   if [[ "$HEADLESS" == true ]]; then
     echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}" && \
     DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y 2>&1) || ERROR
@@ -696,7 +692,7 @@ CONTAINER_UPDATE_START () {
         sleep "$LXC_START_DELAY"
         UPDATE_CONTAINER "$CONTAINER"
         # Stop the container
-        echo -e " ⏹${GN:-} Shutting down LXC ${BL:-}$CONTAINER ${CL:-}\n\n"
+        echo -e "⏹ ${GN:-} Shutting down LXC ${BL:-}$CONTAINER ${CL:-}\n\n"
         pct shutdown "$CONTAINER" &
         WILL_STOP="false"
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" != true ]]; then
@@ -828,7 +824,7 @@ VM_UPDATE_START () {
       echo -e "⏩${BL:-} ${OR:-}VM $VM is a template - skip update${CL:-}\n\n"
       continue
     elif [[ "$PRE_OS" =~ w ]]; then
-      echo -e "⚠${BL:-} Skipped VM $VM${CL:-}\n"
+      echo -e "⚠ ${BL:-} Skipped VM $VM${CL:-}\n"
       echo -e "${OR:-}  Windows is not supported for now.\n  I'm working on it ;)${CL:-}\n\n"
     else
       STATUS=$(qm status "$VM")
@@ -842,7 +838,7 @@ VM_UPDATE_START () {
           START_WAITING="true"
           UPDATE_VM "$VM"
           # Stop the VM
-          echo -e " ⏹${GN:-} Shutting down VM${BL:-} $VM ${CL:-}\n\n"
+          echo -e "⏹ ${GN:-} Shutting down VM${BL:-} $VM ${CL:-}\n\n"
           qm shutdown "$VM" &
           WILL_STOP="false"
           START_WAITING="false"
