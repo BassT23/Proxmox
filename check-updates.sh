@@ -146,6 +146,8 @@ CONTAINER_CHECK_START () {
       continue
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
       continue
+    elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
+      continue
     else
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
