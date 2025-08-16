@@ -50,7 +50,7 @@ EOF
 #Check root
 CHECK_ROOT () {
   if [[ "$EUID" -ne 0 ]]; then
-      echo -e >&2 "${RD}--- Please run this as root ---${CL}";
+      echo -e >&2 "⚠${RD} --- Please run this as root --- ⚠${CL}";
       exit 1
   fi
 }
@@ -87,7 +87,7 @@ ARGUMENTS () {
         EXIT
         ;;
       *)
-        echo -e "${RD}Error: Got an unexpected argument \"$ARGUMENT\"${CL}\n";
+        echo -e "❌${RD} Error: Got an unexpected argument \"$ARGUMENT\"${CL}\n";
         USAGE;
         exit 1;
         ;;
@@ -182,7 +182,7 @@ ${OR}Is it OK for you, or want to backup your files first?${CL}\n"
 }
 
 INSTALL () {
-  echo -e "\n${BL}[Info]${GN} Installing The Ultimate Updater${CL}\n"
+  echo -e "\nℹ ${GN} Installing The Ultimate Updater${CL}\n"
   if [ -f "/usr/local/sbin/update" ]; then
     echo -e "${OR}The Ultimate Updater is already installed.${CL}"
     read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
@@ -231,7 +231,7 @@ UPDATE () {
   OLD_FILESYSTEM_CHECK
   if [ -f "/usr/local/sbin/update" ]; then
     # Update
-    echo -e "\n${BL}[Info]${GN} Updating script ...${CL}\n"
+    echo -e "\nℹ ${GN} Updating script ...${CL}\n"
     # Cleaning
     rm -rf "$TEMP_FOLDER" || true
     # Download files
@@ -306,7 +306,7 @@ UPDATE () {
     fi
   else
     # Install, because no installation found
-    echo -e "${RD}The Ultimate Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
+    echo -e "⚠${RD} The Ultimate Updater is not installed.\n\n${OR}Would you like to install it?${CL}"
     read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
       bash <(curl -s $SERVER_URL/install.sh)
@@ -328,11 +328,11 @@ CHECK_DIFF () {
  The default action is to install new version and backup current file."
     read -p "*** $FILE (Y/y/N/n/S/s) [default=Y] ?" -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
+        echo -e "\nℹ ${GN} Installed server version and backed up old file${CL}\n"
         cp -f "$LOCAL_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE".bak
         mv "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"
       elif [[ $REPLY =~ ^[Nn]$ ]]; then
-        echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
+        echo -e "\nℹ${GN} Kept old file${CL}\n"
       elif [[ $REPLY =~ ^[Ss]$ ]]; then
         echo
         set +e
@@ -344,14 +344,14 @@ CHECK_DIFF () {
  The default action is to install new version and backup current file."
         read -p "*** $FILE (Y/y/N/n) [default=Y] ?" -r
           if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-            echo -e "\n${BL}[Info]${GN} Installed server version and backed up old file${CL}\n"
+            echo -e "\nℹ ${GN} Installed server version and backed up old file${CL}\n"
             cp -f "$LOCAL_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE".bak
             mv "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"
           elif [[ $REPLY =~ ^[Nn]$ ]]; then
-            echo -e "\n${BL}[Info]${GN} Kept old file${CL}\n"
+            echo -e "\nℹ ${GN} Kept old file${CL}\n"
           fi
       else
-        echo -e "\n${BL}[Info]${OR} Skip this file${CL}\n"
+        echo -e "\n⏩${OR} Skip this file${CL}\n"
       fi
   fi
 }
@@ -404,11 +404,11 @@ WELCOME_SCREEN_INSTALL () {
     read -p "  Type [Y/y] or Enter for install with screenfetch - anything else will skip: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then 
       apt-get install screenfetch -y || true
-      echo -e "\n${GN} Welcome-Screen installed with screenfetch${CL}"
+      echo -e "\n✅${GN} Welcome-Screen installed with screenfetch${CL}"
       return 0
     fi
   else
-    echo -e "\n${GN} Welcome-Screen installed successfully${CL}"
+    echo -e "\n✅${GN} Welcome-Screen installed successfully${CL}"
   fi
 }
 
@@ -435,7 +435,7 @@ ${BL} crontab file restored (old one backed up as crontab.bak)${CL}\n"
       exit 0
     fi
   else
-    echo -e "${RD}The Ultimate Updater is not installed.${CL}\n"
+    echo -e "⚠${RD} The Ultimate Updater is not installed.${CL}\n"
   fi
 }
 
@@ -448,7 +448,7 @@ EXIT () {
     exit 0
   elif [[ $EXIT_CODE != "0" ]]; then
     rm -rf $TEMP_FOLDER || true
-    echo -e "${RD}Error during install --- Exit Code: $EXIT_CODE${CL}\n"
+    echo -e "❌${RD} Error during install --- Exit Code: $EXIT_CODE${CL}\n"
   fi
 }
 
