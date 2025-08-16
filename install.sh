@@ -266,9 +266,9 @@ UPDATE () {
       chmod +x /etc/update-motd.d/01-welcome-screen
       if [[ -f /usr/bin/neofetch ]]; then
         echo -e "${OR}I detect neofetch was installed. On PVE9 neofetch is no more supported.${CL}"
-        read -p " Should I install fastfetch for you instead? Type [Y/y] or Enter for yes - anything else will exit: " -r
+        read -p " Should I install screenfetch for you instead? Type [Y/y] or Enter for yes - anything else will exit: " -r
         if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-          apt-get install fastfetch -y || true
+          apt-get install screenfetch -y || true
         fi
       fi
       mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
@@ -399,13 +399,16 @@ WELCOME_SCREEN_INSTALL () {
   if ! grep -q "check-updates.sh" /etc/crontab; then
     echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
   fi
-  echo -e "${OR}  with or without fastfetch?${CL}"
-  read -p "  Type [Y/y] or Enter for install fastfetch - anything else will without fastfetch: " -r
-  if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-    if ! [[ -f /usr/bin/fastfetch ]]; then apt-get install fastfetch -y; fi
-    echo -e "\n${GN} Welcome-Screen installed with fastfetch${CL}"
+  if ! [[ -f /usr/bin/screenfetch ]]; then
+    echo -e "${OR}  with or without screenfetch?${CL}"
+    read -p "  Type [Y/y] or Enter for install with screenfetch - anything else will skip: " -r
+    if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then 
+      apt-get install screenfetch -y || true
+      echo -e "\n${GN} Welcome-Screen installed with screenfetch${CL}"
+      return 0
+    fi
   else
-    echo -e "\n${GN} Welcome-Screen installed without fastfetch${CL}"
+    echo -e "\n${GN} Welcome-Screen installed successfully${CL}"
   fi
 }
 

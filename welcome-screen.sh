@@ -129,9 +129,8 @@ MINUTES=$(( (NOW - MOD) / 60 ))
 if [[ -f /usr/bin/neofetch ]]; then
   echo
   neofetch
-elif [[ -f /usr/bin/fastfetch ]]; then
-  echo
-  fastfetch
+elif [[ -f /usr/bin/screenfetch ]]; then
+  echo && screenfetch && echo
 else
   echo
 fi
