@@ -264,7 +264,7 @@ UPDATE () {
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
       chmod +x /etc/update-motd.d/01-welcome-screen
-      if [[ -f /usr/bin/neofetch ]]; then
+      if [[ -f /usr/bin/neofetch ]] && ! [[ -f /usr/bin/screenfetchfetch ]]; then
         echo -e "${OR:-}I detect neofetch was installed. On PVE9 neofetch is no more supported.${CL:-}"
         read -p " Should I install screenfetch for you instead? Type [Y/y] or Enter for yes - anything else will exit: " -r
         if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
@@ -299,7 +299,7 @@ UPDATE () {
     done
     rm -rf $TEMP_FOLDER || true
     echo -e "✅${GN:-} The Ultimate Updater updated successfully.${CL:-}"
-    if [[ "$BRANCH" != master ]]; then echo -e "${OR:-}  Installed: $BRANCH version${CL:-}"; fi
+    if [[ "$BRANCH" != master ]]; then echo -e "${OR:-}   Installed: $BRANCH version${CL:-}"; fi
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
     if [[ $NEED_REBOOT == true ]]; then
       echo -e "${RD:-}  Please reboot, to make The Ultimative Updater workable\n${CL:-}"
