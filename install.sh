@@ -395,7 +395,7 @@ WELCOME_SCREEN_INSTALL () {
   chmod +x $LOCAL_FILES/check-updates.sh
   if ! [[ -f $LOCAL_FILES/check-output ]]; then touch $LOCAL_FILES/check-output; fi
   if ! grep -q "check-updates.sh" /etc/crontab; then
-    echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
+    echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >/dev/null 2>&1 >> /etc/crontab
   fi
   if ! [[ -f /usr/bin/screenfetch ]]; then
     echo -e "${OR:-}  with or without screenfetch?${CL:-}"
