@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **v4.4.x** (beta/develop)
+- add debug mode (can be enabled in config file)
 - add check-updates command `update -check`
 - add better email notification for update-check
 - add more symbolic

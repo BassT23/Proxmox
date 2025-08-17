@@ -1079,6 +1079,12 @@ UPDATE_VM_QEMU () {
 ## General ##
 READ_CONFIG
 
+# Debug
+DEBUG=$(awk -F'"' '/^DEBUG=/ {print $2}' $CONFIG_FILE)
+if [[ "$DEBUG" == true ]]; then
+  set -x
+fi
+
 # Logging
 OUTPUT_TO_FILE () {
   echo 'EXEC_HOST="'"$HOSTNAME"'"' > /etc/ultimate-updater/temp/exec_host

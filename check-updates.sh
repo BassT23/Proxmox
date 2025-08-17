@@ -392,17 +392,6 @@ OUTPUT_TO_FILE () {
   fi
 }
 
-# Check Cluster Mode
-if [[ -f /etc/corosync/corosync.conf ]]; then
-  HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
-  MODE="Cluster"
-else
-  MODE="Host"
-fi
-
-# Read config
-READ_WRITE_CONFIG
-
 # Exit
 # shellcheck disable=SC2329
 EXIT () {
@@ -415,12 +404,32 @@ EXIT () {
     echo "summary email send"
     mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
   else
+    echo "summary email not send"
     echo "No updates found during search" | mail -s "Ultimate Updater" root
   fi
 }
 trap EXIT EXIT
 
 # Run
+
+# Debug
+DEBUG=$(awk -F'"' '/^DEBUG=/ {print $2}' $CONFIG_FILE)
+if [[ "$DEBUG" == true ]]; then
+  set -x
+fi
+
+# Check Cluster Mode
+if [[ -f /etc/corosync/corosync.conf ]]; then
+  HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
+  MODE="Cluster"
+else
+  MODE="Host"
+fi
+
+# Read config
+READ_WRITE_CONFIG
+
+
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   # Print any tag selection summary captured during config parse
   if [[ "$RICM" != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
