@@ -2,6 +2,8 @@ Changelog:
 ==========
 
 **v4.4.x** (beta/develop)
+- add check-updates command `update -check`
+- add better email notification for update-check
 - add more symbolic
 - add LXC template detection
 - "only" or "exclude" LXC/VM by ID/TAG/range #thx to @AdamSutch

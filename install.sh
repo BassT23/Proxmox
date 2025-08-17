@@ -171,7 +171,7 @@ ${OR:-}Is it OK for you, or want to backup your files first?${CL:-}\n"
   # Delete old files (old filesystem)
   rm -rf /etc/update-motd.d/01-updater || true
   rm -rf /etc/update-motd.d/01-updater.bak || true
-  # Check an renew to new structure
+  # Check and renew to new structure
   if [[ -f /usr/local/bin/update ]] && [[ ! -f /usr/local/sbin/update ]]; then
     curl  -s -L https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/update.sh > $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
@@ -211,9 +211,7 @@ INSTALL () {
     chmod -R +x "$LOCAL_FILES"/exit/*.sh
     cp "$TEMP_FILES"/scripts.d/000/* $LOCAL_FILES/scripts.d/000/
     cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
-    if [[ -f "$TEMP_FILES/tag-filter.sh" ]]; then
-      cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
-    fi
+    cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
     echo -e "${OR:-}Finished. Run The Ultimate Updater with 'update'.${CL:-}"
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
@@ -375,7 +373,7 @@ WELCOME_SCREEN () {
         rm -rf /etc/update-motd.d/01-welcome-screen || true
         rm -rf /etc/motd || true
         if [[ -f /etc/motd.bak ]]; then mv /etc/motd.bak /etc/motd; fi
-        #restore old crontab with info output
+        # restore old crontab with info output
         mv /etc/crontab /etc/crontab.bak2
         mv /etc/crontab.bak /etc/crontab
         mv /etc/crontab.bak2 /etc/crontab.bak

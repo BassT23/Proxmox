@@ -56,7 +56,7 @@ EOF
   CHECK_ROOT
   CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
-  # Print any tag selection summary captured during config parse
+  # Print tag selection summary captured during config parse
   if [[ $SINGLE_UPDATE != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log && echo; fi; fi
 }
 
@@ -77,7 +77,8 @@ CHECK_INTERNET () {
 }
 
 ARGUMENTS () {
-  while test $# -gt -0; do
+  local ARGUMENT
+  while [ $# -gt 0 ]; do
     ARGUMENT="$1"
     case "$ARGUMENT" in
       [0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9])
@@ -179,6 +180,10 @@ ARGUMENTS () {
         UPDATE
         exit 2
         ;;
+      -check)
+        $LOCAL_FILES/check-updates.sh
+        exit 2
+        ;;
       status)
         INFO=false
         HEADER_INFO
@@ -210,6 +215,7 @@ USAGE () {
     echo -e "========="
     echo -e "  -h --help            Show help menu"
     echo -e "  -v --version         Show The Ultimate Updater version"
+    echo -e "  -check               Run check-updates.sh"
     echo -e "  -up                  Update The Ultimate Updater"
     echo -e "  status               Show Status (Version Infos)"
     echo -e "  uninstall            Uninstall The Ultimate Updater\n"
@@ -439,9 +445,7 @@ READ_CONFIG () {
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
-  if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
-    apply_only_exclude_tags ONLY EXCLUDED
-  fi
+  if declare -f apply_only_exclude_tags >/dev/null 2>&1; then apply_only_exclude_tags ONLY EXCLUDED; fi
 }
 
 # Snapshot/Backup
@@ -1172,7 +1176,6 @@ else
 fi
 
 # Run
-
 export TERM=xterm-256color
 if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
 OUTPUT_TO_FILE

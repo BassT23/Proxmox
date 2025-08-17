@@ -11,11 +11,10 @@ VERSION="1.7.3"
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
+
 # Tag helper (if installed)
-if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then
-  # shellcheck disable=SC1091
-  . "$LOCAL_FILES/tag-filter.sh"
-fi
+# shellcheck disable=SC1091
+if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then . "$LOCAL_FILES/tag-filter.sh"; fi
 
 # Colors
 BL="\e[36m"
@@ -25,7 +24,8 @@ GN="\e[1;92m"
 CL="\e[0m"
 
 ARGUMENTS () {
-  while test $# -gt -0; do
+  local ARGUMENT
+  while [ $# -gt 0 ]; do
     ARGUMENT="$1"
     case "$ARGUMENT" in
       -c)
@@ -84,6 +84,7 @@ USAGE () {
 
 READ_WRITE_CONFIG () {
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' $CONFIG_FILE)
+  EMAIL_USER=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' $CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
@@ -383,6 +384,11 @@ OUTPUT_TO_FILE () {
   if [[ "$RDU" != true && "$RICM" != true ]]; then
     touch $LOCAL_FILES/check-output
     exec > >(tee $LOCAL_FILES/check-output)
+    # create mail output file
+    touch $LOCAL_FILES/mail-output
+    echo -e "Available Updates:"  > $LOCAL_FILES/mail-output
+    echo -e "S = Security / N = Normal\n" >> $LOCAL_FILES/mail-output
+    exec > >(tee -a $LOCAL_FILES/mail-output)
   fi
 }
 
@@ -394,14 +400,30 @@ else
   MODE="Host"
 fi
 
-# Read config first so we can use URL_FOR_INTERNET_CHECK for connectivity test
+# Read config
 READ_WRITE_CONFIG
 
+# Exit
+# shellcheck disable=SC2329
+EXIT () {
+  # clean email output file
+  if [[ "$RDU" != true && "$RICM" != true ]]; then
+    cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
+    chmod 640 "$LOCAL_FILES/mail-output"
+  fi
+  if [[ -f "$LOCAL_FILES/mail-output" ]] && [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
+    echo "summary email send"
+    mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+  else
+    echo "No updates found during search" | mail -s "Ultimate Updater" root
+  fi
+}
+trap EXIT EXIT
+
 # Run
-CHECK_URL=${CHECK_URL:-"http://google.com"}
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   # Print any tag selection summary captured during config parse
-  if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi
+  if [[ "$RICM" != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
   ARGUMENTS "$@"
 else
   echo -e "${OR} You are offline${CL}"
@@ -419,3 +441,5 @@ elif [[ "$COMMAND" != true ]]; then
     if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
   fi
 fi
+
+exit 0
