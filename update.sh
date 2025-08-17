@@ -1152,10 +1152,12 @@ EXIT () {
         echo -e "Please checkout $ERROR_LOG_FILE"
         echo
         CLEAN_LOGFILE
+        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$ERROR_LOG_FILE"
       else
         echo -e "${GN:-}✅ Finished, all updates done.${CL:-}\n"
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
+        echo "Finished, all updates done. No errors" | mail -s "Ultimate Updater" root
       fi
     fi
   else
@@ -1164,6 +1166,7 @@ EXIT () {
       echo -e "${RD:-}⚠ Error during update --- Exit Code: $EXIT_CODE${CL:-}\n"
       "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
+      mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOG_FILE"
     fi
   fi
   sleep 3
