@@ -11,10 +11,8 @@ VERSION="1.7.4"
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
-
-# Tag helper (if installed)
 # shellcheck disable=SC1091
-if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then . "$LOCAL_FILES/tag-filter.sh"; fi
+. "$LOCAL_FILES/tag-filter.sh"
 
 # Colors
 BL="\e[36m"
@@ -427,9 +425,9 @@ fi
 # Read config
 READ_WRITE_CONFIG
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
-  # Print any tag selection summary captured during config parse
-  if [[ "$RICM" != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
   ARGUMENTS "$@"
+  # Print any tag selection summary captured during config parse
+  if [[ "$RDU" != true && "$RICM" != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
 else
   echo -e "${OR} You are offline${CL}"
   exit 2
