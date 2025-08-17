@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="4.4.4"
+VERSION="4.4.5"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -13,6 +13,10 @@ USER_SCRIPTS="/etc/ultimate-updater/scripts.d"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
+# Tag filter
+# shellcheck disable=SC1091
+. "$LOCAL_FILES/tag-filter.sh"
+
 # Colors
 BL="\e[36m"
 OR="\e[1;33m"
@@ -20,11 +24,7 @@ RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
 
-# Tag helper (if installed)
-if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then
-  # shellcheck disable=SC1091
-  . "$LOCAL_FILES/tag-filter.sh"
-fi
+
 
 # Header
 HEADER_INFO () {

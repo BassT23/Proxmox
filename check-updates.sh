@@ -6,11 +6,13 @@
 
 # shellcheck disable=SC2034
 
-VERSION="1.7.4"
+VERSION="1.7.5"
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
+
+# Tag filter
 # shellcheck disable=SC1091
 . "$LOCAL_FILES/tag-filter.sh"
 
