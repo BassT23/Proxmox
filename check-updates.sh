@@ -399,11 +399,11 @@ EXIT () {
   if [[ "$RDU" != true && "$RICM" != true ]]; then
     cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
     chmod 640 "$LOCAL_FILES/mail-output"
-  fi
-  if [[ -f "$LOCAL_FILES/mail-output" ]] && [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
-    mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
-  else
-    echo "No updates found during search" | mail -s "Ultimate Updater" root
+    if [[ -f "$LOCAL_FILES/mail-output" ]] && [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
+      mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+    else
+      echo "No updates found during search" | mail -s "Ultimate Updater" root
+    fi
   fi
 }
 trap EXIT EXIT
@@ -426,8 +426,6 @@ fi
 
 # Read config
 READ_WRITE_CONFIG
-
-
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   # Print any tag selection summary captured during config parse
   if [[ "$RICM" != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
