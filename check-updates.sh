@@ -401,10 +401,8 @@ EXIT () {
     chmod 640 "$LOCAL_FILES/mail-output"
   fi
   if [[ -f "$LOCAL_FILES/mail-output" ]] && [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
-    echo "summary email send"
     mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
   else
-    echo "summary email not send"
     echo "No updates found during search" | mail -s "Ultimate Updater" root
   fi
 }
