@@ -42,7 +42,7 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 - Logging - location can be change in config file
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/etc/ultimate-updater/exit`)
 - [Config file](https://github.com/BassT23/Proxmox/tree/master#config-file)
-- [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/edit/beta/README.md#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
+- [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/tree/beta#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
 - send email after update/check
 - Trim filesystem on ext4 nodes
 
