@@ -269,6 +269,11 @@ UPDATE () {
           apt-get install screenfetch -y || true
         fi
       fi
+      # change crontab entry
+      if grep -q "/etc/ultimate-updater/check-updates.sh" /etc/crontab; then
+        cp /etc/crontab "/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
+        sed -i 's|/etc/ultimate-updater/check-updates.sh|update -check >/dev/null 2>\&1|' /etc/crontab
+      fi
       mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
       chmod +x $LOCAL_FILES/check-updates.sh
     else
@@ -461,3 +466,5 @@ ARGUMENTS "$@"
 if [[ $COMMAND != true ]]; then
   INSTALL
 fi
+
+exit 0
