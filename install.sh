@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="1.8.5"
+VERSION="1.8.6"
 
 # Branch
 BRANCH="develop"
@@ -211,6 +211,8 @@ INSTALL () {
     chmod -R +x "$LOCAL_FILES"/exit/*.sh
     cp "$TEMP_FILES"/scripts.d/000/* $LOCAL_FILES/scripts.d/000/
     cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
+    cp "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
+    chmod -R +x "$LOCAL_FILES"/check-updates.sh
     cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
     echo -e "${OR:-}Finished. Run The Ultimate Updater with 'update'.${CL:-}"
@@ -251,6 +253,9 @@ UPDATE () {
     # Copy files
     mv "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
+    mv "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
+    mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
+    chmod +x $LOCAL_FILES/check-updates.sh
     mv "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
     if ! [[ -d "$LOCAL_FILES"/scripts.d/ ]]; then
       mkdir -p $LOCAL_FILES/scripts.d/000
@@ -274,14 +279,9 @@ UPDATE () {
         cp /etc/crontab "/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
         sed -i 's|/etc/ultimate-updater/check-updates.sh|update -check >/dev/null 2>\&1|' /etc/crontab
       fi
-      mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
-      chmod +x $LOCAL_FILES/check-updates.sh
     else
       rm -rf "$TEMP_FILES"/welcome-screen.sh || true
       rm -rf "$TEMP_FILES"/check-updates.sh || true
-    fi
-    if [[ -f "$TEMP_FILES/tag-filter.sh" ]]; then
-      mv "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
     fi
     # Check if files are different
     rm -rf "$TEMP_FILES"/.github || true
@@ -395,9 +395,7 @@ WELCOME_SCREEN_INSTALL () {
   touch /etc/motd
   cp /etc/crontab /etc/crontab.bak
   cp $TEMP_FOLDER/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
-  cp $TEMP_FOLDER/check-updates.sh $LOCAL_FILES/check-updates.sh
   chmod +x /etc/update-motd.d/01-welcome-screen
-  chmod +x $LOCAL_FILES/check-updates.sh
   if ! [[ -f $LOCAL_FILES/check-output ]]; then touch $LOCAL_FILES/check-output; fi
   if ! grep -q "check-updates.sh" /etc/crontab; then
     echo "00 07,19 * * *  root    update -check >/dev/null 2>&1" >> /etc/crontab
