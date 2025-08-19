@@ -620,10 +620,33 @@ DIST_UPGRADE () {
         SNAPSHOT=
         BACKUP=true
         echo
+#        echo -e "${RD:-}--- Backup skipped during develop ---${CL:-}"
         CONTAINER_BACKUP
-        echo "${GR:-}⏩ Upgrade now${CL:-}"
-        sleep 5
-        echo
+        echo -e "${GR:-}⏩ Upgrade to Debian 13 (Trixie) now:${CL:-}"
+        echo -e "${OR:-}--- Enable stop on error ---\n${CL:-}"
+        set -e
+        echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
+        pct exec "$CONTAINER" -- bash -c "apt-get update -y"
+        echo -e "${OR:-}--- APT UPGRADE ---${CL:-}"
+        pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+        echo -e "${OR:-}--- Cleaning ---${CL:-}"
+        pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
+        echo -e "\n${OR:-}--- Need 5Gig on root folder for upgrade - check it now ---${CL:-}"
+        if [[ $(pct exec "$CONTAINER" -- bash -c "df --output=avail -BG / | tail -1 | sed 's/G//'") -gt 5 ]]; then
+          echo "✅ OK\n"
+          echo -e "${OR:-}--- Change Repo to Trixie ---\n${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "sed -i 's/bookworm/trixie/g' /etc/apt/sources.list"
+          pct exec "$CONTAINER" -- bash -c "find /etc/apt/sources.list.d -type f -exec sed -i 's/bookworm/trixie/g' {} \;"
+          echo -e "${OR:-}--- APT UPDATE for Trixie ---${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "apt-get update -y"
+          echo -e "${OR:-}--- APT UPGRADE for Trixie ---${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+          echo -e "${GR:-}✅ UPGRADE to Trixie done ${CL:-}"
+          echo
+        else
+          echo -e "❌ need more space, pls clean up or resize disk, by yourself\n"
+          exit 100
+        fi
       else
         echo -e "❌ skipped\n"
         return 0
