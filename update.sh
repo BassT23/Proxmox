@@ -473,7 +473,7 @@ CONTAINER_BACKUP () {
       fi
     fi
     if [[ "$BACKUP" == true ]]; then
-      echo -e "⏳ Create a backup for LXC (this will take some time - please wait)${CL:-}"
+      echo -e "💾${OR:-} Create a backup for LXC (this will take some time - please wait)${CL:-}"
       vzdump "$CONTAINER" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "✅${GN:-} Backup created${CL:-}\n"
     fi
@@ -497,7 +497,7 @@ VM_BACKUP () {
       fi
     fi
     if [[ "$BACKUP" == true ]]; then
-      echo -e "💾 Create a backup for the VM (this will take some time - please wait)${CL:-}"
+      echo -e "💾${OR:-} Create a backup for the VM (this will take some time - please wait)${CL:-}"
       vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "✅${GN:-} Backup created${CL:-}"
     fi
@@ -629,7 +629,7 @@ DIST_UPGRADE () {
       if [[ $(pct exec "$CONTAINER" -- bash -c "df --output=avail -BG / | tail -1 | sed 's/G//'") -gt 5 ]]; then
         echo -e "✅ OK\n"
         echo -e "${OR:-}⚠  This is the last step! !!! After all, check your repos !!!${CL:-}"
-        echo -e "You could use 'sudo apt modernize-sources' for this."
+        echo -e "'sudo apt modernize-sources' could help you here."
         echo -e "Read and understand?"
         read -p "Type [Y/y] for yes - anything else will skip: " -r
         if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
