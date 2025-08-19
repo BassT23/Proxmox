@@ -186,7 +186,6 @@ ARGUMENTS () {
         HEADER_INFO
         COMMAND=true
         CHECK_DIST=true
-        DIST_UPGRADE_INFO
         CONTAINER_UPDATE_START
         exit 2
         ;;
@@ -604,11 +603,6 @@ TRIM_FILESYSTEM () {
   fi
 }
 
-# Dist-Upgrade Info (delete, if this work)
-DIST_UPGRADE_INFO () {
-  echo -e "⚠  Be patient - NOT WORKABLE FOR NOW! - working on it ⚠\n"
-}
-
 # Dist Upgrade
 DIST_UPGRADE () {
   # debian 12 -> 13
@@ -616,24 +610,29 @@ DIST_UPGRADE () {
   if [[ "$DEB_VERSION" == "12" ]]; then
     echo -e "${OR:-}✅ Debian 12 detected, want to upgrade to Debian 13?${CL:-}"
     read -p "Type [Y/y] for yes - anything else will skip: " -r
-      if [[ $REPLY =~ ^[Yy]$ ]]; then
-        SNAPSHOT=
-        BACKUP=true
-        echo
-#        echo -e "${RD:-}--- Backup skipped during develop ---${CL:-}"
-        CONTAINER_BACKUP
-        echo -e "${GR:-}⏩ Upgrade to Debian 13 (Trixie) now:${CL:-}"
-        echo -e "${OR:-}--- Enable stop on error ---\n${CL:-}"
-        set -e
-        echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
-        pct exec "$CONTAINER" -- bash -c "apt-get update -y"
-        echo -e "${OR:-}--- APT UPGRADE ---${CL:-}"
-        pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
-        echo -e "${OR:-}--- Cleaning ---${CL:-}"
-        pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
-        echo -e "\n${OR:-}--- Need 5Gig on root folder for upgrade - check it now ---${CL:-}"
-        if [[ $(pct exec "$CONTAINER" -- bash -c "df --output=avail -BG / | tail -1 | sed 's/G//'") -gt 5 ]]; then
-          echo "✅ OK\n"
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      SNAPSHOT=
+      BACKUP=true
+      echo
+#      echo -e "${RD:-}--- Backup skipped during develop ---${CL:-}"
+      CONTAINER_BACKUP
+      echo -e "${GR:-}⏩ Upgrade to Debian 13 (Trixie) now:${CL:-}"
+      echo -e "${OR:-}--- Enable stop on error ---\n${CL:-}"
+      set -e
+      echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
+      pct exec "$CONTAINER" -- bash -c "apt-get update -y"
+      echo -e "${OR:-}--- APT UPGRADE ---${CL:-}"
+      pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+      echo -e "${OR:-}--- Cleaning ---${CL:-}"
+      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
+      echo -e "\n${OR:-}--- Need 5Gig on root folder for upgrade - check it now ---${CL:-}"
+      if [[ $(pct exec "$CONTAINER" -- bash -c "df --output=avail -BG / | tail -1 | sed 's/G//'") -gt 5 ]]; then
+        echo -e "✅ OK\n"
+        echo -e "${OR:-}⚠  This is the last step! !!! After all, check your repos !!!${CL:-}"
+        echo -e "You could use 'sudo apt modernize-sources' for this."
+        echo -e "Read and understand?"
+        read -p "Type [Y/y] for yes - anything else will skip: " -r
+        if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
           echo -e "${OR:-}--- Change Repo to Trixie ---\n${CL:-}"
           pct exec "$CONTAINER" -- bash -c "sed -i 's/bookworm/trixie/g' /etc/apt/sources.list"
           pct exec "$CONTAINER" -- bash -c "find /etc/apt/sources.list.d -type f -exec sed -i 's/bookworm/trixie/g' {} \;"
@@ -646,13 +645,17 @@ DIST_UPGRADE () {
           pct exec "$CONTAINER" -- bash -c "reboot"
           echo
         else
-          echo -e "❌ need more space, pls clean up or resize disk, by yourself\n"
-          exit 100
+          echo -e "❌ skipped\n"
+          return 0
         fi
       else
-        echo -e "❌ skipped\n"
-        return 0
+        echo -e "❌ need more space, pls clean up or resize disk, by yourself\n"
+        exit 100
       fi
+    else
+      echo -e "❌ skipped\n"
+      return 0
+    fi
   else
     echo -e "❌ no Debian 12 detected\n"
   fi
