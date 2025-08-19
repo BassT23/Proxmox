@@ -377,10 +377,8 @@ WELCOME_SCREEN () {
         rm -rf /etc/update-motd.d/01-welcome-screen || true
         rm -rf /etc/motd || true
         if [[ -f /etc/motd.bak ]]; then mv /etc/motd.bak /etc/motd; fi
-        # restore old crontab with info output
-        mv /etc/crontab /etc/crontab.bak2
-        mv /etc/crontab.bak /etc/crontab
-        mv /etc/crontab.bak2 /etc/crontab.bak
+        # delete crontab entry
+        sed -i '\|update -check >/dev/null 2>&1|d' /etc/crontab
         echo -e "\n${BL:-} Welcome-Screen uninstalled${CL:-}\n\
 ${BL:-} crontab file restored (old one backed up as crontab.bak)${CL:-}\n"
       fi
