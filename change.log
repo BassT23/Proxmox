@@ -1,8 +1,8 @@
 Changelog:
 ==========
 
-**v4.5.x** (develop)
-- prepare deb12 -> deb13 upgrade
+**v4.4.x** (develop)
+- add LXC debian trixie upgrade (`update -dist-upgrade`)
 
 **v4.4.x** (beta)
 - "only" or "exclude" LXC/VM by ID/TAG/range #thx to @AdamSutch
