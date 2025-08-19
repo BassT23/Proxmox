@@ -1,7 +1,10 @@
 Changelog:
 ==========
 
-**v4.4.x** (beta/develop)
+**v4.5.x** (develop)
+- prepare deb12 -> deb13 upgrade
+
+**v4.4.x** (beta)
 - "only" or "exclude" LXC/VM by ID/TAG/range #thx to @AdamSutch
 - add debug mode (can be enabled in config file)
 - add check-updates command `update -check`
