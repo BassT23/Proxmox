@@ -42,7 +42,9 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 - Logging - location can be change in config file
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/etc/ultimate-updater/exit`)
 - [Config file](https://github.com/BassT23/Proxmox/tree/master#config-file)
-- Trim filesystem on ext4 nodes - 
+- [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/tree/beta#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
+- send email after update/check
+- Trim filesystem on ext4 nodes
 
 Info can be found with `update -h`
 
@@ -129,7 +131,7 @@ Behavior summary:
   3. Resolve tags to IDs (any tag match) and append, de-duplicating while
      preserving first-seen order (input order then discovery order for tags).
   4. Assign final space-separated list back to ONLY / EXCLUDE variable.
-  5. If ONLY provided, EXCLUDE is ignored (legacy behavior).
+  5. If ONLY provided, EXCLUDE is ignored.
 
 Usage examples:
  - ONLY="backup,windows"
@@ -164,7 +166,7 @@ The Welcome Screen is an extra for you. It's optional!
 - The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
 - The update-checker also uses the config file!
 - To force the check, you can run `/etc/ultimate-updater/check-updates.sh` in Terminal.
-- You can choose, if neofetch will be show also (if neofetch is not installed, script will make it automatically)
+- You can choose, if screenfetch will be show also (if screenfetch is not installed, script will make it automatically)
 
 # Beta Testing:
 If anybody wants to help with failure search, please test our beta (if available).

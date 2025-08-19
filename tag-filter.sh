@@ -4,9 +4,7 @@
 # Tag-filter #
 ##############
 
-# shellcheck disable=SC2034
-
-VERSION="1.0.0"
+# VERSION="1.0.0"
 
 # Proxmox VM/CT Tag & ID Expansion Helper
 #
@@ -196,7 +194,7 @@ apply_only_exclude_tags() {
       _expanded_exclude=$(_expand_mixed_spec "$_EXCLUDE_VALUE")
       printf -v "$_exclude_var_name" '%s' "$_expanded_exclude"
       if [[ -n $_expanded_exclude ]]; then
-        _record_tag_log "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> VMIDs: $_expanded_exclude${CL:-}\n"
+        _record_tag_log "ℹ ${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> VMIDs: $_expanded_exclude${CL:-}\n"
       else
         # _record_tag_log "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') matched no VMIDs${CL:-}"
         return 0
@@ -210,7 +208,7 @@ apply_only_exclude_tags() {
     _expanded_only=$(_expand_mixed_spec "$_ONLY_VALUE")
     printf -v "$_only_var_name" '%s' "$_expanded_only"
     if [[ -n $_expanded_only ]]; then
-      _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> VMIDs: $_expanded_only${CL:-}\n"
+      _record_tag_log "ℹ ${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> VMIDs: $_expanded_only${CL:-}\n"
       return 0
     else
       # _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no VMIDs${CL:-}"
