@@ -420,7 +420,6 @@ STATUS () {
 }
 
 # Read Config File
-# shellcheck disable=SC2034
 READ_CONFIG () {
   LOG_FILE=$(awk -F'"' '/^LOG_FILE=/ {print $2}' "$CONFIG_FILE")
   ERROR_LOG_FILE=$(awk -F'"' '/^ERROR_LOG_FILE=/ {print $2}' "$CONFIG_FILE")
@@ -571,6 +570,17 @@ EXTRAS () {
   fi
 }
 
+# Kernel Update
+# shellcheck disable=SC2329
+KERNEL_UPDATE () {
+  if [[ "$INCLUDE_KERNEL" == true ]]; then
+    echo -e "${OR:-}--- Kernel Update ---${CL:-}"
+  fi
+    if [[ "$INCLUDE_KERNEL_CLEAN" == true ]]; then
+    echo -e "${OR:-}--- Clean Kernel ---${CL:-}"
+  fi
+}
+
 # Trim Filesystem
 TRIM_FILESYSTEM () {
   if [[ "$INCLUDE_FSTRIM" == true ]]; then
@@ -611,14 +621,12 @@ UPDATE_CHECK () {
 
 # Dist-Upgrade
 DIST_UPGRADE () {
-  echo -e "⏩ Be patient - NOT WORKABLE FOR NOW! - working on it\n"
+  echo -e "⚠  Be patient - NOT WORKABLE FOR NOW! - working on it ⚠\n"
   # deb12 to deb13
-  echo "create overview now - this could take some time"
+  echo -e "⏩ create overview now - this could take some time"
   $LOCAL_FILES/check-updates.sh -check-dist-upgrade
   # upgrade
-  if grep -q 'VERSION_ID="12"' /etc/os-release 2>/dev/null; then
-    echo "Debian 12 detected, want to upgrade to Debian 13?"
-  fi
+  echo -e "⏩ start dist-upgrade now?\n"
 }
 
 ## HOST ##
