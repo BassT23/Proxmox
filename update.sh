@@ -645,19 +645,19 @@ DIST_UPGRADE () {
           pct exec "$CONTAINER" -- bash -c "reboot"
           echo
         else
-          echo -e "❌ skipped\n"
+          echo -e "❌${BL:-} skipped\n${CL:-}"
           return 0
         fi
       else
-        echo -e "❌ need more space, pls clean up or resize disk, by yourself\n"
+        echo -e "❌${RD:-} need more space, pls clean up or resize disk, by yourself\n${CL:-}"
         exit 100
       fi
     else
-      echo -e "❌ skipped\n"
+      echo -e "❌${BL:-} skipped\n${CL:-}"
       return 0
     fi
   else
-    echo -e "❌ no Debian 12 detected\n"
+    echo -e "❌${BL:-} no Debian 12 detected\n${CL:-}"
     return 0
   fi
 }
