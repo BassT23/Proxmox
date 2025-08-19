@@ -109,9 +109,8 @@ READ_WRITE_CONFIG () {
 ## Dist Upgrade
 CHECK_DIST_UPGRADE () {
   echo -e "\n⏩ check dist upgrade now\n"
-  if grep -q 'VERSION_ID="12"' /etc/os-release 2>/dev/null; then
-    echo "Debian 12 detected, want to upgrade to Debian 13?"
-  fi
+  CHECK_DIST=true
+  CONTAINER_CHECK_START
 }
 
 ## HOST ##
@@ -190,6 +189,18 @@ CHECK_CONTAINER () {
   OS=$(awk '/^ostype/' $LOCAL_FILES/temp/temp | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
+    # Check dist upgrade
+    if [[ "$CHECK_DIST" == true ]]; then
+      echo -e "⏩ check $CONTAINER / $NAME now"
+      DEB_VERSION=$(pct exec "$CONTAINER" -- bash -c "grep -oP '(?<=^VERSION_ID=).+' /etc/os-release | tr -d '\"'")
+      if [[ "$DEB_VERSION" == "12" ]]; then
+        echo -e "✅ Debian 12 detected, want to upgrade to Debian 13?"
+      else
+        echo -e "❌ no Debian 12 detected"
+      fi
+      return 0
+    fi
+    # Check updates
     pct exec "$CONTAINER" -- bash -c "apt-get update" >/dev/null 2>&1
     APT_OUTPUT=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade")
     SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security' || true)

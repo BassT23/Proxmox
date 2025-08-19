@@ -573,6 +573,7 @@ EXTRAS () {
 # Kernel Update
 # shellcheck disable=SC2329
 KERNEL_UPDATE () {
+  # https://github.com/pimlie/ubuntu-mainline-kernel.sh
   if [[ "$INCLUDE_KERNEL" == true ]]; then
     echo -e "${OR:-}--- Kernel Update ---${CL:-}"
   fi
