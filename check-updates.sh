@@ -34,6 +34,11 @@ ARGUMENTS () {
       -u)
         RDU=true
         ;;
+      -check-dist-upgrade)
+        COMMAND=true
+        TAG_OUTPUT=false
+        CHECK_DIST_UPGRADE
+        ;;
       chost)
         COMMAND=true
         OUTPUT_TO_FILE
@@ -98,6 +103,14 @@ READ_WRITE_CONFIG () {
   CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
   if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
     apply_only_exclude_tags ONLY EXCLUDED
+  fi
+}
+
+## Dist Upgrade
+CHECK_DIST_UPGRADE () {
+  echo -e "\n⏩ check dist upgrade now\n"
+  if grep -q 'VERSION_ID="12"' /etc/os-release 2>/dev/null; then
+    echo "Debian 12 detected, want to upgrade to Debian 13?"
   fi
 }
 
@@ -399,12 +412,14 @@ OUTPUT_TO_FILE () {
 EXIT () {
   # clean email output file
   if [[ "$RDU" != true && "$RICM" != true ]]; then
-    cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
-    chmod 640 "$LOCAL_FILES/mail-output"
-    if [[ -f "$LOCAL_FILES/mail-output" ]] && [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
-      mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
-    else
-      echo "No updates found during search" | mail -s "Ultimate Updater" root
+    if [[ -f "$LOCAL_FILES/mail-output" ]]; then
+      cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
+      chmod 640 "$LOCAL_FILES/mail-output"
+      if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
+        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+      else
+        echo "No updates found during search" | mail -s "Ultimate Updater" root
+      fi
     fi
   fi
 }
@@ -431,7 +446,7 @@ READ_WRITE_CONFIG
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   ARGUMENTS "$@"
   # Print any tag selection summary captured during config parse
-  if [[ "$RDU" != true && "$RICM" != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
+  if [[ "$RDU" != true && "$RICM" != true && "$TAG_OUTPUT" != false ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
 else
   echo -e "${OR} You are offline${CL}"
   exit 2
