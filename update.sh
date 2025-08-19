@@ -57,7 +57,7 @@ EOF
   CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
   # Print tag selection summary captured during config parse
-  if [[ $SINGLE_UPDATE != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log && echo; fi; fi
+  if [[ $TAG_LOG == true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log && echo; fi; fi
 }
 
 # Check root
@@ -111,6 +111,7 @@ ARGUMENTS () {
         ;;
       host)
         COMMAND=true
+        TAG_LOG=true
         if [[ "$RICM" != true ]]; then
           MODE="  Host  "
           HEADER_INFO
@@ -610,7 +611,13 @@ UPDATE_CHECK () {
 
 # Dist-Upgrade
 DIST_UPGRADE () {
-  echo -e "⏩ Be patient - working on it\n"
+  echo -e "⏩ Be patient - NOT WORKABLE FOR NOW! - working on it\n"
+  # deb12 to deb13
+  echo "create overview now - this could take some time"
+  #update -check-dist-upgrade 
+  if grep -q 'VERSION_ID="12"' /etc/os-release 2>/dev/null; then
+    echo "Debian 12 detected, want to upgrade to Debian 13?"
+  fi
 }
 
 ## HOST ##
@@ -1205,6 +1212,7 @@ ARGUMENTS "$@"
 
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true ]]; then
+  TAG_LOG=true
   HEADER_INFO
   if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Exit, if error come up, is disabled${CL:-}\n"; fi
   if [[ "$MODE" =~ Cluster ]]; then
