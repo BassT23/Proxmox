@@ -641,7 +641,9 @@ DIST_UPGRADE () {
           pct exec "$CONTAINER" -- bash -c "apt-get update -y"
           echo -e "${OR:-}--- APT UPGRADE for Trixie ---${CL:-}"
           pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
-          echo -e "${GR:-}✅ UPGRADE to Trixie done ${CL:-}"
+          echo -e "\n${GR:-}✅ UPGRADE to Trixie done ${CL:-}"
+          echo -e "\n${OR:-}--- Restart the container now for you ---${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "reboot"
           echo
         else
           echo -e "❌ need more space, pls clean up or resize disk, by yourself\n"
