@@ -180,6 +180,10 @@ ARGUMENTS () {
         UPDATE
         exit 2
         ;;
+      -dist-upgrade)
+        echo "be patient - working on it"
+        exit 2
+        ;;
       -check)
         $LOCAL_FILES/check-updates.sh
         exit 2
