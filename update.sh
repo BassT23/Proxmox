@@ -658,6 +658,7 @@ DIST_UPGRADE () {
     fi
   else
     echo -e "❌ no Debian 12 detected\n"
+    return 0
   fi
 }
 
