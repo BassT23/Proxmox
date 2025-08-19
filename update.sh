@@ -185,7 +185,9 @@ ARGUMENTS () {
         INFO=false
         HEADER_INFO
         COMMAND=true
-        DIST_UPGRADE
+        CHECK_DIST=true
+        DIST_UPGRADE_INFO
+        CONTAINER_UPDATE_START
         exit 2
         ;;
       -check)
@@ -602,6 +604,22 @@ TRIM_FILESYSTEM () {
   fi
 }
 
+# Dist-Upgrade Info (delete, if this work)
+DIST_UPGRADE_INFO () {
+  echo -e "⚠  Be patient - NOT WORKABLE FOR NOW! - working on it ⚠\n"
+}
+
+# Dist Upgrade
+DIST_UPGRADE () {
+  # debian 12 -> 13
+  DEB_VERSION=$(pct exec "$CONTAINER" -- bash -c "grep -oP '(?<=^VERSION_ID=).+' /etc/os-release | tr -d '\"'")
+  if [[ "$DEB_VERSION" == "12" ]]; then
+    echo -e "✅ Debian 12 detected, want to upgrade to Debian 13?\n"
+  else
+    echo -e "❌ no Debian 12 detected\n"
+  fi
+}
+
 # Check Updates for Welcome-Screen
 UPDATE_CHECK () {
   if [[ "$WELCOME_SCREEN" == true ]]; then
@@ -618,16 +636,6 @@ UPDATE_CHECK () {
   else
     echo
   fi
-}
-
-# Dist-Upgrade
-DIST_UPGRADE () {
-  echo -e "⚠  Be patient - NOT WORKABLE FOR NOW! - working on it ⚠\n"
-  # deb12 to deb13
-  echo -e "⏩ create overview now - this could take some time"
-  $LOCAL_FILES/check-updates.sh -check-dist-upgrade
-  # upgrade
-  echo -e "⏩ start dist-upgrade now?\n"
 }
 
 ## HOST ##
@@ -754,7 +762,11 @@ UPDATE_CONTAINER () {
 #  else
 #    NAME=$(pct exec "$CONTAINER" hostname)
 #  fi
-  echo -e "🔄${GN:-} Updating LXC ${BL:-}$CONTAINER${CL:-} : ${GN:-}$NAME${CL:-}\n"
+  if [[ "$CHECK_DIST" != true ]]; then
+    echo -e "🔄${GN:-} Updating LXC ${BL:-}$CONTAINER${CL:-} : ${GN:-}$NAME${CL:-}\n"
+  else
+    echo -e "🔄${GN:-} Check dist upgrade for LXC ${BL:-}$CONTAINER${CL:-} : ${GN:-}$NAME${CL:-}"
+  fi
   # Check Internet connection
   if [[ "$OS" != alpine ]]; then
     if ! pct exec "$CONTAINER" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"; then
@@ -768,12 +780,18 @@ UPDATE_CONTAINER () {
 #    fi
   fi
   # Backup
-  echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
-  CONTAINER_BACKUP
-  echo
+  if [[ "$CHECK_DIST" != true ]]; then
+    echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
+    CONTAINER_BACKUP
+    echo
+  fi
   # Run update
   # shellcheck disable=SC2015
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
+    if [[ "$CHECK_DIST" == true ]]; then
+      DIST_UPGRADE
+      return 0
+    fi
     echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "apt-get update -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update -y" 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
