@@ -42,7 +42,9 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 - Logging - location can be change in config file
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/etc/ultimate-updater/exit`)
 - [Config file](https://github.com/BassT23/Proxmox/tree/master#config-file)
-- Trim filesystem on ext4 nodes - 
+- [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/tree/beta#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
+- send email after update/check
+- Trim filesystem on ext4 nodes
 
 Info can be found with `update -h`
 
@@ -107,7 +109,35 @@ With this file, you can manage the updater. For example; if you don't want to up
 - Headless Mode
 - Extra updates
 - "stopped" or "running" LXC/VM
-- "only" or "exclude" LXC/VM by ID
+- "only" or "exclude" LXC/VM - see below
+
+# New Only/Exclude handling in config file:
+Expands ONLY/EXCLUDE into a space-separated list of numeric VMIDs.
+Supports:
+  - Plain VMIDs: 101 202
+  - Delimiters: commas / semicolons / pipes / spaces intermixed (e.g. 101,202;203|204)
+  - Ranges: 120-125 (inclusive)
+  - Mixed IDs + ranges + tags: 110 testing 111 200-202
+  - Uppercase user tag input (config tags assumed already lowercase)
+    Tag tokens are any token not matching ^[0-9]+$ or ^[0-9]+-[0-9]+$.
+  - OR matching across tag tokens.
+
+Behavior summary:
+  1. Tokenize ONLY if set/matched; else tokenized EXCLUDE.
+  2. For each token:
+       number        -> add as VMID
+       range a-b     -> expand (a..b)
+       tag           -> collect tag for later resolution
+  3. Resolve tags to IDs (any tag match) and append, de-duplicating while
+     preserving first-seen order (input order then discovery order for tags).
+  4. Assign final space-separated list back to ONLY / EXCLUDE variable.
+  5. If ONLY provided, EXCLUDE is ignored.
+
+Usage examples:
+ - ONLY="backup,windows"
+ - ONLY="101,102,105-107"
+ - ONLY="110 testtag 111 120-121"
+ - ONLY="" EXCLUDE="old 300-302"
 
 # Extra Updates:
 If updater detects installation: (disable, if you want in `/etc/ultimate-updater/update.conf`)
@@ -117,7 +147,7 @@ If updater detects installation: (disable, if you want in `/etc/ultimate-updater
 - Octoprint
 - Docker Compose (v1 and v2)
 
-# User scripts
+# User scripts:
 How to use user scripts:
 
 In "/etc/ultimate-updater/scripts.d" create an folder for each LXC/VM who should use it like this:
@@ -136,7 +166,7 @@ The Welcome Screen is an extra for you. It's optional!
 - The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
 - The update-checker also uses the config file!
 - To force the check, you can run `/etc/ultimate-updater/check-updates.sh` in Terminal.
-- You can choose, if neofetch will be show also (if neofetch is not installed, script will make it automatically)
+- You can choose, if screenfetch will be show also (if screenfetch is not installed, script will make it automatically)
 
 # Beta Testing:
 If anybody wants to help with failure search, please test our beta (if available).

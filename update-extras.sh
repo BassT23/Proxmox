@@ -4,10 +4,9 @@
 # Update-Extras #
 #################
 
-# shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="2.0"
+VERSION="2.1"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -133,6 +132,7 @@ if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]] && [[ $DOCKER_
 fi
 
 # Community / Helper Scripts
+  #188
 if grep -q "community-scripts" /usr/bin/update 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]];then
   stdbuf -oL -eL expect <<EOF | grep -v "whiptail"
 set timeout 3
