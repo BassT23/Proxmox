@@ -181,7 +181,10 @@ ARGUMENTS () {
         exit 2
         ;;
       -dist-upgrade)
-        echo "be patient - working on it"
+        INFO=false
+        HEADER_INFO
+        COMMAND=true
+        DIST_UPGRADE
         exit 2
         ;;
       -check)
@@ -603,6 +606,11 @@ UPDATE_CHECK () {
   else
     echo
   fi
+}
+
+# Dist-Upgrade
+DIST_UPGRADE () {
+  echo -e "⏩ Be patient - working on it\n"
 }
 
 ## HOST ##
