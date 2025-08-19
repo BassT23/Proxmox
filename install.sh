@@ -364,7 +364,6 @@ WELCOME_SCREEN () {
     echo -e "\n${BL:-}[Info]${GN:-} Installing The Ultimate Updater Welcome-Screen${CL:-}\n"
     if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
     curl -s $SERVER_URL/welcome-screen.sh > $TEMP_FOLDER/welcome-screen.sh
-    curl -s $SERVER_URL/check-updates.sh > $TEMP_FOLDER/check-updates.sh
     if ! [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
       echo -e "${OR:-} Welcome-Screen is not installed${CL:-}\n"
       read -p "Would you like to install it also? Type [Y/y] or Enter for yes - anything else will skip: " -r
