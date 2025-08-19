@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="1.7.5"
+VERSION="1.7.6"
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -178,8 +178,9 @@ CHECK_CONTAINER () {
   NAME=$(pct exec "$CONTAINER" hostname)
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     pct exec "$CONTAINER" -- bash -c "apt-get update" >/dev/null 2>&1
-    SECURITY_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'")
-    NORMAL_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'")
+    APT_OUTPUT=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade")
+    SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security' || true)
+    NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.' || true)
     if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" != 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
     fi
@@ -287,8 +288,9 @@ CHECK_VM () {
 #        fi
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           ssh "$IP" "apt-get update" >/dev/null 2>&1
-          SECURITY_APT_UPDATES=$(ssh "$IP" "apt-get -s upgrade | grep -ci ^inst.*security")
-          NORMAL_APT_UPDATES=$(ssh "$IP" "apt-get -s upgrade | grep -ci ^inst.")
+          APT_OUTPUT=$(ssh "$IP" "apt-get -s upgrade")
+          SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security')
+          NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.')
           if ssh "$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then REBOOT_REQUIRED=true; fi
           if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
