@@ -614,7 +614,20 @@ DIST_UPGRADE () {
   # debian 12 -> 13
   DEB_VERSION=$(pct exec "$CONTAINER" -- bash -c "grep -oP '(?<=^VERSION_ID=).+' /etc/os-release | tr -d '\"'")
   if [[ "$DEB_VERSION" == "12" ]]; then
-    echo -e "✅ Debian 12 detected, want to upgrade to Debian 13?\n"
+    echo -e "${OR:-}✅ Debian 12 detected, want to upgrade to Debian 13?${CL:-}"
+    read -p "Type [Y/y] for yes - anything else will skip: " -r
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+        SNAPSHOT=
+        BACKUP=true
+        echo
+        CONTAINER_BACKUP
+        echo "${GR:-}⏩ Upgrade now${CL:-}"
+        sleep 5
+        echo
+      else
+        echo -e "❌ skipped\n"
+        return 0
+      fi
   else
     echo -e "❌ no Debian 12 detected\n"
   fi
@@ -785,13 +798,17 @@ UPDATE_CONTAINER () {
     CONTAINER_BACKUP
     echo
   fi
+  # Run dist-upgrade
+  if [[ "$CHECK_DIST" == true ]] && [[ "$OS" =~ debian ]]; then
+    DIST_UPGRADE
+    return 0
+  elif [[ "$CHECK_DIST" == true ]]; then
+    echo -e "${OR:-} ❌ Distribution not supported\n${CL:-}"
+    return 0
+  fi
   # Run update
   # shellcheck disable=SC2015
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
-    if [[ "$CHECK_DIST" == true ]]; then
-      DIST_UPGRADE
-      return 0
-    fi
     echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "apt-get update -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update -y" 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
