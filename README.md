@@ -37,6 +37,7 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 
 ### Features:
 - Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
+- LXC distriburion upgrade (deb12 -> deb13) with `update -dist-upgrade`
 - Snapshot / Backup support (for Snapshot, your system must prepared for it)
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Logging - location can be change in config file
