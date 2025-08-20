@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="1.7.6"
+VERSION="1.7.7"
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -399,12 +399,14 @@ OUTPUT_TO_FILE () {
 EXIT () {
   # clean email output file
   if [[ "$RDU" != true && "$RICM" != true ]]; then
-    cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
-    chmod 640 "$LOCAL_FILES/mail-output"
-    if [[ -f "$LOCAL_FILES/mail-output" ]] && [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
-      mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
-    else
-      echo "No updates found during search" | mail -s "Ultimate Updater" root
+    if [[ -f "$LOCAL_FILES/mail-output" ]]; then
+      cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
+      chmod 640 "$LOCAL_FILES/mail-output"
+      if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
+        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+      else
+        echo "No updates found during search" | mail -s "Ultimate Updater" root
+      fi
     fi
   fi
 }
@@ -431,7 +433,7 @@ READ_WRITE_CONFIG
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   ARGUMENTS "$@"
   # Print any tag selection summary captured during config parse
-  if [[ "$RDU" != true && "$RICM" != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
+  if [[ "$RDU" != true && "$RICM" != true && "$TAG_OUTPUT" != false ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
 else
   echo -e "${OR} You are offline${CL}"
   exit 2

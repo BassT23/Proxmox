@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="4.4.5"
+VERSION="4.4.6"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -57,7 +57,7 @@ EOF
   CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
   # Print tag selection summary captured during config parse
-  if [[ $SINGLE_UPDATE != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log && echo; fi; fi
+  if [[ $TAG_LOG == true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log && echo; fi; fi
 }
 
 # Check root
@@ -111,6 +111,7 @@ ARGUMENTS () {
         ;;
       host)
         COMMAND=true
+        TAG_LOG=true
         if [[ "$RICM" != true ]]; then
           MODE="  Host  "
           HEADER_INFO
@@ -178,6 +179,14 @@ ARGUMENTS () {
           BRANCH=master
         fi
         UPDATE
+        exit 2
+        ;;
+      -dist-upgrade)
+        INFO=false
+        HEADER_INFO
+        COMMAND=true
+        CHECK_DIST=true
+        CONTAINER_UPDATE_START
         exit 2
         ;;
       -check)
@@ -412,7 +421,6 @@ STATUS () {
 }
 
 # Read Config File
-# shellcheck disable=SC2034
 READ_CONFIG () {
   LOG_FILE=$(awk -F'"' '/^LOG_FILE=/ {print $2}' "$CONFIG_FILE")
   ERROR_LOG_FILE=$(awk -F'"' '/^ERROR_LOG_FILE=/ {print $2}' "$CONFIG_FILE")
@@ -465,7 +473,7 @@ CONTAINER_BACKUP () {
       fi
     fi
     if [[ "$BACKUP" == true ]]; then
-      echo -e "⏳ Create a backup for LXC (this will take some time - please wait)${CL:-}"
+      echo -e "💾${OR:-} Create a backup for LXC (this will take some time - please wait)${CL:-}"
       vzdump "$CONTAINER" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "✅${GN:-} Backup created${CL:-}\n"
     fi
@@ -489,7 +497,7 @@ VM_BACKUP () {
       fi
     fi
     if [[ "$BACKUP" == true ]]; then
-      echo -e "💾 Create a backup for the VM (this will take some time - please wait)${CL:-}"
+      echo -e "💾${OR:-} Create a backup for the VM (this will take some time - please wait)${CL:-}"
       vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "✅${GN:-} Backup created${CL:-}"
     fi
@@ -563,6 +571,18 @@ EXTRAS () {
   fi
 }
 
+# Kernel Update
+# shellcheck disable=SC2329
+KERNEL_UPDATE () {
+  # https://github.com/pimlie/ubuntu-mainline-kernel.sh
+  if [[ "$INCLUDE_KERNEL" == true ]]; then
+    echo -e "${OR:-}--- Kernel Update ---${CL:-}"
+  fi
+    if [[ "$INCLUDE_KERNEL_CLEAN" == true ]]; then
+    echo -e "${OR:-}--- Clean Kernel ---${CL:-}"
+  fi
+}
+
 # Trim Filesystem
 TRIM_FILESYSTEM () {
   if [[ "$INCLUDE_FSTRIM" == true ]]; then
@@ -580,6 +600,65 @@ TRIM_FILESYSTEM () {
         sleep 1.5
       fi
     fi
+  fi
+}
+
+# Dist Upgrade
+DIST_UPGRADE () {
+  # debian 12 -> 13
+  DEB_VERSION=$(pct exec "$CONTAINER" -- bash -c "grep -oP '(?<=^VERSION_ID=).+' /etc/os-release | tr -d '\"'")
+  if [[ "$DEB_VERSION" == "12" ]]; then
+    echo -e "${OR:-}✅ Debian 12 detected, want to upgrade to Debian 13?${CL:-}"
+    read -p "Type [Y/y] for yes - anything else will skip: " -r
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      SNAPSHOT=
+      BACKUP=true
+      echo
+#      echo -e "${RD:-}--- Backup skipped during develop ---${CL:-}"
+      CONTAINER_BACKUP
+      echo -e "${GR:-}⏩ Upgrade to Debian 13 (Trixie) now:${CL:-}"
+      echo -e "${OR:-}--- Enable stop on error ---\n${CL:-}"
+      set -e
+      echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
+      pct exec "$CONTAINER" -- bash -c "apt-get update -y"
+      echo -e "${OR:-}--- APT UPGRADE ---${CL:-}"
+      pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+      echo -e "${OR:-}--- Cleaning ---${CL:-}"
+      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
+      echo -e "\n${OR:-}--- Need 5Gig on root folder for upgrade - check it now ---${CL:-}"
+      if [[ $(pct exec "$CONTAINER" -- bash -c "df --output=avail -BG / | tail -1 | sed 's/G//'") -gt 5 ]]; then
+        echo -e "✅ OK\n"
+        echo -e "${OR:-}⚠  This is the last step! !!! After all, check your repos !!!${CL:-}"
+        echo -e "'sudo apt modernize-sources' could help you here."
+        echo -e "Read and understand?"
+        read -p "Type [Y/y] for yes - anything else will skip: " -r
+        if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+          echo -e "${OR:-}--- Change Repo to Trixie ---\n${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "sed -i 's/bookworm/trixie/g' /etc/apt/sources.list"
+          pct exec "$CONTAINER" -- bash -c "find /etc/apt/sources.list.d -type f -exec sed -i 's/bookworm/trixie/g' {} \;"
+          echo -e "${OR:-}--- APT UPDATE for Trixie ---${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "apt-get update -y"
+          echo -e "${OR:-}--- APT UPGRADE for Trixie ---${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+          echo -e "\n${GR:-}✅ UPGRADE to Trixie done ${CL:-}"
+          echo -e "\n${OR:-}--- Restart the container now for you ---${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "reboot"
+          echo
+        else
+          echo -e "❌${BL:-} skipped\n${CL:-}"
+          return 0
+        fi
+      else
+        echo -e "❌${RD:-} need more space, pls clean up or resize disk, by yourself\n${CL:-}"
+        exit 100
+      fi
+    else
+      echo -e "❌${BL:-} skipped\n${CL:-}"
+      return 0
+    fi
+  else
+    echo -e "❌${BL:-} no Debian 12 detected\n${CL:-}"
+    return 0
   fi
 }
 
@@ -725,7 +804,11 @@ UPDATE_CONTAINER () {
 #  else
 #    NAME=$(pct exec "$CONTAINER" hostname)
 #  fi
-  echo -e "🔄${GN:-} Updating LXC ${BL:-}$CONTAINER${CL:-} : ${GN:-}$NAME${CL:-}\n"
+  if [[ "$CHECK_DIST" != true ]]; then
+    echo -e "🔄${GN:-} Updating LXC ${BL:-}$CONTAINER${CL:-} : ${GN:-}$NAME${CL:-}\n"
+  else
+    echo -e "🔄${GN:-} Check dist upgrade for LXC ${BL:-}$CONTAINER${CL:-} : ${GN:-}$NAME${CL:-}"
+  fi
   # Check Internet connection
   if [[ "$OS" != alpine ]]; then
     if ! pct exec "$CONTAINER" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"; then
@@ -739,9 +822,19 @@ UPDATE_CONTAINER () {
 #    fi
   fi
   # Backup
-  echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
-  CONTAINER_BACKUP
-  echo
+  if [[ "$CHECK_DIST" != true ]]; then
+    echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
+    CONTAINER_BACKUP
+    echo
+  fi
+  # Run dist-upgrade
+  if [[ "$CHECK_DIST" == true ]] && [[ "$OS" =~ debian ]]; then
+    DIST_UPGRADE
+    return 0
+  elif [[ "$CHECK_DIST" == true ]]; then
+    echo -e "${OR:-} ❌ Distribution not supported\n${CL:-}"
+    return 0
+  fi
   # Run update
   # shellcheck disable=SC2015
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
@@ -1193,6 +1286,7 @@ ARGUMENTS "$@"
 
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true ]]; then
+  TAG_LOG=true
   HEADER_INFO
   if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Exit, if error come up, is disabled${CL:-}\n"; fi
   if [[ "$MODE" =~ Cluster ]]; then
