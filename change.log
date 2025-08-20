@@ -1,10 +1,8 @@
 Changelog:
 ==========
 
-**v4.4.x** (develop)
-- add LXC debian trixie upgrade (`update -dist-upgrade`)
-
 **v4.4.x** (beta)
+- add LXC debian trixie upgrade (`update -dist-upgrade`)
 - "only" or "exclude" LXC/VM by ID/TAG/range #thx to @AdamSutch
 - add debug mode (can be enabled in config file)
 - add check-updates command `update -check`
