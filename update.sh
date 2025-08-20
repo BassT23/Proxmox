@@ -1012,10 +1012,10 @@ UPDATE_VM () {
         # https://github.com/pimlie/ubuntu-mainline-kernel.sh
         if [[ $INCLUDE_KERNEL == true || $INCLUDE_KERNEL_CLEAN == true ]]; then
           echo -e "${OR:-}--- Start Kernel Upgrade ---${CL:-}"
-          if ssh -t -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
+          if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
           if [[ $NEED_REBOOT == true ]]; then
             echo -e "${OR:-}--- need reboot first ---${CL:-}"
-            ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
+            ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
             echo -e "${OR:-}--- wait for reboot ---${CL:-}"
             # repeat till work
             MAX_RETRIES=10
@@ -1038,16 +1038,16 @@ UPDATE_VM () {
           mkdir -p "$LOCAL_FILES"/temp_kernel
           wget -q -p "$LOCAL_FILES"/temp_kernel https://raw.githubusercontent.com/pimlie/ubuntu-mainline-kernel.sh/master/ubuntu-mainline-kernel.sh
           scp -P "$SSH_VM_PORT" "$LOCAL_FILES"/temp_kernel/ubuntu-mainline-kernel.sh "$USER@$IP:/usr/local/bin/ubuntu-mainline-kernel.sh" >/dev/null 2>&1
-          ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "chmod +x /usr/local/bin/ubuntu-mainline-kernel.sh"
+          ssh -p "$SSH_VM_PORT" "$USER@$IP" "chmod +x /usr/local/bin/ubuntu-mainline-kernel.sh"
           rm -rf "$LOCAL_FILES"/temp_kernel
         fi
         if [[ $INCLUDE_KERNEL == true ]]; then
           echo -e "${OR:-}--- Kernel Upgrade ---${CL:-}"
           ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -c && ubuntu-mainline-kernel.sh -i"
-          if ssh -t -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
+          if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
           if [[ $NEED_REBOOT == true ]]; then
             echo -e "${OR:-}--- Kernel Upgrade finished, need reboot now ---\n${CL:-}"
-            ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
+            ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
           else
             echo -e "${GN:-}--- Kernel Upgrade finished, no reboot needed ---\n${CL:-}"
           fi
@@ -1055,15 +1055,15 @@ UPDATE_VM () {
         fi
         if [[ $INCLUDE_KERNEL_CLEAN == true ]]; then
           echo -e "${OR:-}--- Kernel Cleaning ---${CL:-}"
-          if ssh -t -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
+          if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
           if [[ $NEED_REBOOT == true ]]; then
             echo -e "${OR:-}--- need reboot first ---${CL:-}"
-            ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
+            ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
           fi
           CURRENT_KERNEL=$(ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "uname -r")
-          ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "CURRENT_KERNEL=$(uname -r)"
+          ssh -p "$SSH_VM_PORT" "$USER@$IP" "CURRENT_KERNEL=$(uname -r)"
           # List all Mainline-Kernel
-          INSTALLED_KERNELS=$(ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "dpkg --list 'linux-image-*' | grep ^ii | awk '{print $2}' | grep -v '$CURRENT_KERNEL'")
+          INSTALLED_KERNELS=$(ssh -p "$SSH_VM_PORT" "$USER@$IP" "dpkg --list 'linux-image-*' | grep ^ii | awk '{print $2}' | grep -v '$CURRENT_KERNEL'")
           # Output
           echo -e "$CURRENT_KERNEL"
           echo -e "$INSTALLED_KERNELS"
