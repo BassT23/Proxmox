@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="1.7.7"
+VERSION="1.7.8"
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -24,16 +24,11 @@ GN="\e[1;92m"
 CL="\e[0m"
 
 ARGUMENTS () {
-  local ARGUMENT
-  while [ $# -gt 0 ]; do
-    ARGUMENT="$1"
+  while [[ $# -gt 0 ]]; do
+    local ARGUMENT="$1"
     case "$ARGUMENT" in
-      -c)
-        RICM=true
-        ;;
-      -u)
-        RDU=true
-        ;;
+      -c) RICM=true ;;
+      -u) RDU=true ;;
       chost)
         COMMAND=true
         OUTPUT_TO_FILE

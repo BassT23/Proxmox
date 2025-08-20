@@ -77,9 +77,8 @@ CHECK_INTERNET () {
 }
 
 ARGUMENTS () {
-  local ARGUMENT
-  while [ $# -gt 0 ]; do
-    ARGUMENT="$1"
+  while [[ $# -gt 0 ]]; do
+    local ARGUMENT="$1"
     case "$ARGUMENT" in
       [0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9])
         COMMAND=true
@@ -92,23 +91,11 @@ ARGUMENTS () {
         CONTAINER_UPDATE_START
         VM_UPDATE_START
         ;;
-      -h|--help)
-        USAGE
-        exit 2
-        ;;
-      -s|--silent)
-        HEADLESS=true
-        ;;
-      -v|--version)
-        VERSION_CHECK
-        exit 2
-        ;;
-      -c)
-        RICM=true
-        ;;
-      -w)
-        WELCOME_SCREEN=true
-        ;;
+      -h|--help) USAGE; exit 0 ;;
+      -v|--version) VERSION_CHECK; exit 0 ;;
+      -s|--silent) HEADLESS=true ;;
+      -c) RICM=true ;;
+      -w) WELCOME_SCREEN=true ;;
       host)
         COMMAND=true
         TAG_LOG=true
@@ -146,31 +133,13 @@ ARGUMENTS () {
         # shellcheck disable=SC2317
         exit 2
         ;;
-      master)
+      master|beta|develop)
         if [[ "$2" != -up ]]; then
           echo -e "\n${OR:-}  Wrong usage! Use branch update like this:${CL:-}"
-          echo -e "  update beta -up\n"
+          echo -e "  update $ARGUMENT -up\n"
           exit 2
         fi
-        BRANCH=master
-        BRANCH_SET=true
-        ;;
-      beta)
-        if [[ "$2" != -up ]]; then
-          echo -e "\n${OR:-}  Wrong usage! Use branch update like this:${CL:-}"
-          echo -e "  update beta -up\n"
-          exit 2
-        fi
-        BRANCH=beta
-        BRANCH_SET=true
-        ;;
-      develop)
-        if [[ "$2" != -up ]]; then
-          echo -e "\n${OR:-}  Wrong usage! Use branch update like this:${CL:-}"
-          echo -e "  update beta -up\n"
-          exit 2
-        fi
-        BRANCH=develop
+        BRANCH=$ARGUMENT
         BRANCH_SET=true
         ;;
       -up)
@@ -217,12 +186,12 @@ USAGE () {
     echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
     echo -e "[OPTIONS] Manages the Ultimate Updater:"
     echo -e "======================================"
-    echo -e "  -s --silent          Silent / Headless Mode"
     echo -e "  master               Use master branch"
     echo -e "  beta                 Use beta branch"
     echo -e "  develop              Use develop branch\n"
     echo -e "{COMMAND}:"
     echo -e "========="
+    echo -e "  -s --silent          Silent / Headless Mode"
     echo -e "  -h --help            Show help menu"
     echo -e "  -v --version         Show The Ultimate Updater version"
     echo -e "  -dist-upgrade        Run distribution upgrade (Debian 12 -> 13)"
@@ -508,7 +477,7 @@ VM_BACKUP () {
   fi
 }
 
-# Extras / User scripts
+# User scripts
 USER_SCRIPTS () {
   if [[ -d $USER_SCRIPTS/$CONTAINER ]]; then
     echo -e "\n*** Run user scripts now ***\n"
@@ -537,6 +506,8 @@ USER_SCRIPTS_VM () {
     echo -e "\n*** User scripts finished ***\n"
   fi
 }
+
+# Extras
 EXTRAS () {
   if [[ "$EXTRA_GLOBAL" != true ]]; then
     echo -e "\n${OR:-}--- Skip Extra Updates because of the user settings ---${CL:-}\n"
@@ -572,6 +543,7 @@ EXTRAS () {
     fi
   fi
 }
+
 
 # Kernel Update
 # shellcheck disable=SC2329
@@ -682,7 +654,10 @@ UPDATE_CHECK () {
   fi
 }
 
-## HOST ##
+############################
+########## HOST ############
+############################
+
 # Host Update Start
 HOST_UPDATE_START () {
   if [[ "$RICM" != true ]]; then true > $LOCAL_FILES/check-output; fi
@@ -751,7 +726,10 @@ UPDATE_HOST_ITSELF () {
   CHOST=""
 }
 
-## Container ##
+############################
+######## CONTAINER #########
+############################
+
 # Container Update Start
 CONTAINER_UPDATE_START () {
   # Get the list of containers
@@ -907,7 +885,10 @@ UPDATE_CONTAINER () {
   CCONTAINER=""
 }
 
-## VM ##
+############################
+########### VM #############
+############################
+
 # VM Update Start
 VM_UPDATE_START () {
   # Get the list of VMs
@@ -996,6 +977,7 @@ UPDATE_VM () {
       SSH_CONNECTION="true"
       KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
       OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
+      # Free-BSD
       if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
         echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update 2>&1) || ERROR
@@ -1007,11 +989,11 @@ UPDATE_VM () {
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo
-        # UPDATE_CHECK
         return
       elif [[ "$KERNEL" =~ FreeBSD ]]; then
         echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
         return
+      # Debian Base
       elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
         # Check Internet connection
         if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
@@ -1039,6 +1021,7 @@ UPDATE_VM () {
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
+      # Fedora
       elif [[ "$OS" =~ Fedora ]]; then
         echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade 2>&1) || ERROR
@@ -1048,30 +1031,43 @@ UPDATE_VM () {
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
+      # Arch
       elif [[ "$OS" =~ Arch ]]; then
         echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
+      # Alpine
       elif [[ "$OS" =~ Alpine ]]; then
         echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
+      # Cent OS
       elif [[ "$OS" =~ CentOS ]]; then
         echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
         ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
+      # Windows
+      elif [[ $OS_BASE == "win10" || $OS_BASE == "win11" ]]; then
+        VM_NOT_SUPPORTED=true
+        ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command 'Install-WindowsUpdate -AcceptAll -IgnoreReboot'"
+  #      ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "wuauclt /detectnow /updatenow"
       else
+        VM_NOT_SUPPORTED=true
         echo -e "${RD:-}  ❌ The system is not supported.\n  Maybe with later version ;)\n${CL:-}"
         echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
       fi
+      # Kernel Upgrade / Cleaning
+      if [[ $VM_NOT_SUPPORTED != true && $INCLUDE_KERNEL == true ]]; then
+        echo "Kernel Upgrade now"
+        if [[ $INCLUDE_KERNEL_CLEAN == true ]]; then
+          echo "Clean Kernel now"
+        fi
+      fi
       return
-#      elif [[ $OS_BASE == win10 ]]; then
-#        ssh -q -p "$SSH_PORT" "$USER"@"$IP" wuauclt /detectnow /updatenow
-#        Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot # don't work
     fi
   else
     UPDATE_VM_QEMU
