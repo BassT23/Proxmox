@@ -981,7 +981,7 @@ UPDATE_VM () {
         echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
         return
       # Debian Base
-      elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+      elif [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ LinuxMint ]] || [[ "$OS" =~ neon ]] || [[ "$OS" =~ Devuan ]]; then
         # Check Internet connection
         if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
           echo -e "${OR:-} ❌ Internet check fail - skip this VM${CL:-}\n"
@@ -1009,19 +1009,18 @@ UPDATE_VM () {
         EXTRAS
         UPDATE_CHECK
         # Kernel Upgrade / Cleaning
-        if [[ "$OS" =~ Ubuntu ]]; then   
-          if [[ $INCLUDE_KERNEL == true ]]; then
-            echo -e "${OR:-}--- Kernel Update ---${CL:-}"
-            echo "Placeholder for now!"
-            KERNEL_UPGRADE=true
-          fi
-          if [[ $INCLUDE_KERNEL_CLEAN == true && $KERNEL_UPGRADE == true ]]; then
-            echo -e "${OR:-}--- Kernel Cleaning ---${CL:-}"
-            echo "Placeholder for now!"
-          elif [[ $INCLUDE_KERNEL_CLEAN == true && $KERNEL_UPGRADE != true ]]; then
-            echo -e "${OR:-}--- first reboot, then Kernel Cleaning ---${CL:-}"
-            echo "Placeholder for now!"
-          fi
+        if [[ $INCLUDE_KERNEL == true ]]; then
+          echo -e "${OR:-}--- Kernel Upgrade ---${CL:-}"
+          echo "Placeholder for now!"
+          #if ssh "$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then REBOOT_REQUIRED=true; fi
+          KERNEL_UPGRADE=true
+        fi
+        if [[ $INCLUDE_KERNEL_CLEAN == true && $KERNEL_UPGRADE == true ]]; then
+          echo -e "${OR:-}--- Kernel Cleaning ---${CL:-}"
+          echo "Placeholder for now!"
+        elif [[ $INCLUDE_KERNEL_CLEAN == true && $KERNEL_UPGRADE != true ]]; then
+          echo -e "${OR:-}--- first reboot, then Kernel Cleaning ---${CL:-}"
+          echo "Placeholder for now!"
         fi
       # Fedora
       elif [[ "$OS" =~ Fedora ]]; then

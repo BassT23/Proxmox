@@ -231,6 +231,15 @@ VM_CHECK_START () {
         continue
       else
         STATUS=$(qm status "$VM")
+        if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
+          IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+          USER=$(awk -F'"' '/^USER=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+          if [[ -z "$USER" ]]; then USER="root"; fi
+          SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+          if [[ -z "$SSH_VM_PORT" ]]; then SSH_VM_PORT="22"; fi
+          SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
+          if [[ -z "$SSH_START_DELAY_TIME" ]]; then SSH_START_DELAY_TIME="45"; fi
+        fi
         if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
           # Check suspend mode
           if [[ $(qm config "$VM" | grep 'lock:' | sed 's/lock:\s*//') == "suspend" ]]; then 
@@ -240,7 +249,7 @@ VM_CHECK_START () {
           fi
           # Start VM
           qm start "$VM" >/dev/null 2>&1
-          sleep 45
+          sleep "$SSH_START_DELAY_TIME"
           CHECK_VM "$VM"
           # Stop/Suspend VM
           qm stop "$VM"
@@ -248,7 +257,7 @@ VM_CHECK_START () {
         elif [[ "$STATUS" == "status: paused" && "$PAUSED_VM" == true ]]; then
           # Start VM
           qm resume "$VM" >/dev/null 2>&1
-          sleep 45
+          sleep "$SSH_START_DELAY_TIME"
           CHECK_VM "$VM"
           # Suspend VM
           qm suspend "$VM"
@@ -269,7 +278,6 @@ CHECK_VM () {
   fi
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
-    IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     if ! (ssh "$IP" exit) >/dev/null 2>&1; then
       CHECK_VM_QEMU
     else
@@ -282,11 +290,11 @@ CHECK_VM () {
 #          return
 #        fi
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
-          ssh "$IP" "apt-get update" >/dev/null 2>&1
-          APT_OUTPUT=$(ssh "$IP" "apt-get -s upgrade")
+          ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "apt-get update" >/dev/null 2>&1
+          APT_OUTPUT=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "apt-get -s upgrade")
           SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security')
           NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.')
-          if ssh "$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then REBOOT_REQUIRED=true; fi
+          if ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then REBOOT_REQUIRED=true; fi
           if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
           fi
@@ -299,14 +307,14 @@ CHECK_VM () {
             echo -e "N: $NORMAL_APT_UPDATES"
           fi
         elif [[ "$OS" =~ Fedora ]]; then
-          ssh "$IP" "dnf -y update" >/dev/null 2>&1
-          UPDATES=$(ssh "$IP" "dnf check-update| grep -Ec ' updates$'")
+          ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "dnf -y update" >/dev/null 2>&1
+          UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "dnf check-update| grep -Ec ' updates$'")
           if [[ "$UPDATES" -gt 0 ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
             echo -e "$UPDATES"
           fi
         elif [[ "$OS" =~ Arch ]]; then
-          UPDATES=$(ssh "$IP" "pacman -Qu | wc -l")
+          UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "pacman -Qu | wc -l")
           if [[ "$UPDATES" -gt 0 ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
             echo -e "$UPDATES"
@@ -314,7 +322,7 @@ CHECK_VM () {
         elif [[ "$OS" =~ Alpine ]]; then
           return
         elif [[ "$OS" =~ CentOS ]]; then
-          UPDATES=$(ssh "$IP" "yum -q check-update | wc -l")
+          UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "yum -q check-update | wc -l")
           if [[ "$UPDATES" -gt 0 ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
             echo -e "$UPDATES"
