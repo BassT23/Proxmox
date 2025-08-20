@@ -185,6 +185,7 @@ ARGUMENTS () {
         INFO=false
         HEADER_INFO
         COMMAND=true
+        READ_CONFIG
         CHECK_DIST=true
         CONTAINER_UPDATE_START
         exit 2
@@ -224,6 +225,7 @@ USAGE () {
     echo -e "========="
     echo -e "  -h --help            Show help menu"
     echo -e "  -v --version         Show The Ultimate Updater version"
+    echo -e "  -dist-upgrade        Run distribution upgrade (Debian 12 -> 13)"
     echo -e "  -check               Run check-updates.sh"
     echo -e "  -up                  Update The Ultimate Updater"
     echo -e "  status               Show Status (Version Infos)"
@@ -1245,7 +1247,7 @@ EXIT () {
         echo -e "Please checkout $ERROR_LOG_FILE"
         echo
         CLEAN_LOGFILE
-        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$ERROR_LOG_FILE"
+        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$ERROR_LOG_FILE" 2>/dev/null
       else
         echo -e "${GN:-}✅ Finished, all updates done.${CL:-}\n"
         "$LOCAL_FILES/exit/passed.sh"
@@ -1256,10 +1258,10 @@ EXIT () {
   else
   # Update Error
     if [[ "$RICM" != true ]]; then
-      echo -e "${RD:-}⚠ Error during update --- Exit Code: $EXIT_CODE${CL:-}\n"
+      echo -e "${RD:-}⚠  Error during update --- Exit Code: $EXIT_CODE${CL:-}\n"
       "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
-      mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOG_FILE"
+      mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOG_FILE" 2>/dev/null
     fi
   fi
   sleep 3
