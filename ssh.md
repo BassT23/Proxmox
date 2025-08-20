@@ -3,7 +3,7 @@
 ## VM need an static IP Address - Random IP will not work with the script.
 
 ### IN VM:
-(Example for Debian Based Systems)
+Example for Debian Based Systems:
 
 - install ssh server (if not installed):
 `sudo apt-get install openssh-server`
@@ -28,6 +28,15 @@ PermitRootLogin yes
 - Restart the SSH server:
 `sudo service sshd restart`
 
+Example for Windows (WindowsUpdate need admin rights, ... NOT IMPLEMENTED FOR NOW):
+
+- allow ping (New-NetFirewallRule -Name "Allow ICMPv4-In" -DisplayName "Allow ICMPv4-In" -Protocol ICMPv4 -IcmpType 8 -Direction Inbound -Action Allow)
+- check if ping work from node to win
+- install/enable sshd
+- test ssh connection
+- establish passwordless connection with ssh key
+- test pw less connection
+- install PSWindowsUpdate on Windows to run update with command
 
 ### IN HOST who hosted the VM:
 - Copy ssh key to VM:

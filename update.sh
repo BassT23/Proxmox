@@ -544,19 +544,6 @@ EXTRAS () {
   fi
 }
 
-
-# Kernel Update
-# shellcheck disable=SC2329
-KERNEL_UPDATE () {
-  # https://github.com/pimlie/ubuntu-mainline-kernel.sh
-  if [[ "$INCLUDE_KERNEL" == true ]]; then
-    echo -e "${OR:-}--- Kernel Update ---${CL:-}"
-  fi
-    if [[ "$INCLUDE_KERNEL_CLEAN" == true ]]; then
-    echo -e "${OR:-}--- Clean Kernel ---${CL:-}"
-  fi
-}
-
 # Trim Filesystem
 TRIM_FILESYSTEM () {
   if [[ "$INCLUDE_FSTRIM" == true ]]; then
@@ -1021,6 +1008,21 @@ UPDATE_VM () {
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
+        # Kernel Upgrade / Cleaning
+        if [[ "$OS" =~ Ubuntu ]]; then   
+          if [[ $INCLUDE_KERNEL == true ]]; then
+            echo -e "${OR:-}--- Kernel Update ---${CL:-}"
+            echo "Placeholder for now!"
+            KERNEL_UPGRADE=true
+          fi
+          if [[ $INCLUDE_KERNEL_CLEAN == true && $KERNEL_UPGRADE == true ]]; then
+            echo -e "${OR:-}--- Kernel Cleaning ---${CL:-}"
+            echo "Placeholder for now!"
+          elif [[ $INCLUDE_KERNEL_CLEAN == true && $KERNEL_UPGRADE != true ]]; then
+            echo -e "${OR:-}--- first reboot, then Kernel Cleaning ---${CL:-}"
+            echo "Placeholder for now!"
+          fi
+        fi
       # Fedora
       elif [[ "$OS" =~ Fedora ]]; then
         echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
@@ -1050,22 +1052,15 @@ UPDATE_VM () {
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
-      # Windows
-      elif [[ $OS_BASE == "win10" || $OS_BASE == "win11" ]]; then
-        VM_NOT_SUPPORTED=true
-        ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command 'Install-WindowsUpdate -AcceptAll -IgnoreReboot'"
-  #      ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "wuauclt /detectnow /updatenow"
+      # Windows ( WindowsUpdate need admin rights, ...)
+#      elif [[ $OS_BASE == "win10" || $OS_BASE == "win11" ]]; then
+#        # check updates
+#        ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command Get-WindowsUpdate"
+#        # install updates
+#        ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command Install-WindowsUpdate -AcceptAll -IgnoreReboot"
       else
-        VM_NOT_SUPPORTED=true
         echo -e "${RD:-}  ❌ The system is not supported.\n  Maybe with later version ;)\n${CL:-}"
         echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
-      fi
-      # Kernel Upgrade / Cleaning
-      if [[ $VM_NOT_SUPPORTED != true && $INCLUDE_KERNEL == true ]]; then
-        echo "Kernel Upgrade now"
-        if [[ $INCLUDE_KERNEL_CLEAN == true ]]; then
-          echo "Clean Kernel now"
-        fi
       fi
       return
     fi
