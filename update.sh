@@ -398,7 +398,7 @@ READ_CONFIG () {
   CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' "$CONFIG_FILE")
   CHECK_URL=$(awk -F'"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
   CHECK_URL_EXE=$(awk -F'"' '/^EXE_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
-  if [[ "$CHECK_URL_EXE" == '' ]]; then CHECK_URL_EXE="ping"; fi
+  CHECK_URL_EXE="${CHECK_URL_EXE:-ping}"
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' "$CONFIG_FILE")
   EXIT_ON_ERROR=$(awk -F'"' '/^EXIT_ON_ERROR=/ {print $2}' "$CONFIG_FILE")
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
@@ -424,7 +424,7 @@ READ_CONFIG () {
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
-  if declare -f apply_only_exclude_tags >/dev/null 2>&1; then apply_only_exclude_tags ONLY EXCLUDED; fi
+  declare -f apply_only_exclude_tags >/dev/null 2>&1 && apply_only_exclude_tags ONLY EXCLUDED
 }
 
 # Snapshot/Backup
@@ -638,6 +638,26 @@ UPDATE_CHECK () {
     if [[ "$WILL_STOP" != true ]]; then echo; fi
   else
     echo
+  fi
+}
+
+# Wait for bootup / reboot
+# VM-SSH
+WAIT_FOR_BOOTUP_SSH () {
+  MAX_RETRIES=10
+  COUNT=1
+  while [ $COUNT -le $MAX_RETRIES ]; do
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER@$IP" exit >/dev/null 2>&1; then
+      echo -e "✅${GN:-} $VM reachable (tryout $COUNT)\n${CL:-}"
+      break
+    else
+      echo -e "ℹ  Tryout $COUNT/$MAX_RETRIES failed"
+      sleep "$SSH_START_DELAY_TIME"
+    fi
+    COUNT=$((COUNT+1))
+  done
+  if [ $COUNT -gt $MAX_RETRIES ]; then
+    echo -e "❌${RD:-} Connection to $VM after $MAX_RETRIES failed.${CL:-}\n"
   fi
 }
 
@@ -941,19 +961,18 @@ UPDATE_VM () {
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     USER=$(awk -F'"' '/^USER=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if [[ -z "$USER" ]]; then USER="root"; fi
+    USER="${USER:-root}"
     SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if [[ -z "$SSH_VM_PORT" ]]; then SSH_VM_PORT="22"; fi
+    SSH_VM_PORT="${SSH_VM_PORT:-22}"
     SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if [[ -z "$SSH_START_DELAY_TIME" ]]; then SSH_START_DELAY_TIME="45"; fi
+    SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-45}"
     if [[ "$START_WAITING" == true ]]; then
       echo -e "⏳${OR:-} Wait for bootup${CL:-}"
-      echo -e "⏳${OR:-} Sleep $SSH_START_DELAY_TIME secounds - time could be set in SSH-VM config file${CL:-}\n"
-      sleep "$SSH_START_DELAY_TIME"
+      echo -e "ℹ ${OR:-} $SSH_START_DELAY_TIME seconds is set for sleep between tryouts in SSH-VM config file${CL:-}\n"
+      WAIT_FOR_BOOTUP_SSH
     fi
     if ! (ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
       echo -e "${RD:-}  ❌ File for ssh connection found, but not correctly set?\n\
-  ${OR:-}Or need more start delay time.\n\
   ${BL:-}Please check SSH Key-Based Authentication${CL:-}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
   Try to use QEMU insead\n"
@@ -967,13 +986,13 @@ UPDATE_VM () {
       # Free-BSD
       if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
         echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- PKG UPGRADE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg upgrade -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- PKG CLEANING ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg autoremove -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg autoremove -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo
         return
@@ -995,7 +1014,7 @@ UPDATE_VM () {
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
         if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y 2>&1) || ERROR
+          ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y 2>&1) || ERROR
           if [[ $ERROR_CODE != "" ]]; then return; fi
         else
           ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y 2>&1) || ERROR
@@ -1009,36 +1028,19 @@ UPDATE_VM () {
         EXTRAS
         UPDATE_CHECK
         # Kernel Upgrade / Cleaning
-
-        # exit on error
-        # set -e
-
         if [[ $INCLUDE_KERNEL == true || $INCLUDE_KERNEL_CLEAN == true ]]; then
-          echo -e "${OR:-}--- Start Kernel Upgrade ---${CL:-}"
+          echo -e "${OR:-}--- Start kernel upgrade ---${CL:-}"
           # check if reboot is needed
-          # need to test
           if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
           if [[ $NEED_REBOOT == true ]]; then
-            echo -e "${OR:-}--- need reboot first ---${CL:-}"
+            echo -e "${OR:-}--- Need reboot first ---${CL:-}"
             ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
-            echo -e "${OR:-}--- wait for reboot ---${CL:-}"
-            # repeat till work
-            MAX_RETRIES=10
-            COUNT=1
-            while [ $COUNT -le $MAX_RETRIES ]; do
-              if ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER@$IP" exit >/dev/null 2>&1; then
-                echo "✅ $VM reachable (tryout $COUNT)"
-                break
-              else
-                echo "⏳ Tryout $COUNT/$MAX_RETRIES failed"
-                sleep 15
-              fi
-              COUNT=$((COUNT+1))
+            while ping -c1 -W1 "$IP" &>/dev/null; do
+              echo -e "ℹ  Host still up... waiting"
+              sleep 2
             done
-            if [ $COUNT -gt $MAX_RETRIES ]; then
-              echo "❌ Connection to $VM after $MAX_RETRIES failed."
-              return 0
-            fi
+            echo -e "${OR:-}--- Wait for reboot ---${CL:-}"
+            WAIT_FOR_BOOTUP_SSH
           fi
           mkdir -p "$LOCAL_FILES"/temp_kernel
           wget -q -O "$LOCAL_FILES/temp_kernel/ubuntu-mainline-kernel.sh" https://raw.githubusercontent.com/pimlie/ubuntu-mainline-kernel.sh/master/ubuntu-mainline-kernel.sh
@@ -1048,59 +1050,72 @@ UPDATE_VM () {
         fi
         if [[ $INCLUDE_KERNEL == true ]]; then
           # check available Kernel
-          ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -c"
-          echo
-          # install new Kernel
-          #ask for install - if new one found - need to build in (fi `A newer kernel version` come up)
-          ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i --yes"
-          # check if reboot is needed
-          if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
-          if [[ $NEED_REBOOT == true ]]; then
-            echo -e "${OR:-}--- Kernel Upgrade finished, need reboot now ---\n${CL:-}"
-            ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
+          if ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -c" | grep -q "A newer kernel version"; then
+            # install new Kernel
+#            ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i --yes"
+            ssh -tt -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i"
+            # check if reboot is needed
+            if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
+            if [[ $NEED_REBOOT == true ]]; then
+              echo -e "${OR:-}--- Kernel upgrade finished, need reboot now ---\n${CL:-}"
+              ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
+              while ping -c1 -W1 "$IP" &>/dev/null; do
+                echo -e "ℹ  Host still up... waiting"
+                sleep 2
+              done
+              echo -e "\n${OR:-}--- Wait for reboot ---${CL:-}"
+              WAIT_FOR_BOOTUP_SSH
+            else
+              echo -e "${GN:-}--- Kernel upgrade finished, no reboot needed ---\n${CL:-}"
+            fi
+            NEED_REBOOT=
           else
-            echo -e "${GN:-}--- Kernel Upgrade finished, no reboot needed ---\n${CL:-}"
+            echo -e "${GN:-}--- No newer kernel available ---\n${CL:-}"
           fi
-          NEED_REBOOT=
         fi
         if [[ $INCLUDE_KERNEL_CLEAN == true ]]; then
-          echo -e "${OR:-}--- Kernel Cleaning ---${CL:-}"
+          echo -e "${OR:-}--- Kernel cleaning ---${CL:-}"
           # check if reboot is needed
           if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
           if [[ $NEED_REBOOT == true ]]; then
-            echo -e "${OR:-}--- need reboot first ---${CL:-}"
+            echo -e "${OR:-}--- Need reboot first ---${CL:-}"
             ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
+            echo -e "${OR:-}--- Wait for shutdown ---${CL:-}"
+            while ping -c1 -W1 "$IP" &>/dev/null; do
+              echo -e "ℹ  Host still up... waiting"
+              sleep 2
+            done
+            echo -e "\n${OR:-}--- Wait for reboot ---${CL:-}"
+            sleep "$SSH_START_DELAY_TIME"
+            WAIT_FOR_BOOTUP_SSH
           fi
           CURRENT_KERNEL=$(ssh -p "$SSH_VM_PORT" "$USER@$IP" "uname -r")
           ssh -p "$SSH_VM_PORT" "$USER@$IP" "CURRENT_KERNEL=$(uname -r)"
           # List all Mainline-Kernel
           INSTALLED_KERNELS=$(ssh -p "$SSH_VM_PORT" "$USER@$IP" "dpkg --list 'linux-image-*' | grep ^ii | awk '{print $2}' | grep -v '$CURRENT_KERNEL'")
-          # Output
-          echo -e "$CURRENT_KERNEL"
-          echo -e "$INSTALLED_KERNELS"
+          echo "Current kernel:"
+          echo -e "$CURRENT_KERNEL\n"
           # Check for old Mainline-Kernels
-          if [[ -z "$INSTALLED_KERNELS" ]]; then
-            echo "No old Kernel found."
-            return 0
+          if [[ -n "$INSTALLED_KERNELS" ]]; then
+            echo "Installed kernels:"
+            echo -e "$INSTALLED_KERNELS\n"
+            # Delete old Mainline-Kernel    # seems not to work, ....
+            INSTALLED_MAINLINE_KERNEL=$(echo "$INSTALLED_KERNELS" | awk '/^ii/ && $2 ~ /^linux-image-[0-9]/ {print $2}')
+            for KERNEL in $INSTALLED_MAINLINE_KERNEL; do
+                echo "Remove Mainline-Kernel: $KERNEL"
+                ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -r $KERNEL"
+            done
+            echo -e "\n${GN:-}--- Finished. Current kernel: $CURRENT_KERNEL stay.${CL:-}\n"
+          else
+            echo -e "\n${GN:-}--- Finished. No old kernel found ---${CL:-}\n"
           fi
-          # Delete old Mainline-Kernel
-          for KERNEL in $INSTALLED_KERNELS; do
-            VERSION=$(ssh -p "$SSH_VM_PORT" "$USER@$IP" "echo '$KERNEL' | sed 's/linux-image-//;s/-generic//'")
-            echo "Remove Mainline-Kernel: $VERSION"
-            sleep 10
-#            ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -r '$VERSION'""
-          done
-          echo "Finish. Current Kernel: $CURRENT_KERNEL stay."
         fi
         # Remove file on VM
         ssh -p "$SSH_VM_PORT" "$USER@$IP" "rm -rf /usr/local/bin/ubuntu-mainline-kernel.sh"
-#        if [[ $EXIT_ON_ERROR == false ]]; then
-#          ERROR_LOGGING
-#        fi
       # Fedora
       elif [[ "$OS" =~ Fedora ]]; then
         echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y upgrade 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
         ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove 2>&1) || ERROR
@@ -1110,19 +1125,19 @@ UPDATE_VM () {
       # Arch
       elif [[ "$OS" =~ Arch ]]; then
         echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pacman -Su --noconfirm || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pacman -Su --noconfirm 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
       # Alpine
       elif [[ "$OS" =~ Alpine ]]; then
         echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" apk -U upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" apk -U upgrade 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
       # Cent OS
       elif [[ "$OS" =~ CentOS ]]; then
         echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" yum -y update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" yum -y update 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
