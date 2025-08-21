@@ -935,7 +935,7 @@ UPDATE_VM () {
   echo -e "🔄${GN:-} Updating VM ${BL:-}$VM${CL:-} : ${GN:-}$NAME${CL:-}\n"
   # Backup
   echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
-  VM_BACKUP
+#  VM_BACKUP                                                                             #DEVELOP
   echo
   # Read SSH config file - check how update is possible
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
@@ -1009,9 +1009,14 @@ UPDATE_VM () {
         EXTRAS
         UPDATE_CHECK
         # Kernel Upgrade / Cleaning
-        # https://github.com/pimlie/ubuntu-mainline-kernel.sh
+
+        # exit on error
+        # set -e
+
         if [[ $INCLUDE_KERNEL == true || $INCLUDE_KERNEL_CLEAN == true ]]; then
           echo -e "${OR:-}--- Start Kernel Upgrade ---${CL:-}"
+          # check if reboot is needed
+          # need to test
           if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
           if [[ $NEED_REBOOT == true ]]; then
             echo -e "${OR:-}--- need reboot first ---${CL:-}"
@@ -1036,14 +1041,19 @@ UPDATE_VM () {
             fi
           fi
           mkdir -p "$LOCAL_FILES"/temp_kernel
-          wget -q -p "$LOCAL_FILES"/temp_kernel https://raw.githubusercontent.com/pimlie/ubuntu-mainline-kernel.sh/master/ubuntu-mainline-kernel.sh
+          wget -q -O "$LOCAL_FILES/temp_kernel/ubuntu-mainline-kernel.sh" https://raw.githubusercontent.com/pimlie/ubuntu-mainline-kernel.sh/master/ubuntu-mainline-kernel.sh
           scp -P "$SSH_VM_PORT" "$LOCAL_FILES"/temp_kernel/ubuntu-mainline-kernel.sh "$USER@$IP:/usr/local/bin/ubuntu-mainline-kernel.sh" >/dev/null 2>&1
           ssh -p "$SSH_VM_PORT" "$USER@$IP" "chmod +x /usr/local/bin/ubuntu-mainline-kernel.sh"
-          rm -rf "$LOCAL_FILES"/temp_kernel
+          [ -d "$LOCAL_FILES/temp_kernel" ] && rm -rf "$LOCAL_FILES/temp_kernel"
         fi
         if [[ $INCLUDE_KERNEL == true ]]; then
-          echo -e "${OR:-}--- Kernel Upgrade ---${CL:-}"
-          ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -c && ubuntu-mainline-kernel.sh -i"
+          # check available Kernel
+          ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -c"
+          echo
+          # install new Kernel
+          #ask for install - if new one found - need to build in (fi `A newer kernel version` come up)
+          ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i --yes"
+          # check if reboot is needed
           if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
           if [[ $NEED_REBOOT == true ]]; then
             echo -e "${OR:-}--- Kernel Upgrade finished, need reboot now ---\n${CL:-}"
@@ -1055,19 +1065,19 @@ UPDATE_VM () {
         fi
         if [[ $INCLUDE_KERNEL_CLEAN == true ]]; then
           echo -e "${OR:-}--- Kernel Cleaning ---${CL:-}"
+          # check if reboot is needed
           if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
           if [[ $NEED_REBOOT == true ]]; then
             echo -e "${OR:-}--- need reboot first ---${CL:-}"
             ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
           fi
-          CURRENT_KERNEL=$(ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "uname -r")
+          CURRENT_KERNEL=$(ssh -p "$SSH_VM_PORT" "$USER@$IP" "uname -r")
           ssh -p "$SSH_VM_PORT" "$USER@$IP" "CURRENT_KERNEL=$(uname -r)"
           # List all Mainline-Kernel
           INSTALLED_KERNELS=$(ssh -p "$SSH_VM_PORT" "$USER@$IP" "dpkg --list 'linux-image-*' | grep ^ii | awk '{print $2}' | grep -v '$CURRENT_KERNEL'")
           # Output
           echo -e "$CURRENT_KERNEL"
           echo -e "$INSTALLED_KERNELS"
-
           # Check for old Mainline-Kernels
           if [[ -z "$INSTALLED_KERNELS" ]]; then
             echo "No old Kernel found."
@@ -1075,13 +1085,18 @@ UPDATE_VM () {
           fi
           # Delete old Mainline-Kernel
           for KERNEL in $INSTALLED_KERNELS; do
-            VERSION=$(ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "echo '$KERNEL' | sed 's/linux-image-//;s/-generic//'")
+            VERSION=$(ssh -p "$SSH_VM_PORT" "$USER@$IP" "echo '$KERNEL' | sed 's/linux-image-//;s/-generic//'")
             echo "Remove Mainline-Kernel: $VERSION"
             sleep 10
 #            ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -r '$VERSION'""
           done
           echo "Finish. Current Kernel: $CURRENT_KERNEL stay."
         fi
+        # Remove file on VM
+        ssh -p "$SSH_VM_PORT" "$USER@$IP" "rm -rf /usr/local/bin/ubuntu-mainline-kernel.sh"
+#        if [[ $EXIT_ON_ERROR == false ]]; then
+#          ERROR_LOGGING
+#        fi
       # Fedora
       elif [[ "$OS" =~ Fedora ]]; then
         echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
