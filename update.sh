@@ -4,13 +4,7 @@
 # Update #
 ##########
 
-# shellcheck disable=SC1017
-# shellcheck disable=SC2034
-# shellcheck disable=SC2029
-# shellcheck disable=SC2317
-# shellcheck disable=SC2320
-
-VERSION="4.4"
+VERSION="4.5"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -19,12 +13,18 @@ USER_SCRIPTS="/etc/ultimate-updater/scripts.d"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
+# Tag filter
+# shellcheck disable=SC1091
+. "$LOCAL_FILES/tag-filter.sh"
+
 # Colors
 BL="\e[36m"
 OR="\e[1;33m"
 RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
+
+
 
 # Header
 HEADER_INFO () {
@@ -56,17 +56,14 @@ EOF
   CHECK_ROOT
   CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
-}
-
-# Name Changing
-NAME_CHANGING () {
-if [[ -d /root/Proxmox-Updater/ ]]; then mv /root/Proxmox-Updater/ $LOCAL_FILES/; fi
+  # Print tag selection summary captured during config parse
+  if [[ $TAG_LOG == true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log && echo; fi; fi
 }
 
 # Check root
 CHECK_ROOT () {
   if [[ "$RICM" != true && "$EUID" -ne 0 ]]; then
-      echo -e "\n${RD} --- Please run this as root ---${CL}\n"
+      echo -e "\n${RD:-} ⚠ --- Please run this as root --- ⚠${CL:-}\n"
       exit 2
   fi
 }
@@ -74,13 +71,14 @@ CHECK_ROOT () {
 # Check internet status
 CHECK_INTERNET () {
   if ! "$CHECK_URL_EXE" -q -c1 "$CHECK_URL" &>/dev/null; then
-    echo -e "\n${OR} Internet check fail - Can't update without internet${CL}\n"
+    echo -e "\n${OR:-} ❌ Internet check fail - Can't update without internet${CL:-}\n"
     exit 2
   fi
 }
 
 ARGUMENTS () {
-  while test $# -gt -0; do
+  local ARGUMENT
+  while [ $# -gt 0 ]; do
     ARGUMENT="$1"
     case "$ARGUMENT" in
       [0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9])
@@ -89,8 +87,8 @@ ARGUMENTS () {
         MODE=" Single "
         ONLY=$ARGUMENT
         HEADER_INFO
-        if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit, if error come up, is disabled${CL}\n"; fi
-        echo -e "${BL}[Info]${OR} Update only LXC/VM $ARGUMENT - work only on main host!${CL}\n"
+        if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Exit, if error come up, is disabled${CL:-}\n"; fi
+        echo -e "ℹ ${OR:-} Update only LXC/VM $ARGUMENT - work only on main host!${CL:-}\n"
         CONTAINER_UPDATE_START
         VM_UPDATE_START
         ;;
@@ -113,26 +111,27 @@ ARGUMENTS () {
         ;;
       host)
         COMMAND=true
+        TAG_LOG=true
         if [[ "$RICM" != true ]]; then
           MODE="  Host  "
           HEADER_INFO
-          if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit, if error come up, is disabled${CL}\n"; fi
+          if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Exit, if error come up, is disabled${CL:-}\n"; fi
         fi
-        echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP | ($HOSTNAME)${CL}\n"
+        echo -e "🔄${GN:-} Updating Host${CL:-} : ${GN:-}$IP | ($HOSTNAME)${CL:-}\n"
         if [[ "$WITH_HOST" == true ]]; then
           UPDATE_HOST_ITSELF
         else
-          echo -e "${BL}[Info] Skipped host itself by the user${CL}\n\n"
+          echo -e "⏩${BL:-} Skipped host itself by the user${CL:-}\n\n"
         fi
         if [[ "$WITH_LXC" == true ]]; then
           CONTAINER_UPDATE_START
         else
-          echo -e "${BL}[Info] Skipped all containers by the user${CL}\n"
+          echo -e "⏩${BL:-} Skipped all containers by the user${CL:-}\n"
         fi
         if [[ "$WITH_VM" == true ]]; then
           VM_UPDATE_START
         else
-          echo -e "${BL}[Info] Skipped all VMs by the user${CL}\n"
+          echo -e "⏩${BL:-} Skipped all VMs by the user${CL:-}\n"
         fi
         ;;
       cluster)
@@ -144,11 +143,12 @@ ARGUMENTS () {
       uninstall)
         COMMAND=true
         UNINSTALL
+        # shellcheck disable=SC2317
         exit 2
         ;;
       master)
         if [[ "$2" != -up ]]; then
-          echo -e "\n${OR}  Wrong usage! Use branch update like this:${CL}"
+          echo -e "\n${OR:-}  Wrong usage! Use branch update like this:${CL:-}"
           echo -e "  update beta -up\n"
           exit 2
         fi
@@ -157,7 +157,7 @@ ARGUMENTS () {
         ;;
       beta)
         if [[ "$2" != -up ]]; then
-          echo -e "\n${OR}  Wrong usage! Use branch update like this:${CL}"
+          echo -e "\n${OR:-}  Wrong usage! Use branch update like this:${CL:-}"
           echo -e "  update beta -up\n"
           exit 2
         fi
@@ -166,7 +166,7 @@ ARGUMENTS () {
         ;;
       develop)
         if [[ "$2" != -up ]]; then
-          echo -e "\n${OR}  Wrong usage! Use branch update like this:${CL}"
+          echo -e "\n${OR:-}  Wrong usage! Use branch update like this:${CL:-}"
           echo -e "  update beta -up\n"
           exit 2
         fi
@@ -181,6 +181,19 @@ ARGUMENTS () {
         UPDATE
         exit 2
         ;;
+      -dist-upgrade)
+        INFO=false
+        HEADER_INFO
+        COMMAND=true
+        READ_CONFIG
+        CHECK_DIST=true
+        CONTAINER_UPDATE_START
+        exit 2
+        ;;
+      -check)
+        $LOCAL_FILES/check-updates.sh
+        exit 2
+        ;;
       status)
         INFO=false
         HEADER_INFO
@@ -189,7 +202,7 @@ ARGUMENTS () {
         exit 2
         ;;
       *)
-        echo -e "\n${RD} ❌ Error: Got an unexpected argument \"$ARGUMENT\"${CL}";
+        echo -e "\n${RD:-} ❌ Error: Got an unexpected argument \"$ARGUMENT\"${CL:-}";
         USAGE;
         exit 2;
         ;;
@@ -212,6 +225,8 @@ USAGE () {
     echo -e "========="
     echo -e "  -h --help            Show help menu"
     echo -e "  -v --version         Show The Ultimate Updater version"
+    echo -e "  -dist-upgrade        Run distribution upgrade (Debian 12 -> 13)"
+    echo -e "  -check               Run check-updates.sh"
     echo -e "  -up                  Update The Ultimate Updater"
     echo -e "  status               Show Status (Version Infos)"
     echo -e "  uninstall            Uninstall The Ultimate Updater\n"
@@ -231,12 +246,12 @@ VERSION_CHECK () {
   DEVELOP_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update_develop.sh)
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.sh)
   if [[ "$BRANCH" == develop ]]; then
-    echo -e "${OR}*** The Ultimate Updater is on develop branch ***${CL}"
+    echo -e "${OR:-}*** The Ultimate Updater is on develop branch ***${CL:-}"
     if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
-      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+      echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
        Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION"
       if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
         read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
         if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
           bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
@@ -245,10 +260,10 @@ VERSION_CHECK () {
       fi
       VERSION_NOT_SHOW=true
     elif [[ "$LOCAL_VERSION" < "$BETA_VERSION" ]]; then
-      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+      echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
        Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION"
       if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
         read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
         if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
           bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
@@ -257,10 +272,10 @@ VERSION_CHECK () {
       fi
       VERSION_NOT_SHOW=true
     elif [[ "$LOCAL_VERSION" < "$DEVELOP_VERSION" ]]; then
-      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+      echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
        Installed: $LOCAL_VERSION / Github-Develop: $DEVELOP_VERSION"
       if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
         read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
         if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
           bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/install.sh) update
@@ -269,16 +284,16 @@ VERSION_CHECK () {
       fi
       VERSION_NOT_SHOW=true
     else
-      echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
+      echo -e "${GN:-}       The Ultimate Updater is UpToDate${CL:-}"
     fi
   fi
   if [[ "$BRANCH" == beta ]]; then
-    echo -e "${OR}*** The Ultimate Updater is on beta branch ***${CL}"
+    echo -e "${OR:-}*** The Ultimate Updater is on beta branch ***${CL:-}"
     if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
-      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+      echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
        Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION"
       if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
         read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
         if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
           bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
@@ -287,10 +302,10 @@ VERSION_CHECK () {
       fi
       VERSION_NOT_SHOW=true
     elif [[ "$LOCAL_VERSION" < "$BETA_VERSION" ]]; then
-      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+      echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
        Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION"
       if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
         read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
         if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
           bash <(curl -s "$SERVER_URL"/install.sh) update
@@ -299,15 +314,15 @@ VERSION_CHECK () {
       fi
       VERSION_NOT_SHOW=true
     else
-      echo -e "\n              ${GN}Script is UpToDate${CL}"
+      echo -e "\n              ${GN:-}Script is UpToDate${CL:-}"
     fi
   fi
   if [[ "$BRANCH" == master ]]; then
     if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
-      echo -e "${OR}    *** A newer version is available ***${CL}\n\
+      echo -e "${OR:-}    *** A newer version is available ***${CL:-}\n\
         Installed: $LOCAL_VERSION / Server: $MASTER_VERSION"
       if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR}Want to update The Ultimate Updater first?${CL}"
+        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
         read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
         if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
           bash <(curl -s "$SERVER_URL"/install.sh) update
@@ -316,7 +331,7 @@ VERSION_CHECK () {
       fi
       VERSION_NOT_SHOW=true
     else
-      echo -e "\n              ${GN}Script is UpToDate${CL}"
+      echo -e "\n              ${GN:-}Script is UpToDate${CL:-}"
     fi
   fi
   if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "                 Version: $VERSION"; fi
@@ -325,7 +340,6 @@ VERSION_CHECK () {
   rm -rf $LOCAL_FILES/temp/update_develop.sh
   rm -rf $LOCAL_FILES/temp/update.sh && echo
 }
-
 
 # Update The Ultimate Updater
 UPDATE () {
@@ -340,8 +354,8 @@ UPDATE () {
 
 # Uninstall
 UNINSTALL () {
-  echo -e "\n${BL}[Info]${OR} Uninstall The Ultimate Updater${CL}\n"
-  echo -e "${RD}Really want to remove The Ultimate Updater?${CL}"
+  echo -e "\n⚠ ${OR:-} Uninstall The Ultimate Updater${CL:-}\n"
+  echo -e "${RD:-}Really want to remove The Ultimate Updater?${CL:-}"
   read -p "Type [Y/y] for yes - anything else will exit: " -r
   if [[ "$REPLY" =~ ^[Yy]$ ]]; then
     bash <(curl -s "$SERVER_URL"/install.sh) uninstall
@@ -351,8 +365,8 @@ UNINSTALL () {
   fi
 }
 
+# Get Server Versions
 STATUS () {
-  # Get Server Versions
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.sh > $LOCAL_FILES/temp/update.sh
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update-extras.sh > $LOCAL_FILES/temp/update-extras.sh
   curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.conf > $LOCAL_FILES/temp/update.conf
@@ -371,37 +385,37 @@ STATUS () {
   fi
   MODIFICATION=$(curl -s https://api.github.com/repos/BassT23/Proxmox | grep pushed_at | cut -d: -f2- | cut -c 3- | rev | cut -c 3- | rev)
   echo -e "Last modification (on GitHub): $MODIFICATION\n"
-  if [[ "$BRANCH" == master ]]; then echo -e "${OR}  Version overview${CL}"; else
-    echo -e "${OR}  Version overview ($BRANCH)${CL}"
+  if [[ "$BRANCH" == master ]]; then echo -e "${OR:-}  Version overview${CL:-}"; else
+    echo -e "${OR:-}  Version overview ($BRANCH)${CL:-}"
   fi
   if [[ "$SERVER_VERSION" != "$VERSION" ]] || [[ "$SERVER_EXTRA_VERSION" != "$EXTRA_VERSION" ]] || [[ "$SERVER_CONFIG_VERSION" != "$CONFIG_VERSION" ]] || [[ "$SERVER_WELCOME_VERSION" != "$WELCOME_VERSION" ]] || [[ "$SERVER_CHECK_UPDATE_VERSION" != "$CHECK_UPDATE_VERSION" ]]; then
     echo -e "           Local / Server\n"
   fi
   if [[ "$SERVER_VERSION" == "$VERSION" ]]; then
-    echo -e "  Updater: ${GN}$VERSION${CL}"
+    echo -e "  Updater: ${GN:-}$VERSION${CL:-}"
   else
-    echo -e "  Updater: $VERSION / ${OR}$SERVER_VERSION${CL}"
+    echo -e "  Updater: $VERSION / ${OR:-}$SERVER_VERSION${CL:-}"
   fi
   if [[ "$SERVER_EXTRA_VERSION" == "$EXTRA_VERSION" ]]; then
-    echo -e "  Extras:  ${GN}$EXTRA_VERSION${CL}"
+    echo -e "  Extras:  ${GN:-}$EXTRA_VERSION${CL:-}"
   else
-    echo -e "  Extras:  $EXTRA_VERSION / ${OR}$SERVER_EXTRA_VERSION${CL}"
+    echo -e "  Extras:  $EXTRA_VERSION / ${OR:-}$SERVER_EXTRA_VERSION${CL:-}"
   fi
   if [[ "$SERVER_CONFIG_VERSION" == "$CONFIG_VERSION" ]]; then
-    echo -e "  Config:  ${GN}$CONFIG_VERSION${CL}"
+    echo -e "  Config:  ${GN:-}$CONFIG_VERSION${CL:-}"
   else
-    echo -e "  Config:  $CONFIG_VERSION / ${OR}$SERVER_CONFIG_VERSION${CL}"
+    echo -e "  Config:  $CONFIG_VERSION / ${OR:-}$SERVER_CONFIG_VERSION${CL:-}"
   fi
   if [[ "$WELCOME_SCREEN" == true ]]; then
     if [[ "$SERVER_WELCOME_VERSION" == "$WELCOME_VERSION" ]]; then
-      echo -e "  Welcome: ${GN}$WELCOME_VERSION${CL}"
+      echo -e "  Welcome: ${GN:-}$WELCOME_VERSION${CL:-}"
     else
-      echo -e "  Welcome: $WELCOME_VERSION / ${OR}$SERVER_WELCOME_VERSION${CL}"
+      echo -e "  Welcome: $WELCOME_VERSION / ${OR:-}$SERVER_WELCOME_VERSION${CL:-}"
     fi
     if [[ "$SERVER_CHECK_UPDATE_VERSION" == "$CHECK_UPDATE_VERSION" ]]; then
-      echo -e "  Check:   ${GN}$CHECK_UPDATE_VERSION${CL}"
+      echo -e "  Check:   ${GN:-}$CHECK_UPDATE_VERSION${CL:-}"
     else
-      echo -e "  Check:   $CHECK_UPDATE_VERSION / ${OR}$SERVER_CHECK_UPDATE_VERSION${CL}"
+      echo -e "  Check:   $CHECK_UPDATE_VERSION / ${OR:-}$SERVER_CHECK_UPDATE_VERSION${CL:-}"
     fi
   fi
   echo
@@ -441,22 +455,7 @@ READ_CONFIG () {
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
-}
-
-# ID range support
-# need testing
-ID_CONVERT () {
-  expand_ranges() {
-    local IFS=,
-    set -- $1
-    for range; do
-      case $range in 
-        *-*) for (( i=${range%-*}; i<=${range#*-}; i++ )); do echo $i; done ;;
-        *)   echo $range ;;
-      esac
-    done
-  }
-numbers=( $(expand_ranges 11-14,17,20) )
+  if declare -f apply_only_exclude_tags >/dev/null 2>&1; then apply_only_exclude_tags ONLY EXCLUDED; fi
 }
 
 # Snapshot/Backup
@@ -464,48 +463,48 @@ CONTAINER_BACKUP () {
   if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
-        echo -e "${BL}[Info]${GN} ✅ Snapshot created${CL}"
-        echo -e "${BL}[Info]${GN} Delete old snapshots${CL}"
+        echo -e "✅${GN:-} Snapshot created${CL:-}"
+        echo -e "ℹ ${GN:-} Delete old snapshots${CL:-}"
         LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
           pct delsnapshot "$CONTAINER" Update"$SNAPSHOTS" >/dev/null 2>&1
         done
-      echo -e "${BL}[Info]${GN} Done${CL}"
+      echo -e "✅${GN:-} Done${CL:-}"
       else
-        echo -e "${BL}[Info]${RD} ❌ Snapshot is not possible on your storage${CL}"
+        echo -e "❌${RD:-} Snapshot is not possible on your storage${CL:-}"
       fi
     fi
     if [[ "$BACKUP" == true ]]; then
-      echo -e "${BL}[Info] Create a backup for LXC (this will take some time - please wait)${CL}"
+      echo -e "💾${OR:-} Create a backup for LXC (this will take some time - please wait)${CL:-}"
       vzdump "$CONTAINER" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
-      echo -e "${BL}[Info]${GN} ✅ Backup created${CL}\n"
+      echo -e "✅${GN:-} Backup created${CL:-}\n"
     fi
   else
-    echo -e "${BL}[Info]${OR} Snapshot and Backup skipped by the user${CL}"
+    echo -e "⏩${OR:-} Snapshot and Backup skipped by the user${CL:-}"
   fi
 }
 VM_BACKUP () {
   if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
       if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
-        echo -e "${BL}[Info]${GN} ✅ Snapshot created${CL}"
-        echo -e "${BL}[Info]${GN} Delete old snapshot(s)${CL}"
+        echo -e "✅${GN:-} Snapshot created${CL:-}"
+        echo -e "ℹ ${GN:-} Delete old snapshot(s)${CL:-}"
         LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
         for SNAPSHOTS in $LIST; do
           qm delsnapshot "$VM" Update"$SNAPSHOTS" >/dev/null 2>&1
         done
-      echo -e "${BL}[Info]${GN} Done${CL}"
+      echo -e "✅${GN:-} Done${CL:-}"
       else
-        echo -e "${BL}[Info]${RD} ❌ Snapshot is not possible on your storage${CL}"
+        echo -e "❌${RD:-} Snapshot is not possible on your storage${CL:-}"
       fi
     fi
     if [[ "$BACKUP" == true ]]; then
-      echo -e "${BL}[Info] Create a backup for the VM (this will take some time - please wait)${CL}"
+      echo -e "💾${OR:-} Create a backup for the VM (this will take some time - please wait)${CL:-}"
       vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
-      echo -e "${BL}[Info]${GN} ✅ Backup created${CL}"
+      echo -e "✅${GN:-} Backup created${CL:-}"
     fi
   else
-    echo -e "${BL}[Info]${OR} Snapshot and/or Backup skipped by the user${CL}"
+    echo -e "⏩${OR:-} Snapshot and/or Backup skipped by the user${CL:-}"
   fi
 }
 
@@ -513,44 +512,38 @@ VM_BACKUP () {
 USER_SCRIPTS () {
   if [[ -d $USER_SCRIPTS/$CONTAINER ]]; then
     echo -e "\n*** Run user scripts now ***\n"
-    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/$CONTAINER)
+    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/"$CONTAINER")
     pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/user-scripts"
     for SCRIPT in $USER_SCRIPTS_LS; do
-      pct push "$CONTAINER" -- $USER_SCRIPTS/$CONTAINER/$SCRIPT $LOCAL_FILES/user-scripts/$SCRIPT
+      pct push "$CONTAINER" -- "$USER_SCRIPTS"/"$CONTAINER"/"$SCRIPT" "$LOCAL_FILES"/user-scripts/"$SCRIPT"
       pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
                                         $LOCAL_FILES/user-scripts/$SCRIPT"
     done
     pct exec "$CONTAINER" -- bash -c "rm -rf $LOCAL_FILES || true"
     echo -e "\n*** User scripts finished ***\n"
-  else
-    echo -e "\n*** Script now can run user scripts also ***\n\
-Infos here: <https://github.com/BassT23/Proxmox/tree/master#user-scripts>\n"
   fi
 }
 USER_SCRIPTS_VM () {
   if [[ -d $USER_SCRIPTS/$VM ]]; then
     echo -e "\n*** Run user scripts now ***\n"
-    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/$VM)
+    USER_SCRIPTS_LS=$(ls "$USER_SCRIPTS"/"$VM")
     ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/user-scripts/
     for SCRIPT in $USER_SCRIPTS_LS; do
-      scp $USER_SCRIPTS/$CONTAINER/$SCRIPT "$IP":$LOCAL_FILES/user-scripts/$SCRIPT
+      scp "$USER_SCRIPTS"/"$CONTAINER"/"$SCRIPT" "$IP":$LOCAL_FILES/user-scripts/"$SCRIPT"
       ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
                 $LOCAL_FILES/user-scripts/$SCRIPT"
     done
     ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "rm -rf $LOCAL_FILES || true"
     echo -e "\n*** User scripts finished ***\n"
-  else
-    echo -e "\n*** Script now can run user scripts also ***\n\
-Infos here: <https://github.com/BassT23/Proxmox/tree/master#user-scripts>\n"
   fi
 }
 EXTRAS () {
   if [[ "$EXTRA_GLOBAL" != true ]]; then
-    echo -e "\n${OR}--- Skip Extra Updates because of the user settings ---${CL}\n"
+    echo -e "\n${OR:-}--- Skip Extra Updates because of the user settings ---${CL:-}\n"
   elif [[ "$HEADLESS" == true && "$EXTRA_IN_HEADLESS" == false ]]; then
-    echo -e "\n${OR}--- Skip Extra Updates because of Headless Mode or user settings ---${CL}\n"
+    echo -e "\n${OR:-}--- Skip Extra Updates because of Headless Mode or user settings ---${CL:-}\n"
   else
-    echo -e "\n${OR}--- Searching for extra updates ---${CL}"
+    echo -e "\n${OR:-}--- Searching for extra updates ---${CL:-}"
     if [[ "$SSH_CONNECTION" != true ]]; then
       pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/"
       pct push "$CONTAINER" -- $LOCAL_FILES/update-extras.sh $LOCAL_FILES/update-extras.sh
@@ -561,7 +554,7 @@ EXTRAS () {
       USER_SCRIPTS
     # Extras in VMS with SSH_CONNECTION
     elif [[ "$USER" != root ]]; then
-      echo -e "${RD}--- You need root user for extra updates - maybe in later relaeses possible ---${CL}"
+      echo -e "${RD:-}--- You need root user for extra updates - maybe in later relaeses possible ---${CL:-}"
     else
       ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/
       scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
@@ -571,12 +564,24 @@ EXTRAS () {
                 rm -rf $LOCAL_FILES || true"
       USER_SCRIPTS_VM
     fi
-    echo -e "${GN}---   Finished extra updates    ---${CL}"
+    echo -e "${GN:-}---   Finished extra updates    ---${CL:-}"
     if [[ "$WILL_STOP" != true ]] && [[ "$WELCOME_SCREEN" != true ]]; then
       echo
     elif [[ "$WELCOME_SCREEN" == true ]]; then
       echo
     fi
+  fi
+}
+
+# Kernel Update
+# shellcheck disable=SC2329
+KERNEL_UPDATE () {
+  # https://github.com/pimlie/ubuntu-mainline-kernel.sh
+  if [[ "$INCLUDE_KERNEL" == true ]]; then
+    echo -e "${OR:-}--- Kernel Update ---${CL:-}"
+  fi
+    if [[ "$INCLUDE_KERNEL_CLEAN" == true ]]; then
+    echo -e "${OR:-}--- Clean Kernel ---${CL:-}"
   fi
 }
 
@@ -586,22 +591,83 @@ TRIM_FILESYSTEM () {
     ROOT_FS=$(df -Th "/" | awk 'NR==2 {print $2}')
     if [[ $(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}') ]]; then
       if [ "$ROOT_FS" = "ext4" ]; then
-        echo -e "${OR}--- Trimming filesystem ---${CL}"
-        local BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-        echo -e "${RD}Data before trim $BEFORE_TRIM%${CL}"
-        pct fstrim $CONTAINER --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
-        local AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-        echo -e "${GN}Data after trim $AFTER_TRIM%${CL}\n"
+        echo -e "${OR:-}--- Trimming filesystem ---${CL:-}"
+        BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        local "$BEFORE_TRIM"
+        echo -e "${RD:-}Data before trim $BEFORE_TRIM%${CL:-}"
+        pct fstrim "$CONTAINER" --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
+        AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+        local "$AFTER_TRIM"
+        echo -e "${GN:-}Data after trim $AFTER_TRIM%${CL:-}\n"
         sleep 1.5
       fi
     fi
   fi
 }
 
+# Dist Upgrade
+DIST_UPGRADE () {
+  # debian 12 -> 13
+  DEB_VERSION=$(pct exec "$CONTAINER" -- bash -c "grep -oP '(?<=^VERSION_ID=).+' /etc/os-release | tr -d '\"'")
+  if [[ "$DEB_VERSION" == "12" ]]; then
+    echo -e "${OR:-}✅ Debian 12 detected, want to upgrade to Debian 13?${CL:-}"
+    read -p "Type [Y/y] for yes - anything else will skip: " -r
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      SNAPSHOT=
+      BACKUP=true
+      echo
+#      echo -e "${RD:-}--- Backup skipped during develop ---${CL:-}"
+      CONTAINER_BACKUP
+      echo -e "${GR:-}⏩ Upgrade to Debian 13 (Trixie) now:${CL:-}"
+      echo -e "${OR:-}--- Enable stop on error ---\n${CL:-}"
+      set -e
+      echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
+      pct exec "$CONTAINER" -- bash -c "apt-get update -y"
+      echo -e "${OR:-}--- APT UPGRADE ---${CL:-}"
+      pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+      echo -e "${OR:-}--- Cleaning ---${CL:-}"
+      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
+      echo -e "\n${OR:-}--- Need 5Gig on root folder for upgrade - check it now ---${CL:-}"
+      if [[ $(pct exec "$CONTAINER" -- bash -c "df --output=avail -BG / | tail -1 | sed 's/G//'") -gt 5 ]]; then
+        echo -e "✅ OK\n"
+        echo -e "${OR:-}⚠  This is the last step! !!! After all, check your repos !!!${CL:-}"
+        echo -e "'sudo apt modernize-sources' could help you here."
+        echo -e "Read and understand?"
+        read -p "Type [Y/y] for yes - anything else will skip: " -r
+        if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+          echo -e "${OR:-}--- Change Repo to Trixie ---\n${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "sed -i 's/bookworm/trixie/g' /etc/apt/sources.list"
+          pct exec "$CONTAINER" -- bash -c "find /etc/apt/sources.list.d -type f -exec sed -i 's/bookworm/trixie/g' {} \;"
+          echo -e "${OR:-}--- APT UPDATE for Trixie ---${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "apt-get update -y"
+          echo -e "${OR:-}--- APT UPGRADE for Trixie ---${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+          echo -e "\n${GR:-}✅ UPGRADE to Trixie done ${CL:-}"
+          echo -e "\n${OR:-}--- Restart the container now for you ---${CL:-}"
+          pct exec "$CONTAINER" -- bash -c "reboot"
+          echo
+        else
+          echo -e "❌${BL:-} skipped\n${CL:-}"
+          return 0
+        fi
+      else
+        echo -e "❌${RD:-} need more space, pls clean up or resize disk, by yourself\n${CL:-}"
+        exit 100
+      fi
+    else
+      echo -e "❌${BL:-} skipped\n${CL:-}"
+      return 0
+    fi
+  else
+    echo -e "❌${BL:-} no Debian 12 detected\n${CL:-}"
+    return 0
+  fi
+}
+
 # Check Updates for Welcome-Screen
 UPDATE_CHECK () {
   if [[ "$WELCOME_SCREEN" == true ]]; then
-    echo -e "${OR}--- Check Status for Welcome-Screen ---${CL}"
+    echo -e "${OR:-}--- Check Status for Welcome-Screen ---${CL:-}"
     if [[ "$CHOST" == true ]]; then
       ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u chost | tee -a $LOCAL_FILES/check-output
     elif [[ "$CCONTAINER" == true ]]; then
@@ -609,7 +675,7 @@ UPDATE_CHECK () {
     elif [[ "$CVM" == true ]]; then
       ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u cvm | tee -a $LOCAL_FILES/check-output
     fi
-    echo -e "${GN}---          Finished check         ---${CL}\n"
+    echo -e "${GN:-}---          Finished check         ---${CL:-}\n"
     if [[ "$WILL_STOP" != true ]]; then echo; fi
   else
     echo
@@ -623,9 +689,9 @@ HOST_UPDATE_START () {
   for HOST in $HOSTS; do
     # Check if Host/Node is available
     if ssh -q -p "$SSH_PORT" "$HOST" test >/dev/null 2>&1; [ $? -eq 255 ]; then
-      echo -e "${BL}[Info] ${OR}Skip Host${CL} : ${GN}$HOST${CL} ${OR}- can't connect${CL}\n"
+      echo -e "⏩ ${OR:-}Skip Host${CL:-} : ${GN:-}$HOST${CL:-} ${OR:-}- can't connect${CL:-}\n"
     else
-     UPDATE_HOST "$HOST"
+      UPDATE_HOST "$HOST"
     fi
   done
 }
@@ -641,12 +707,13 @@ UPDATE_HOST () {
     scp $LOCAL_FILES/update.conf "$HOST":$LOCAL_FILES/update.conf
     if [[ "$WELCOME_SCREEN" == true ]]; then
       scp $LOCAL_FILES/check-updates.sh "$HOST":$LOCAL_FILES/check-updates.sh
-      if [[ "$WELCOME_SCREEN" == true ]]; then
-        scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
-      fi
+      scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
     fi
     scp /etc/ultimate-updater/temp/exec_host "$HOST":/etc/ultimate-updater/temp
     scp -r $LOCAL_FILES/VMs/ "$HOST":$LOCAL_FILES/
+    if [[ -f $LOCAL_FILES/tag-filter.sh ]]; then
+      scp $LOCAL_FILES/tag-filter.sh "$HOST":$LOCAL_FILES/tag-filter.sh
+    fi
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
@@ -657,24 +724,25 @@ UPDATE_HOST () {
   fi
 }
 
+# shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
-  echo -e "${OR}--- PVE UPDATE ---${CL}" && pveupdate
+  echo -e "${OR:-}--- PVE UPDATE ---${CL:-}" && pveupdate || true
   if [[ "$HEADLESS" == true ]]; then
-    echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}" && \
+    echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}" && \
     DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
   else
     if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-      echo -e "\n${OR}--- APT UPGRADE ---${CL}" && \
+      echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}" && \
       apt-get dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(apt-get dist-upgrade -y 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
     else
-      echo -e "\n${OR}--- APT UPGRADE ---${CL}" && \
+      echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}" && \
       apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
     fi
   fi
-  echo -e "\n${OR}--- APT CLEANING ---${CL}" && \
+  echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}" && \
   apt-get --purge autoremove -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(apt-get --purge autoremove -y 2>&1) || ERROR
   if [[ $ERROR_CODE != "" ]]; then return; fi
   echo
@@ -692,31 +760,34 @@ CONTAINER_UPDATE_START () {
   for CONTAINER in $CONTAINERS; do
     ERROR_CODE=""
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $CONTAINER ]]; then
-      echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
+      echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
-      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"; else continue; fi
+      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"; else continue; fi
+    elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
+      echo -e "⏩ ${OR:-}LXC $CONTAINER is a template - skip update${CL:-}\n\n"
+      continue
     else
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
         # Start the container
         WILL_STOP="true"
-        echo -e "${BL}[Info]${GN} Starting LXC ${BL}$CONTAINER ${CL}"
+        echo -e " ▶${GN:-} Starting LXC ${BL:-}$CONTAINER ${CL:-}"
         pct start "$CONTAINER"
-        echo -e "${BL}[Info]${GN} Waiting for LXC ${BL}$CONTAINER${CL}${GN} to start ${CL}"
+        echo -e "⏳${GN:-} Waiting for LXC ${BL:-}$CONTAINER${CL:-}${GN:-} to start ${CL:-}"
         sleep "$LXC_START_DELAY"
         UPDATE_CONTAINER "$CONTAINER"
         # Stop the container
-        echo -e "${BL}[Info]${GN} Shutting down LXC ${BL}$CONTAINER ${CL}\n\n"
+        echo -e "⏹ ${GN:-} Shutting down LXC ${BL:-}$CONTAINER ${CL:-}\n\n"
         pct shutdown "$CONTAINER" &
         WILL_STOP="false"
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" != true ]]; then
-        echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
+        echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" == true ]]; then
         UPDATE_CONTAINER "$CONTAINER"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" != true ]]; then
-        echo -e "${BL}[Info] Skipped LXC $CONTAINER by the user${CL}\n\n"
+        echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
       else
-        echo -e "${BL}[Info] Can't find status, please report this issue${CL}\n\n"
+        echo -e "⚠ Can't find status, please report this issue${CL:-}\n\n"
       fi
     fi
   done
@@ -728,7 +799,6 @@ UPDATE_CONTAINER () {
   CONTAINER=$1
   CCONTAINER="true"
   echo 'CONTAINER="'"$CONTAINER"'"' > /etc/ultimate-updater/temp/var
-#  pct config "$CONTAINER" > /etc/ultimate-updater/temp/temp
   OS=$(pct config "$CONTAINER" | awk '/^ostype/' - | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
 #  if [[ "$OS" =~ centos ]]; then
@@ -736,26 +806,41 @@ UPDATE_CONTAINER () {
 #  else
 #    NAME=$(pct exec "$CONTAINER" hostname)
 #  fi
-  echo -e "${BL}[Info]${GN} Updating LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}\n"
+  if [[ "$CHECK_DIST" != true ]]; then
+    echo -e "🔄${GN:-} Updating LXC ${BL:-}$CONTAINER${CL:-} : ${GN:-}$NAME${CL:-}\n"
+  else
+    echo -e "🔄${GN:-} Check dist upgrade for LXC ${BL:-}$CONTAINER${CL:-} : ${GN:-}$NAME${CL:-}"
+  fi
   # Check Internet connection
   if [[ "$OS" != alpine ]]; then
     if ! pct exec "$CONTAINER" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"; then
-      echo -e "${OR} ❌ Internet check fail - skip this container${CL}\n"
+      echo -e "${OR:-} ❌ Internet check fail - skip this container${CL:-}\n"
       return
     fi
 #  elif [[ "$OS" == alpine ]]; then
 #    if ! pct exec "$CONTAINER" -- ash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"; then
-#      echo -e "${OR} Internet is not reachable - skip the update${CL}\n"
+#      echo -e "${OR:-} Internet is not reachable - skip the update${CL:-}\n"
 #      return
 #    fi
   fi
   # Backup
-  echo -e "${BL}[Info]${OR} Start Snapshot and/or Backup${CL}"
-  CONTAINER_BACKUP
-  echo
+  if [[ "$CHECK_DIST" != true ]]; then
+    echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
+    CONTAINER_BACKUP
+    echo
+  fi
+  # Run dist-upgrade
+  if [[ "$CHECK_DIST" == true ]] && [[ "$OS" =~ debian ]]; then
+    DIST_UPGRADE
+    return 0
+  elif [[ "$CHECK_DIST" == true ]]; then
+    echo -e "${OR:-} ❌ Distribution not supported\n${CL:-}"
+    return 0
+  fi
   # Run update
+  # shellcheck disable=SC2015
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
-    echo -e "${OR}--- APT UPDATE ---${CL}"
+    echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "apt-get update -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update -y" 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
     # Check APT in Container
@@ -764,12 +849,12 @@ UPDATE_CONTAINER () {
     fi
     # Check END
     if [[ "$HEADLESS" == true || "$UNIFI" == true ]]; then
-      echo -e "\n${OR}--- APT UPGRADE HEADLESS ---${CL}"
+      echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}"
       pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y" 2>&1) || ERROR
       UNIFI=""
       if [[ $ERROR_CODE != "" ]]; then return; fi
     else
-      echo -e "\n${OR}--- APT UPGRADE ---${CL}"
+      echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
         pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y" 2>&1)  || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
@@ -778,44 +863,46 @@ UPDATE_CONTAINER () {
         if [[ $ERROR_CODE != "" ]]; then return; fi
       fi
     fi
-      echo -e "\n${OR}--- APT CLEANING ---${CL}"
-      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" 2>&1) || ERROR
+      echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
+      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y" 2>&1) || ERROR
+      if [[ $ERROR_CODE != "" ]]; then return; fi
+      pct exec "$CONTAINER" -- bash -c "apt-get autoclean -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get autoclean -y" 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       EXTRAS
       TRIM_FILESYSTEM
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
-    echo -e "\n${OR}--- DNF UPGRATE ---${CL}"
+    echo -e "\n${OR:-}--- DNF UPGRATE ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
-    echo -e "\n${OR}--- DNF CLEANING ---${CL}"
+    echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
     EXTRAS
     TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ archlinux ]]; then
-    echo -e "${OR}--- PACMAN UPDATE ---${CL}"
+    echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm" 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
     EXTRAS
     TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ alpine ]]; then
-    echo -e "${OR}--- APK UPDATE ---${CL}"
+    echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
     pct exec "$CONTAINER" -- ash -c "apk -U upgrade" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- ash -c "apk -U upgrade" 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
     if [[ "$WILL_STOP" != true ]]; then echo; fi
     echo
   elif [[ "$OS" =~ centos ]]; then
-    echo -e "${OR}--- YUM UPDATE ---${CL}"
+    echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "yum -y update" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "yum -y update" 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
     EXTRAS
     TRIM_FILESYSTEM
     UPDATE_CHECK
   else
-    echo -e "${OR}The system could not be idetified.${CL}"
+    echo -e "${OR:-}The system could not be idetified.${CL:-}"
   fi
   CCONTAINER=""
 }
@@ -829,15 +916,15 @@ VM_UPDATE_START () {
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep ostype || true)
     if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
-      echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
+      echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
-      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"; else continue; fi
+      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"; else continue; fi
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
-      echo -e "${BL}[Info] ${OR}VM $VM is a template - skip update${CL}\n\n"
-      return
+      echo -e "⏩${BL:-} ${OR:-}VM $VM is a template - skip update${CL:-}\n\n"
+      continue
     elif [[ "$PRE_OS" =~ w ]]; then
-      echo -e "${BL}[Info] Skipped VM $VM${CL}\n"
-      echo -e "${OR}  Windows is not supported for now.\n  I'm working on it ;)${CL}\n\n"
+      echo -e "⚠ ${BL:-} Skipped VM $VM${CL:-}\n"
+      echo -e "${OR:-}  Windows is not supported for now.\n  I'm working on it ;)${CL:-}\n\n"
     else
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
@@ -845,40 +932,41 @@ VM_UPDATE_START () {
         if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
           # Start the VM
           WILL_STOP="true"
-          echo -e "${BL}[Info]${GN} Starting VM${BL} $VM ${CL}"
+          echo -e " ▶${GN:-} Starting VM${BL:-} $VM ${CL:-}"
           qm start "$VM" >/dev/null 2>&1
           START_WAITING="true"
           UPDATE_VM "$VM"
           # Stop the VM
-          echo -e "${BL}[Info]${GN} Shutting down VM${BL} $VM ${CL}\n\n"
+          echo -e "⏹ ${GN:-} Shutting down VM${BL:-} $VM ${CL:-}\n\n"
           qm shutdown "$VM" &
           WILL_STOP="false"
           START_WAITING="false"
         else
-          echo -e "${BL}[Info] Skipped VM $VM because, QEMU or SSH hasn't initialized${CL}\n\n"
+          echo -e "⏩${BL:-} Skipped VM $VM because, QEMU or SSH hasn't initialized${CL:-}\n\n"
         fi
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" != true ]]; then
-        echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
+        echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
         UPDATE_VM "$VM"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" != true ]]; then
-        echo -e "${BL}[Info] Skipped VM $VM by the user${CL}\n\n"
+        echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
       else
-        echo -e "${BL}[Info] Can't find status, please report this issue${CL}\n\n"
+        echo -e "⚠ Can't find status, please report this issue${CL:-}\n\n"
       fi
     fi
   done
 }
 
 # VM Update
+# shellcheck disable=SC2015
 UPDATE_VM () {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   CVM="true"
   echo 'VM="'"$VM"'"' > /etc/ultimate-updater/temp/var
-  echo -e "${BL}[Info]${GN} Updating VM ${BL}$VM${CL} : ${GN}$NAME${CL}\n"
+  echo -e "🔄${GN:-} Updating VM ${BL:-}$VM${CL:-} : ${GN:-}$NAME${CL:-}\n"
   # Backup
-  echo -e "${BL}[Info]${OR} Start Snapshot and/or Backup${CL}"
+  echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
   VM_BACKUP
   echo
   # Read SSH config file - check how update is possible
@@ -891,14 +979,14 @@ UPDATE_VM () {
     SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     if [[ -z "$SSH_START_DELAY_TIME" ]]; then SSH_START_DELAY_TIME="45"; fi
     if [[ "$START_WAITING" == true ]]; then
-      echo -e "${BL}[Info]${OR} Wait for bootup${CL}"
-      echo -e "${BL}[Info]${OR} Sleep $SSH_START_DELAY_TIME secounds - time could be set in SSH-VM config file${CL}\n"
+      echo -e "⏳${OR:-} Wait for bootup${CL:-}"
+      echo -e "⏳${OR:-} Sleep $SSH_START_DELAY_TIME secounds - time could be set in SSH-VM config file${CL:-}\n"
       sleep "$SSH_START_DELAY_TIME"
     fi
     if ! (ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
-      echo -e "${RD}  ❌ File for ssh connection found, but not correctly set?\n\
-  ${OR}Or need more start delay time.\n\
-  ${BL}Please check SSH Key-Based Authentication${CL}\n\
+      echo -e "${RD:-}  ❌ File for ssh connection found, but not correctly set?\n\
+  ${OR:-}Or need more start delay time.\n\
+  ${BL:-}Please check SSH Key-Based Authentication${CL:-}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
   Try to use QEMU insead\n"
       START_WAITING=false
@@ -909,73 +997,75 @@ UPDATE_VM () {
       KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
       OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
       if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
-        echo -e "${OR}--- PKG UPDATE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update 2>&1) || ERROR
+        echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y 2>&1) || ERROR
+        echo -e "\n${OR:-}--- PKG UPGRADE ---${CL:-}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        echo -e "\n${OR}--- PKG CLEANING ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y 2>&1) || ERROR
+        echo -e "\n${OR:-}--- PKG CLEANING ---${CL:-}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo
-#        UPDATE_CHECK
+        # UPDATE_CHECK
         return
       elif [[ "$KERNEL" =~ FreeBSD ]]; then
-        echo -e "${OR} Free BSD skipped by user${CL}\n"
+        echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
         return
       elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
         # Check Internet connection
         if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
-          echo -e "${OR} ❌ Internet check fail - skip this VM${CL}\n"
+          echo -e "${OR:-} ❌ Internet check fail - skip this VM${CL:-}\n"
           return
         fi
         if [[ "$USER" != root ]]; then
           UPDATE_USER="sudo "
         fi
-        echo -e "${OR}--- APT UPDATE ---${CL}"
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y 2>&1) || ERROR
+        echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        echo -e "\n${OR}--- APT UPGRADE ---${CL}"
+        echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
         if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y 2>&1) || ERROR
+          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y 2>&1) || ERROR
           if [[ $ERROR_CODE != "" ]]; then return; fi
         else
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y 2>&1) || ERROR
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y 2>&1) || ERROR
           if [[ $ERROR_CODE != "" ]]; then return; fi
         fi
-        echo -e "\n${OR}--- APT CLEANING ---${CL}"
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" "apt-get --purge autoremove -y && apt-get autoclean -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get --purge autoremove -y 2>&1) || ERROR
+        echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" "apt-get --purge autoremove -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get --purge autoremove -y 2>&1) || ERROR
+        if [[ $ERROR_CODE != "" ]]; then return; fi
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" "apt-get autoclean -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get autoclean -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
       elif [[ "$OS" =~ Fedora ]]; then
-        echo -e "\n${OR}--- DNF UPGRADE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade 2>&1) || ERROR
+        echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-        ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove 2>&1) || ERROR
+        echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
+        ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
       elif [[ "$OS" =~ Arch ]]; then
-        echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm 2>&1) || ERROR
+        echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
       elif [[ "$OS" =~ Alpine ]]; then
-        echo -e "${OR}--- APK UPDATE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade 2>&1) || ERROR
+        echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
       elif [[ "$OS" =~ CentOS ]]; then
-        echo -e "${OR}--- YUM UPDATE ---${CL}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update 2>&1) || ERROR
+        echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
+        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
       else
-        echo -e "${RD}  ❌ The system is not supported.\n  Maybe with later version ;)\n${CL}"
+        echo -e "${RD:-}  ❌ The system is not supported.\n  Maybe with later version ;)\n${CL:-}"
         echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
       fi
       return
@@ -989,89 +1079,92 @@ UPDATE_VM () {
 }
 
 # QEMU
+# shellcheck disable=SC2015
 UPDATE_VM_QEMU () {
-  echo -e "${BL}[Info]${GN} Try to connect via QEMU${CL}"
+  echo -e " ▶${GN:-} Try to connect via QEMU${CL:-}"
   if [[ "$START_WAITING" == true ]]; then
-    echo -e "${BL}[Info]${OR} Wait for bootup${CL}"
-    echo -e "${BL}[Info]${OR} Sleep $VM_START_DELAY secounds - time could be set in config file${CL}\n"
+    echo -e "⏳${OR:-} Wait for bootup${CL:-}"
+    echo -e "⏳${OR:-} Sleep $VM_START_DELAY secounds - time could be set in config file${CL:-}\n"
     sleep "$VM_START_DELAY"
   fi
   if qm guest exec "$VM" test >/dev/null 2>&1; then
-    echo -e "${OR}  QEMU found. SSH connection is also available - with better output.${CL}\n\
+    echo -e "${OR:-}  QEMU found. SSH connection is also available - with better output.${CL:-}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
     # Run Update
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
     OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
     if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
-      echo -e "${OR}--- PKG UPDATE ---${CL}"
-      qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
+      qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
-      echo -e "\n${OR}--- PKG UPGRADE ---${CL}"
-      qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
+      echo -e "\n${OR:-}--- PKG UPGRADE ---${CL:-}"
+      qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
-      echo -e "\n${OR}--- PKG CLEANING ---${CL}"
-      qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      echo -e "\n${OR:-}--- PKG CLEANING ---${CL:-}"
+      qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
       return
     elif [[ "$KERNEL" =~ FreeBSD ]]; then
-      echo -e "${OR} Free BSD skipped by user${CL}\n"
+      echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
       return
     elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       # Check Internet connection
       if ! (qm guest exec "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"); then
-        echo -e "${OR} ❌ Internet is not reachable - skip the update${CL}\n"
+        echo -e "${OR:-} ❌ Internet is not reachable - skip the update${CL:-}\n"
         return
       fi
-      echo -e "${OR}--- APT UPDATE ---${CL}"
-      qm guest exec "$VM" -- bash -c "apt-get update -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get update -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
+      qm guest exec "$VM" -- bash -c "apt-get update -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get update -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
-      echo -e "\n${OR}--- APT UPGRADE ---${CL}"
+      echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
+        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" --timeout 120 -- bash -c "apt-get upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
       else
-        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
+        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" --timeout 120 -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
       fi
-      echo -e "\n${OR}--- APT CLEANING ---${CL}"
-      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
+      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      if [[ $ERROR_CODE != "" ]]; then return; fi
+      qm guest exec "$VM" -- bash -c "apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Fedora ]]; then
-      echo -e "\n${OR}--- DNF UPGRADE ---${CL}"
-      qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1 2>&1) || ERROR
+      echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
+      qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
-      echo -e "\n${OR}--- DNF CLEANING ---${CL}"
-      qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
+      echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
+      qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Arch ]]; then
-      echo -e "${OR}--- PACMAN UPDATE ---${CL}"
-      qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1 2>&1) || ERROR
+      echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
+      qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Alpine ]]; then
-      echo -e "${OR}--- APK UPDATE ---${CL}"
-      qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1 2>&1) || ERROR
+      echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
+      qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
     elif [[ "$OS" =~ CentOS ]]; then
-      echo -e "${OR}--- YUM UPDATE ---${CL}"
-      qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1 2>&1) || ERROR
+      echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
+      qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1 || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
     else
-      echo -e "${RD}  The system is not supported.\n  Maybe with later version ;)\n${CL}"
+      echo -e "${RD:-}  The system is not supported.\n  Maybe with later version ;)\n${CL:-}"
       echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
     fi
   else
-    echo -e "${RD}  ❌ SSH or QEMU guest agent is not initialized on VM ${CL}\n\
-  ${OR}If you want to update VMs, you must set up it by yourself!${CL}\n\
+    echo -e "${RD:-}  ❌ SSH or QEMU guest agent is not initialized on VM ${CL:-}\n\
+  ${OR:-}If you want to update VMs, you must set up it by yourself!${CL:-}\n\
   For ssh (harder, but nicer output), check this: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n\
   For QEMU (easy connection), check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
   fi
@@ -1080,6 +1173,12 @@ UPDATE_VM_QEMU () {
 
 ## General ##
 READ_CONFIG
+
+# Debug
+DEBUG=$(awk -F'"' '/^DEBUG=/ {print $2}' $CONFIG_FILE)
+if [[ "$DEBUG" == true ]]; then
+  set -x
+fi
 
 # Logging
 OUTPUT_TO_FILE () {
@@ -1096,6 +1195,7 @@ OUTPUT_TO_FILE () {
     fi
   fi
 }
+# shellcheck disable=SC2329
 CLEAN_LOGFILE () {
   if [[ "$RICM" != true ]]; then
     tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
@@ -1116,7 +1216,7 @@ ERROR () {
 }
 ERROR_LOGGING () {
   touch "$ERROR_LOG_FILE"
-  > "$ERROR_LOG_FILE"
+  true > "$ERROR_LOG_FILE"
 }
 if [[ $EXIT_ON_ERROR == false ]]; then
   ERROR_LOGGING
@@ -1125,6 +1225,7 @@ else
 fi
 
 # Exit
+# shellcheck disable=SC2329
 EXIT () {
   EXIT_CODE=$?
   if [[ -f "/etc/ultimate-updater/temp/exec_host" ]]; then
@@ -1142,28 +1243,30 @@ EXIT () {
   elif [[ "$EXIT_CODE" == 0 ]]; then
     if [[ "$RICM" != true ]]; then
       if [[ -f "$ERROR_LOG_FILE" ]] && [[ -s "$ERROR_LOG_FILE" ]]; then
-        echo -e "${OR}❌ Finished, with errors.${CL}\n"
+        echo -e "${OR:-}❌ Finished, with errors.${CL:-}\n"
         echo -e "Please checkout $ERROR_LOG_FILE"
-        #$LOCAL_FILES/exit/error.sh
         echo
         CLEAN_LOGFILE
+        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$ERROR_LOG_FILE" 2>/dev/null
       else
-        echo -e "${GN}✅ Finished, all updates done.${CL}\n"
-        $LOCAL_FILES/exit/passed.sh
+        echo -e "${GN:-}✅ Finished, all updates done.${CL:-}\n"
+        "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
+        echo "Finished, all updates done. No errors" | mail -s "Ultimate Updater" root
       fi
     fi
   else
   # Update Error
     if [[ "$RICM" != true ]]; then
-      echo -e "${RD}❌ Error during update --- Exit Code: $EXIT_CODE${CL}\n"
-      $LOCAL_FILES/exit/error.sh
+      echo -e "${RD:-}⚠  Error during update --- Exit Code: $EXIT_CODE${CL:-}\n"
+      "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
+      mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOG_FILE" 2>/dev/null
     fi
   fi
   sleep 3
   rm -rf /etc/ultimate-updater/temp/var
-  rm -rf $LOCAL_FILES/update
+  rm -rf "$LOCAL_FILES"/update
   if [[ -f "/etc/ultimate-updater/temp/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf "$LOCAL_FILES"; fi
 }
 trap EXIT EXIT
@@ -1177,7 +1280,6 @@ else
 fi
 
 # Run
-NAME_CHANGING
 export TERM=xterm-256color
 if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
 OUTPUT_TO_FILE
@@ -1186,26 +1288,27 @@ ARGUMENTS "$@"
 
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true ]]; then
+  TAG_LOG=true
   HEADER_INFO
-  if [[ $EXIT_ON_ERROR == false ]]; then echo -e "${BL}[Info]${OR} Exit, if error come up, is disabled${CL}\n"; fi
+  if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Exit, if error come up, is disabled${CL:-}\n"; fi
   if [[ "$MODE" =~ Cluster ]]; then
     HOST_UPDATE_START
   else
-    echo -e "${BL}[Info]${GN} Updating Host${CL} : ${GN}$IP | ($HOSTNAME)${CL}\n"
+    echo -e "🔄${GN:-} Updating Host${CL:-} : ${GN:-}$IP | ($HOSTNAME)${CL:-}\n"
     if [[ "$WITH_HOST" == true ]]; then
       UPDATE_HOST_ITSELF
     else
-      echo -e "${BL}[Info] Skipped host itself by the user${CL}\n\n"
+      echo -e "⏩${BL:-} Skipped host itself by the user${CL:-}\n\n"
     fi
     if [[ "$WITH_LXC" == true ]]; then
       CONTAINER_UPDATE_START
     else
-      echo -e "${BL}[Info] Skipped all containers by the user${CL}\n"
+      echo -e "⏩${BL:-} Skipped all containers by the user${CL:-}\n"
     fi
     if [[ "$WITH_VM" == true ]]; then
       VM_UPDATE_START
     else
-      echo -e "${BL}[Info] Skipped all VMs by the user${CL}\n"
+      echo -e "⏩${BL:-} Skipped all VMs by the user${CL:-}\n"
     fi
   fi
 fi

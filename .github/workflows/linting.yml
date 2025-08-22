@@ -5,7 +5,7 @@ on:
     branches: [master, beta, develop]
   pull_request:
     branches: [master, beta, develop]
-  schedule:
+#   schedule:
 
 permissions: {}
 

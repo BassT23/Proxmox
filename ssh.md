@@ -56,7 +56,7 @@ Example for Ubuntu/Debian - with sudo (change in VM):
 - `sudo visudo`
 - add this to file:
 
-`%sudo ALL=(root) NOPASSWD: /usr/bin/apt-get update, /usr/bin/apt-get upgrade -y, /usr/bin/apt-get --purge autoremove -y, /usr/bin/apt-get autoclean -y`
+`%sudo ALL=(root) NOPASSWD: /usr/bin/apt-get update -y, /usr/bin/apt-get upgrade -y, /usr/bin/apt-get --purge autoremove -y, /usr/bin/apt-get autoclean -y`
 - save and exit file
 
 Sources:

@@ -4,14 +4,17 @@
 # Check Updates #
 #################
 
-# shellcheck disable=SC1017
 # shellcheck disable=SC2034
 
-VERSION="1.7"
+VERSION="1.7.7"
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
+
+# Tag filter
+# shellcheck disable=SC1091
+. "$LOCAL_FILES/tag-filter.sh"
 
 # Colors
 BL="\e[36m"
@@ -21,7 +24,8 @@ GN="\e[1;92m"
 CL="\e[0m"
 
 ARGUMENTS () {
-  while test $# -gt -0; do
+  local ARGUMENT
+  while [ $# -gt 0 ]; do
     ARGUMENT="$1"
     case "$ARGUMENT" in
       -c)
@@ -80,13 +84,21 @@ USAGE () {
 
 READ_WRITE_CONFIG () {
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' $CONFIG_FILE)
+  EMAIL_USER=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' $CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
   RUNNING=$(awk -F'"' '/^CHECK_RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
   STOPPED=$(awk -F'"' '/^CHECK_STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
+  RUNNING_VM=$(awk -F'"' '/^CHECK_RUNNING_VM=/ {print $2}' $CONFIG_FILE)
+  STOPPED_VM=$(awk -F'"' '/^CHECK_STOPPED_VM=/ {print $2}' $CONFIG_FILE)
+  PAUSED_VM=$(awk -F'"' '/^CHECK_PAUSED_VM=/ {print $2}' $CONFIG_FILE)
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
+  CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
+  if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
+    apply_only_exclude_tags ONLY EXCLUDED
+  fi
 }
 
 ## HOST ##
@@ -135,6 +147,8 @@ CONTAINER_CHECK_START () {
       continue
     elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
       continue
+    elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
+      continue
     else
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
@@ -164,9 +178,9 @@ CHECK_CONTAINER () {
   NAME=$(pct exec "$CONTAINER" hostname)
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     pct exec "$CONTAINER" -- bash -c "apt-get update" >/dev/null 2>&1
-    SECURITY_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'")
-    NORMAL_APT_UPDATES=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'")
-#    NOT_INSTALLED=$(apt-get -s upgrade | grep -ci "^inst.*not")
+    APT_OUTPUT=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade")
+    SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security' || true)
+    NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.' || true)
     if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" != 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
     fi
@@ -208,29 +222,44 @@ CHECK_CONTAINER () {
 VM_CHECK_START () {
   # Get the list of VMs
   VMS=$(qm list | tail -n +2 | cut -c -10)
-  # Loop through the VMs
+  # Loop through VMs
   for VM in $VMS; do
-    PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-    if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
-      continue
-    elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
-      continue
-    elif [[ "$PRE_OS" =~ w ]]; then
-      continue
-    else
-      STATUS=$(qm status "$VM")
-      if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
-        # Check if connection is available
-        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
-          # Start the VM
+    # Check if connection is available
+    if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
+      # Check VM
+      PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
+      if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
+        continue
+      elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
+        continue
+      elif [[ "$PRE_OS" =~ w ]]; then
+        continue
+      else
+        STATUS=$(qm status "$VM")
+        if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
+          # Check suspend mode
+          if [[ $(qm config "$VM" | grep 'lock:' | sed 's/lock:\s*//') == "suspend" ]]; then 
+            SUSPEND=true
+            echo -e "${OR}skip suspend VM${CL}"
+            continue
+          fi
+          # Start VM
           qm start "$VM" >/dev/null 2>&1
           sleep 45
           CHECK_VM "$VM"
-          # Stop the VM
+          # Stop/Suspend VM
           qm stop "$VM"
+          SUSPEND=
+        elif [[ "$STATUS" == "status: paused" && "$PAUSED_VM" == true ]]; then
+          # Start VM
+          qm resume "$VM" >/dev/null 2>&1
+          sleep 45
+          CHECK_VM "$VM"
+          # Suspend VM
+          qm suspend "$VM"
+        elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
+          CHECK_VM "$VM"
         fi
-      elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
-        CHECK_VM "$VM"
       fi
     fi
   done
@@ -259,8 +288,9 @@ CHECK_VM () {
 #        fi
         if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
           ssh "$IP" "apt-get update" >/dev/null 2>&1
-          SECURITY_APT_UPDATES=$(ssh "$IP" "apt-get -s upgrade | grep -ci ^inst.*security")
-          NORMAL_APT_UPDATES=$(ssh "$IP" "apt-get -s upgrade | grep -ci ^inst.")
+          APT_OUTPUT=$(ssh "$IP" "apt-get -s upgrade")
+          SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security')
+          NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.')
           if ssh "$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then REBOOT_REQUIRED=true; fi
           if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
@@ -356,8 +386,39 @@ OUTPUT_TO_FILE () {
   if [[ "$RDU" != true && "$RICM" != true ]]; then
     touch $LOCAL_FILES/check-output
     exec > >(tee $LOCAL_FILES/check-output)
+    # create mail output file
+    touch $LOCAL_FILES/mail-output
+    echo -e "Available Updates:"  > $LOCAL_FILES/mail-output
+    echo -e "S = Security / N = Normal\n" >> $LOCAL_FILES/mail-output
+    exec > >(tee -a $LOCAL_FILES/mail-output)
   fi
 }
+
+# Exit
+# shellcheck disable=SC2329
+EXIT () {
+  # clean email output file
+  if [[ "$RDU" != true && "$RICM" != true ]]; then
+    if [[ -f "$LOCAL_FILES/mail-output" ]]; then
+      cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
+      chmod 640 "$LOCAL_FILES/mail-output"
+      if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
+        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+      else
+        echo "No updates found during search" | mail -s "Ultimate Updater" root
+      fi
+    fi
+  fi
+}
+trap EXIT EXIT
+
+# Run
+
+# Debug
+DEBUG=$(awk -F'"' '/^DEBUG=/ {print $2}' $CONFIG_FILE)
+if [[ "$DEBUG" == true ]]; then
+  set -x
+fi
 
 # Check Cluster Mode
 if [[ -f /etc/corosync/corosync.conf ]]; then
@@ -367,10 +428,12 @@ else
   MODE="Host"
 fi
 
-# Run
-if [[ "$(wget -q --spider http://google.com)" -eq 0 ]]; then
-  READ_WRITE_CONFIG
+# Read config
+READ_WRITE_CONFIG
+if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   ARGUMENTS "$@"
+  # Print any tag selection summary captured during config parse
+  if [[ "$RDU" != true && "$RICM" != true && "$TAG_OUTPUT" != false ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
 else
   echo -e "${OR} You are offline${CL}"
   exit 2
@@ -379,7 +442,6 @@ fi
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true && "$RDU" == true ]]; then
   OUTPUT_TO_FILE
-  CHECK_RUNNUNG_MACHINE
 elif [[ "$COMMAND" != true ]]; then
   OUTPUT_TO_FILE
   if [[ "$MODE" =~ Cluster ]]; then HOST_CHECK_START; else
@@ -388,3 +450,5 @@ elif [[ "$COMMAND" != true ]]; then
     if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
   fi
 fi
+
+exit 0
