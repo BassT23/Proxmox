@@ -80,6 +80,7 @@ USAGE () {
 READ_WRITE_CONFIG () {
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' $CONFIG_FILE)
   EMAIL_USER=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' $CONFIG_FILE)
+  EMAIL_NO_UPDATES=$(awk -F'"' '/^EMAIL_NO_UPDATES=/ {print $2}' $CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
@@ -91,6 +92,7 @@ READ_WRITE_CONFIG () {
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
+
   if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
     apply_only_exclude_tags ONLY EXCLUDED
   fi
@@ -405,7 +407,7 @@ EXIT () {
     if [[ -f "$LOCAL_FILES/mail-output" ]]; then
       cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
       chmod 640 "$LOCAL_FILES/mail-output"
-      if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
+      if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]] && [[ "$EMAIL_NO_UPDATES" == true ]]; then
         mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
       else
         echo "No updates found during search" | mail -s "Ultimate Updater" root
