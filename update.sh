@@ -658,6 +658,7 @@ WAIT_FOR_BOOTUP_SSH () {
   done
   if [ $COUNT -gt $MAX_RETRIES ]; then
     echo -e "❌${RD:-} Connection to $VM after $MAX_RETRIES failed.${CL:-}\n"
+    return 0
   fi
 }
 
@@ -1052,8 +1053,8 @@ UPDATE_VM () {
           # check available Kernel
           if ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -c" | grep -q "A newer kernel version"; then
             # install new Kernel
-#            ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i --yes"
-            ssh -tt -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i"
+            ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i --yes"
+#            ssh -tt -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i"
             # check if reboot is needed
             if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
             if [[ $NEED_REBOOT == true ]]; then
@@ -1100,11 +1101,12 @@ UPDATE_VM () {
             echo "Installed kernels:"
             echo -e "$INSTALLED_KERNELS\n"
             # Delete old Mainline-Kernel    # seems not to work, ....
-            INSTALLED_MAINLINE_KERNEL=$(echo "$INSTALLED_KERNELS" | awk '/^ii/ && $2 ~ /^linux-image-[0-9]/ {print $2}')
-            for KERNEL in $INSTALLED_MAINLINE_KERNEL; do
-                echo "Remove Mainline-Kernel: $KERNEL"
-                ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -r $KERNEL"
-            done
+#            INSTALLED_MAINLINE_KERNEL=$(echo "$INSTALLED_KERNELS" | awk '/^ii/ && $2 ~ /^linux-image-[0-9]/ {print $2}')
+#            for KERNEL in $INSTALLED_MAINLINE_KERNEL; do
+#                echo "Remove Mainline-Kernel: $KERNEL"
+#                ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -u $KERNEL --yes"
+#            done
+            ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh  -u --remove-old --yes"
             echo -e "\n${GN:-}--- Finished. Current kernel: $CURRENT_KERNEL stay.${CL:-}\n"
           else
             echo -e "\n${GN:-}--- Finished. No old kernel found ---${CL:-}\n"
