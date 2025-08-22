@@ -1,7 +1,12 @@
 Changelog:
 ==========
 
-**v4.4.x** (beta)
+**v4.5.x** (beta/develop)
+- add kernel upgrade for debian based vm with ssh connection (disabled by default in config file)
+- fix ssh connection during check
+- code cleaning
+
+**v4.5** (22.08.2025)
 - add LXC debian trixie upgrade (`update -dist-upgrade`)
 - "only" or "exclude" LXC/VM by ID/TAG/range #thx to @AdamSutch
 - add debug mode (can be enabled in config file)
