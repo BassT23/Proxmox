@@ -3,6 +3,7 @@ Changelog:
 
 **v4.5.x** (beta/develop)
 - add kernel upgrade for debian based vm with ssh connection (disabled by default in config file)
+  used script: https://github.com/pimlie/ubuntu-mainline-kernel.sh
 - fix ssh connection during check
 - code cleaning
 

@@ -357,7 +357,11 @@ STATUS () {
   if [[ "$BRANCH" == master ]]; then echo -e "${OR:-}  Version overview${CL:-}"; else
     echo -e "${OR:-}  Version overview ($BRANCH)${CL:-}"
   fi
-  if [[ "$SERVER_VERSION" != "$VERSION" ]] || [[ "$SERVER_EXTRA_VERSION" != "$EXTRA_VERSION" ]] || [[ "$SERVER_CONFIG_VERSION" != "$CONFIG_VERSION" ]] || [[ "$SERVER_WELCOME_VERSION" != "$WELCOME_VERSION" ]] || [[ "$SERVER_CHECK_UPDATE_VERSION" != "$CHECK_UPDATE_VERSION" ]]; then
+  if [[ $SERVER_VERSION            != [[$VERSION]]         || 
+      $SERVER_EXTRA_VERSION        != [[$EXTRA_VERSION]]   || 
+      $SERVER_CONFIG_VERSION       != [[$CONFIG_VERSION]]  || 
+      $SERVER_WELCOME_VERSION      != [[$WELCOME_VERSION]] || 
+      $SERVER_CHECK_UPDATE_VERSION != [[$CHECK_UPDATE_VERSION]] ]]; then
     echo -e "           Local / Server\n"
   fi
   if [[ "$SERVER_VERSION" == "$VERSION" ]]; then
@@ -429,7 +433,7 @@ READ_CONFIG () {
 
 # Snapshot/Backup
 CONTAINER_BACKUP () {
-  if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
+  if [[ $SNAPSHOT == true || $BACKUP == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "✅${GN:-} Snapshot created${CL:-}"
@@ -452,8 +456,9 @@ CONTAINER_BACKUP () {
     echo -e "⏩${OR:-} Snapshot and Backup skipped by the user${CL:-}"
   fi
 }
+# shellcheck disable=SC2329
 VM_BACKUP () {
-  if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
+  if [[ $SNAPSHOT == true || $BACKUP == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
       if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "✅${GN:-} Snapshot created${CL:-}"
@@ -536,7 +541,7 @@ EXTRAS () {
       USER_SCRIPTS_VM
     fi
     echo -e "${GN:-}---   Finished extra updates    ---${CL:-}"
-    if [[ "$WILL_STOP" != true ]] && [[ "$WELCOME_SCREEN" != true ]]; then
+    if [[ $WILL_STOP != true && $WELCOME_SCREEN != true ]]; then
       echo
     elif [[ "$WELCOME_SCREEN" == true ]]; then
       echo
@@ -816,7 +821,7 @@ UPDATE_CONTAINER () {
     echo
   fi
   # Run dist-upgrade
-  if [[ "$CHECK_DIST" == true ]] && [[ "$OS" =~ debian ]]; then
+  if [[ $CHECK_DIST == true && $OS =~ debian ]]; then
     DIST_UPGRADE
     return 0
   elif [[ "$CHECK_DIST" == true ]]; then
@@ -918,7 +923,7 @@ VM_UPDATE_START () {
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
         # Check if update is possible
-        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
+        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 || -f $LOCAL_FILES/VMs/$VM ]]; then
           # Start the VM
           WILL_STOP="true"
           echo -e " ▶${GN:-} Starting VM${BL:-} $VM ${CL:-}"
@@ -985,7 +990,7 @@ UPDATE_VM () {
       KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
       OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
       # Free-BSD
-      if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
+      if [[ $KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true ]]; then
         echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
         ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
@@ -1032,7 +1037,7 @@ UPDATE_VM () {
         if [[ $INCLUDE_KERNEL == true || $INCLUDE_KERNEL_CLEAN == true ]]; then
           echo -e "${OR:-}--- Start kernel upgrade ---${CL:-}"
           # check if reboot is needed
-          if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
+          ssh -p "$SSH_VM_PORT" "$USER@$IP" "[ -f /var/run/reboot-required.pkgs ]" && NEED_REBOOT=true
           if [[ $NEED_REBOOT == true ]]; then
             echo -e "${OR:-}--- Need reboot first ---${CL:-}"
             ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
@@ -1056,7 +1061,7 @@ UPDATE_VM () {
             ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i --yes"
 #            ssh -tt -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i"
             # check if reboot is needed
-            if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
+            ssh -p "$SSH_VM_PORT" "$USER@$IP" "[ -f /var/run/reboot-required.pkgs ]" && NEED_REBOOT=true
             if [[ $NEED_REBOOT == true ]]; then
               echo -e "${OR:-}--- Kernel upgrade finished, need reboot now ---\n${CL:-}"
               ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
@@ -1077,7 +1082,7 @@ UPDATE_VM () {
         if [[ $INCLUDE_KERNEL_CLEAN == true ]]; then
           echo -e "${OR:-}--- Kernel cleaning ---${CL:-}"
           # check if reboot is needed
-          if ssh -p "$SSH_VM_PORT" "$USER@$IP"  "stat /var/run/reboot-required.pkgs" \> /dev/null 2\>\&1; then NEED_REBOOT=true; fi
+          ssh -p "$SSH_VM_PORT" "$USER@$IP" "[ -f /var/run/reboot-required.pkgs ]" && NEED_REBOOT=true
           if [[ $NEED_REBOOT == true ]]; then
             echo -e "${OR:-}--- Need reboot first ---${CL:-}"
             ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
@@ -1101,12 +1106,11 @@ UPDATE_VM () {
             echo "Installed kernels:"
             echo -e "$INSTALLED_KERNELS\n"
             # Delete old Mainline-Kernel    # seems not to work, ....
-#            INSTALLED_MAINLINE_KERNEL=$(echo "$INSTALLED_KERNELS" | awk '/^ii/ && $2 ~ /^linux-image-[0-9]/ {print $2}')
-#            for KERNEL in $INSTALLED_MAINLINE_KERNEL; do
-#                echo "Remove Mainline-Kernel: $KERNEL"
-#                ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -u $KERNEL --yes"
-#            done
-            ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh  -u --remove-old --yes"
+            INSTALLED_MAINLINE_KERNEL=$(echo "$INSTALLED_KERNELS" | awk '/^ii/ && $2 ~ /^linux-image-[0-9]/ {print $2}')
+            for KERNEL in $INSTALLED_MAINLINE_KERNEL; do
+                echo "Remove Mainline-Kernel: $KERNEL"
+                ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -u $KERNEL --yes"
+            done
             echo -e "\n${GN:-}--- Finished. Current kernel: $CURRENT_KERNEL stay.${CL:-}\n"
           else
             echo -e "\n${GN:-}--- Finished. No old kernel found ---${CL:-}\n"
@@ -1146,9 +1150,9 @@ UPDATE_VM () {
       # Windows ( WindowsUpdate need admin rights, ...)
 #      elif [[ $OS_BASE == "win10" || $OS_BASE == "win11" ]]; then
 #        # check updates
-#        ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command Get-WindowsUpdate"
+#        ssh -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command Get-WindowsUpdate"
 #        # install updates
-#        ssh -t -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command Install-WindowsUpdate -AcceptAll -IgnoreReboot"
+#        ssh -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command Install-WindowsUpdate -AcceptAll -IgnoreReboot"
       else
         echo -e "${RD:-}  ❌ The system is not supported.\n  Maybe with later version ;)\n${CL:-}"
         echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
@@ -1175,7 +1179,7 @@ UPDATE_VM_QEMU () {
     # Run Update
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
     OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
-    if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
+    if [[ $KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true ]]; then
       echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
       qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
@@ -1191,7 +1195,7 @@ UPDATE_VM_QEMU () {
     elif [[ "$KERNEL" =~ FreeBSD ]]; then
       echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
       return
-    elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+    elif [[ ${OS,,} =~ ubuntu|debian|devuan ]]; then
       # Check Internet connection
       if ! (qm guest exec "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"); then
         echo -e "${OR:-} ❌ Internet is not reachable - skip the update${CL:-}\n"
@@ -1324,7 +1328,7 @@ EXIT () {
   # Update Finish
   elif [[ "$EXIT_CODE" == 0 ]]; then
     if [[ "$RICM" != true ]]; then
-      if [[ -f "$ERROR_LOG_FILE" ]] && [[ -s "$ERROR_LOG_FILE" ]]; then
+      if [[ -f $ERROR_LOG_FILE && -s $ERROR_LOG_FILE ]]; then
         echo -e "${OR:-}❌ Finished, with errors.${CL:-}\n"
         echo -e "Please checkout $ERROR_LOG_FILE"
         echo
