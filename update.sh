@@ -426,8 +426,6 @@ READ_CONFIG () {
   INCLUDE_FSTRIM=$(awk -F'"' '/^INCLUDE_FSTRIM=/ {print $2}' "$CONFIG_FILE")
   FSTRIM_WITH_MOUNTPOINT=$(awk -F'"' '/^FSTRIM_WITH_MOUNTPOINT=/ {print $2}' "$CONFIG_FILE")
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
-  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
-  INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
   declare -f apply_only_exclude_tags >/dev/null 2>&1 && apply_only_exclude_tags ONLY EXCLUDED
 }
 
@@ -456,7 +454,6 @@ CONTAINER_BACKUP () {
     echo -e "⏩${OR:-} Snapshot and Backup skipped by the user${CL:-}"
   fi
 }
-# shellcheck disable=SC2329
 VM_BACKUP () {
   if [[ $SNAPSHOT == true || $BACKUP == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
@@ -829,7 +826,7 @@ UPDATE_CONTAINER () {
   fi
   # Run update
   # shellcheck disable=SC2015
-  if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
+  if [[ "${OS,,}" =~ ubuntu|debian|devuan ]]; then
     echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "apt-get update -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update -y" 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
@@ -960,7 +957,7 @@ UPDATE_VM () {
   echo -e "🔄${GN:-} Updating VM ${BL:-}$VM${CL:-} : ${GN:-}$NAME${CL:-}\n"
   # Backup
   echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
-#  VM_BACKUP                                                                             #DEVELOP
+  VM_BACKUP
   echo
   # Read SSH config file - check how update is possible
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
@@ -1005,7 +1002,7 @@ UPDATE_VM () {
         echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
         return
       # Debian Base
-      elif [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ LinuxMint ]] || [[ "$OS" =~ neon ]] || [[ "$OS" =~ Devuan ]]; then
+      elif [[ "${OS,,}" =~ debian|ubuntu|linuxmint|neon|devuan ]]; then
         # Check Internet connection
         if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
           echo -e "${OR:-} ❌ Internet check fail - skip this VM${CL:-}\n"
@@ -1032,91 +1029,6 @@ UPDATE_VM () {
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
-        # Kernel Upgrade / Cleaning
-        if [[ $INCLUDE_KERNEL == true || $INCLUDE_KERNEL_CLEAN == true ]]; then
-          echo -e "${OR:-}--- Start kernel upgrade ---${CL:-}"
-          # check if reboot is needed
-          ssh -p "$SSH_VM_PORT" "$USER@$IP" "[ -f /var/run/reboot-required.pkgs ]" && NEED_REBOOT=true
-          if [[ $NEED_REBOOT == true ]]; then
-            echo -e "${OR:-}--- Need reboot first ---${CL:-}"
-            ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
-            while ping -c1 -W1 "$IP" &>/dev/null; do
-              echo -e "ℹ  Host still up... waiting"
-              sleep 2
-            done
-            echo -e "${OR:-}--- Wait for reboot ---${CL:-}"
-            WAIT_FOR_BOOTUP_SSH
-          fi
-          mkdir -p "$LOCAL_FILES"/temp_kernel
-          wget -q -O "$LOCAL_FILES/temp_kernel/ubuntu-mainline-kernel.sh" https://raw.githubusercontent.com/pimlie/ubuntu-mainline-kernel.sh/master/ubuntu-mainline-kernel.sh
-          scp -P "$SSH_VM_PORT" "$LOCAL_FILES"/temp_kernel/ubuntu-mainline-kernel.sh "$USER@$IP:/usr/local/bin/ubuntu-mainline-kernel.sh" >/dev/null 2>&1
-          ssh -p "$SSH_VM_PORT" "$USER@$IP" "chmod +x /usr/local/bin/ubuntu-mainline-kernel.sh"
-          [ -d "$LOCAL_FILES/temp_kernel" ] && rm -rf "$LOCAL_FILES/temp_kernel"
-        fi
-        if [[ $INCLUDE_KERNEL == true ]]; then
-          # check available Kernel
-          if ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -c" | grep -q "A newer kernel version"; then
-            # install new Kernel
-            ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i --yes"
-#            ssh -tt -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -i"
-            # check if reboot is needed
-            ssh -p "$SSH_VM_PORT" "$USER@$IP" "[ -f /var/run/reboot-required.pkgs ]" && NEED_REBOOT=true
-            if [[ $NEED_REBOOT == true ]]; then
-              echo -e "${OR:-}--- Kernel upgrade finished, need reboot now ---\n${CL:-}"
-              ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
-              while ping -c1 -W1 "$IP" &>/dev/null; do
-                echo -e "ℹ  Host still up... waiting"
-                sleep 2
-              done
-              echo -e "\n${OR:-}--- Wait for reboot ---${CL:-}"
-              WAIT_FOR_BOOTUP_SSH
-            else
-              echo -e "${GN:-}--- Kernel upgrade finished, no reboot needed ---\n${CL:-}"
-            fi
-            NEED_REBOOT=
-          else
-            echo -e "${GN:-}--- No newer kernel available ---\n${CL:-}"
-          fi
-        fi
-        if [[ $INCLUDE_KERNEL_CLEAN == true ]]; then
-          echo -e "${OR:-}--- Kernel cleaning ---${CL:-}"
-          # check if reboot is needed
-          ssh -p "$SSH_VM_PORT" "$USER@$IP" "[ -f /var/run/reboot-required.pkgs ]" && NEED_REBOOT=true
-          if [[ $NEED_REBOOT == true ]]; then
-            echo -e "${OR:-}--- Need reboot first ---${CL:-}"
-            ssh -p "$SSH_VM_PORT" "$USER@$IP" "reboot"
-            echo -e "${OR:-}--- Wait for shutdown ---${CL:-}"
-            while ping -c1 -W1 "$IP" &>/dev/null; do
-              echo -e "ℹ  Host still up... waiting"
-              sleep 2
-            done
-            echo -e "\n${OR:-}--- Wait for reboot ---${CL:-}"
-            sleep "$SSH_START_DELAY_TIME"
-            WAIT_FOR_BOOTUP_SSH
-          fi
-          CURRENT_KERNEL=$(ssh -p "$SSH_VM_PORT" "$USER@$IP" "uname -r")
-          ssh -p "$SSH_VM_PORT" "$USER@$IP" "CURRENT_KERNEL=$(uname -r)"
-          # List all Mainline-Kernel
-          INSTALLED_KERNELS=$(ssh -p "$SSH_VM_PORT" "$USER@$IP" "dpkg --list 'linux-image-*' | grep ^ii | awk '{print $2}' | grep -v '$CURRENT_KERNEL'")
-          echo "Current kernel:"
-          echo -e "$CURRENT_KERNEL\n"
-          # Check for old Mainline-Kernels
-          if [[ -n "$INSTALLED_KERNELS" ]]; then
-            echo "Installed kernels:"
-            echo -e "$INSTALLED_KERNELS\n"
-            # Delete old Mainline-Kernel    # seems not to work, ....
-            INSTALLED_MAINLINE_KERNEL=$(echo "$INSTALLED_KERNELS" | awk '/^ii/ && $2 ~ /^linux-image-[0-9]/ {print $2}')
-            for KERNEL in $INSTALLED_MAINLINE_KERNEL; do
-                echo "Remove Mainline-Kernel: $KERNEL"
-                ssh -p "$SSH_VM_PORT" "$USER@$IP" "ubuntu-mainline-kernel.sh -u $KERNEL --yes"
-            done
-            echo -e "\n${GN:-}--- Finished. Current kernel: $CURRENT_KERNEL stay.${CL:-}\n"
-          else
-            echo -e "\n${GN:-}--- Finished. No old kernel found ---${CL:-}\n"
-          fi
-        fi
-        # Remove file on VM
-        ssh -p "$SSH_VM_PORT" "$USER@$IP" "rm -rf /usr/local/bin/ubuntu-mainline-kernel.sh"
       # Fedora
       elif [[ "$OS" =~ Fedora ]]; then
         echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
