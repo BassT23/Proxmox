@@ -357,11 +357,11 @@ STATUS () {
   if [[ "$BRANCH" == master ]]; then echo -e "${OR:-}  Version overview${CL:-}"; else
     echo -e "${OR:-}  Version overview ($BRANCH)${CL:-}"
   fi
-  if [[ $SERVER_VERSION            != [[$VERSION]]         || 
-      $SERVER_EXTRA_VERSION        != [[$EXTRA_VERSION]]   || 
-      $SERVER_CONFIG_VERSION       != [[$CONFIG_VERSION]]  || 
-      $SERVER_WELCOME_VERSION      != [[$WELCOME_VERSION]] || 
-      $SERVER_CHECK_UPDATE_VERSION != [[$CHECK_UPDATE_VERSION]] ]]; then
+  if [[ $SERVER_VERSION         != [[$VERSION]]         || 
+        $SERVER_EXTRA_VERSION   != [[$EXTRA_VERSION]]   || 
+        $SERVER_CONFIG_VERSION  != [[$CONFIG_VERSION]]  || 
+        $SERVER_WELCOME_VERSION != [[$WELCOME_VERSION]] || 
+        $SERVER_CHECK_UPDATE_VERSION != [[$CHECK_UPDATE_VERSION]] ]]; then
     echo -e "           Local / Server\n"
   fi
   if [[ "$SERVER_VERSION" == "$VERSION" ]]; then
@@ -580,7 +580,6 @@ DIST_UPGRADE () {
       SNAPSHOT=
       BACKUP=true
       echo
-#      echo -e "${RD:-}--- Backup skipped during develop ---${CL:-}"
       CONTAINER_BACKUP
       echo -e "${GR:-}⏩ Upgrade to Debian 13 (Trixie) now:${CL:-}"
       echo -e "${OR:-}--- Enable stop on error ---\n${CL:-}"
@@ -633,14 +632,14 @@ UPDATE_CHECK () {
   if [[ "$WELCOME_SCREEN" == true ]]; then
     echo -e "${OR:-}--- Check Status for Welcome-Screen ---${CL:-}"
     if [[ "$CHOST" == true ]]; then
-      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u chost | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u chost" | tee -a "$LOCAL_FILES/check-output"
     elif [[ "$CCONTAINER" == true ]]; then
-      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u ccontainer | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u ccontainer" | tee -a $LOCAL_FILES/check-output
     elif [[ "$CVM" == true ]]; then
-      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u cvm | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u cvm" | tee -a $LOCAL_FILES/check-output
     fi
     echo -e "${GN:-}---          Finished check         ---${CL:-}\n"
-    if [[ "$WILL_STOP" != true ]]; then echo; fi
+    [[ "$WILL_STOP" != true ]] && echo
   else
     echo
   fi
