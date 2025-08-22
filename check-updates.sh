@@ -407,9 +407,9 @@ EXIT () {
     if [[ -f "$LOCAL_FILES/mail-output" ]]; then
       cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
       chmod 640 "$LOCAL_FILES/mail-output"
-      if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]] && [[ "$EMAIL_NO_UPDATES" == true ]]; then
+      if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
         mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
-      else
+      elif [[ "$EMAIL_NO_UPDATES" == true ]]; then
         echo "No updates found during search" | mail -s "Ultimate Updater" root
       fi
     fi
