@@ -656,6 +656,7 @@ UPDATE_CHECK () {
 WAIT_FOR_BOOTUP_LXC () {
   MAX_RETRIES=10
   COUNT=1
+  sleep "$LXC_START_DELAY"
   while [ $COUNT -le $MAX_RETRIES ]; do
     if pct exec "$CONTAINER" -- bash -c "exit" >/dev/null 2>&1; then
       echo -e "✅${GN:-} $CONTAINER reachable (tryout $COUNT)\n${CL:-}"
@@ -675,6 +676,7 @@ WAIT_FOR_BOOTUP_LXC () {
 WAIT_FOR_BOOTUP_SSH () {
   MAX_RETRIES=10
   COUNT=1
+  sleep "$SSH_START_DELAY_TIME"
   while [ $COUNT -le $MAX_RETRIES ]; do
     if ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER@$IP" exit >/dev/null 2>&1; then
       echo -e "✅${GN:-} $VM reachable (tryout $COUNT)\n${CL:-}"

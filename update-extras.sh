@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="2.1"
+VERSION="2.2"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -133,15 +133,16 @@ fi
 
 # Community / Helper Scripts
 apt-get install expect -y
-if grep -q "community-scripts" /usr/bin/update 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]];then
-  stdbuf -oL -eL expect <<EOF | grep -v "whiptail"
-set timeout 3
-spawn update
-expect "Choose an option:"
-send "2\r"
-expect "<Ok>"
-send "\r"
-expect eof
+if grep -q "community-scripts" /usr/bin/update 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]]; then
+  echo -e "\n*** Updating Community-Scripts ***"
+  expect <<EOF > /dev/null 2>&1
+    set timeout 3
+    spawn update
+    expect "Choose an option:"
+    send "2\r"
+    expect "<Ok>"
+    send "\r"
+    expect eof
 EOF
-  echo "✅ Update process completed"
+  echo -e "✅ Update process completed\n"
 fi
