@@ -96,7 +96,7 @@ if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]] && [[ $DOCKER_
     docker image prune -f
     docker system prune --volumes -f
   }
-  COMPOSEFILES=("docker-compose.yaml" "docker-compose.yml" "compose.yaml" "compose.yml")
+  COMPOSEFILES=("docker-compose.y*ml" "compose.y*ml")
   DIRLIST=()
   for COMPOSEFILE in "${COMPOSEFILES[@]}"; do
     while IFS= read -r line; do
