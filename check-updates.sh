@@ -271,6 +271,7 @@ VM_CHECK_START () {
           # Start VM
           qm start "$VM" >/dev/null 2>&1
           sleep "$SSH_START_DELAY_TIME"
+          sleep "$SSH_START_DELAY_TIME"
           CHECK_VM "$VM"
           # Stop/Suspend VM
           qm stop "$VM"
