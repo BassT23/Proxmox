@@ -643,6 +643,25 @@ UPDATE_CHECK () {
 }
 
 # Wait for bootup / reboot
+# Container
+WAIT_FOR_BOOTUP_LXC () {
+  MAX_RETRIES=10
+  COUNT=1
+  while [ $COUNT -le $MAX_RETRIES ]; do
+    if pct exec "$CONTAINER" -- bash -c "exit" >/dev/null 2>&1; then
+      echo -e "✅${GN:-} $CONTAINER reachable (tryout $COUNT)\n${CL:-}"
+      break
+    else
+      echo -e "ℹ  Tryout $COUNT/$MAX_RETRIES failed"
+      sleep "$LXC_START_DELAY"
+    fi
+    COUNT=$((COUNT+1))
+  done
+  if [ $COUNT -gt $MAX_RETRIES ]; then
+    echo -e "❌${RD:-} Connection to $CONTAINER after $MAX_RETRIES failed.${CL:-}\n"
+    return 0
+  fi
+}
 # VM-SSH
 WAIT_FOR_BOOTUP_SSH () {
   MAX_RETRIES=10
@@ -761,7 +780,8 @@ CONTAINER_UPDATE_START () {
         echo -e " ▶${GN:-} Starting LXC ${BL:-}$CONTAINER ${CL:-}"
         pct start "$CONTAINER"
         echo -e "⏳${GN:-} Waiting for LXC ${BL:-}$CONTAINER${CL:-}${GN:-} to start ${CL:-}"
-        sleep "$LXC_START_DELAY"
+#        sleep "$LXC_START_DELAY"
+        WAIT_FOR_BOOTUP_LXC
         UPDATE_CONTAINER "$CONTAINER"
         # Stop the container
         echo -e "⏹ ${GN:-} Shutting down LXC ${BL:-}$CONTAINER ${CL:-}\n\n"
