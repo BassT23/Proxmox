@@ -57,7 +57,7 @@ EOF
   CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
   # Print tag selection summary captured during config parse
-  if [[ $TAG_LOG == true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log && echo; fi; fi
+  [[ "${TAG_LOG:-}" == "true" ]] && type print_tag_log >/dev/null 2>&1 && { print_tag_log; echo; } || true
 }
 
 # Check root
@@ -557,21 +557,20 @@ EXTRAS () {
 }
 
 # Trim Filesystem
-TRIM_FILESYSTEM () {
+TRIM_FILESYSTEM() {
   if [[ "$INCLUDE_FSTRIM" == true ]]; then
+    local ROOT_FS
     ROOT_FS=$(df -Th "/" | awk 'NR==2 {print $2}')
-    if [[ $(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}') ]]; then
-      if [ "$ROOT_FS" = "ext4" ]; then
-        echo -e "${OR:-}--- Trimming filesystem ---${CL:-}"
-        BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-        local "$BEFORE_TRIM"
-        echo -e "${RD:-}Data before trim $BEFORE_TRIM%${CL:-}"
-        pct fstrim "$CONTAINER" --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
-        AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-        local "$AFTER_TRIM"
-        echo -e "${GN:-}Data after trim $AFTER_TRIM%${CL:-}\n"
-        sleep 1.5
-      fi
+    local LVS
+    mapfile -t LVS < <(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+    if [[ ${#LVS[@]} -gt 0 ]] && [[ "$ROOT_FS" == "ext4" ]]; then
+      echo -e "${OR:-}--- Trimming filesystem ---${CL:-}"
+      echo -e "${RD:-}Data before trim: ${LVS[*]}%${CL:-}"
+      pct fstrim "$CONTAINER" --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
+      local LVS_AFTER
+      mapfile -t LVS_AFTER < <(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+      echo -e "${GN:-}Data after trim: ${LVS_AFTER[*]}%${CL:-}\n"
+      sleep 1.5
     fi
   fi
 }

@@ -3,6 +3,8 @@ Changelog:
 
 **v4.5.x** (beta/develop)
 - add Backup when Snapshot is not available #204
+- fix fs-trim
+- fix "error code 1" on start
 - fix #188 error during helper-script update
 - fix ssh connection during check
 - code cleaning
