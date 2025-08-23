@@ -416,6 +416,7 @@ READ_CONFIG () {
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
+  BACKUP_LXC_MP=$(awk -F'"' '/^BACKUP_LXC_MP=/ {print $2}' "$CONFIG_FILE")
   LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   VM_START_DELAY=$(awk -F'"' '/^VM_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
@@ -432,6 +433,11 @@ READ_CONFIG () {
 # Snapshot/Backup
 CONTAINER_BACKUP () {
   if [[ $SNAPSHOT == true || $BACKUP == true ]]; then
+    if [[ $SNAPSHOT == true ]] && pct config "$CONTAINER" | grep -q '^mp'; then
+      BACKUP=true
+      SNAPSHOT=false
+      BACKUP_RESET=true
+    fi
     if [[ "$SNAPSHOT" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "✅${GN:-} Snapshot created${CL:-}"
@@ -447,8 +453,12 @@ CONTAINER_BACKUP () {
     fi
     if [[ "$BACKUP" == true ]]; then
       echo -e "💾${OR:-} Create a backup for LXC (this will take some time - please wait)${CL:-}"
-      vzdump "$CONTAINER" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
+      vzdump "$CONTAINER" --mode stop --notes-template "{{guestname}} - Ultimate-Updater" --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "✅${GN:-} Backup created${CL:-}\n"
+      if [[ $BACKUP_RESET == true ]]; then
+        BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
+        SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
+      fi
     fi
   else
     echo -e "⏩${OR:-} Snapshot and Backup skipped by the user${CL:-}"
