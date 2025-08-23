@@ -98,6 +98,25 @@ READ_WRITE_CONFIG () {
   fi
 }
 
+# Wait for bootup / reboot
+# Container
+WAIT_FOR_BOOTUP_LXC () {
+  MAX_RETRIES=10
+  COUNT=1
+  sleep "$LXC_START_DELAY"
+  while [ $COUNT -le $MAX_RETRIES ]; do
+    if pct exec "$CONTAINER" -- bash -c "exit" >/dev/null 2>&1; then
+      break
+    else
+      sleep "$LXC_START_DELAY"
+    fi
+    COUNT=$((COUNT+1))
+  done
+  if [ $COUNT -gt $MAX_RETRIES ]; then
+    return 0
+  fi
+}
+
 ## HOST ##
 # Host Check Start
 HOST_CHECK_START () {
@@ -151,7 +170,7 @@ CONTAINER_CHECK_START () {
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
         pct start "$CONTAINER"
-        sleep 5
+        WAIT_FOR_BOOTUP_LXC
         CHECK_CONTAINER "$CONTAINER"
         # Stop the container
         pct shutdown "$CONTAINER"
