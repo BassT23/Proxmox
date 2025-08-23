@@ -433,7 +433,7 @@ READ_CONFIG () {
 # Snapshot/Backup
 CONTAINER_BACKUP () {
   if [[ $SNAPSHOT == true || $BACKUP == true ]]; then
-    if [[ $SNAPSHOT == true ]] && pct config "$CONTAINER" | grep -q '^mp'; then
+    if [[ $SNAPSHOT == true && $BACKUP_LXC_MP == true && $(pct config "$CONTAINER" | grep -q '^mp' && echo true) == true ]]; then
       BACKUP=true
       SNAPSHOT=false
       BACKUP_RESET=true
