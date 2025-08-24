@@ -9,7 +9,8 @@
 VERSION="1.8.6"
 
 # Branch
-BRANCH="develop"
+
+BRANCH="master"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
