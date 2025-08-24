@@ -46,6 +46,7 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 - [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/tree/beta#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
 - send email after update/check
 - Trim filesystem on ext4 nodes
+- Kernel upgrade for debian based vm with ssh connection - [used script](https://github.com/pimlie/ubuntu-mainline-kernel.sh)
 
 Info can be found with `update -h`
 

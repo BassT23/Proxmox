@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="4.5"
+VERSION="4.5.2"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -57,7 +57,7 @@ EOF
   CHECK_INTERNET
   if [[ "$INFO" != false && "$CHECK_VERSION" == true ]]; then VERSION_CHECK; else echo; fi
   # Print tag selection summary captured during config parse
-  if [[ $TAG_LOG == true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log && echo; fi; fi
+  [[ "${TAG_LOG:-}" == "true" ]] && type print_tag_log >/dev/null 2>&1 && { print_tag_log; echo; } || true
 }
 
 # Check root
@@ -77,9 +77,8 @@ CHECK_INTERNET () {
 }
 
 ARGUMENTS () {
-  local ARGUMENT
-  while [ $# -gt 0 ]; do
-    ARGUMENT="$1"
+  while [[ $# -gt 0 ]]; do
+    local ARGUMENT="$1"
     case "$ARGUMENT" in
       [0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9])
         COMMAND=true
@@ -92,23 +91,11 @@ ARGUMENTS () {
         CONTAINER_UPDATE_START
         VM_UPDATE_START
         ;;
-      -h|--help)
-        USAGE
-        exit 2
-        ;;
-      -s|--silent)
-        HEADLESS=true
-        ;;
-      -v|--version)
-        VERSION_CHECK
-        exit 2
-        ;;
-      -c)
-        RICM=true
-        ;;
-      -w)
-        WELCOME_SCREEN=true
-        ;;
+      -h|--help) USAGE; exit 0 ;;
+      -v|--version) VERSION_CHECK; exit 0 ;;
+      -s|--silent) HEADLESS=true ;;
+      -c) RICM=true ;;
+      -w) WELCOME_SCREEN=true ;;
       host)
         COMMAND=true
         TAG_LOG=true
@@ -146,31 +133,13 @@ ARGUMENTS () {
         # shellcheck disable=SC2317
         exit 2
         ;;
-      master)
+      master|beta|develop)
         if [[ "$2" != -up ]]; then
           echo -e "\n${OR:-}  Wrong usage! Use branch update like this:${CL:-}"
-          echo -e "  update beta -up\n"
+          echo -e "  update $ARGUMENT -up\n"
           exit 2
         fi
-        BRANCH=master
-        BRANCH_SET=true
-        ;;
-      beta)
-        if [[ "$2" != -up ]]; then
-          echo -e "\n${OR:-}  Wrong usage! Use branch update like this:${CL:-}"
-          echo -e "  update beta -up\n"
-          exit 2
-        fi
-        BRANCH=beta
-        BRANCH_SET=true
-        ;;
-      develop)
-        if [[ "$2" != -up ]]; then
-          echo -e "\n${OR:-}  Wrong usage! Use branch update like this:${CL:-}"
-          echo -e "  update beta -up\n"
-          exit 2
-        fi
-        BRANCH=develop
+        BRANCH=$ARGUMENT
         BRANCH_SET=true
         ;;
       -up)
@@ -217,12 +186,12 @@ USAGE () {
     echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
     echo -e "[OPTIONS] Manages the Ultimate Updater:"
     echo -e "======================================"
-    echo -e "  -s --silent          Silent / Headless Mode"
     echo -e "  master               Use master branch"
     echo -e "  beta                 Use beta branch"
     echo -e "  develop              Use develop branch\n"
     echo -e "{COMMAND}:"
     echo -e "========="
+    echo -e "  -s --silent          Silent / Headless Mode"
     echo -e "  -h --help            Show help menu"
     echo -e "  -v --version         Show The Ultimate Updater version"
     echo -e "  -dist-upgrade        Run distribution upgrade (Debian 12 -> 13)"
@@ -388,7 +357,11 @@ STATUS () {
   if [[ "$BRANCH" == master ]]; then echo -e "${OR:-}  Version overview${CL:-}"; else
     echo -e "${OR:-}  Version overview ($BRANCH)${CL:-}"
   fi
-  if [[ "$SERVER_VERSION" != "$VERSION" ]] || [[ "$SERVER_EXTRA_VERSION" != "$EXTRA_VERSION" ]] || [[ "$SERVER_CONFIG_VERSION" != "$CONFIG_VERSION" ]] || [[ "$SERVER_WELCOME_VERSION" != "$WELCOME_VERSION" ]] || [[ "$SERVER_CHECK_UPDATE_VERSION" != "$CHECK_UPDATE_VERSION" ]]; then
+  if [[ $SERVER_VERSION         != [[$VERSION]]         || 
+        $SERVER_EXTRA_VERSION   != [[$EXTRA_VERSION]]   || 
+        $SERVER_CONFIG_VERSION  != [[$CONFIG_VERSION]]  || 
+        $SERVER_WELCOME_VERSION != [[$WELCOME_VERSION]] || 
+        $SERVER_CHECK_UPDATE_VERSION != [[$CHECK_UPDATE_VERSION]] ]]; then
     echo -e "           Local / Server\n"
   fi
   if [[ "$SERVER_VERSION" == "$VERSION" ]]; then
@@ -429,7 +402,7 @@ READ_CONFIG () {
   CHECK_VERSION=$(awk -F'"' '/^VERSION_CHECK=/ {print $2}' "$CONFIG_FILE")
   CHECK_URL=$(awk -F'"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
   CHECK_URL_EXE=$(awk -F'"' '/^EXE_FOR_INTERNET_CHECK=/ {print $2}' "$CONFIG_FILE")
-  if [[ "$CHECK_URL_EXE" == '' ]]; then CHECK_URL_EXE="ping"; fi
+  CHECK_URL_EXE="${CHECK_URL_EXE:-ping}"
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' "$CONFIG_FILE")
   EXIT_ON_ERROR=$(awk -F'"' '/^EXIT_ON_ERROR=/ {print $2}' "$CONFIG_FILE")
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
@@ -443,6 +416,7 @@ READ_CONFIG () {
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
+  BACKUP_LXC_MP=$(awk -F'"' '/^BACKUP_LXC_MP=/ {print $2}' "$CONFIG_FILE")
   LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   VM_START_DELAY=$(awk -F'"' '/^VM_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
@@ -453,14 +427,17 @@ READ_CONFIG () {
   INCLUDE_FSTRIM=$(awk -F'"' '/^INCLUDE_FSTRIM=/ {print $2}' "$CONFIG_FILE")
   FSTRIM_WITH_MOUNTPOINT=$(awk -F'"' '/^FSTRIM_WITH_MOUNTPOINT=/ {print $2}' "$CONFIG_FILE")
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
-  INCLUDE_KERNEL=$(awk -F'"' '/^INCLUDE_KERNEL=/ {print $2}' "$CONFIG_FILE")
-  INCLUDE_KERNEL_CLEAN=$(awk -F'"' '/^INCLUDE_KERNEL_CLEAN=/ {print $2}' "$CONFIG_FILE")
-  if declare -f apply_only_exclude_tags >/dev/null 2>&1; then apply_only_exclude_tags ONLY EXCLUDED; fi
+  declare -f apply_only_exclude_tags >/dev/null 2>&1 && apply_only_exclude_tags ONLY EXCLUDED
 }
 
 # Snapshot/Backup
 CONTAINER_BACKUP () {
-  if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
+  if [[ $SNAPSHOT == true || $BACKUP == true ]]; then
+    if [[ $SNAPSHOT == true && $BACKUP_LXC_MP == true && $(pct config "$CONTAINER" | grep -q '^mp' && echo true) == true ]]; then
+      BACKUP=true
+      SNAPSHOT=false
+      BACKUP_RESET=true
+    fi
     if [[ "$SNAPSHOT" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "✅${GN:-} Snapshot created${CL:-}"
@@ -476,15 +453,19 @@ CONTAINER_BACKUP () {
     fi
     if [[ "$BACKUP" == true ]]; then
       echo -e "💾${OR:-} Create a backup for LXC (this will take some time - please wait)${CL:-}"
-      vzdump "$CONTAINER" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
+      vzdump "$CONTAINER" --mode stop --notes-template "{{guestname}} - Ultimate-Updater" --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
       echo -e "✅${GN:-} Backup created${CL:-}\n"
+      if [[ $BACKUP_RESET == true ]]; then
+        BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
+        SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
+      fi
     fi
   else
     echo -e "⏩${OR:-} Snapshot and Backup skipped by the user${CL:-}"
   fi
 }
 VM_BACKUP () {
-  if [[ "$SNAPSHOT" == true ]] || [[ "$BACKUP" == true ]]; then
+  if [[ $SNAPSHOT == true || $BACKUP == true ]]; then
     if [[ "$SNAPSHOT" == true ]]; then
       if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "✅${GN:-} Snapshot created${CL:-}"
@@ -508,7 +489,7 @@ VM_BACKUP () {
   fi
 }
 
-# Extras / User scripts
+# User scripts
 USER_SCRIPTS () {
   if [[ -d $USER_SCRIPTS/$CONTAINER ]]; then
     echo -e "\n*** Run user scripts now ***\n"
@@ -537,6 +518,8 @@ USER_SCRIPTS_VM () {
     echo -e "\n*** User scripts finished ***\n"
   fi
 }
+
+# Extras
 EXTRAS () {
   if [[ "$EXTRA_GLOBAL" != true ]]; then
     echo -e "\n${OR:-}--- Skip Extra Updates because of the user settings ---${CL:-}\n"
@@ -565,7 +548,7 @@ EXTRAS () {
       USER_SCRIPTS_VM
     fi
     echo -e "${GN:-}---   Finished extra updates    ---${CL:-}"
-    if [[ "$WILL_STOP" != true ]] && [[ "$WELCOME_SCREEN" != true ]]; then
+    if [[ $WILL_STOP != true && $WELCOME_SCREEN != true ]]; then
       echo
     elif [[ "$WELCOME_SCREEN" == true ]]; then
       echo
@@ -573,34 +556,21 @@ EXTRAS () {
   fi
 }
 
-# Kernel Update
-# shellcheck disable=SC2329
-KERNEL_UPDATE () {
-  # https://github.com/pimlie/ubuntu-mainline-kernel.sh
-  if [[ "$INCLUDE_KERNEL" == true ]]; then
-    echo -e "${OR:-}--- Kernel Update ---${CL:-}"
-  fi
-    if [[ "$INCLUDE_KERNEL_CLEAN" == true ]]; then
-    echo -e "${OR:-}--- Clean Kernel ---${CL:-}"
-  fi
-}
-
 # Trim Filesystem
-TRIM_FILESYSTEM () {
+TRIM_FILESYSTEM() {
   if [[ "$INCLUDE_FSTRIM" == true ]]; then
+    local ROOT_FS
     ROOT_FS=$(df -Th "/" | awk 'NR==2 {print $2}')
-    if [[ $(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}') ]]; then
-      if [ "$ROOT_FS" = "ext4" ]; then
-        echo -e "${OR:-}--- Trimming filesystem ---${CL:-}"
-        BEFORE_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-        local "$BEFORE_TRIM"
-        echo -e "${RD:-}Data before trim $BEFORE_TRIM%${CL:-}"
-        pct fstrim "$CONTAINER" --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
-        AFTER_TRIM=$(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
-        local "$AFTER_TRIM"
-        echo -e "${GN:-}Data after trim $AFTER_TRIM%${CL:-}\n"
-        sleep 1.5
-      fi
+    local LVS
+    mapfile -t LVS < <(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+    if [[ ${#LVS[@]} -gt 0 ]] && [[ "$ROOT_FS" == "ext4" ]]; then
+      echo -e "${OR:-}--- Trimming filesystem ---${CL:-}"
+      echo -e "${RD:-}Data before trim: ${LVS[*]}%${CL:-}"
+      pct fstrim "$CONTAINER" --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
+      local LVS_AFTER
+      mapfile -t LVS_AFTER < <(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
+      echo -e "${GN:-}Data after trim: ${LVS_AFTER[*]}%${CL:-}\n"
+      sleep 1.5
     fi
   fi
 }
@@ -616,7 +586,6 @@ DIST_UPGRADE () {
       SNAPSHOT=
       BACKUP=true
       echo
-#      echo -e "${RD:-}--- Backup skipped during develop ---${CL:-}"
       CONTAINER_BACKUP
       echo -e "${GR:-}⏩ Upgrade to Debian 13 (Trixie) now:${CL:-}"
       echo -e "${OR:-}--- Enable stop on error ---\n${CL:-}"
@@ -669,20 +638,65 @@ UPDATE_CHECK () {
   if [[ "$WELCOME_SCREEN" == true ]]; then
     echo -e "${OR:-}--- Check Status for Welcome-Screen ---${CL:-}"
     if [[ "$CHOST" == true ]]; then
-      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u chost | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u chost" | tee -a "$LOCAL_FILES/check-output"
     elif [[ "$CCONTAINER" == true ]]; then
-      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u ccontainer | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u ccontainer" | tee -a $LOCAL_FILES/check-output
     elif [[ "$CVM" == true ]]; then
-      ssh -q -p "$SSH_PORT" "$HOSTNAME" $LOCAL_FILES/check-updates.sh -u cvm | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u cvm" | tee -a $LOCAL_FILES/check-output
     fi
     echo -e "${GN:-}---          Finished check         ---${CL:-}\n"
-    if [[ "$WILL_STOP" != true ]]; then echo; fi
+    [[ "$WILL_STOP" != true ]] && echo
   else
     echo
   fi
 }
 
-## HOST ##
+# Wait for bootup / reboot
+# Container
+WAIT_FOR_BOOTUP_LXC () {
+  MAX_RETRIES=10
+  COUNT=1
+  sleep "$LXC_START_DELAY"
+  while [ $COUNT -le $MAX_RETRIES ]; do
+    if pct exec "$CONTAINER" -- bash -c "exit" >/dev/null 2>&1; then
+      echo -e "✅${GN:-} $CONTAINER reachable (tryout $COUNT)\n${CL:-}"
+      break
+    else
+      echo -e "ℹ  Tryout $COUNT/$MAX_RETRIES failed"
+      sleep "$LXC_START_DELAY"
+    fi
+    COUNT=$((COUNT+1))
+  done
+  if [ $COUNT -gt $MAX_RETRIES ]; then
+    echo -e "❌${RD:-} Connection to $CONTAINER after $MAX_RETRIES failed.${CL:-}\n"
+    return 0
+  fi
+}
+# VM-SSH
+WAIT_FOR_BOOTUP_SSH () {
+  MAX_RETRIES=10
+  COUNT=1
+  sleep "$SSH_START_DELAY_TIME"
+  while [ $COUNT -le $MAX_RETRIES ]; do
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER@$IP" exit >/dev/null 2>&1; then
+      echo -e "✅${GN:-} $VM reachable (tryout $COUNT)\n${CL:-}"
+      break
+    else
+      echo -e "ℹ  Tryout $COUNT/$MAX_RETRIES failed"
+      sleep "$SSH_START_DELAY_TIME"
+    fi
+    COUNT=$((COUNT+1))
+  done
+  if [ $COUNT -gt $MAX_RETRIES ]; then
+    echo -e "❌${RD:-} Connection to $VM after $MAX_RETRIES failed.${CL:-}\n"
+    return 0
+  fi
+}
+
+############################
+########## HOST ############
+############################
+
 # Host Update Start
 HOST_UPDATE_START () {
   if [[ "$RICM" != true ]]; then true > $LOCAL_FILES/check-output; fi
@@ -751,7 +765,10 @@ UPDATE_HOST_ITSELF () {
   CHOST=""
 }
 
-## Container ##
+############################
+######## CONTAINER #########
+############################
+
 # Container Update Start
 CONTAINER_UPDATE_START () {
   # Get the list of containers
@@ -774,7 +791,8 @@ CONTAINER_UPDATE_START () {
         echo -e " ▶${GN:-} Starting LXC ${BL:-}$CONTAINER ${CL:-}"
         pct start "$CONTAINER"
         echo -e "⏳${GN:-} Waiting for LXC ${BL:-}$CONTAINER${CL:-}${GN:-} to start ${CL:-}"
-        sleep "$LXC_START_DELAY"
+#        sleep "$LXC_START_DELAY"
+        WAIT_FOR_BOOTUP_LXC
         UPDATE_CONTAINER "$CONTAINER"
         # Stop the container
         echo -e "⏹ ${GN:-} Shutting down LXC ${BL:-}$CONTAINER ${CL:-}\n\n"
@@ -830,7 +848,7 @@ UPDATE_CONTAINER () {
     echo
   fi
   # Run dist-upgrade
-  if [[ "$CHECK_DIST" == true ]] && [[ "$OS" =~ debian ]]; then
+  if [[ $CHECK_DIST == true && $OS =~ debian ]]; then
     DIST_UPGRADE
     return 0
   elif [[ "$CHECK_DIST" == true ]]; then
@@ -839,7 +857,7 @@ UPDATE_CONTAINER () {
   fi
   # Run update
   # shellcheck disable=SC2015
-  if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
+  if [[ "${OS,,}" =~ ubuntu|debian|devuan ]]; then
     echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "apt-get update -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update -y" 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
@@ -907,7 +925,10 @@ UPDATE_CONTAINER () {
   CCONTAINER=""
 }
 
-## VM ##
+############################
+########### VM #############
+############################
+
 # VM Update Start
 VM_UPDATE_START () {
   # Get the list of VMs
@@ -929,7 +950,7 @@ VM_UPDATE_START () {
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
         # Check if update is possible
-        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
+        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 || -f $LOCAL_FILES/VMs/$VM ]]; then
           # Start the VM
           WILL_STOP="true"
           echo -e " ▶${GN:-} Starting VM${BL:-} $VM ${CL:-}"
@@ -973,19 +994,18 @@ UPDATE_VM () {
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     USER=$(awk -F'"' '/^USER=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if [[ -z "$USER" ]]; then USER="root"; fi
+    USER="${USER:-root}"
     SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if [[ -z "$SSH_VM_PORT" ]]; then SSH_VM_PORT="22"; fi
+    SSH_VM_PORT="${SSH_VM_PORT:-22}"
     SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if [[ -z "$SSH_START_DELAY_TIME" ]]; then SSH_START_DELAY_TIME="45"; fi
+    SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-45}"
     if [[ "$START_WAITING" == true ]]; then
       echo -e "⏳${OR:-} Wait for bootup${CL:-}"
-      echo -e "⏳${OR:-} Sleep $SSH_START_DELAY_TIME secounds - time could be set in SSH-VM config file${CL:-}\n"
-      sleep "$SSH_START_DELAY_TIME"
+      echo -e "ℹ ${OR:-} $SSH_START_DELAY_TIME seconds is set for sleep between tryouts in SSH-VM config file${CL:-}\n"
+      WAIT_FOR_BOOTUP_SSH
     fi
     if ! (ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
       echo -e "${RD:-}  ❌ File for ssh connection found, but not correctly set?\n\
-  ${OR:-}Or need more start delay time.\n\
   ${BL:-}Please check SSH Key-Based Authentication${CL:-}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
   Try to use QEMU insead\n"
@@ -996,23 +1016,24 @@ UPDATE_VM () {
       SSH_CONNECTION="true"
       KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
       OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
-      if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
+      # Free-BSD
+      if [[ $KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true ]]; then
         echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- PKG UPGRADE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg upgrade -y 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg upgrade -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- PKG CLEANING ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg autoremove -y 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg autoremove -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg autoremove -y 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo
-        # UPDATE_CHECK
         return
       elif [[ "$KERNEL" =~ FreeBSD ]]; then
         echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
         return
-      elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+      # Debian Base
+      elif [[ "${OS,,}" =~ debian|ubuntu|linuxmint|neon|devuan ]]; then
         # Check Internet connection
         if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
           echo -e "${OR:-} ❌ Internet check fail - skip this VM${CL:-}\n"
@@ -1026,7 +1047,7 @@ UPDATE_VM () {
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
         if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y 2>&1) || ERROR
+          ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$UPDATE_USER" apt-get upgrade -y 2>&1) || ERROR
           if [[ $ERROR_CODE != "" ]]; then return; fi
         else
           ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get -o APT::Get::Always-Include-Phased-Updates=true upgrade -y 2>&1) || ERROR
@@ -1039,39 +1060,46 @@ UPDATE_VM () {
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
+      # Fedora
       elif [[ "$OS" =~ Fedora ]]; then
         echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" dnf -y upgrade 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y upgrade 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
         ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
+      # Arch
       elif [[ "$OS" =~ Arch ]]; then
         echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pacman -Su --noconfirm 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pacman -Su --noconfirm || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pacman -Su --noconfirm 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
+      # Alpine
       elif [[ "$OS" =~ Alpine ]]; then
         echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" apk -U upgrade 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" apk -U upgrade || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" apk -U upgrade 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
+      # Cent OS
       elif [[ "$OS" =~ CentOS ]]; then
         echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
-        ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" yum -y update 2>&1) || ERROR
+        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" yum -y update || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" yum -y update 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK
+      # Windows ( WindowsUpdate need admin rights, ...)
+#      elif [[ $OS_BASE == "win10" || $OS_BASE == "win11" ]]; then
+#        # check updates
+#        ssh -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command Get-WindowsUpdate"
+#        # install updates
+#        ssh -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command Install-WindowsUpdate -AcceptAll -IgnoreReboot"
       else
         echo -e "${RD:-}  ❌ The system is not supported.\n  Maybe with later version ;)\n${CL:-}"
         echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
       fi
       return
-#      elif [[ $OS_BASE == win10 ]]; then
-#        ssh -q -p "$SSH_PORT" "$USER"@"$IP" wuauclt /detectnow /updatenow
-#        Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot # don't work
     fi
   else
     UPDATE_VM_QEMU
@@ -1093,7 +1121,7 @@ UPDATE_VM_QEMU () {
     # Run Update
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
     OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
-    if [[ "$KERNEL" =~ FreeBSD ]] && [[ "$FREEBSD_UPDATES" == true ]]; then
+    if [[ $KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true ]]; then
       echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
       qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- || ERROR_CODE=$? && ID=$VM && ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
@@ -1109,7 +1137,7 @@ UPDATE_VM_QEMU () {
     elif [[ "$KERNEL" =~ FreeBSD ]]; then
       echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
       return
-    elif [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
+    elif [[ ${OS,,} =~ ubuntu|debian|devuan ]]; then
       # Check Internet connection
       if ! (qm guest exec "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"); then
         echo -e "${OR:-} ❌ Internet is not reachable - skip the update${CL:-}\n"
@@ -1242,7 +1270,7 @@ EXIT () {
   # Update Finish
   elif [[ "$EXIT_CODE" == 0 ]]; then
     if [[ "$RICM" != true ]]; then
-      if [[ -f "$ERROR_LOG_FILE" ]] && [[ -s "$ERROR_LOG_FILE" ]]; then
+      if [[ -f $ERROR_LOG_FILE && -s $ERROR_LOG_FILE ]]; then
         echo -e "${OR:-}❌ Finished, with errors.${CL:-}\n"
         echo -e "Please checkout $ERROR_LOG_FILE"
         echo
