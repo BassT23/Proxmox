@@ -430,7 +430,7 @@ EXIT () {
       if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
         mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
       elif [[ "$EMAIL_NO_UPDATES" == true ]]; then
-        echo "No updates found during search" | mail -s "Ultimate Updater" root
+        echo "No updates found during search" | mail -s "Ultimate Updater" "$EMAIL_USER"
       fi
     fi
   fi
