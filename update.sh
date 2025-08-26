@@ -615,6 +615,7 @@ DIST_UPGRADE () {
           echo -e "\n${OR:-}--- Restart the container now for you ---${CL:-}"
           pct exec "$CONTAINER" -- bash -c "reboot"
           echo
+          return 0
         else
           echo -e "❌${BL:-} skipped\n${CL:-}"
           return 0

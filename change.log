@@ -4,6 +4,7 @@ Changelog:
 **v4.5.3** (beta/develop)
 
 **v4.5.2** (24.08.2025)
+- add EMAIL_NO_UPDATES in config file
 - add Backup when Snapshot is not available #204
 - fix fs-trim
 - fix "error code 1" on start
