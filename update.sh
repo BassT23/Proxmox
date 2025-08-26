@@ -1281,7 +1281,7 @@ EXIT () {
         echo -e "${GN:-}✅ Finished, all updates done.${CL:-}\n"
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
-        echo "Finished, all updates done. No errors" | mail -s "Ultimate Updater" root
+        echo "Finished, all updates done. No errors" | mail -s "Ultimate Updater" "$EMAIL_USER"
       fi
     fi
   else
