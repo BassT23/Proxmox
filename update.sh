@@ -433,11 +433,6 @@ READ_CONFIG () {
 # Snapshot/Backup
 CONTAINER_BACKUP () {
   if [[ $SNAPSHOT == true || $BACKUP == true ]]; then
-    if [[ $SNAPSHOT == true && $BACKUP_LXC_MP == true && $(pct config "$CONTAINER" | grep -q '^mp' && echo true) == true ]]; then
-      BACKUP=true
-      SNAPSHOT=false
-      BACKUP_RESET=true
-    fi
     if [[ "$SNAPSHOT" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "✅${GN:-} Snapshot created${CL:-}"
@@ -449,6 +444,12 @@ CONTAINER_BACKUP () {
       echo -e "✅${GN:-} Done${CL:-}"
       else
         echo -e "❌${RD:-} Snapshot is not possible on your storage${CL:-}"
+        if [[ $BACKUP_LXC_MP == true && $(pct config "$CONTAINER" | grep -q '^mp' && echo true) == true ]]; then
+          BACKUP=true
+          SNAPSHOT=false
+          BACKUP_RESET=true
+          echo -e "ℹ ${OR:-} Changed to Backup because of mount points${CL:-}"
+        fi
       fi
     fi
     if [[ "$BACKUP" == true ]]; then
