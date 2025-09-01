@@ -443,12 +443,12 @@ CONTAINER_BACKUP () {
         done
       echo -e "✅${GN:-} Done${CL:-}"
       else
-        echo -e "❌${RD:-} Snapshot is not possible on your storage${CL:-}"
+        echo -e "❌${RD:-} Snapshot is not possible on your setup${CL:-}"
         if [[ $BACKUP_LXC_MP == true && $(pct config "$CONTAINER" | grep -q '^mp' && echo true) == true ]]; then
           BACKUP=true
           SNAPSHOT=false
           BACKUP_RESET=true
-          echo -e "ℹ ${OR:-} Changed to Backup because of mount points${CL:-}"
+          echo -e "ℹ ${OR:-} Changed to backup, because of mount points${CL:-}"
         fi
       fi
     fi
