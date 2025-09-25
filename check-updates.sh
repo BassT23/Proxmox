@@ -89,6 +89,7 @@ READ_WRITE_CONFIG () {
   RUNNING_VM=$(awk -F'"' '/^CHECK_RUNNING_VM=/ {print $2}' $CONFIG_FILE)
   STOPPED_VM=$(awk -F'"' '/^CHECK_STOPPED_VM=/ {print $2}' $CONFIG_FILE)
   PAUSED_VM=$(awk -F'"' '/^CHECK_PAUSED_VM=/ {print $2}' $CONFIG_FILE)
+  REEBOOT_IF_NEEDED=$(awk -F'"' '/^REEBOOT_IF_NEEDED=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
@@ -284,7 +285,9 @@ VM_CHECK_START () {
           # Suspend VM
           qm suspend "$VM"
         elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
+          VM_NOT_STOPPED=true
           CHECK_VM "$VM"
+          VM_NOT_STOPPED=""
         fi
       fi
     fi
@@ -327,6 +330,9 @@ CHECK_VM () {
             echo -e "S: $SECURITY_APT_UPDATES / "
           elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
             echo -e "N: $NORMAL_APT_UPDATES"
+          fi
+          if [[ "$REBOOT_REQUIRED" == true ]] && [[ "$REEBOOT_IF_NEEDED" == true ]] && [[ "$VM_NOT_STOPPED" == true ]]; then
+            ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "reboot" >/dev/null 2>&1
           fi
         elif [[ "$OS" =~ Fedora ]]; then
           ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "dnf -y update" >/dev/null 2>&1
