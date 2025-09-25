@@ -3,6 +3,7 @@ Changelog:
 
 **v4.5.3** (beta/develop)
 - add Reboot VM/Container after update option in config file
+- fix password promt during update check
 
 **v4.5.2** (24.08.2025)
 - add EMAIL_NO_UPDATES in config file
