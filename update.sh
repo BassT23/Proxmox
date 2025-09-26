@@ -1279,12 +1279,12 @@ EXIT () {
         echo -e "Please checkout $ERROR_LOG_FILE"
         echo
         CLEAN_LOGFILE
-        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$ERROR_LOG_FILE" 2>/dev/null
+        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$ERROR_LOG_FILE" 2>/dev/null ||true
       else
         echo -e "${GN:-}✅ Finished, all updates done.${CL:-}\n"
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
-        echo "Finished, all updates done. No errors" | mail -s "Ultimate Updater" "$EMAIL_USER"
+        echo "Finished, all updates done. No errors" | mail -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
       fi
     fi
   else
