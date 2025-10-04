@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="1.7.9"
+VERSION="1.8"
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -140,7 +140,7 @@ CHECK_HOST_ITSELF () {
   NORMAL_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst." | tr -d '\n')
   if [[ -f /var/run/reboot-required.pkgs ]]; then REBOOT_REQUIRED=true; fi
   if [[ $SECURITY_APT_UPDATES != 0 || $NORMAL_APT_UPDATES != 0 || $REBOOT_REQUIRED == true ]]; then
-    echo -e "${GN}Host${CL} : ${GN}$HOSTNAME${CL}"
+    echo -e "${BL}Host${CL} : ${GN}$HOSTNAME${CL}"
   fi
   if [[ $REBOOT_REQUIRED == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
   if [[ $SECURITY_APT_UPDATES != 0 && $NORMAL_APT_UPDATES != 0 ]]; then
