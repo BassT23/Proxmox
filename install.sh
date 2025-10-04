@@ -428,6 +428,13 @@ UNINSTALL () {
         mv /etc/crontab /etc/crontab.bak2
         mv /etc/crontab.bak /etc/crontab
         mv /etc/crontab.bak2 /etc/crontab.bak
+        echo -e "${BL:-}Should fetch be uninstalled also?${CL:-}"
+        read -p "Type [Y/y] for yes - anything else will skip: " -r
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+          apt-get remove screenfetch -y ; apt-get remove neofetch -y || true
+          apt-get autoremove -y || true
+          echo -e "\n${BL:-} fetch uninstalled${CL:-}"
+        fi
       fi
       echo -e "\n\n${BL:-} The Ultimate Updater has gone${CL:-}\n\
 ${BL:-} crontab file restored (old one backed up as crontab.bak)${CL:-}\n"

@@ -1262,10 +1262,8 @@ EXIT () {
   EXIT_CODE=$?
   if [[ -f "/etc/ultimate-updater/temp/exec_host" ]]; then
     EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' /etc/ultimate-updater/temp/exec_host)
-  else
-    echo "no exec host file exist"
   fi
-  if [[ "$WELCOME_SCREEN" == true ]]; then
+  if [[ "$WELCOME_SCREEN" == true && -n "$EXEC_HOST" ]]; then
     scp "$LOCAL_FILES"/check-output "$EXEC_HOST":"$LOCAL_FILES"/check-output
   fi
   # Exit without echo
