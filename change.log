@@ -3,6 +3,7 @@ Changelog:
 
 **v4.5.3** (beta/develop)
 - add Reboot VM/Container after update option in config file
+- add option to send email only if security updates are available
 - fix password promt during update check
 - fix uninstall issue
 - hide mail error
