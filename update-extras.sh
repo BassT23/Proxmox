@@ -15,7 +15,6 @@ IOBROKER=$(awk -F'"' '/^IOBROKER=/ {print $2}' $CONFIG_FILE)
 PTERODACTYL=$(awk -F'"' '/^PTERODACTYL=/ {print $2}' $CONFIG_FILE)
 OCTOPRINT=$(awk -F'"' '/^OCTOPRINT=/ {print $2}' $CONFIG_FILE)
 DOCKER_COMPOSE=$(awk -F'"' '/^DOCKER_COMPOSE=/ {print $2}' $CONFIG_FILE)
-UNIFI=$(awk -F'"' '/^UNIFI=/ {print $2}' $CONFIG_FILE)
 COMPOSE_PATH=$(awk -F'"' '/^COMPOSE_PATH=/ {print $2}' $CONFIG_FILE)
 INCLUDE_HELPER_SCRIPTS=$(awk -F'"' '/^INCLUDE_HELPER_SCRIPTS=/ {print $2}' $CONFIG_FILE)
 
@@ -83,16 +82,6 @@ if [[ -d "/root/OctoPrint" && $OCTOPRINT == true ]]; then
   sudo service octoprint restart
 fi
 
-# Unifi Network Controller
-if [[ -d "/usr/lib/unifi" && $UNIFI == true ]]; then
-  echo -e "\n*** Updating Unifi Network Controller ***\n"
-  # --allow-releaseinfo-change needed because Unifi regularly changes repository metadata between versions
-  DEBIAN_FRONTEND=noninteractive apt-get update --allow-releaseinfo-change
-  DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
-    -o Dpkg::Options::="--force-confdef" \
-    -o Dpkg::Options::="--force-confold"
-fi
-
 # Docker Compose detection
 if [[ -f /usr/local/bin/docker-compose ]]; then DOCKER_COMPOSE_V1=true; fi
 if docker compose version &>/dev/null; then DOCKER_COMPOSE_V2=true; fi
@@ -114,7 +103,6 @@ if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]] && [[ $DOCKER_
       DIRLIST+=("$line")
     done < <(find "$COMPOSE_PATH" -name "$COMPOSEFILE" -exec dirname {} \; 2> >(grep -v 'Permission denied'))
   done
-fi
 
   # Docker-Compose v1
   if [[ $DOCKER_COMPOSE_V1 == true && ${#DIRLIST[@]} -gt 0 ]]; then
