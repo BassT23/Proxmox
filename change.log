@@ -1,6 +1,34 @@
 Changelog:
 ==========
 
+**v5.0.0** (2026-04-27)
+- complete architecture refactor: split monolithic update.sh into lib/ modules
+  - lib/ui.sh — all output functions, header, colors
+  - lib/errors.sh — error accumulation, EXIT trap, log cleanup
+  - lib/os-update.sh — exec_on() abstraction, all package manager functions
+  - lib/snapshot.sh — container and VM snapshot/backup logic
+  - lib/config.sh — READ_CONFIG(), CONFIG_WIZARD()
+- replace update-extras.sh with drop-in plugins/ system (one file per application)
+  - plugins/docker-compose.sh, pihole.sh, iobroker.sh, octoprint.sh, pterodactyl.sh, unifi.sh
+  - add run-plugins.sh as isolated plugin runner (failures don't abort the run)
+- add exec_on() abstraction: eliminates duplicate OS update code across LXC/SSH/QEMU paths
+- add interactive config wizard: update --config
+- implement REEBOOT_IF_NEEDED in regular update path (was only in check-updates.sh)
+- add DOCKER_PRUNE config key with explicit destructive-action warning
+- add CLEAN_APT_CACHE option to run apt-get clean after each update
+- fix broken error handling (replace || ERROR_CODE=$? && ... || ERROR anti-pattern)
+- fix fstrim lvs display: snapshot rows shifted Data% column, now matches exact LV name
+- fix internet check: curl mode used ping flags (-q -c1), now properly handled
+- fix --help and --version printing "All updates done" (wrong exit code)
+- fix check-updates.sh VM stop: use qm shutdown --timeout before qm stop
+- rewrite README without emoji, targeting all skill levels
+- rewrite update.conf: remove Unicode box-drawing characters, inline documentation
+- rewrite install.sh: _download()/_copy_files() helpers, new dirs, config diff prompt
+- rewrite check-updates.sh: _cfg() helper, EMAIL_ONLY_SECURITY logic fixed
+- add .gitattributes to enforce LF line endings
+- add GitHub Actions release workflow (automated release on version tag)
+- add wiki/ directory with full documentation
+
 **v4.5.3** (beta/develop)
 - add Reboot VM/Container after update option in config file
 - add option to send email only if security updates are available

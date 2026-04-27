@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Build release archive
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCHIVE="ultimate-updater.tar.gz"
+
+          # Assemble files into a staging directory
+          mkdir -p release/lib release/plugins release/exit release/VMs release/scripts.d/000
+
+          cp update.sh run-plugins.sh tag-filter.sh check-updates.sh update.conf release/
+          cp lib/*.sh   release/lib/
+          cp plugins/*.sh release/plugins/
+          cp exit/*     release/exit/
+          [[ -f VMs/example ]] && cp VMs/example release/VMs/
+          [[ -d scripts.d/000 ]] && cp scripts.d/000/* release/scripts.d/000/ 2>/dev/null || true
+
+          # Also include the welcome screen if present
+          [[ -f welcome-screen.sh ]] && cp welcome-screen.sh release/
+
+          tar -czf "${ARCHIVE}" -C release .
+          echo "ARCHIVE=${ARCHIVE}" >> "${GITHUB_ENV}"
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "v${{ env.VERSION }}"
+          body: |
+            See [CHANGELOG](https://github.com/${{ github.repository }}/blob/master/CHANGELOG.md) for details.
+          files: ${{ env.ARCHIVE }}
+          draft: false
+          prerelease: false
