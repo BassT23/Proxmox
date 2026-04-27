@@ -41,7 +41,13 @@ CHECK_ROOT() {
 CHECK_INTERNET() {
   local exe="${CHECK_URL_EXE:-ping}"
   local url="${CHECK_URL:-google.com}"
-  if ! "${exe}" -q -c1 "${url}" &>/dev/null; then
+  local ok=true
+  case "${exe}" in
+    ping) ping -q -c1 "${url}" &>/dev/null || ok=false ;;
+    curl) curl -sf --max-time 5 "https://${url}" >/dev/null 2>&1 || ok=false ;;
+    *)    "${exe}" "${url}" &>/dev/null || ok=false ;;
+  esac
+  if [[ "${ok}" == false ]]; then
     echo -e "\n${OR}  No internet — cannot update.${CL}\n"
     exit 2
   fi

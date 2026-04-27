@@ -34,16 +34,17 @@ internet_check_on() {
   local url="${CHECK_URL:-google.com}"
   local ok=true
 
+  local check_cmd
+  case "${exe}" in
+    ping) check_cmd="ping -q -c1 ${url} &>/dev/null" ;;
+    curl) check_cmd="curl -sf --max-time 5 https://${url} >/dev/null 2>&1" ;;
+    *)    check_cmd="${exe} ${url} &>/dev/null" ;;
+  esac
+
   case "${method}" in
-    lxc)
-      pct exec "${target}" -- bash -c "${exe} -q -c1 ${url} &>/dev/null" || ok=false
-      ;;
-    ssh)
-      ssh -q -p "${SSH_VM_PORT:-22}" "${SSH_USER:-root}@${IP}" "${exe} -c1 ${url}" &>/dev/null || ok=false
-      ;;
-    qemu)
-      qm guest exec "${target}" -- bash -c "${exe} -q -c1 ${url} &>/dev/null" >/dev/null 2>&1 || ok=false
-      ;;
+    lxc)  pct exec "${target}" -- bash -c "${check_cmd}" || ok=false ;;
+    ssh)  ssh -q -p "${SSH_VM_PORT:-22}" "${SSH_USER:-root}@${IP}" "${check_cmd}" &>/dev/null || ok=false ;;
+    qemu) qm guest exec "${target}" -- bash -c "${check_cmd}" >/dev/null 2>&1 || ok=false ;;
   esac
 
   if [[ "${ok}" == false ]]; then
