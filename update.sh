@@ -215,8 +215,8 @@ ARGUMENTS() {
         CONTAINER_UPDATE_START
         VM_UPDATE_START
         ;;
-      -h|--help)    USAGE; exit 0 ;;
-      -v|--version) VERSION_CHECK; exit 0 ;;
+      -h|--help)    USAGE; exit 2 ;;
+      -v|--version) VERSION_CHECK; exit 2 ;;
       -s|--silent)  HEADLESS=true ;;
       -c)           RICM=true ;;
       -w)           WELCOME_SCREEN=true ;;
