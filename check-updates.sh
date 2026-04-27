@@ -249,7 +249,7 @@ VM_CHECK_START() {
       sleep "${delay}"
       sleep "${delay}"
       CHECK_VM "${VM}"
-      qm stop "${VM}"
+      qm shutdown "${VM}" --timeout 30 >/dev/null 2>&1 || qm stop "${VM}" >/dev/null 2>&1
     elif [[ "${status}" == "status: paused" && "${PAUSED_VM:-true}" == true ]]; then
       qm resume "${VM}" >/dev/null 2>&1
       sleep "${SSH_START_DELAY_TIME:-45}"

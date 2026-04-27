@@ -393,19 +393,24 @@ TRIM_FILESYSTEM() {
 
   local root_fs
   root_fs=$(df -Th "/" | awk 'NR==2 {print $2}')
-  local lvs_before
-  mapfile -t lvs_before < <(lvs 2>/dev/null \
-    | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-${CONTAINER}"'/) {gsub(/%/, "", $7); print $7}')
+  # Get pool Data% for this container's base disk (skip snapshots which shift columns)
+  _lvs_pool_pct() {
+    lvs --noheadings 2>/dev/null | \
+      awk -v lv="vm-${CONTAINER}-disk-0" '
+        $1==lv { for(i=1;i<=NF;i++) if($i~/^[0-9]+\.[0-9]+$/) {print $i; exit} }
+      '
+  }
 
-  if [[ ${#lvs_before[@]} -gt 0 && "${root_fs}" == ext4 ]]; then
+  local pct_before
+  pct_before=$(_lvs_pool_pct)
+
+  if [[ -n "${pct_before}" && "${root_fs}" == ext4 ]]; then
     ui_section "Filesystem trim"
-    echo "Before: ${lvs_before[*]}%"
+    echo "Pool usage before: ${pct_before}%"
     pct fstrim "${CONTAINER}" --ignore-mountpoints "${FSTRIM_WITH_MOUNTPOINT:-true}"
-    local lvs_after
-    mapfile -t lvs_after < <(lvs 2>/dev/null \
-      | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-${CONTAINER}"'/) {gsub(/%/, "", $7); print $7}')
-    echo "After:  ${lvs_after[*]}%"
-    sleep 1
+    local pct_after
+    pct_after=$(_lvs_pool_pct)
+    echo "Pool usage after:  ${pct_after}%"
   fi
 }
 

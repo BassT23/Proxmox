@@ -44,6 +44,7 @@ READ_CONFIG() {
   INCLUDE_PHASED_UPDATES=$(_cfg INCLUDE_PHASED_UPDATES)
   INCLUDE_FSTRIM=$(_cfg INCLUDE_FSTRIM)
   FSTRIM_WITH_MOUNTPOINT=$(_cfg FSTRIM_WITH_MOUNTPOINT)
+  CLEAN_APT_CACHE=$(_cfg CLEAN_APT_CACHE)
   PACMAN_ENVIRONMENT=$(_cfg PACMAN_ENVIRONMENT)
   EMAIL_USER=$(_cfg EMAIL_USER)
   EMAIL_NO_UPDATES=$(_cfg EMAIL_NO_UPDATES)
@@ -134,6 +135,7 @@ CONFIG_WIZARD() {
   echo "--- Filesystem ---"
   _ask_bool "INCLUDE_FSTRIM"         "Run fstrim after updates"
   _ask_bool "FSTRIM_WITH_MOUNTPOINT" "Include mount points in fstrim"
+  _ask_bool "CLEAN_APT_CACHE"        "Run apt-get clean after updates (removes all cached .debs)"
   echo ""
 
   echo "--- Notifications ---"

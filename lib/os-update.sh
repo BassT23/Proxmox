@@ -95,7 +95,9 @@ apt_upgrade() {
   }
 
   ui_section "APT CLEANUP"
-  exec_on "${method}" "${target}" "apt-get --purge autoremove -y && apt-get autoclean -y" || {
+  local clean_cmd="apt-get --purge autoremove -y && apt-get autoclean -y"
+  [[ "${CLEAN_APT_CACHE:-false}" == true ]] && clean_cmd+=" && apt-get clean"
+  exec_on "${method}" "${target}" "${clean_cmd}" || {
     log_error "${target}" "${_TARGET_NAME}" $? "apt-get cleanup failed"
     return 1
   }
