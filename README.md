@@ -2,192 +2,283 @@
 
 ![Logo](https://github.com/BassT23/Proxmox/assets/30832786/6400ed7f-71c6-486c-b5ed-249c2e0df19b)
 
-![Screenshot_20240109_113501](https://github.com/BassT23/Proxmox/assets/30832786/640cefd9-0659-4265-b34a-cb5b9905046b)
-
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
 [![downloads](https://img.shields.io/github/downloads/BassT23/Proxmox/total.svg)](https://github.com/BassT23/Proxmox/releases)
 [![Discord](https://img.shields.io/discord/1149671790864506882)](https://discord.gg/nVpUg6BKn8)
 
-Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
-
-I am no member of the Proxmox Server Solutions GmbH. This is not an official program from Proxmox!
-
 </div>
 
->  This is distributed in the hope that it will be useful, but
->  WITHOUT ANY WARRANTY; without even the implied warranty of
->  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
->  See the GNU General Public License for more details.
+# The Ultimate Updater for Proxmox VE
 
-<div align="center">
+A single command to update your entire Proxmox environment: the host, all LXC containers, and all VMs. Supports clusters, snapshots, backups, and extra update plugins.
 
-**IN CASE OF EMERGENCY, I HOPE YOU HAVE BACKUPS FROM YOUR MACHINES!**
+## Requirements
 
-**YOU HAVE BEEN WARNED!**
+- Proxmox VE 7 or later
+- Root access on the Proxmox host
 
-</div>
+---
 
-### What does the script do:
-- The script makes system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
-- Make a snapshot before update (if your storage support it - [look here](https://pve.proxmox.com/wiki/Storage)). If not supported, you can choose to make a real backup, but this must be enabled in `update.conf` by user (take long time!)
-- After all, the updater makes a little cleaning (like `apt autoremove`) 
-- If the script detects "extra" installations, it could update this also. Look in config file, for that.
-- NEW: use your own scripts during update if you like. [Look here](https://github.com/BassT23/Proxmox/tree/develop#user-scripts)
+## Installation
 
-### Features:
-- Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
-- LXC distriburion upgrade (deb12 -> deb13) with `update -dist-upgrade`
-- Snapshot / Backup support (for Snapshot, your system must prepared for it)
-- Normal run is "Interactive" / Headless Mode can be run with `update -s`
-- Logging - location can be change in config file
-- Exit tracking, so you can send additional commands for finish or failure (edit files in `/etc/ultimate-updater/exit`)
-- [Config file](https://github.com/BassT23/Proxmox/tree/master#config-file)
-- [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/tree/beta#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
-- send email after update/check
-- Trim filesystem on ext4 nodes
-
-Info can be found with `update -h`
-
-Changelog: [here](https://github.com/BassT23/Proxmox/blob/master/change.log)
-
-## 
-# Installation:
-In Proxmox GUI Host Shell or as root on proxmox host terminal:
-```
+```bash
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
 
-# Usage:
- - If you want to run the updater globally for all nodes/lxc/vm only run `update`
- - If you want to update only one specific lxc/vm run `update <ID>`
+After installation, run the updater with:
 
-##
-## Cluster-Mode preparation:
-**! For Cluster Installation, you only need to install on one Host !**
-
-The nodes need to know each other. For that please edit the `/etc/hosts` file on each node. Otherwise, you can use the GUI. (NODE -> System -> Hosts)
-
-Example add:
+```bash
+update
 ```
-192.168.1.10   pve1
-192.168.1.11   pve2
-192.168.1.12   pve3
-...
+
+---
+
+## Usage
+
 ```
-IP and Name must match with node ip and its hostname.
-- IP can be found in node terminal with `hostname -I`
-- hostname can be found in node terminal with `hostname`
+update [OPTIONS] [COMMAND]
 
-After that make the fingerprints.
-The used sequence can be check, if you run `awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf"` from the host, on which Proxmox-Updater is installed.
-So connect from first node (on which you install the Proxmox-Updater) to node2 with `ssh pve2`. Then from node2 `ssh pve3`, and so on.
+Commands:
+  host                 Update this host, all containers, and all VMs
+  cluster              Update all cluster nodes
+  <VMID>               Update a single container or VM by ID
 
-## If you want to update the VMs also, you have two choices:
-1. Use the "light and easy" QEMU option
+  status               Show version status (local vs server)
+  --config             Run the interactive configuration wizard
+  uninstall            Uninstall The Ultimate Updater
 
-     more infos here: [QEMU Guest Agent](https://pve.proxmox.com/wiki/Qemu-guest-agent)
+Self-update:
+  master  -up          Update to the latest stable release
+  beta    -up          Update to the beta branch
+  develop -up          Update to the develop branch
 
-2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
-
-     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/master/ssh.md)
-
-# Update the script:
-`update -up`
-
-If update run into issue, please remove first with:
+Options:
+  -s, --silent         Headless mode (no interactive prompts)
+  -v, --version        Show version information
+  -h, --help           Show this help message
+  -dist-upgrade        Run Debian distribution upgrade on all containers
+  -check               Run the update checker (welcome screen data)
 ```
-bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) uninstall
+
+Running `update` with no arguments defaults to `host` mode.
+
+---
+
+## Configuration
+
+The configuration file is located at `/etc/ultimate-updater/update.conf`.
+
+You can edit it directly, or use the interactive wizard:
+
+```bash
+update --config
 ```
-and install new
 
-# Config File:
-The config file is stored under `/etc/ultimate-updater/update.conf`
+The wizard guides you through each setting and explains what it does.
 
-With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
+### Key settings
 
-- Host / LXC / VM
-- Headless Mode
-- Extra updates
-- "stopped" or "running" LXC/VM
-- "only" or "exclude" LXC/VM - see below
+| Setting | Default | Description |
+|---|---|---|
+| `WITH_HOST` | `true` | Update the Proxmox host itself |
+| `WITH_LXC` | `true` | Update LXC containers |
+| `WITH_VM` | `true` | Update VMs |
+| `STOPPED_CONTAINER` | `true` | Start stopped containers to update them |
+| `SNAPSHOT` | `true` | Create a snapshot before each update |
+| `KEEP_SNAPSHOTS` | `3` | Number of snapshots to keep per container/VM |
+| `REEBOOT_IF_NEEDED` | `false` | Reboot after update if required |
+| `EXTRA_GLOBAL` | `true` | Enable extra update plugins |
+| `EXIT_ON_ERROR` | `false` | Stop the entire run on the first error |
 
-# New Only/Exclude handling in config file:
-Expands ONLY/EXCLUDE into a space-separated list of numeric VMIDs.
-Supports:
-  - Plain VMIDs: 101 202
-  - Delimiters: commas / semicolons / pipes / spaces intermixed (e.g. 101,202;203|204)
-  - Ranges: 120-125 (inclusive)
-  - Mixed IDs + ranges + tags: 110 testing 111 200-202
-  - Uppercase user tag input (config tags assumed already lowercase)
-    Tag tokens are any token not matching ^[0-9]+$ or ^[0-9]+-[0-9]+$.
-  - OR matching across tag tokens.
+Full documentation of all settings is in the config file itself.
 
-Behavior summary:
-  1. Tokenize ONLY if set/matched; else tokenized EXCLUDE.
-  2. For each token:
-       number        -> add as VMID
-       range a-b     -> expand (a..b)
-       tag           -> collect tag for later resolution
-  3. Resolve tags to IDs (any tag match) and append, de-duplicating while
-     preserving first-seen order (input order then discovery order for tags).
-  4. Assign final space-separated list back to ONLY / EXCLUDE variable.
-  5. If ONLY provided, EXCLUDE is ignored.
+### Filtering — only update specific containers or VMs
 
-Usage examples:
- - ONLY="backup,windows"
- - ONLY="101,102,105-107"
- - ONLY="110 testtag 111 120-121"
- - ONLY="" EXCLUDE="old 300-302"
+Use `ONLY` to restrict updates to a subset, or `EXCLUDE` to skip some.
 
-# Extra Updates:
-If updater detects installation: (disable, if you want in `/etc/ultimate-updater/update.conf`)
-- PiHole
-- ioBroker
-- Pterodactyl
-- Octoprint
-- Docker Compose (v1 and v2)
+Both settings accept Proxmox tags, VM/CT IDs, ID ranges, or combinations:
 
-# User scripts:
-How to use user scripts:
+```bash
+# Only update containers/VMs tagged "production"
+ONLY="production"
 
-In "/etc/ultimate-updater/scripts.d" create an folder for each LXC/VM who should use it like this:
-(000 is the example ID)
+# Only update specific IDs and a range
+ONLY="101,105,200-210"
 
-/etc/ultimate-updater/scripts.d/000/
+# Skip containers/VMs tagged "testing" or in a range
+EXCLUDE="testing,300-305"
+```
 
-here you can put in any script you like, which will be run during update also.
-!!! DON'T use free spaces in file name !!! ("file 1.sh" -> "file-1.sh")
+If `ONLY` is set, `EXCLUDE` is ignored.
 
-these files are used in the "extra update" section at the end of the LXC/VM
+---
 
-# Welcome Screen:
-The Welcome Screen is an extra for you. It's optional!
+## VM updates via SSH
 
-- The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
-- The update-checker also uses the config file!
-- To force the check, you can run `/etc/ultimate-updater/check-updates.sh` in Terminal.
-- You can choose, if screenfetch will be show also (if screenfetch is not installed, script will make it automatically)
+By default, VMs are updated through the QEMU guest agent. For richer output and SSH-based plugin support, you can configure SSH access per VM.
 
-# Beta Testing:
-If anybody wants to help with failure search, please test our beta (if available).
+Create a file at `/etc/ultimate-updater/VMs/<VMID>` with the following content:
 
-Install beta update with `update beta -up`
-To go back to master, choose `update -up`
+```bash
+IP="192.168.1.10"
+USER="root"
+SSH_VM_PORT="22"
+SSH_START_DELAY_TIME="45"
+```
 
-# Q&A:
-[Discussion](https://github.com/BassT23/Proxmox/discussions/60)
+See [ssh.md](ssh.md) for setup instructions including SSH key-based authentication.
 
-# Support:
-[![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
+---
 
-# Contributors:
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="=https://github.com/BassT23"><img src="https://avatars.githubusercontent.com/u/30832786?v=4?s=100" width="100px;" alt="BassT23"/><br /><sub><b>BassT23</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=BassT23" title="Code">💻</a> <a href="#maintenance-BassT23" title="Maintenance">🚧</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Gauvino"><img src="https://avatars.githubusercontent.com/u/68083474?v=4?s=100" width="100px;" alt="Gauvino"/><br /><sub><b>Gauvino</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=Gauvino" title="Code">💻</a> <a href="#translation-Gauvino" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/elbim"><img src="https://avatars.githubusercontent.com/u/28606318?v=4?s=100" width="100px;" alt="elbim"/><br /><sub><b>elbim</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=elbim" title="Code">💻</a> <a href="#translation-elbim"</a></td>
-    </tr>
-  </tbody>
-</table>
+## Cluster mode
+
+When Corosync is detected (`/etc/corosync/corosync.conf`), the updater switches to cluster mode automatically. Run from any node:
+
+```bash
+update
+# or explicitly:
+update cluster
+```
+
+The updater connects to each node via SSH and runs the update there. No extra configuration is required beyond standard SSH key access between nodes.
+
+---
+
+## Extra updates (plugins)
+
+After the system packages are updated on each container or VM, the updater runs any enabled plugins found in `/etc/ultimate-updater/plugins/`.
+
+### Built-in plugins
+
+| Plugin file | Application | Config key |
+|---|---|---|
+| `pihole.sh` | Pi-hole | `PIHOLE` |
+| `iobroker.sh` | ioBroker | `IOBROKER` |
+| `pterodactyl.sh` | Pterodactyl Panel + Wings | `PTERODACTYL` |
+| `octoprint.sh` | OctoPrint | `OCTOPRINT` |
+| `docker-compose.sh` | Docker Compose projects | `DOCKER_COMPOSE` |
+| `unifi.sh` | Unifi Network Controller | `UNIFI` |
+
+Each plugin checks whether its application is actually installed before doing anything. Enabling a plugin when the application is not present is harmless.
+
+### Docker cleanup
+
+The Docker plugin can optionally run a full cleanup after updating images:
+
+```bash
+DOCKER_PRUNE="true"
+```
+
+**Warning:** This permanently removes all unused images, containers, networks, and volumes — including those unrelated to the updated projects. Only enable this if you understand and accept the consequence.
+
+### Writing your own plugin
+
+Create a `.sh` file in `/etc/ultimate-updater/plugins/`. The file is executed as a subprocess inside the container or VM being updated. Use the `CONFIG_FILE` variable to read settings:
+
+```bash
+#!/bin/bash
+
+# Example plugin: update a custom application
+MY_APP=$(awk -F'"' '/^MY_APP=/ {print $2}' "${CONFIG_FILE:-/etc/ultimate-updater/update.conf}")
+[[ "${MY_APP}" == true ]] || exit 0
+[[ -f /usr/local/bin/myapp ]] || exit 0
+
+echo "--- Updating My App ---"
+myapp update
+```
+
+Add a toggle key to `update.conf` if you want to control the plugin from the config file.
+
+Plugins run in alphabetical order by filename.
+
+---
+
+## Welcome screen
+
+The welcome screen shows pending updates when you SSH into the Proxmox host. It is optional and can be installed or removed at any time:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) welcome
+```
+
+The welcome screen is updated by a cron job (`/etc/crontab`) that runs `update -check` twice a day.
+
+---
+
+## User scripts
+
+You can run custom scripts on specific containers or VMs after the update completes. Place your scripts in:
+
+```
+/etc/ultimate-updater/scripts.d/<VMID>/
+```
+
+Scripts are pushed into the container/VM and executed there after all updates and plugins have run. See `scripts.d/000/example.sh` for a minimal example.
+
+---
+
+## Updating The Ultimate Updater
+
+```bash
+update master -up    # latest stable
+update beta -up      # beta branch
+update develop -up   # development branch
+```
+
+Or run the installer directly:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+```
+
+---
+
+## Uninstall
+
+```bash
+update uninstall
+```
+
+---
+
+## Troubleshooting
+
+**Enable debug output:**
+
+```bash
+DEBUG="true"   # in update.conf
+```
+
+This activates `set -x` and prints every command as it runs.
+
+**Check the log files:**
+
+```bash
+cat /var/log/ultimate-updater.log
+cat /var/log/ultimate-updater-error.log
+```
+
+**A VM is not being updated:**
+
+- Check that the QEMU guest agent is installed and running inside the VM, or configure SSH access (see [ssh.md](ssh.md)).
+- Windows VMs are not supported.
+
+**A container fails to snapshot:**
+
+- Some storage types do not support snapshots. Enable `BACKUP_LXC_MP="true"` to fall back to a backup automatically, or set `SNAPSHOT="false"` and use `BACKUP="true"`.
+
+---
+
+## Contributing
+
+Issues and pull requests are welcome at:
+https://github.com/BassT23/Proxmox
+
+Please check existing issues before opening a new one.
+
+---
+
+## License
+
+[MIT](LICENSE)

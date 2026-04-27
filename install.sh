@@ -4,31 +4,24 @@
 # Install #
 ###########
 
-# shellcheck disable=SC2034
+VERSION="2.0.0"
 
-VERSION="1.8.7"
+BRANCH="master"
 
-# Branch
-
-BRANCH="develop"
-
-# Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/${BRANCH}"
 
-#Colors
+# Colors
 BL="\e[36m"
 OR="\e[1;33m"
 RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
 
-#Header
-HEADER_INFO () {
+HEADER_INFO() {
   clear
-  echo -e "\n \
-      https://github.com/BassT23/Proxmox\n"
+  echo -e "\n      https://github.com/BassT23/Proxmox\n"
   cat <<'EOF'
  The __  ______  _                 __
     / / / / / /_(_)___ ___  ____ _/ /____
@@ -42,436 +35,356 @@ HEADER_INFO () {
   \____/ ____/\____/\____/\__/\___/_/
       /_/     for Proxmox VE
 EOF
-  echo -e "\n \
-      *** Install and/or Update *** \n \
-      ***   Version :   $VERSION   *** \n"
+  echo -e "\n      Installer version: ${VERSION}\n"
   CHECK_ROOT
 }
 
-#Check root
-CHECK_ROOT () {
-  if [[ "$EUID" -ne 0 ]]; then
-      echo -e >&2 "⚠${RD:-} --- Please run this as root --- ⚠${CL:-}";
-      exit 1
+CHECK_ROOT() {
+  if [[ "${EUID}" -ne 0 ]]; then
+    echo -e "${RD}  Please run this as root.${CL}" >&2
+    exit 1
   fi
 }
 
-ARGUMENTS () {
-  while test $# -gt -0; do
-    ARGUMENT="$1"
-    case "$ARGUMENT" in
-      -h|--help)
-        USAGE
-        exit 0
-        ;;
-      status)
-        STATUS
-        ;;
-      install)
-        COMMAND=true
-        INSTALL
-        WELCOME_SCREEN
-        EXIT
-        ;;
-      update)
-        COMMAND=true
-        UPDATE
-        EXIT
-        ;;
-      uninstall)
-        COMMAND=true
-        UNINSTALL
-        EXIT
-        ;;
-      welcome)
-        WELCOME_SCREEN
-        EXIT
-        ;;
+ARGUMENTS() {
+  while test $# -gt 0; do
+    case "$1" in
+      -h|--help) USAGE; exit 0 ;;
+      status)    STATUS ;;
+      install)   COMMAND=true; INSTALL;        WELCOME_SCREEN; EXIT ;;
+      update)    COMMAND=true; UPDATE;                         EXIT ;;
+      uninstall) COMMAND=true; UNINSTALL;                      EXIT ;;
+      welcome)               WELCOME_SCREEN;                   EXIT ;;
       *)
-        echo -e "❌${RD:-} Error: Got an unexpected argument \"$ARGUMENT\"${CL:-}\n";
-        USAGE;
-        exit 1;
+        echo -e "${RD}Unknown argument: $1${CL}" >&2
+        USAGE
+        exit 1
         ;;
     esac
+    shift
   done
 }
 
-USAGE () {
-  if [[ $SILENT != true ]]; then
-    echo -e "Usage: $0 {COMMAND}\n"
-    echo -e "{COMMAND}:"
-    echo -e "=========="
-    echo -e "  -h --help            Show help menu"
-    echo -e "  status               Check current installation status"
-    echo -e "  install              Install The Ultimate Updater"
-    echo -e "  welcome              Install or Uninstall Welcome Screen"
-    echo -e "  uninstall            Uninstall The Ultimate Updater"
-    echo -e "  update               Update The Ultimate Updater\n"
-    echo -e "Report issues at: <https://github.com/BassT23/Proxmox/issues>\n"
-  fi
+USAGE() {
+  cat <<EOF
+
+Usage: bash install.sh [COMMAND]
+
+Commands:
+  install     Install The Ultimate Updater
+  update      Update an existing installation
+  uninstall   Remove The Ultimate Updater
+  welcome     Install or remove the welcome screen
+  status      Check installation status
+  -h, --help  Show this help message
+
+EOF
 }
 
-IS_INSTALLED () {
-  if [ -f "/usr/local/sbin/update" ]; then
-    true
+IS_INSTALLED() {
+  [[ -f /usr/local/sbin/update ]]
+}
+
+STATUS() {
+  echo "The Ultimate Updater"
+  if IS_INSTALLED; then
+    echo -e "Status: ${GN}installed${CL}"
+    exit 0
   else
-    false
+    echo -e "Status: ${RD}not installed${CL}"
+    exit 1
   fi
 }
 
-STATUS () {
-  if [[ $SILENT != true ]]; then
-    echo -e "The Ultimate Updater"
-    if IS_INSTALLED; then
-      echo -e "Status: ${GN:-}present${CL:-}\n"
-    else
-      echo -e "Status: ${RD:-}not present${CL:-}\n"
-    fi
-  fi
-  if IS_INSTALLED; then exit 0; else exit 1; fi
-}
-
-INFORMATION () {
+OLD_FILESYSTEM_CHECK() {
+  # Migrate from legacy directory names
   if [[ -d /root/Proxmox-Updater/ ]]; then
-    echo -e "\n${RD:-} --- ATTENTION! ---\n Because of name and directory changing, you will need an reboot of the node, after the update\n\n${BL:-} Do you want to proceed?${CL:-}"
-    read -p " Type [Y/y] or Enter for yes - anything else will exit: " -r
-      if ! [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        exit 1
-      fi
+    mv /root/Proxmox-Updater/ "${LOCAL_FILES}/"
   fi
-}
-
-OLD_FILESYSTEM_CHECK () {
-  if [[ -d /root/Proxmox-Updater/ ]]; then
-    mv /root/Proxmox-Updater/ $LOCAL_FILES/
-    if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
-      mv /etc/crontab /etc/crontab.bak_name_change
-      cp /etc/crontab.bak /etc/crontab
-      echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
-    fi
-  fi
-  if [[ -d /root/Ultimative-Updater/ ]]; then
-    if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
-      mv /etc/crontab /etc/crontab.bak_name_change
-      cp /etc/crontab.bak /etc/crontab
-      echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
-    fi
-  fi
-  if [ -d "/root/Ultimative-Update-Scripts" ]; then
-    echo -e "${RD:-}Ultimate-Updater has changed directory's, so the old directory\n\
-/root/Update-Scripts will be delete.${CL:-}\n\
-${OR:-}Is it OK for you, or want to backup your files first?${CL:-}\n"
-    read -p "Type [Y/y] for DELETE - anything else will exit: " -r
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-      rm -rf /root/Update-Proxmox-Scripts || true
-      bash <(curl -s $SERVER_URL/install.sh) update
-    else
-      exit 0
-    fi
-  fi
-  # Delete old files (old filesystem)
-  rm -rf /etc/update-motd.d/01-updater || true
-  rm -rf /etc/update-motd.d/01-updater.bak || true
-  # Check and renew to new structure
-  if [[ -f /usr/local/bin/update ]] && [[ ! -f /usr/local/sbin/update ]]; then
-    curl  -s -L https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/update.sh > $LOCAL_FILES/update.sh
-    chmod 750 $LOCAL_FILES/update.sh
-    ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
+  # Migrate symlink from /usr/local/bin to /usr/local/sbin
+  if [[ -f /usr/local/bin/update && ! -f /usr/local/sbin/update ]]; then
+    curl -sf "https://raw.githubusercontent.com/BassT23/Proxmox/${BRANCH}/update.sh" \
+      > "${LOCAL_FILES}/update.sh"
+    chmod 750 "${LOCAL_FILES}/update.sh"
+    ln -sf "${LOCAL_FILES}/update.sh" /usr/local/sbin/update
     rm /usr/local/bin/update
     NEED_REBOOT=true
   fi
 }
 
-INSTALL () {
-  echo -e "\nℹ ${GN:-} Installing The Ultimate Updater${CL:-}\n"
-  if [ -f "/usr/local/sbin/update" ]; then
-    echo -e "${OR:-}The Ultimate Updater is already installed.${CL:-}"
-    read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
-    if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-      bash <(curl -s $SERVER_URL/install.sh) update
-    else
-      echo -e "${OR:-}\nBye\n${CL:-}"
-      exit 0
-    fi
+_download() {
+  if ! [[ -d "${TEMP_FOLDER}" ]]; then mkdir "${TEMP_FOLDER}"; fi
+  if [[ "${BRANCH}" == master ]]; then
+    curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest \
+      | grep "browser_download_url" | cut -d: -f2,3 | tr -d \" \
+      | wget -i - -q -O "${TEMP_FOLDER}/ultimate-updater.tar.gz"
   else
-    mkdir -p $LOCAL_FILES/exit
-    mkdir -p $LOCAL_FILES/VMs
-    mkdir -p $LOCAL_FILES/scripts.d/000
-    # Download latest release
-    if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
-      tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
-      rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
-      TEMP_FILES=$TEMP_FOLDER
-    # Copy files
-    cp "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
-    chmod 750 $LOCAL_FILES/update.sh
-    ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
-    cp "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
-    cp "$TEMP_FILES"/exit/* $LOCAL_FILES/exit/
-    chmod -R +x "$LOCAL_FILES"/exit/*.sh
-    cp "$TEMP_FILES"/scripts.d/000/* $LOCAL_FILES/scripts.d/000/
-    cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
-    cp "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
-    chmod -R +x "$LOCAL_FILES"/check-updates.sh
-    cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
-    cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
-    echo -e "${OR:-}Finished. Run The Ultimate Updater with 'update'.${CL:-}"
-    echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
-    echo -e "${OR:-}Also want to install the Welcome-Screen?${CL:-}"
-    read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
-    if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
+    curl -sL "https://github.com/BassT23/Proxmox/tarball/${BRANCH}" \
+      > "${TEMP_FOLDER}/ultimate-updater.tar.gz"
+  fi
+  tar -zxf "${TEMP_FOLDER}/ultimate-updater.tar.gz" -C "${TEMP_FOLDER}"
+  rm -f "${TEMP_FOLDER}/ultimate-updater.tar.gz"
+  if [[ "${BRANCH}" == master ]]; then
+    TEMP_FILES="${TEMP_FOLDER}"
+  else
+    TEMP_FILES="${TEMP_FOLDER}/$(ls "${TEMP_FOLDER}")"
+  fi
+}
+
+_copy_files() {
+  local src="$1"
+
+  # Core files
+  cp "${src}/update.sh"        "${LOCAL_FILES}/update.sh"
+  cp "${src}/run-plugins.sh"   "${LOCAL_FILES}/run-plugins.sh"
+  cp "${src}/tag-filter.sh"    "${LOCAL_FILES}/tag-filter.sh"
+  cp "${src}/check-updates.sh" "${LOCAL_FILES}/check-updates.sh"
+
+  # Libraries
+  mkdir -p "${LOCAL_FILES}/lib"
+  cp "${src}/lib/"*.sh "${LOCAL_FILES}/lib/"
+
+  # Plugins
+  mkdir -p "${LOCAL_FILES}/plugins"
+  cp "${src}/plugins/"*.sh "${LOCAL_FILES}/plugins/"
+
+  # Support files
+  cp "${src}/exit/"* "${LOCAL_FILES}/exit/"
+
+  # VM SSH config examples
+  [[ -f "${src}/VMs/example" ]] && cp "${src}/VMs/example" "${LOCAL_FILES}/VMs/example"
+
+  # User scripts example
+  if [[ -d "${src}/scripts.d/000" ]]; then
+    cp "${src}/scripts.d/000/"* "${LOCAL_FILES}/scripts.d/000/" 2>/dev/null || true
+  fi
+
+  chmod 750 "${LOCAL_FILES}/update.sh"
+  chmod +x "${LOCAL_FILES}/run-plugins.sh"
+  chmod +x "${LOCAL_FILES}/check-updates.sh"
+  chmod -R +x "${LOCAL_FILES}/lib/"
+  chmod -R +x "${LOCAL_FILES}/plugins/"
+  chmod -R +x "${LOCAL_FILES}/exit/"
+}
+
+INSTALL() {
+  echo -e "\n${GN}Installing The Ultimate Updater${CL}\n"
+
+  if IS_INSTALLED; then
+    echo -e "${OR}Already installed.${CL}"
+    read -rp "Update instead? [Y/y/Enter = yes]: " _reply
+    if [[ "${_reply}" =~ ^[Yy]$ || "${_reply}" == "" ]]; then
+      bash <(curl -s "${SERVER_URL}/install.sh") update
+    fi
+    return
+  fi
+
+  mkdir -p "${LOCAL_FILES}/exit"
+  mkdir -p "${LOCAL_FILES}/VMs"
+  mkdir -p "${LOCAL_FILES}/scripts.d/000"
+  mkdir -p "${LOCAL_FILES}/lib"
+  mkdir -p "${LOCAL_FILES}/plugins"
+  mkdir -p "${LOCAL_FILES}/temp"
+
+  _download
+  _copy_files "${TEMP_FILES}"
+
+  # Config — only copy if not already present
+  if [[ ! -f "${LOCAL_FILES}/update.conf" ]]; then
+    cp "${TEMP_FILES}/update.conf" "${LOCAL_FILES}/update.conf"
+  fi
+
+  ln -sf "${LOCAL_FILES}/update.sh" /usr/local/sbin/update
+
+  echo -e "${GN}Installed. Run The Ultimate Updater with: update${CL}"
+  echo "Documentation: https://github.com/BassT23/Proxmox"
+  echo ""
+
+  read -rp "Also install the welcome screen? [Y/y/Enter = yes]: " _reply
+  if [[ "${_reply}" =~ ^[Yy]$ || "${_reply}" == "" ]]; then
+    WELCOME_SCREEN_INSTALL
+  fi
+
+  rm -rf "${TEMP_FOLDER}"
+}
+
+UPDATE() {
+  OLD_FILESYSTEM_CHECK
+
+  if ! IS_INSTALLED; then
+    echo -e "${OR}Not installed. Run: bash install.sh install${CL}"
+    exit 1
+  fi
+
+  echo -e "\n${GN}Updating The Ultimate Updater${CL}\n"
+  rm -rf "${TEMP_FOLDER}"
+  _download
+
+  # Copy new files
+  cp "${TEMP_FILES}/update.sh"        "${LOCAL_FILES}/update.sh"
+  cp "${TEMP_FILES}/run-plugins.sh"   "${LOCAL_FILES}/run-plugins.sh"
+  cp "${TEMP_FILES}/tag-filter.sh"    "${LOCAL_FILES}/tag-filter.sh"
+  cp "${TEMP_FILES}/check-updates.sh" "${LOCAL_FILES}/check-updates.sh"
+
+  # Libraries (always replace)
+  mkdir -p "${LOCAL_FILES}/lib"
+  cp "${TEMP_FILES}/lib/"*.sh "${LOCAL_FILES}/lib/"
+
+  # Plugins (always replace shipped plugins; user plugins are left alone
+  # because we only copy files that exist in the downloaded archive)
+  mkdir -p "${LOCAL_FILES}/plugins"
+  cp "${TEMP_FILES}/plugins/"*.sh "${LOCAL_FILES}/plugins/"
+
+  cp "${TEMP_FILES}/exit/"*       "${LOCAL_FILES}/exit/"
+  [[ -f "${TEMP_FILES}/VMs/example" ]] && cp "${TEMP_FILES}/VMs/example" "${LOCAL_FILES}/VMs/example"
+
+  chmod 750 "${LOCAL_FILES}/update.sh"
+  chmod +x "${LOCAL_FILES}/run-plugins.sh" "${LOCAL_FILES}/check-updates.sh"
+  chmod -R +x "${LOCAL_FILES}/lib/" "${LOCAL_FILES}/plugins/" "${LOCAL_FILES}/exit/"
+
+  # Config — prompt if different from installed
+  if [[ -f "${TEMP_FILES}/update.conf" ]]; then
+    if ! cmp -s "${TEMP_FILES}/update.conf" "${LOCAL_FILES}/update.conf"; then
+      echo ""
+      echo "The configuration file has changed in this release."
+      echo "Options:"
+      echo "  Y — install new version (your current file is backed up as update.conf.bak)"
+      echo "  N — keep your current file"
+      echo "  S — show differences"
+      read -rp "update.conf [Y/y/N/n/S/s, default=N]: " _reply
+      case "${_reply,,}" in
+        y|"")
+          cp -f "${LOCAL_FILES}/update.conf" "${LOCAL_FILES}/update.conf.bak"
+          cp "${TEMP_FILES}/update.conf" "${LOCAL_FILES}/update.conf"
+          echo "New config installed (old saved as update.conf.bak)"
+          ;;
+        s)
+          diff "${TEMP_FILES}/update.conf" "${LOCAL_FILES}/update.conf" || true
+          read -rp "Install new version? [Y/y = yes, anything else = keep]: " _reply2
+          if [[ "${_reply2,,}" =~ ^y$ ]]; then
+            cp -f "${LOCAL_FILES}/update.conf" "${LOCAL_FILES}/update.conf.bak"
+            cp "${TEMP_FILES}/update.conf" "${LOCAL_FILES}/update.conf"
+            echo "New config installed (old saved as update.conf.bak)"
+          fi
+          ;;
+        *)
+          echo "Keeping current config."
+          ;;
+      esac
+    fi
+  fi
+
+  # Welcome screen
+  if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
+    cp "${TEMP_FILES}/welcome-screen.sh" /etc/update-motd.d/01-welcome-screen
+    chmod +x /etc/update-motd.d/01-welcome-screen
+    # Migrate old crontab entry
+    if grep -q "/etc/ultimate-updater/check-updates.sh" /etc/crontab 2>/dev/null; then
+      cp /etc/crontab "/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
+      sed -i 's|/etc/ultimate-updater/check-updates.sh|update -check >/dev/null 2>\&1|' /etc/crontab
+    fi
+  fi
+
+  rm -rf "${TEMP_FOLDER}"
+
+  echo -e "${GN}Update complete.${CL}"
+  [[ "${BRANCH}" != master ]] && echo -e "${OR}Branch: ${BRANCH}${CL}"
+  [[ "${NEED_REBOOT:-false}" == true ]] && echo -e "${RD}Please reboot this node.${CL}"
+  echo ""
+}
+
+WELCOME_SCREEN() {
+  if [[ "${COMMAND:-false}" == true ]]; then return; fi
+
+  if [[ ! -f /etc/update-motd.d/01-welcome-screen ]]; then
+    echo -e "\n${OR}Welcome screen is not installed.${CL}"
+    read -rp "Install it? [Y/y/Enter = yes]: " _reply
+    if [[ "${_reply}" =~ ^[Yy]$ || "${_reply}" == "" ]]; then
+      if ! [[ -d "${TEMP_FOLDER}" ]]; then mkdir "${TEMP_FOLDER}"; fi
+      curl -sf "${SERVER_URL}/welcome-screen.sh" > "${TEMP_FOLDER}/welcome-screen.sh"
       WELCOME_SCREEN_INSTALL
     fi
-    rm -rf $TEMP_FOLDER || true
-  fi
-}
-
-UPDATE () {
-  INFORMATION
-  OLD_FILESYSTEM_CHECK
-  if [ -f "/usr/local/sbin/update" ]; then
-    # Update
-    echo -e "\nℹ ${GN:-} Updating script ...${CL:-}\n"
-    # Cleaning
-    rm -rf "$TEMP_FOLDER" || true
-    # Download files
-    if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
-    if [[ "$BRANCH" == master ]]; then
-      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
-    elif [[ "$BRANCH" == beta ]]; then
-      curl -s -L https://github.com/BassT23/Proxmox/tarball/beta > $TEMP_FOLDER/ultimate-updater.tar.gz
-    elif [[ "$BRANCH" == develop ]]; then
-      curl -s -L https://github.com/BassT23/Proxmox/tarball/develop > $TEMP_FOLDER/ultimate-updater.tar.gz
-    fi
-    tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
-    rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
-    if [[ "$BRANCH" == master ]]; then
-      TEMP_FILES=$TEMP_FOLDER
-    else
-      TEMP_FILES=$TEMP_FOLDER/$(ls $TEMP_FOLDER)
-    fi
-    # Copy files
-    mv "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
-    chmod 750 $LOCAL_FILES/update.sh
-    mv "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
-    mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
-    chmod +x $LOCAL_FILES/check-updates.sh
-    mv "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
-    if ! [[ -d "$LOCAL_FILES"/scripts.d/ ]]; then
-      mkdir -p $LOCAL_FILES/scripts.d/000
-      mv "$TEMP_FILES"/scripts.d/000/* $LOCAL_FILES/scripts.d/000/
-      rm -rf "$TEMP_FILES"/scripts.d/ || true
-    else
-      rm -rf "$TEMP_FILES"/scripts.d/ || true
-    fi
-    if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
-      mv "$TEMP_FILES"/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
-      chmod +x /etc/update-motd.d/01-welcome-screen
-      if [[ -f /usr/bin/neofetch ]] && [[ ! -f /usr/bin/screenfetch ]]; then
-        echo -e "${OR:-}I detect neofetch was installed. On PVE9 neofetch is no more supported.${CL:-}"
-        read -p " Should I install screenfetch for you instead? Type [Y/y] or Enter for yes - anything else will exit: " -r
-        if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-          apt-get install screenfetch -y || true
-        fi
-      fi
-      # change crontab entry
-      if grep -q "/etc/ultimate-updater/check-updates.sh" /etc/crontab; then
-        cp /etc/crontab "/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
-        sed -i 's|/etc/ultimate-updater/check-updates.sh|update -check >/dev/null 2>\&1|' /etc/crontab
-      fi
-    else
-      rm -rf "$TEMP_FILES"/welcome-screen.sh || true
-      rm -rf "$TEMP_FILES"/check-updates.sh || true
-    fi
-    # Check if files are different
-    rm -rf "$TEMP_FILES"/.github || true
-    rm -rf "$TEMP_FILES"/VMs || true
-    rm -rf "$TEMP_FILES"/LICENSE || true
-    rm -rf "$TEMP_FILES"/README.md || true
-    rm -rf "$TEMP_FILES"/change.log || true
-    rm -rf "$TEMP_FILES"/install.sh || true
-    rm -rf "$TEMP_FILES"/ssh.md || true
-    rm -rf "$TEMP_FILES"/CODE_OF_CONDUCT.md || true
-    rm -rf "$TEMP_FILES"/SECURITY.md || true
-    chmod -R +x "$TEMP_FILES"/exit/*.sh
-    cd "$TEMP_FILES"
-    FILES="*.* **/*.*"
-    for FILE in $FILES
-    do
-     CHECK_DIFF
-    done
-    rm -rf $TEMP_FOLDER || true
-    echo -e "✅${GN:-} The Ultimate Updater updated successfully.${CL:-}"
-    if [[ "$BRANCH" != master ]]; then echo -e "${OR:-}   Installed: $BRANCH version${CL:-}"; fi
-    echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
-    if [[ $NEED_REBOOT == true ]]; then
-      echo -e "${RD:-}  Please reboot, to make The Ultimative Updater workable\n${CL:-}"
-    fi
   else
-    # Install, because no installation found
-    echo -e "⚠${RD:-} The Ultimate Updater is not installed.\n\n${OR:-}Would you like to install it?${CL:-}"
-    read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
-    if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-      bash <(curl -s $SERVER_URL/install.sh)
-    else
-      echo -e "\n\nBye\n"
-      exit 0
+    echo -e "\n${OR}Welcome screen is already installed.${CL}"
+    read -rp "Uninstall it? [Y/y = yes]: " _reply
+    if [[ "${_reply}" =~ ^[Yy]$ ]]; then
+      rm -f /etc/update-motd.d/01-welcome-screen /etc/motd
+      [[ -f /etc/motd.bak ]] && mv /etc/motd.bak /etc/motd
+      sed -i '\|update -check >/dev/null 2>&1|d' /etc/crontab
+      echo "Welcome screen removed."
     fi
   fi
+  rm -rf "${TEMP_FOLDER}"
 }
 
-CHECK_DIFF () {
-  if ! cmp -s "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"; then
-    echo -e "The file ${OR:-}$FILE${CL:-}\n \
- was modified (by you or by a script) since installation.\n \
-   What would you like to do about it ?  Your options are:\n \
-    Y or y  : install the package maintainer's version (old file will be saved as '$FILE.bak')\n \
-    N or n  : keep your currently-installed version\n \
-    S or s  : show the differences between the versions\n \
- The default action is to install new version and backup current file."
-    read -p "*** $FILE (Y/y/N/n/S/s) [default=Y] ?" -r
-      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        echo -e "\nℹ ${GN:-} Installed server version and backed up old file${CL:-}\n"
-        cp -f "$LOCAL_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE".bak
-        mv "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"
-      elif [[ $REPLY =~ ^[Nn]$ ]]; then
-        echo -e "\nℹ${GN:-} Kept old file${CL:-}\n"
-      elif [[ $REPLY =~ ^[Ss]$ ]]; then
-        echo
-        set +e
-        diff "$TEMP_FILES"/"$FILE" "$LOCAL_FILES/$FILE"
-        set -e
-        echo -e "\n   What would you like to do about it ?  Your options are:\n \
-    Y or y  : install the package maintainer's version (old file will be saved as '$FILE.bak')\n \
-    N or n  : keep your currently-installed version\n \
- The default action is to install new version and backup current file."
-        read -p "*** $FILE (Y/y/N/n) [default=Y] ?" -r
-          if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-            echo -e "\nℹ ${GN:-} Installed server version and backed up old file${CL:-}\n"
-            cp -f "$LOCAL_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE".bak
-            mv "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"
-          elif [[ $REPLY =~ ^[Nn]$ ]]; then
-            echo -e "\nℹ ${GN:-} Kept old file${CL:-}\n"
-          fi
-      else
-        echo -e "\n⏩${OR:-} Skip this file${CL:-}\n"
-      fi
-  fi
-}
-
-WELCOME_SCREEN () {
-  if [[ $COMMAND != true ]]; then
-    echo -e "\n${BL:-}[Info]${GN:-} Installing The Ultimate Updater Welcome-Screen${CL:-}\n"
-    if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-    curl -s $SERVER_URL/welcome-screen.sh > $TEMP_FOLDER/welcome-screen.sh
-    if ! [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
-      echo -e "${OR:-} Welcome-Screen is not installed${CL:-}\n"
-      read -p "Would you like to install it also? Type [Y/y] or Enter for yes - anything else will skip: " -r
-      if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        WELCOME_SCREEN_INSTALL
-      fi
-    else
-      echo -e "${OR:-}  Welcome-Screen is already installed${CL:-}\n"
-      read -p "Would you like to uninstall it? Type [Y/y] for yes - anything else will skip: " -r
-      if [[ $REPLY =~ ^[Yy]$ ]]; then
-        rm -rf /etc/update-motd.d/01-welcome-screen || true
-        rm -rf /etc/motd || true
-        if [[ -f /etc/motd.bak ]]; then mv /etc/motd.bak /etc/motd; fi
-        # delete crontab entry
-        sed -i '\|update -check >/dev/null 2>&1|d' /etc/crontab
-        echo -e "\n${BL:-} Welcome-Screen uninstalled${CL:-}\n\
-${BL:-} crontab file restored (old one backed up as crontab.bak)${CL:-}\n"
-      fi
-    fi
-    rm -rf $TEMP_FOLDER || true
-  fi
-}
-
-WELCOME_SCREEN_INSTALL () {
-  if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
+WELCOME_SCREEN_INSTALL() {
+  [[ -f /etc/motd ]] && mv /etc/motd /etc/motd.bak
   touch /etc/motd
   cp /etc/crontab /etc/crontab.bak
-  cp $TEMP_FOLDER/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
+  cp "${TEMP_FOLDER}/welcome-screen.sh" /etc/update-motd.d/01-welcome-screen
   chmod +x /etc/update-motd.d/01-welcome-screen
-  if ! [[ -f $LOCAL_FILES/check-output ]]; then touch $LOCAL_FILES/check-output; fi
-  if ! grep -q "check-updates.sh" /etc/crontab; then
-    echo "00 07,19 * * *  root    update -check >/dev/null 2>&1" >> /etc/crontab
+  [[ ! -f "${LOCAL_FILES}/check-output" ]] && touch "${LOCAL_FILES}/check-output"
+  if ! grep -q "update -check" /etc/crontab; then
+    echo "00 07,19 * * *  root  update -check >/dev/null 2>&1" >> /etc/crontab
   fi
-  # Fetch tool install (neofetch or screenfetch)
+
+  # Install a fetch tool if none present
   if ! command -v neofetch >/dev/null 2>&1 && ! command -v screenfetch >/dev/null 2>&1; then
-    echo -e "${OR:-}  Install neofetch or screenfetch?${CL:-}"
-    read -r -p "  Type [N/n] or Enter for neofetch, [S/s] for screenfetch: " REPLY
-    if [[ $REPLY =~ ^[Ss]$ ]]; then
+    echo ""
+    read -rp "Install neofetch [Enter] or screenfetch [s]? " _reply
+    if [[ "${_reply,,}" == s ]]; then
       apt-get install screenfetch -y || true
-      echo -e "\n✅${GN:-} Welcome-Screen installed with screenfetch${CL:-}"
-      return 0
     else
       apt-get install neofetch -y || true
-      echo -e "\n✅${GN:-} Welcome-Screen installed with neofetch${CL:-}"
-      return 0
     fi
-  else
-    echo -e "\n✅${GN:-} Welcome-Screen installed successfully${CL:-}"
   fi
+
+  echo -e "${GN}Welcome screen installed.${CL}"
 }
 
-UNINSTALL () {
-  if [ -f /usr/local/sbin/update ]; then
-    echo -e "\n${BL:-}[Info]${GN:-} Uninstall The Ultimate Updater${CL:-}\n"
-    echo -e "${RD:-}Really want to remove The Ultimate Updater?${CL:-}"
-    read -p "Type [Y/y] for yes - anything else will exit: " -r
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-      rm /usr/local/sbin/update
-      rm -r $LOCAL_FILES
-      if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
-        rm -rf /etc/update-motd.d/01-welcome-screen
-        rm -rf /etc/motd
-        if [[ -f /etc/motd.bak ]]; then
-          mv /etc/motd.bak /etc/motd
-        fi
-        mv /etc/crontab /etc/crontab.bak2
-        mv /etc/crontab.bak /etc/crontab
-        mv /etc/crontab.bak2 /etc/crontab.bak
-        echo -e "${BL:-}Should fetch be uninstalled also?${CL:-}"
-        read -p "Type [Y/y] for yes - anything else will skip: " -r
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-          apt-get remove screenfetch -y ; apt-get remove neofetch -y || true
-          apt-get autoremove -y || true
-          echo -e "\n${BL:-} fetch uninstalled${CL:-}"
-        fi
+UNINSTALL() {
+  if ! IS_INSTALLED; then
+    echo -e "${OR}The Ultimate Updater is not installed.${CL}"
+    return
+  fi
+
+  echo -e "\n${OR}Uninstall The Ultimate Updater${CL}\n"
+  echo -e "${RD}This will remove all files under ${LOCAL_FILES}. Continue?${CL}"
+  read -rp "Type Y/y to confirm: " _reply
+  if [[ "${_reply}" =~ ^[Yy]$ ]]; then
+    rm -f /usr/local/sbin/update
+    rm -rf "${LOCAL_FILES}"
+    if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
+      rm -f /etc/update-motd.d/01-welcome-screen /etc/motd
+      [[ -f /etc/motd.bak ]] && mv /etc/motd.bak /etc/motd
+      mv /etc/crontab /etc/crontab.bak2
+      [[ -f /etc/crontab.bak ]] && mv /etc/crontab.bak /etc/crontab
+      mv /etc/crontab.bak2 /etc/crontab.bak
+      read -rp "Also remove neofetch/screenfetch? [Y/y = yes]: " _reply
+      if [[ "${_reply}" =~ ^[Yy]$ ]]; then
+        apt-get remove screenfetch neofetch -y 2>/dev/null || true
+        apt-get autoremove -y || true
       fi
-      echo -e "\n\n${BL:-} The Ultimate Updater has gone${CL:-}\n\
-${BL:-} crontab file restored (old one backed up as crontab.bak)${CL:-}\n"
-      exit 0
     fi
-  else
-    echo -e "⚠${RD:-} The Ultimate Updater is not installed.${CL:-}\n"
-  fi
-}
-
-#Error/Exit
-set -e
-EXIT () {
-  EXIT_CODE=$?
-  # Install Finish
-  if  [[ $EXIT_CODE -lt 2 ]]; then
+    echo -e "${GN}The Ultimate Updater has been removed.${CL}"
     exit 0
-  elif [[ $EXIT_CODE != "0" ]]; then
-    rm -rf $TEMP_FOLDER || true
-    echo -e "❌${RD:-} Error during install --- Exit Code: $EXIT_CODE${CL:-}\n"
   fi
 }
 
-# Exit Code
+set -e
+
+EXIT() {
+  local code=$?
+  [[ ${code} -lt 2 ]] && exit 0
+  rm -rf "${TEMP_FOLDER}" || true
+  [[ ${code} -ne 0 ]] && echo -e "${RD}Install error — exit code: ${code}${CL}"
+}
 trap EXIT EXIT
 
-#Install
 HEADER_INFO
 ARGUMENTS "$@"
 
-# Run without commands
-if [[ $COMMAND != true ]]; then
+if [[ "${COMMAND:-false}" != true ]]; then
   INSTALL
 fi
 
