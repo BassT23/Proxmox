@@ -1,6 +1,7 @@
 <div align="center">
 
-![Logo](https://github.com/BassT23/Proxmox/assets/30832786/6400ed7f-71c6-486c-b5ed-249c2e0df19b)
+ <img width="1600" height="900" alt="ultimate-updater-full-layered" src="https://github.com/user-attachments/assets/b746b78a-ad05-42db-8f4d-db1019be86a9" />
+<br>
 
 ![Screenshot_20240109_113501](https://github.com/BassT23/Proxmox/assets/30832786/640cefd9-0659-4265-b34a-cb5b9905046b)
 
