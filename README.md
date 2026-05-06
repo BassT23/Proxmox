@@ -29,6 +29,22 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 
 </div>
 
+---
+## ⚠️ Project Status
+
+Development has slowed down recently due to personal circumstances (limited working environment after a water damage situation).
+
+The project is **not abandoned**:
+- It is actively used in real environments
+- Core functionality is stable and working
+- Updates will continue as time allows
+
+There are already new features and improvements in the `develop` branch, which will be merged into a future release.
+
+Thanks for your patience and for using the project ❤️
+---
+<br>
+
 ### What does the script do:
 - The script makes system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
 - Make a snapshot before update (if your storage support it - [look here](https://pve.proxmox.com/wiki/Storage)). If not supported, you can choose to make a real backup, but this must be enabled in `update.conf` by user (take long time!)

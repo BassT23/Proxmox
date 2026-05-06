@@ -227,6 +227,11 @@ CHECK_CONTAINER () {
     fi
   elif [[ "$OS" =~ alpine ]]; then
     pct exec "$CONTAINER" -- ash -c "apk update" >/dev/null 2>&1
+    UPDATES=$(pct exec "$CONTAINER" -- ash -c "apk list -u | wc -l")
+    if [[ "$UPDATES" -gt 0 ]]; then
+      echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
+      echo -e "$UPDATES"
+    fi
   else
     pct exec "$CONTAINER" -- bash -c "yum update" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "yum -q check-update | wc -l")
