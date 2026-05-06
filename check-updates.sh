@@ -250,6 +250,7 @@ VM_CHECK_START () {
   VMS=$(qm list | tail -n +2 | cut -c -10)
   # Loop through VMs
   for VM in $VMS; do
+    REBOOT_REQUIRED=false
     # Check if connection is available
     if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
       # Check VM
@@ -262,14 +263,14 @@ VM_CHECK_START () {
         continue
       else
         STATUS=$(qm status "$VM")
-        if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
-          IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-          USER=$(awk -F'"' '/^USER=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-          if [[ -z "$USER" ]]; then USER="root"; fi
-          SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-          if [[ -z "$SSH_VM_PORT" ]]; then SSH_VM_PORT="22"; fi
-          SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-          if [[ -z "$SSH_START_DELAY_TIME" ]]; then SSH_START_DELAY_TIME="45"; fi
+        if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
+          IP=$(awk -F'"' '/^IP=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+          USER=$(awk -F'"' '/^USER=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+          USER="${USER:-root}"
+          SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+          SSH_VM_PORT="${SSH_VM_PORT:-22}"
+          SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+          SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-45}"
         fi
         if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
           # Check suspend mode
@@ -305,14 +306,28 @@ VM_CHECK_START () {
 
 # VM Check
 CHECK_VM () {
+  local IP USER SSH_VM_PORT SSH_START_DELAY_TIME
   if [[ "$RDU" != true ]]; then
     VM=$1
   else
     VM=$(awk -F'"' '/^VM=/ {print $2}' $LOCAL_FILES/temp/var)
   fi
+  if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
+    IP=$(awk -F'"' '/^IP=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    USER=$(awk -F'"' '/^USER=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    USER="${USER:-root}"
+    SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    SSH_VM_PORT="${SSH_VM_PORT:-22}"
+    SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-45}"
+  fi
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
+  if [[ -z "$IP" ]]; then
+    CHECK_VM_QEMU
+    return
+  fi
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
-    if ! (ssh "$IP" exit) >/dev/null 2>&1; then
+    if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$SSH_VM_PORT" "$USER@$IP" "true" >/dev/null 2>&1; then
       CHECK_VM_QEMU
     else
       OS_BASE=$(qm config "$VM" | grep ostype || true)
@@ -353,6 +368,8 @@ CHECK_VM () {
           fi
         elif [[ "$OS" =~ Arch ]]; then
           UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "pacman -Qu | wc -l")
+          UPDATES=${UPDATES//[^0-9]/}
+          UPDATES=${UPDATES:-0}
           if [[ "$UPDATES" -gt 0 ]]; then
             echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
             echo -e "$UPDATES"
@@ -386,7 +403,11 @@ CHECK_VM_QEMU () {
       SECURITY_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
       NORMAL_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
-      if [[ $(qm guest exec "$VM" -- bash -c "[ -f /var/run/reboot-required.pkgs ]" | grep exitcode) =~ 0 ]]; then REBOOT_REQUIRED=true; fi
+      EXITCODE=$(qm guest exec "$VM" -- bash -c '[ -f /var/run/reboot-required.pkgs ]' 2>/dev/null | grep -o '"exitcode"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]\+')
+      EXITCODE=${EXITCODE:-1}
+      if [[ "$EXITCODE" -eq 0 ]]; then
+        REBOOT_REQUIRED=true
+      fi
       if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
