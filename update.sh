@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="4.5.3"
+VERSION="4.5.4"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
