@@ -429,6 +429,7 @@ READ_CONFIG () {
   FSTRIM_WITH_MOUNTPOINT=$(awk -F'"' '/^FSTRIM_WITH_MOUNTPOINT=/ {print $2}' "$CONFIG_FILE")
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
   declare -f apply_only_exclude_tags >/dev/null 2>&1 && apply_only_exclude_tags ONLY EXCLUDED
+  EMAIL_ONLY_ERROR=$(awk -F'"' '/^EMAIL_ONLY_ERROR=/ {print $2}' "$CONFIG_FILE")
 }
 
 # Snapshot/Backup
@@ -1304,7 +1305,9 @@ EXIT () {
         echo -e "${GN:-}✅ Finished, all updates done.${CL:-}\n"
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
-        echo "Finished, all updates done. No errors" | mail -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
+        if [[ "$EMAIL_ONLY_ERROR" != true ]]; then
+          echo "Finished, all updates done. No errors" | mail -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
+        fi
       fi
     fi
   else

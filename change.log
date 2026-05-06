@@ -4,6 +4,7 @@ Changelog:
 **v4.5.x** (beta/develop)
 - change Logo
 - add option for disable daily check email notification in config file #273
+- add option for disable email notification on successful run in config file #268
 - add alpine check - thx to @beer73 #276
 - add Reboot VM/Container after update option in config file
 - add option to send email only if security updates are available
