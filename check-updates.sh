@@ -322,71 +322,67 @@ CHECK_VM () {
     SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-45}"
   fi
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
-  if [[ -z "$IP" ]]; then
+  if [[ -z "$IP" || -z "$USER" || -z "$SSH_VM_PORT" ]]; then
     CHECK_VM_QEMU
     return
   fi
-  if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
-    if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$SSH_VM_PORT" "$USER@$IP" "true" >/dev/null 2>&1; then
-      CHECK_VM_QEMU
-    else
-      OS_BASE=$(qm config "$VM" | grep ostype || true)
-      if [[ "$OS_BASE" =~ l2 ]]; then
-        KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
-        OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
-#        if [[ "$KERNEL" =~ FreeBSD ]]; then
-#          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update
-#          return
-#        fi
-        if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
-          ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "apt-get update" >/dev/null 2>&1
-          APT_OUTPUT=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "apt-get -s upgrade")
-          SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security')
-          if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
-          NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.')
-          if ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then REBOOT_REQUIRED=true; fi
-          if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
-            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-          fi
-          if [[ "$REBOOT_REQUIRED" == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
-          if [[ "$SECURITY_APT_UPDATES" -gt 0 && "$NORMAL_APT_UPDATES" -gt 0 ]]; then
-            echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
-          elif [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then
-            echo -e "S: $SECURITY_APT_UPDATES / "
-          elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
-            echo -e "N: $NORMAL_APT_UPDATES"
-          fi
-          if [[ "$REBOOT_REQUIRED" == true ]] && [[ "$REEBOOT_IF_NEEDED" == true ]] && [[ "$VM_NOT_STOPPED" == true ]]; then
-            ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "reboot" >/dev/null 2>&1
-          fi
-        elif [[ "$OS" =~ Fedora ]]; then
-          ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "dnf -y update" >/dev/null 2>&1
-          UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "dnf check-update| grep -Ec ' updates$'")
-          if [[ "$UPDATES" -gt 0 ]]; then
-            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-            echo -e "$UPDATES"
-          fi
-        elif [[ "$OS" =~ Arch ]]; then
-          UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "pacman -Qu | wc -l")
-          UPDATES=${UPDATES//[^0-9]/}
-          UPDATES=${UPDATES:-0}
-          if [[ "$UPDATES" -gt 0 ]]; then
-            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-            echo -e "$UPDATES"
-          fi
-        elif [[ "$OS" =~ Alpine ]]; then
-          return
-        elif [[ "$OS" =~ CentOS ]]; then
-          UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "yum -q check-update | wc -l")
-          if [[ "$UPDATES" -gt 0 ]]; then
-            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-            echo -e "$UPDATES"
-          fi
-        fi
+  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 \
+    -p "$SSH_VM_PORT" "$USER@$IP" "true" >/dev/null 2>&1; then
+    CHECK_VM_QEMU
+    return
+  fi
+  OS_BASE=$(qm config "$VM" | grep ostype || true)
+  if [[ "$OS_BASE" =~ l2 ]]; then
+    KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
+    OS=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" hostnamectl 2>/dev/null | grep System || true)
+    if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
+      ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "apt-get update" >/dev/null 2>&1
+      APT_OUTPUT=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "apt-get -s upgrade")
+      SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security')
+      NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.')
+      if ssh -q -p "$SSH_VM_PORT" "$USER@$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then
+        REBOOT_REQUIRED=true
+      fi
+      if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+      fi
+      if [[ "$REBOOT_REQUIRED" == true ]]; then
+        echo -e "${OR} Reboot required${CL}"
+      fi
+      if [[ "$SECURITY_APT_UPDATES" -gt 0 && "$NORMAL_APT_UPDATES" -gt 0 ]]; then
+        echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
+      elif [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then
+        echo -e "S: $SECURITY_APT_UPDATES / "
+      elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
+        echo -e "N: $NORMAL_APT_UPDATES"
+      fi
+      if [[ "$REBOOT_REQUIRED" == true ]] && [[ "$REEBOOT_IF_NEEDED" == true ]] && [[ "$VM_NOT_STOPPED" == true ]]; then
+        ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "reboot" >/dev/null 2>&1
+      fi
+    elif [[ "$OS" =~ Fedora ]]; then
+      ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "dnf -y update" >/dev/null 2>&1
+      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "dnf check-update | grep -Ec ' updates$'")
+      if [[ "$UPDATES" -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
+      fi
+    elif [[ "$OS" =~ Arch ]]; then
+      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "pacman -Qu | wc -l")
+      UPDATES=${UPDATES//[^0-9]/}
+      UPDATES=${UPDATES:-0}
+      if [[ "$UPDATES" -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
+      fi
+    elif [[ "$OS" =~ Alpine ]]; then
+      return
+    elif [[ "$OS" =~ CentOS ]]; then
+      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "yum -q check-update | wc -l")
+      if [[ "$UPDATES" -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
       fi
     fi
-  else
-    CHECK_VM_QEMU
   fi
 }
 
