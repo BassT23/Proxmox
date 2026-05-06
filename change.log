@@ -12,6 +12,7 @@ Changelog:
 - add Kali Linux support - thx to @Richard Hollis #262
 - add screenfetch also during install #253
 - add hostname in mail notification subject #254
+- fix timout problem during welcome-screen by @MarvinFS #271
 - fix unifi headless update - thx to @Perjan-smul #274
 - fix password promt during update check
 - fix uninstall issue

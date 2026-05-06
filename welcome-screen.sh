@@ -22,9 +22,9 @@ CL="\e[0m"
 
 # Version Check
 VERSION_CHECK () {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update_master.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/update.sh > /root/update_beta.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/update.sh > /root/update_develop.sh
+  curl -s --connect-timeout 3 --max-time 15 https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update_master.sh
+  curl -s --connect-timeout 3 --max-time 15 https://raw.githubusercontent.com/BassT23/Proxmox/beta/update.sh > /root/update_beta.sh
+  curl -s --connect-timeout 3 --max-time 15 https://raw.githubusercontent.com/BassT23/Proxmox/develop/update.sh > /root/update_develop.sh
   MASTER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_master.sh)
   BETA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_beta.sh)
   DEVELOP_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_develop.sh)
