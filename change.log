@@ -1,13 +1,20 @@
 Changelog:
 ==========
 
-**v4.5.3** (beta/develop)
+**v4.5.x** (beta/develop)
+- change Logo
+- add option for disable daily check email notification in config file #273
+- add alpine check - thx to @beer73 #276
 - add Reboot VM/Container after update option in config file
 - add option to send email only if security updates are available
-- fix password promt during update check
-- fix uninstall issue
+- add backup mode in config by @Ben Olson #258
+- add Kali Linux support - thx to @Richard Hollis #262
 - add screenfetch also during install #253
 - add hostname in mail notification subject #254
+- fix unifi headless update - thx to @Perjan-smul #274
+- fix password promt during update check
+- fix uninstall issue
+- fix community script - thx to Christoph Stiller #257
 - hide mail error
 
 **v4.5.2** (24.08.2025)

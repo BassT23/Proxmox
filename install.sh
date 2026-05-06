@@ -278,7 +278,7 @@ UPDATE () {
       # change crontab entry
       if grep -q "/etc/ultimate-updater/check-updates.sh" /etc/crontab; then
         cp /etc/crontab "/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
-        sed -i 's|/etc/ultimate-updater/check-updates.sh|update -check >/dev/null 2>\&1|' /etc/crontab
+        sed -i 's|.*check-updates.sh.*|00 06 * * * root RUN_FROM_CRON=true update -check >/dev/null 2>\&1|' /etc/crontab
       fi
     else
       rm -rf "$TEMP_FILES"/welcome-screen.sh || true
@@ -396,7 +396,7 @@ WELCOME_SCREEN_INSTALL () {
   chmod +x /etc/update-motd.d/01-welcome-screen
   if ! [[ -f $LOCAL_FILES/check-output ]]; then touch $LOCAL_FILES/check-output; fi
   if ! grep -q "check-updates.sh" /etc/crontab; then
-    echo "00 07,19 * * *  root    update -check >/dev/null 2>&1" >> /etc/crontab
+    echo "00 06 * * *  root    RUN_FROM_CRON=true update -check >/dev/null 2>&1" >> /etc/crontab
   fi
   # Fetch tool install (neofetch or screenfetch)
   if ! command -v neofetch >/dev/null 2>&1 && ! command -v screenfetch >/dev/null 2>&1; then
