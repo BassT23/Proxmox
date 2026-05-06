@@ -276,10 +276,14 @@ UPDATE () {
         fi
       fi
       # change crontab entry
-      if grep -q "update -check" /etc/crontab && ! grep -q "RUN_FROM_CRON=true.*update -check" /etc/crontab; then
-        cp /etc/crontab "/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
-
-        sed -i 's|.*update -check.*|00 06 * * * root RUN_FROM_CRON=true /etc/ultimate-updater/update -check >/dev/null 2>\&1|' /etc/crontab
+      CRON_FILE="/etc/crontab"
+      BACKUP="/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
+      if grep -q "update -check" "$CRON_FILE"; then
+        if ! grep -q "RUN_FROM_CRON=true.*update -check" "$CRON_FILE"; then
+          cp "$CRON_FILE" "$BACKUP"
+          sed -i '/update -check/d' "$CRON_FILE"
+          echo "00 06 * * * root RUN_FROM_CRON=true /etc/ultimate-updater/update -check >/dev/null 2>&1" >> "$CRON_FILE"
+        fi
       fi
     else
       rm -rf "$TEMP_FILES"/welcome-screen.sh || true
