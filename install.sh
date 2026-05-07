@@ -40,7 +40,7 @@ HEADER_INFO () {
    / / / / __ \/ __  / __ `/ __/ _ \/ __/
   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
   \____/ ____/\____/\____/\__/\___/_/
-      /_/     for Proxmox VE
+      /_/                for Proxmox VE
 EOF
   echo -e "\n \
       *** Install and/or Update *** \n \
