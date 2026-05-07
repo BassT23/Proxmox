@@ -282,7 +282,7 @@ UPDATE () {
         if ! grep -q "RUN_FROM_CRON=true.*update -check" "$CRON_FILE"; then
           cp "$CRON_FILE" "$BACKUP"
           sed -i '/update -check/d' "$CRON_FILE"
-          echo "00 06 * * * root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> "$CRON_FILE"
+          echo "00 06   * * *   root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> "$CRON_FILE"
         fi
       fi
     else
@@ -401,7 +401,7 @@ WELCOME_SCREEN_INSTALL () {
   chmod +x /etc/update-motd.d/01-welcome-screen
   if ! [[ -f $LOCAL_FILES/check-output ]]; then touch $LOCAL_FILES/check-output; fi
   if ! grep -q "check-updates.sh" /etc/crontab; then
-    echo "00 06 * * *    root      RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> /etc/crontab
+    echo "00 06   * * *   root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> /etc/crontab
   fi
   # Fetch tool install (neofetch or screenfetch)
   if ! command -v neofetch >/dev/null 2>&1 && ! command -v screenfetch >/dev/null 2>&1; then
