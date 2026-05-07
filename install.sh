@@ -282,7 +282,7 @@ UPDATE () {
         if ! grep -q "RUN_FROM_CRON=true.*update -check" "$CRON_FILE"; then
           cp "$CRON_FILE" "$BACKUP"
           sed -i '/update -check/d' "$CRON_FILE"
-          echo "00 06 * * * root RUN_FROM_CRON=true /etc/ultimate-updater/update -check >/dev/null 2>&1" >> "$CRON_FILE"
+          echo "00 06 * * * root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> "$CRON_FILE"
         fi
       fi
     else
