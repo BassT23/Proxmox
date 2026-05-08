@@ -1,7 +1,7 @@
 <div align="center">
 
 <img src="https://github.com/user-attachments/assets/df181f9c-683b-4e9b-9234-80c158c7da98"
-       style="max-width: 100%; height: auto;" />
+       style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
 
 ![Screenshot_20240109_113501](https://github.com/BassT23/Proxmox/assets/30832786/640cefd9-0659-4265-b34a-cb5b9905046b)
 
