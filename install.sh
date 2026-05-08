@@ -216,6 +216,7 @@ INSTALL () {
     chmod -R +x "$LOCAL_FILES"/check-updates.sh
     cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
+    cp "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     echo -e "${OR:-}Finished. Run The Ultimate Updater with 'update'.${CL:-}"
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
     echo -e "${OR:-}Also want to install the Welcome-Screen?${CL:-}"
@@ -254,6 +255,7 @@ UPDATE () {
     # Copy files
     mv "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
+    mv "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     mv "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
     mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod +x $LOCAL_FILES/check-updates.sh
