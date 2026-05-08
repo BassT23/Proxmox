@@ -16,6 +16,7 @@ CHECK_OUTPUT=$(stat -c%s $LOCAL_FILES/check-output)
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 # Colors
+BL="\e[36m"
 OR="\e[1;33m"
 GN="\e[1;92m"
 CL="\e[0m"
@@ -87,7 +88,8 @@ VERSION_CHECK () {
         echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
     fi
   fi
-  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "              Version: $LOCAL_VERSION\n"; fi
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "              Version: $LOCAL_VERSION"; fi
+  echo -e "\n${BL}  Repo: ${OR}https://github.com/BassT23/Proxmox\n${CL}"
   rm -rf /root/update_master.sh
   rm -rf /root/update_beta.sh
   rm -rf /root/update_develop.sh
