@@ -3,6 +3,7 @@ Changelog:
 
 **v4.5.x** (beta/develop)
 - change Logo
+- respect start delay from config also in check-updates
 - add README to local files / add Repo in config file #270
 - add option for disable daily check email notification in config file #273
 - add option for disable email notification on successful run in config file #268

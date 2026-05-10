@@ -100,6 +100,9 @@ READ_WRITE_CONFIG () {
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
+  VM_START_DELAY=$(awk -F'"' '/^VM_START_DELAY=/ {print $2}' "$CONFIG_FILE")
+  VM_START_DELAY=$(SANITIZE_NUMBER "$VM_START_DELAY")
+  VM_START_DELAY="${VM_START_DELAY:-45}"
 
   if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
     apply_only_exclude_tags ONLY EXCLUDED
@@ -276,7 +279,7 @@ VM_CHECK_START () {
           SSH_VM_PORT="${SSH_VM_PORT:-22}"
           SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
           SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "$SSH_START_DELAY_TIME")
-          SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-45}"
+          SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-$VM_START_DELAY}"
         fi
         if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
           # Check suspend mode
@@ -325,7 +328,8 @@ CHECK_VM () {
     SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
     SSH_VM_PORT="${SSH_VM_PORT:-22}"
     SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
-    SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-45}"
+    SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "$SSH_START_DELAY_TIME")
+    SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-$VM_START_DELAY}"
   fi
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   if [[ -z "$IP" || -z "$USER" || -z "$SSH_VM_PORT" ]]; then
@@ -368,6 +372,8 @@ CHECK_VM () {
     elif [[ "$OS" =~ Fedora ]]; then
       ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "dnf -y update" >/dev/null 2>&1
       UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "dnf check-update | grep -Ec ' updates$'")
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
@@ -385,11 +391,13 @@ CHECK_VM () {
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
-        echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ CentOS ]]; then
       UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "yum -q check-update | wc -l")
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
@@ -408,14 +416,14 @@ CHECK_VM_QEMU () {
 #    fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
       qm guest exec "$VM" --timeout 0 -- bash -c "apt-get update" >/dev/null 2>&1
-      SECURITY_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      SECURITY_APT_UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       SECURITY_APT_UPDATES=$(SANITIZE_NUMBER "$SECURITY_APT_UPDATES")
       SECURITY_APT_UPDATES=${SECURITY_APT_UPDATES:-0}
       if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
-      NORMAL_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci '^inst.'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      NORMAL_APT_UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       NORMAL_APT_UPDATES=$(SANITIZE_NUMBER "$NORMAL_APT_UPDATES")
       NORMAL_APT_UPDATES=${NORMAL_APT_UPDATES:-0}
-      EXITCODE=$(qm guest exec "$VM" -- bash -c '[ -f /var/run/reboot-required.pkgs ]' 2>/dev/null | grep -o '"exitcode"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]\+')
+      EXITCODE=$(qm guest exec "$VM" --timeout 0 -- bash -c '[ -f /var/run/reboot-required.pkgs ]' 2>/dev/null | grep -o '"exitcode"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]\+')
       EXITCODE=${EXITCODE:-1}
       if [[ "$EXITCODE" -eq 0 ]]; then
         REBOOT_REQUIRED=true
@@ -433,7 +441,7 @@ CHECK_VM_QEMU () {
       fi
     elif [[ "$OS" =~ Fedora ]]; then
       qm guest exec "$VM" --timeout 0 -- bash -c "dnf -y update" >/dev/null 2>&1
-      UPDATES=$(qm guest exec "$VM" -- bash -c "dnf check-update | grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "dnf check-update | grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -441,7 +449,7 @@ CHECK_VM_QEMU () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Arch ]]; then
-      UPDATES=$(qm guest exec "$VM" -- bash -c "pacman -Qu | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "pacman -Qu | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -449,7 +457,7 @@ CHECK_VM_QEMU () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Alpine ]]; then
-      UPDATES=$(qm guest exec "$VM" -- ash -c "yum -q check-update | wc -l")
+      UPDATES=$(qm guest exec "$VM" --timeout 0 -- ash -c "apk list -u | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -457,7 +465,7 @@ CHECK_VM_QEMU () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ CentOS ]]; then
-      UPDATES=$(qm guest exec "$VM" -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
