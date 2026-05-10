@@ -381,7 +381,13 @@ CHECK_VM () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Alpine ]]; then
-      return
+      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "apk list -u | wc -l")
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
+      if [[ "$UPDATES" -gt 0 ]]; then
+        echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
+      fi
     elif [[ "$OS" =~ CentOS ]]; then
       UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "yum -q check-update | wc -l")
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -401,7 +407,7 @@ CHECK_VM_QEMU () {
 #      return
 #    fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
-      qm guest exec "$VM" -- bash -c "apt-get update" >/dev/null 2>&1
+      qm guest exec "$VM" --timeout 0 -- bash -c "apt-get update" >/dev/null 2>&1
       SECURITY_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       SECURITY_APT_UPDATES=$(SANITIZE_NUMBER "$SECURITY_APT_UPDATES")
       SECURITY_APT_UPDATES=${SECURITY_APT_UPDATES:-0}
@@ -426,7 +432,7 @@ CHECK_VM_QEMU () {
         echo -e "N: $NORMAL_APT_UPDATES"
       fi
     elif [[ "$OS" =~ Fedora ]]; then
-      qm guest exec "$VM" -- bash -c "dnf -y update" >/dev/null 2>&1
+      qm guest exec "$VM" --timeout 0 -- bash -c "dnf -y update" >/dev/null 2>&1
       UPDATES=$(qm guest exec "$VM" -- bash -c "dnf check-update | grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
@@ -443,7 +449,13 @@ CHECK_VM_QEMU () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Alpine ]]; then
-      return
+      UPDATES=$(qm guest exec "$VM" -- ash -c "yum -q check-update | wc -l")
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
+      if [[ "$UPDATES" -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
+      fi
     elif [[ "$OS" =~ CentOS ]]; then
       UPDATES=$(qm guest exec "$VM" -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
