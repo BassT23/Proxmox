@@ -1,6 +1,7 @@
 <div align="center">
 
-![Logo](https://github.com/BassT23/Proxmox/assets/30832786/6400ed7f-71c6-486c-b5ed-249c2e0df19b)
+<img src="https://github.com/user-attachments/assets/df181f9c-683b-4e9b-9234-80c158c7da98"
+       style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
 
 ![Screenshot_20240109_113501](https://github.com/BassT23/Proxmox/assets/30832786/640cefd9-0659-4265-b34a-cb5b9905046b)
 
@@ -27,6 +28,22 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 **YOU HAVE BEEN WARNED!**
 
 </div>
+
+---
+## ⚠️ Project Status
+
+Development has slowed down recently due to personal circumstances (limited working environment after a water damage situation).
+
+The project is **not abandoned**:
+- It is actively used in real environments
+- Core functionality is stable and working
+- Updates will continue as time allows
+
+There are already new features and improvements in the `develop` branch, which will be merged into a future release.
+
+Thanks for your patience and for using the project ❤️
+---
+<br>
 
 ### What does the script do:
 - The script makes system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)

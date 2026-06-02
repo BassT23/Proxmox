@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="2.1"
+VERSION="2.2"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -96,13 +96,14 @@ if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]] && [[ $DOCKER_
     docker image prune -f
     docker system prune --volumes -f
   }
-  COMPOSEFILES=("docker-compose.yaml" "docker-compose.yml" "compose.yaml" "compose.yml")
+  COMPOSEFILES=("docker-compose.y*ml" "compose.y*ml")
   DIRLIST=()
   for COMPOSEFILE in "${COMPOSEFILES[@]}"; do
     while IFS= read -r line; do
       DIRLIST+=("$line")
     done < <(find "$COMPOSE_PATH" -name "$COMPOSEFILE" -exec dirname {} \; 2> >(grep -v 'Permission denied'))
   done
+
   # Docker-Compose v1
   if [[ $DOCKER_COMPOSE_V1 == true && ${#DIRLIST[@]} -gt 0 ]]; then
     echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
@@ -132,16 +133,8 @@ if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]] && [[ $DOCKER_
 fi
 
 # Community / Helper Scripts
-  #188
-if grep -q "community-scripts" /usr/bin/update 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]];then
-  stdbuf -oL -eL expect <<EOF | grep -v "whiptail"
-set timeout 3
-spawn update
-expect "Choose an option:"
-send "2\r"
-expect "<Ok>"
-send "\r"
-expect eof
-EOF
-  echo "✅ Update process completed"
+if grep -q "community-scripts" /usr/bin/update 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]]; then
+  echo -e "\n*** Updating Community-Scripts ***"
+  PHS_SILENT=1 update > /dev/null 2>&1
+  echo -e "✅ Update process completed\n"
 fi

@@ -17,6 +17,10 @@ Steps to reproduce the behavior:
 3. Scroll down to '....'
 4. See error
 
+**Debug output**
+- set DEBUG in config file to `true` and run the updater again
+- post output here
+
 **Expected behavior**
 A clear and concise description of what you expected to happen.
 

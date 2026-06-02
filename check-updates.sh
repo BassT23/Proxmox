@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="1.7.7"
+VERSION="1.8"
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -23,17 +23,16 @@ RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
 
+SANITIZE_NUMBER() {
+  echo "$1" | tr -cd '0-9'
+}
+
 ARGUMENTS () {
-  local ARGUMENT
-  while [ $# -gt 0 ]; do
-    ARGUMENT="$1"
+  while [[ $# -gt 0 ]]; do
+    local ARGUMENT="$1"
     case "$ARGUMENT" in
-      -c)
-        RICM=true
-        ;;
-      -u)
-        RDU=true
-        ;;
+      -c) RICM=true ;;
+      -u) RDU=true ;;
       chost)
         COMMAND=true
         OUTPUT_TO_FILE
@@ -85,6 +84,10 @@ USAGE () {
 READ_WRITE_CONFIG () {
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' $CONFIG_FILE)
   EMAIL_USER=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' $CONFIG_FILE)
+  EMAIL_SENDER=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' $CONFIG_FILE)
+  EMAIL_DAILY_CHECK=$(awk -F'"' '/^EMAIL_DAILY_CHECK=/ {print $2}' $CONFIG_FILE)
+  EMAIL_NO_UPDATES=$(awk -F'"' '/^EMAIL_NO_UPDATES=/ {print $2}' $CONFIG_FILE)
+  EMAIL_ONLY_SECURITY=$(awk -F'"' '/^EMAIL_ONLY_SECURITY=/ {print $2}' $CONFIG_FILE)
   WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
   WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
   WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
@@ -93,11 +96,35 @@ READ_WRITE_CONFIG () {
   RUNNING_VM=$(awk -F'"' '/^CHECK_RUNNING_VM=/ {print $2}' $CONFIG_FILE)
   STOPPED_VM=$(awk -F'"' '/^CHECK_STOPPED_VM=/ {print $2}' $CONFIG_FILE)
   PAUSED_VM=$(awk -F'"' '/^CHECK_PAUSED_VM=/ {print $2}' $CONFIG_FILE)
+  REEBOOT_IF_NEEDED=$(awk -F'"' '/^REEBOOT_IF_NEEDED=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
+  VM_START_DELAY=$(awk -F'"' '/^VM_START_DELAY=/ {print $2}' "$CONFIG_FILE")
+  VM_START_DELAY=$(SANITIZE_NUMBER "$VM_START_DELAY")
+  VM_START_DELAY="${VM_START_DELAY:-45}"
+
   if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
     apply_only_exclude_tags ONLY EXCLUDED
+  fi
+}
+
+# Wait for bootup / reboot
+# Container
+WAIT_FOR_BOOTUP_LXC () {
+  MAX_RETRIES=10
+  COUNT=1
+  sleep "$LXC_START_DELAY"
+  while [ $COUNT -le $MAX_RETRIES ]; do
+    if pct exec "$CONTAINER" -- bash -c "exit" >/dev/null 2>&1; then
+      break
+    else
+      sleep "$LXC_START_DELAY"
+    fi
+    COUNT=$((COUNT+1))
+  done
+  if [ $COUNT -gt $MAX_RETRIES ]; then
+    return 0
   fi
 }
 
@@ -120,10 +147,11 @@ CHECK_HOST () {
 CHECK_HOST_ITSELF () {
   apt-get update >/dev/null 2>&1
   SECURITY_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst.*security" | tr -d '\n')
+  if [[ $SECURITY_APT_UPDATES != 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
   NORMAL_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst." | tr -d '\n')
   if [[ -f /var/run/reboot-required.pkgs ]]; then REBOOT_REQUIRED=true; fi
   if [[ $SECURITY_APT_UPDATES != 0 || $NORMAL_APT_UPDATES != 0 || $REBOOT_REQUIRED == true ]]; then
-    echo -e "${GN}Host${CL} : ${GN}$HOSTNAME${CL}"
+    echo -e "\n${BL}Host${CL} : ${GN}$HOSTNAME${CL}"
   fi
   if [[ $REBOOT_REQUIRED == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
   if [[ $SECURITY_APT_UPDATES != 0 && $NORMAL_APT_UPDATES != 0 ]]; then
@@ -154,7 +182,7 @@ CONTAINER_CHECK_START () {
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
         pct start "$CONTAINER"
-        sleep 5
+        WAIT_FOR_BOOTUP_LXC
         CHECK_CONTAINER "$CONTAINER"
         # Stop the container
         pct shutdown "$CONTAINER"
@@ -180,6 +208,7 @@ CHECK_CONTAINER () {
     pct exec "$CONTAINER" -- bash -c "apt-get update" >/dev/null 2>&1
     APT_OUTPUT=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade")
     SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security' || true)
+    if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
     NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.' || true)
     if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" != 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
@@ -207,6 +236,11 @@ CHECK_CONTAINER () {
     fi
   elif [[ "$OS" =~ alpine ]]; then
     pct exec "$CONTAINER" -- ash -c "apk update" >/dev/null 2>&1
+    UPDATES=$(pct exec "$CONTAINER" -- ash -c "apk list -u | wc -l")
+    if [[ "$UPDATES" -gt 0 ]]; then
+      echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
+      echo -e "$UPDATES"
+    fi
   else
     pct exec "$CONTAINER" -- bash -c "yum update" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "yum -q check-update | wc -l")
@@ -224,6 +258,7 @@ VM_CHECK_START () {
   VMS=$(qm list | tail -n +2 | cut -c -10)
   # Loop through VMs
   for VM in $VMS; do
+    REBOOT_REQUIRED=false
     # Check if connection is available
     if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
       # Check VM
@@ -236,6 +271,16 @@ VM_CHECK_START () {
         continue
       else
         STATUS=$(qm status "$VM")
+        if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
+          IP=$(awk -F'"' '/^IP=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+          USER=$(awk -F'"' '/^USER=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+          USER="${USER:-root}"
+          SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+          SSH_VM_PORT="${SSH_VM_PORT:-22}"
+          SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+          SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "$SSH_START_DELAY_TIME")
+          SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-$VM_START_DELAY}"
+        fi
         if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
           # Check suspend mode
           if [[ $(qm config "$VM" | grep 'lock:' | sed 's/lock:\s*//') == "suspend" ]]; then 
@@ -245,7 +290,8 @@ VM_CHECK_START () {
           fi
           # Start VM
           qm start "$VM" >/dev/null 2>&1
-          sleep 45
+          sleep "$SSH_START_DELAY_TIME"
+          sleep "$SSH_START_DELAY_TIME"
           CHECK_VM "$VM"
           # Stop/Suspend VM
           qm stop "$VM"
@@ -253,12 +299,14 @@ VM_CHECK_START () {
         elif [[ "$STATUS" == "status: paused" && "$PAUSED_VM" == true ]]; then
           # Start VM
           qm resume "$VM" >/dev/null 2>&1
-          sleep 45
+          sleep "$SSH_START_DELAY_TIME"
           CHECK_VM "$VM"
           # Suspend VM
           qm suspend "$VM"
         elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
+          VM_NOT_STOPPED=true
           CHECK_VM "$VM"
+          VM_NOT_STOPPED=""
         fi
       fi
     fi
@@ -267,68 +315,94 @@ VM_CHECK_START () {
 
 # VM Check
 CHECK_VM () {
+  local IP USER SSH_VM_PORT SSH_START_DELAY_TIME
   if [[ "$RDU" != true ]]; then
     VM=$1
   else
     VM=$(awk -F'"' '/^VM=/ {print $2}' $LOCAL_FILES/temp/var)
   fi
+  if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
+    IP=$(awk -F'"' '/^IP=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    USER=$(awk -F'"' '/^USER=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    USER="${USER:-root}"
+    SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    SSH_VM_PORT="${SSH_VM_PORT:-22}"
+    SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "$SSH_START_DELAY_TIME")
+    SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-$VM_START_DELAY}"
+  fi
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
-  if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
-    IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
-    if ! (ssh "$IP" exit) >/dev/null 2>&1; then
-      CHECK_VM_QEMU
-    else
-      OS_BASE=$(qm config "$VM" | grep ostype || true)
-      if [[ "$OS_BASE" =~ l2 ]]; then
-        KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
-        OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
-#        if [[ "$KERNEL" =~ FreeBSD ]]; then
-#          ssh -t -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" pkg update
-#          return
-#        fi
-        if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
-          ssh "$IP" "apt-get update" >/dev/null 2>&1
-          APT_OUTPUT=$(ssh "$IP" "apt-get -s upgrade")
-          SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security')
-          NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.')
-          if ssh "$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then REBOOT_REQUIRED=true; fi
-          if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
-            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-          fi
-          if [[ "$REBOOT_REQUIRED" == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
-          if [[ "$SECURITY_APT_UPDATES" -gt 0 && "$NORMAL_APT_UPDATES" -gt 0 ]]; then
-            echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
-          elif [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then
-            echo -e "S: $SECURITY_APT_UPDATES / "
-          elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
-            echo -e "N: $NORMAL_APT_UPDATES"
-          fi
-        elif [[ "$OS" =~ Fedora ]]; then
-          ssh "$IP" "dnf -y update" >/dev/null 2>&1
-          UPDATES=$(ssh "$IP" "dnf check-update| grep -Ec ' updates$'")
-          if [[ "$UPDATES" -gt 0 ]]; then
-            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-            echo -e "$UPDATES"
-          fi
-        elif [[ "$OS" =~ Arch ]]; then
-          UPDATES=$(ssh "$IP" "pacman -Qu | wc -l")
-          if [[ "$UPDATES" -gt 0 ]]; then
-            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-            echo -e "$UPDATES"
-          fi
-        elif [[ "$OS" =~ Alpine ]]; then
-          return
-        elif [[ "$OS" =~ CentOS ]]; then
-          UPDATES=$(ssh "$IP" "yum -q check-update | wc -l")
-          if [[ "$UPDATES" -gt 0 ]]; then
-            echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-            echo -e "$UPDATES"
-          fi
-        fi
+  if [[ -z "$IP" || -z "$USER" || -z "$SSH_VM_PORT" ]]; then
+    CHECK_VM_QEMU
+    return
+  fi
+  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 \
+    -p "$SSH_VM_PORT" "$USER@$IP" "true" >/dev/null 2>&1; then
+    CHECK_VM_QEMU
+    return
+  fi
+  OS_BASE=$(qm config "$VM" | grep ostype || true)
+  if [[ "$OS_BASE" =~ l2 ]]; then
+    KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
+    OS=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" hostnamectl 2>/dev/null | grep System || true)
+    if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
+      ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "apt-get update" >/dev/null 2>&1
+      APT_OUTPUT=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "apt-get -s upgrade")
+      SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security')
+      NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.')
+      if ssh -q -p "$SSH_VM_PORT" "$USER@$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then
+        REBOOT_REQUIRED=true
+      fi
+      if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+      fi
+      if [[ "$REBOOT_REQUIRED" == true ]]; then
+        echo -e "${OR} Reboot required${CL}"
+      fi
+      if [[ "$SECURITY_APT_UPDATES" -gt 0 && "$NORMAL_APT_UPDATES" -gt 0 ]]; then
+        echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
+      elif [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then
+        echo -e "S: $SECURITY_APT_UPDATES / "
+      elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
+        echo -e "N: $NORMAL_APT_UPDATES"
+      fi
+      if [[ "$REBOOT_REQUIRED" == true ]] && [[ "$REEBOOT_IF_NEEDED" == true ]] && [[ "$VM_NOT_STOPPED" == true ]]; then
+        ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "reboot" >/dev/null 2>&1
+      fi
+    elif [[ "$OS" =~ Fedora ]]; then
+      ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "dnf -y update" >/dev/null 2>&1
+      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "dnf check-update | grep -Ec ' updates$'")
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
+      if [[ "$UPDATES" -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
+      fi
+    elif [[ "$OS" =~ Arch ]]; then
+      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "pacman -Qu | wc -l")
+      UPDATES=${UPDATES//[^0-9]/}
+      UPDATES=${UPDATES:-0}
+      if [[ "$UPDATES" -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
+      fi
+    elif [[ "$OS" =~ Alpine ]]; then
+      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "apk list -u | wc -l")
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
+      if [[ "$UPDATES" -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
+      fi
+    elif [[ "$OS" =~ CentOS ]]; then
+      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "yum -q check-update | wc -l")
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
+      if [[ "$UPDATES" -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
       fi
     fi
-  else
-    CHECK_VM_QEMU
   fi
 }
 
@@ -340,11 +414,20 @@ CHECK_VM_QEMU () {
 #      qm guest exec "$VM" -- tcsh -c "pkg update"
 #      return
 #    fi
-    if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
-      qm guest exec "$VM" -- bash -c "apt-get update" >/dev/null 2>&1
-      SECURITY_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
-      NORMAL_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
-      if [[ $(qm guest exec "$VM" -- bash -c "[ -f /var/run/reboot-required.pkgs ]" | grep exitcode) =~ 0 ]]; then REBOOT_REQUIRED=true; fi
+    if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
+      qm guest exec "$VM" --timeout 0 -- bash -c "apt-get update" >/dev/null 2>&1
+      SECURITY_APT_UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      SECURITY_APT_UPDATES=$(SANITIZE_NUMBER "$SECURITY_APT_UPDATES")
+      SECURITY_APT_UPDATES=${SECURITY_APT_UPDATES:-0}
+      if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
+      NORMAL_APT_UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      NORMAL_APT_UPDATES=$(SANITIZE_NUMBER "$NORMAL_APT_UPDATES")
+      NORMAL_APT_UPDATES=${NORMAL_APT_UPDATES:-0}
+      EXITCODE=$(qm guest exec "$VM" --timeout 0 -- bash -c '[ -f /var/run/reboot-required.pkgs ]' 2>/dev/null | grep -o '"exitcode"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]\+')
+      EXITCODE=${EXITCODE:-1}
+      if [[ "$EXITCODE" -eq 0 ]]; then
+        REBOOT_REQUIRED=true
+      fi
       if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -357,22 +440,34 @@ CHECK_VM_QEMU () {
         echo -e "N: $NORMAL_APT_UPDATES"
       fi
     elif [[ "$OS" =~ Fedora ]]; then
-      qm guest exec "$VM" -- bash -c "dnf -y update" >/dev/null 2>&1
-      UPDATES=$(qm guest exec "$VM" -- bash -c "dnf check-update | grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      qm guest exec "$VM" --timeout 0 -- bash -c "dnf -y update" >/dev/null 2>&1
+      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "dnf check-update | grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Arch ]]; then
-      UPDATES=$(qm guest exec "$VM" -- bash -c "pacman -Qu | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "pacman -Qu | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Alpine ]]; then
-      return
+      UPDATES=$(qm guest exec "$VM" --timeout 0 -- ash -c "apk list -u | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
+      if [[ "$UPDATES" -gt 0 ]]; then
+        echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+        echo -e "$UPDATES"
+      fi
     elif [[ "$OS" =~ CentOS ]]; then
-      UPDATES=$(qm guest exec "$VM" -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
@@ -403,9 +498,14 @@ EXIT () {
       cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
       chmod 640 "$LOCAL_FILES/mail-output"
       if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
-        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
-      else
-        echo "No updates found during search" | mail -s "Ultimate Updater" root
+        # check variable !!!
+        if [[ "$EMAIL_ONLY_SECURITY" == true && "$SECURITY_UPDATES_AVALABLE" == true ]]; then
+          mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+        else
+          mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+        fi
+      elif [[ "$EMAIL_NO_UPDATES" == true ]]; then
+        echo "No updates found during search" | mail -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER"
       fi
     fi
   fi
