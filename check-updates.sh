@@ -416,11 +416,11 @@ CHECK_VM_QEMU () {
 #    fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
       qm guest exec "$VM" --timeout 0 -- bash -c "apt-get update" >/dev/null 2>&1
-      SECURITY_APT_UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      SECURITY_APT_UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
       SECURITY_APT_UPDATES=$(SANITIZE_NUMBER "$SECURITY_APT_UPDATES")
       SECURITY_APT_UPDATES=${SECURITY_APT_UPDATES:-0}
       if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
-      NORMAL_APT_UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      NORMAL_APT_UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.'" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
       NORMAL_APT_UPDATES=$(SANITIZE_NUMBER "$NORMAL_APT_UPDATES")
       NORMAL_APT_UPDATES=${NORMAL_APT_UPDATES:-0}
       EXITCODE=$(qm guest exec "$VM" --timeout 0 -- bash -c '[ -f /var/run/reboot-required.pkgs ]' 2>/dev/null | grep -o '"exitcode"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]\+')
@@ -441,7 +441,7 @@ CHECK_VM_QEMU () {
       fi
     elif [[ "$OS" =~ Fedora ]]; then
       qm guest exec "$VM" --timeout 0 -- bash -c "dnf -y update" >/dev/null 2>&1
-      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "dnf check-update | grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "dnf check-update | grep -Ec ' updates$'" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -449,7 +449,7 @@ CHECK_VM_QEMU () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Arch ]]; then
-      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "pacman -Qu | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "pacman -Qu | wc -l" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -465,7 +465,7 @@ CHECK_VM_QEMU () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ CentOS ]]; then
-      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "yum -q check-update | wc -l" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
