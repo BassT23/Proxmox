@@ -367,8 +367,8 @@ CHECK_VM_QEMU () {
 #    fi
     if [[ "$OS" =~ Ubuntu ]] || [[ "$OS" =~ Debian ]] || [[ "$OS" =~ Devuan ]]; then
       qm guest exec "$VM" -- bash -c "apt-get update" >/dev/null 2>&1
-      SECURITY_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
-      NORMAL_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst. | tr -d '\n'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      SECURITY_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst.*security" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
+      NORMAL_APT_UPDATES=$(qm guest exec "$VM" -- bash -c "apt-get -s upgrade | grep -ci ^inst." | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
       if [[ $(qm guest exec "$VM" -- bash -c "[ -f /var/run/reboot-required.pkgs ]" | grep exitcode) =~ 0 ]]; then REBOOT_REQUIRED=true; fi
       if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
@@ -383,13 +383,13 @@ CHECK_VM_QEMU () {
       fi
     elif [[ "$OS" =~ Fedora ]]; then
       qm guest exec "$VM" -- bash -c "dnf -y update" >/dev/null 2>&1
-      UPDATES=$(qm guest exec "$VM" -- bash -c "dnf check-update | grep -Ec ' updates$'" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" -- bash -c "dnf check-update | grep -Ec ' updates$'" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Arch ]]; then
-      UPDATES=$(qm guest exec "$VM" -- bash -c "pacman -Qu | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" -- bash -c "pacman -Qu | wc -l" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
@@ -397,7 +397,7 @@ CHECK_VM_QEMU () {
     elif [[ "$OS" =~ Alpine ]]; then
       return
     elif [[ "$OS" =~ CentOS ]]; then
-      UPDATES=$(qm guest exec "$VM" -- bash -c "yum -q check-update | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      UPDATES=$(qm guest exec "$VM" -- bash -c "yum -q check-update | wc -l" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
