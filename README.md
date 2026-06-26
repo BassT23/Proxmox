@@ -1,6 +1,7 @@
 <div align="center">
 
-![Logo](https://github.com/BassT23/Proxmox/assets/30832786/6400ed7f-71c6-486c-b5ed-249c2e0df19b)
+<img src="https://github.com/user-attachments/assets/df181f9c-683b-4e9b-9234-80c158c7da98"
+       style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
 
 ![Screenshot_20240109_113501](https://github.com/BassT23/Proxmox/assets/30832786/640cefd9-0659-4265-b34a-cb5b9905046b)
 
@@ -62,7 +63,6 @@ Thanks for your patience and for using the project ❤️
 - [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/tree/beta#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
 - send email after update/check
 - Trim filesystem on ext4 nodes
-- Kernel upgrade for debian based vm with ssh connection - [used script](https://github.com/pimlie/ubuntu-mainline-kernel.sh)
 
 Info can be found with `update -h`
 

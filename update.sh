@@ -4,7 +4,7 @@
 # Update #
 ##########
 
-VERSION="4.5.2"
+VERSION="4.5.5"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -42,7 +42,7 @@ HEADER_INFO () {
    / / / / __ \/ __  / __ `/ __/ _ \/ __/
   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
   \____/ ____/\____/\____/\__/\___/_/
-      /_/     for Proxmox VE
+      /_/                for Proxmox VE
 EOF
   if [[ "$INFO" != false ]]; then
     echo -e "\n \
@@ -417,6 +417,7 @@ READ_CONFIG () {
   KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
   BACKUP_LXC_MP=$(awk -F'"' '/^BACKUP_LXC_MP=/ {print $2}' "$CONFIG_FILE")
+  BACKUP_MODE=$(awk -F'"' '/^BACKUP_MODE=/ {print $2}' "$CONFIG_FILE")
   LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   VM_START_DELAY=$(awk -F'"' '/^VM_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
@@ -428,16 +429,13 @@ READ_CONFIG () {
   FSTRIM_WITH_MOUNTPOINT=$(awk -F'"' '/^FSTRIM_WITH_MOUNTPOINT=/ {print $2}' "$CONFIG_FILE")
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
   declare -f apply_only_exclude_tags >/dev/null 2>&1 && apply_only_exclude_tags ONLY EXCLUDED
+  EMAIL_ONLY_ERROR=$(awk -F'"' '/^EMAIL_ONLY_ERROR=/ {print $2}' "$CONFIG_FILE")
+  EMAIL_SENDER=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' $CONFIG_FILE)
 }
 
 # Snapshot/Backup
 CONTAINER_BACKUP () {
   if [[ $SNAPSHOT == true || $BACKUP == true ]]; then
-    if [[ $SNAPSHOT == true && $BACKUP_LXC_MP == true && $(pct config "$CONTAINER" | grep -q '^mp' && echo true) == true ]]; then
-      BACKUP=true
-      SNAPSHOT=false
-      BACKUP_RESET=true
-    fi
     if [[ "$SNAPSHOT" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "✅${GN:-} Snapshot created${CL:-}"
@@ -448,13 +446,25 @@ CONTAINER_BACKUP () {
         done
       echo -e "✅${GN:-} Done${CL:-}"
       else
-        echo -e "❌${RD:-} Snapshot is not possible on your storage${CL:-}"
+        echo -e "❌${RD:-} Snapshot is not possible on your setup${CL:-}"
+        if [[ $BACKUP_LXC_MP == true && $(pct config "$CONTAINER" | grep -q '^mp' && echo true) == true ]]; then
+          BACKUP=true
+          SNAPSHOT=false
+          BACKUP_RESET=true
+          echo -e "ℹ ${OR:-} Changed to backup, because of mount points${CL:-}"
+        fi
       fi
     fi
     if [[ "$BACKUP" == true ]]; then
+      # Use BACKUP_MODE from config, default to 'stop' if not set
+      MODE=${BACKUP_MODE:-stop}
       echo -e "💾${OR:-} Create a backup for LXC (this will take some time - please wait)${CL:-}"
-      vzdump "$CONTAINER" --mode stop --notes-template "{{guestname}} - Ultimate-Updater" --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
-      echo -e "✅${GN:-} Backup created${CL:-}\n"
+      if vzdump "$CONTAINER" --mode stop --notes-template "{{guestname}} - Ultimate-Updater" --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd; then
+        echo -e "✅${GN:-} Backup created${CL:-}\n"
+      else
+        echo -e "❌${RD:-} Backup of LXC $CONTAINER failed - skipping update${CL:-}\n"
+        return 1
+      fi
       if [[ $BACKUP_RESET == true ]]; then
         BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
         SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
@@ -480,9 +490,15 @@ VM_BACKUP () {
       fi
     fi
     if [[ "$BACKUP" == true ]]; then
+      # Use BACKUP_MODE from config, default to 'stop' if not set
+      MODE=${BACKUP_MODE:-stop}
       echo -e "💾${OR:-} Create a backup for the VM (this will take some time - please wait)${CL:-}"
-      vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd
-      echo -e "✅${GN:-} Backup created${CL:-}"
+      if vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd; then
+        echo -e "✅${GN:-} Backup created${CL:-}"
+      else
+        echo -e "❌${RD:-} Backup of VM $VM failed - skipping update${CL:-}"
+        return 1
+      fi
     fi
   else
     echo -e "⏩${OR:-} Snapshot and/or Backup skipped by the user${CL:-}"
@@ -586,7 +602,7 @@ DIST_UPGRADE () {
       SNAPSHOT=
       BACKUP=true
       echo
-      CONTAINER_BACKUP
+      CONTAINER_BACKUP || return
       echo -e "${GR:-}⏩ Upgrade to Debian 13 (Trixie) now:${CL:-}"
       echo -e "${OR:-}--- Enable stop on error ---\n${CL:-}"
       set -e
@@ -615,6 +631,7 @@ DIST_UPGRADE () {
           echo -e "\n${OR:-}--- Restart the container now for you ---${CL:-}"
           pct exec "$CONTAINER" -- bash -c "reboot"
           echo
+          return 0
         else
           echo -e "❌${BL:-} skipped\n${CL:-}"
           return 0
@@ -638,9 +655,11 @@ UPDATE_CHECK () {
   if [[ "$WELCOME_SCREEN" == true ]]; then
     echo -e "${OR:-}--- Check Status for Welcome-Screen ---${CL:-}"
     if [[ "$CHOST" == true ]]; then
-      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u chost" | tee -a "$LOCAL_FILES/check-output"
+#      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u chost" | tee -a "$LOCAL_FILES/check-output"
+      "$LOCAL_FILES/check-updates.sh" -u chost | tee -a "$LOCAL_FILES/check-output"
     elif [[ "$CCONTAINER" == true ]]; then
-      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u ccontainer" | tee -a $LOCAL_FILES/check-output
+#      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u ccontainer" | tee -a $LOCAL_FILES/check-output
+      "$LOCAL_FILES/check-updates.sh" -u ccontainer | tee -a "$LOCAL_FILES/check-output"
     elif [[ "$CVM" == true ]]; then
       ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u cvm" | tee -a $LOCAL_FILES/check-output
     fi
@@ -844,7 +863,7 @@ UPDATE_CONTAINER () {
   # Backup
   if [[ "$CHECK_DIST" != true ]]; then
     echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
-    CONTAINER_BACKUP
+    CONTAINER_BACKUP || return
     echo
   fi
   # Run dist-upgrade
@@ -859,16 +878,25 @@ UPDATE_CONTAINER () {
   # shellcheck disable=SC2015
   if [[ "${OS,,}" =~ ubuntu|debian|devuan ]]; then
     echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "apt-get update -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update -y" 2>&1) || ERROR
-    if [[ $ERROR_CODE != "" ]]; then return; fi
-    # Check APT in Container
+    # Check APT in Container for Unifi before update
     if pct exec "$CONTAINER" -- bash -c "grep -rnw /etc/apt -e unifi >/dev/null 2>&1"; then
       UNIFI="true"
+      # --allow-releaseinfo-change needed because Unifi regularly changes repository metadata between versions
+      pct exec "$CONTAINER" -- bash -c "apt-get update --allow-releaseinfo-change" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update --allow-releaseinfo-change" 2>&1) || ERROR
+    else
+      pct exec "$CONTAINER" -- bash -c "apt-get update" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update" 2>&1) || ERROR
     fi
+    if [[ $ERROR_CODE != "" ]]; then return; fi
     # Check END
-    if [[ "$HEADLESS" == true || "$UNIFI" == true ]]; then
+    if [[ "$HEADLESS" == true ]]; then
       echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}"
       pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y" 2>&1) || ERROR
+      UNIFI=""
+      if [[ $ERROR_CODE != "" ]]; then return; fi
+    elif [[ "$UNIFI" == true ]]; then
+      echo -e "\n${OR:-}--- APT UPGRADE HEADLESS (Unifi) ---${CL:-}"
+      # Use --force-confdef/--force-confold to suppress Unifi interactive prompts
+      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confold'" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confold'" 2>&1) || ERROR
       UNIFI=""
       if [[ $ERROR_CODE != "" ]]; then return; fi
     else
@@ -988,7 +1016,7 @@ UPDATE_VM () {
   echo -e "🔄${GN:-} Updating VM ${BL:-}$VM${CL:-} : ${GN:-}$NAME${CL:-}\n"
   # Backup
   echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
-  VM_BACKUP
+  VM_BACKUP || return
   echo
   # Read SSH config file - check how update is possible
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
@@ -1033,7 +1061,7 @@ UPDATE_VM () {
         echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
         return
       # Debian Base
-      elif [[ "${OS,,}" =~ debian|ubuntu|linuxmint|neon|devuan ]]; then
+      elif [[ "${OS,,}" =~ debian|ubuntu|mint|kali|neon|devuan ]]; then
         # Check Internet connection
         if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
           echo -e "${OR:-} ❌ Internet check fail - skip this VM${CL:-}\n"
@@ -1137,7 +1165,7 @@ UPDATE_VM_QEMU () {
     elif [[ "$KERNEL" =~ FreeBSD ]]; then
       echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
       return
-    elif [[ ${OS,,} =~ ubuntu|debian|devuan ]]; then
+    elif [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
       # Check Internet connection
       if ! (qm guest exec "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"); then
         echo -e "${OR:-} ❌ Internet is not reachable - skip the update${CL:-}\n"
@@ -1258,10 +1286,8 @@ EXIT () {
   EXIT_CODE=$?
   if [[ -f "/etc/ultimate-updater/temp/exec_host" ]]; then
     EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' /etc/ultimate-updater/temp/exec_host)
-  else
-    echo "no exec host file exist"
   fi
-  if [[ "$WELCOME_SCREEN" == true ]]; then
+  if [[ "$WELCOME_SCREEN" == true && -n "$EXEC_HOST" ]]; then
     scp "$LOCAL_FILES"/check-output "$EXEC_HOST":"$LOCAL_FILES"/check-output
   fi
   # Exit without echo
@@ -1275,12 +1301,14 @@ EXIT () {
         echo -e "Please checkout $ERROR_LOG_FILE"
         echo
         CLEAN_LOGFILE
-        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$ERROR_LOG_FILE" 2>/dev/null
+        mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$ERROR_LOG_FILE" 2>/dev/null ||true
       else
         echo -e "${GN:-}✅ Finished, all updates done.${CL:-}\n"
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
-        echo "Finished, all updates done. No errors" | mail -s "Ultimate Updater" root
+        if [[ "$EMAIL_ONLY_ERROR" != true ]]; then
+          echo "Finished, all updates done. No errors" | mail -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
+        fi
       fi
     fi
   else
@@ -1289,7 +1317,7 @@ EXIT () {
       echo -e "${RD:-}⚠  Error during update --- Exit Code: $EXIT_CODE${CL:-}\n"
       "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
-      mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOG_FILE" 2>/dev/null
+      mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOG_FILE" 2>/dev/null
     fi
   fi
   sleep 3

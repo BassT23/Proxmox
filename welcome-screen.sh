@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="1.9"
+VERSION="2.0"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -16,15 +16,16 @@ CHECK_OUTPUT=$(stat -c%s $LOCAL_FILES/check-output)
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
 # Colors
+BL="\e[36m"
 OR="\e[1;33m"
 GN="\e[1;92m"
 CL="\e[0m"
 
 # Version Check
 VERSION_CHECK () {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update_master.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/update.sh > /root/update_beta.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/update.sh > /root/update_develop.sh
+  curl -s --connect-timeout 3 --max-time 15 https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update_master.sh
+  curl -s --connect-timeout 3 --max-time 15 https://raw.githubusercontent.com/BassT23/Proxmox/beta/update.sh > /root/update_beta.sh
+  curl -s --connect-timeout 3 --max-time 15 https://raw.githubusercontent.com/BassT23/Proxmox/develop/update.sh > /root/update_develop.sh
   MASTER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_master.sh)
   BETA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_beta.sh)
   DEVELOP_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_develop.sh)
@@ -87,7 +88,8 @@ VERSION_CHECK () {
         echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
     fi
   fi
-  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "              Version: $LOCAL_VERSION\n"; fi
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "              Version: $LOCAL_VERSION"; fi
+  echo -e "\n${BL}  Repo: ${OR}https://github.com/BassT23/Proxmox\n${CL}"
   rm -rf /root/update_master.sh
   rm -rf /root/update_beta.sh
   rm -rf /root/update_develop.sh
@@ -126,11 +128,11 @@ MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
 # Welcome
-if [[ -f /usr/bin/neofetch ]]; then
+if [[ -f /usr/bin/screenfetch ]]; then
+  echo && screenfetch && echo
+elif [[ -f /usr/bin/neofetch ]]; then
   echo
   neofetch
-elif [[ -f /usr/bin/screenfetch ]]; then
-  echo && screenfetch && echo
 else
   echo
 fi

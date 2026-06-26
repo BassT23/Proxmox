@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="2.2"
+VERSION="2.3"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
@@ -103,6 +103,7 @@ if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]] && [[ $DOCKER_
       DIRLIST+=("$line")
     done < <(find "$COMPOSE_PATH" -name "$COMPOSEFILE" -exec dirname {} \; 2> >(grep -v 'Permission denied'))
   done
+
   # Docker-Compose v1
   if [[ $DOCKER_COMPOSE_V1 == true && ${#DIRLIST[@]} -gt 0 ]]; then
     echo -e "\n*** Updating Docker-Compose v1 (oldstable) ***\n"
@@ -132,17 +133,8 @@ if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]] && [[ $DOCKER_
 fi
 
 # Community / Helper Scripts
-apt-get install expect -y
 if grep -q "community-scripts" /usr/bin/update 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]]; then
   echo -e "\n*** Updating Community-Scripts ***"
-  expect <<EOF > /dev/null 2>&1
-    set timeout 3
-    spawn update
-    expect "Choose an option:"
-    send "2\r"
-    expect "<Ok>"
-    send "\r"
-    expect eof
-EOF
+  PHS_SILENT=1 update > /dev/null 2>&1
   echo -e "✅ Update process completed\n"
 fi

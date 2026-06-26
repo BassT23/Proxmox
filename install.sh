@@ -6,11 +6,11 @@
 
 # shellcheck disable=SC2034
 
-VERSION="1.8.6"
+VERSION="1.8.8"
 
 # Branch
 
-BRANCH="master"
+BRANCH="beta"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -40,7 +40,7 @@ HEADER_INFO () {
    / / / / __ \/ __  / __ `/ __/ _ \/ __/
   / /_/ / /_/ / /_/ / /_/ / /_/  __/ /
   \____/ ____/\____/\____/\__/\___/_/
-      /_/     for Proxmox VE
+      /_/                for Proxmox VE
 EOF
   echo -e "\n \
       *** Install and/or Update *** \n \
@@ -216,6 +216,7 @@ INSTALL () {
     chmod -R +x "$LOCAL_FILES"/check-updates.sh
     cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
+    cp "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     echo -e "${OR:-}Finished. Run The Ultimate Updater with 'update'.${CL:-}"
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
     echo -e "${OR:-}Also want to install the Welcome-Screen?${CL:-}"
@@ -254,6 +255,7 @@ UPDATE () {
     # Copy files
     mv "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
+    mv "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     mv "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
     mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod +x $LOCAL_FILES/check-updates.sh
@@ -276,9 +278,14 @@ UPDATE () {
         fi
       fi
       # change crontab entry
-      if grep -q "/etc/ultimate-updater/check-updates.sh" /etc/crontab; then
-        cp /etc/crontab "/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
-        sed -i 's|/etc/ultimate-updater/check-updates.sh|update -check >/dev/null 2>\&1|' /etc/crontab
+      CRON_FILE="/etc/crontab"
+      BACKUP="/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
+      if grep -q "update -check" "$CRON_FILE"; then
+        if ! grep -q "RUN_FROM_CRON=true.*update -check" "$CRON_FILE"; then
+          cp "$CRON_FILE" "$BACKUP"
+          sed -i '/update -check/d' "$CRON_FILE"
+          echo "00 06   * * *   root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> "$CRON_FILE"
+        fi
       fi
     else
       rm -rf "$TEMP_FILES"/welcome-screen.sh || true
@@ -396,14 +403,19 @@ WELCOME_SCREEN_INSTALL () {
   chmod +x /etc/update-motd.d/01-welcome-screen
   if ! [[ -f $LOCAL_FILES/check-output ]]; then touch $LOCAL_FILES/check-output; fi
   if ! grep -q "check-updates.sh" /etc/crontab; then
-    echo "00 07,19 * * *  root    update -check >/dev/null 2>&1" >> /etc/crontab
+    echo "00 06   * * *   root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> /etc/crontab
   fi
-  if ! [[ -f /usr/bin/screenfetch ]]; then
-    echo -e "${OR:-}  with or without screenfetch?${CL:-}"
-    read -p "  Type [Y/y] or Enter for install with screenfetch - anything else will skip: " -r
-    if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then 
+  # Fetch tool install (neofetch or screenfetch)
+  if ! command -v neofetch >/dev/null 2>&1 && ! command -v screenfetch >/dev/null 2>&1; then
+    echo -e "${OR:-}  Install neofetch or screenfetch?${CL:-}"
+    read -r -p "  Type [N/n] or Enter for neofetch, [S/s] for screenfetch: " REPLY
+    if [[ $REPLY =~ ^[Ss]$ ]]; then
       apt-get install screenfetch -y || true
       echo -e "\n✅${GN:-} Welcome-Screen installed with screenfetch${CL:-}"
+      return 0
+    else
+      apt-get install neofetch -y || true
+      echo -e "\n✅${GN:-} Welcome-Screen installed with neofetch${CL:-}"
       return 0
     fi
   else
@@ -428,6 +440,13 @@ UNINSTALL () {
         mv /etc/crontab /etc/crontab.bak2
         mv /etc/crontab.bak /etc/crontab
         mv /etc/crontab.bak2 /etc/crontab.bak
+        echo -e "${BL:-}Should fetch be uninstalled also?${CL:-}"
+        read -p "Type [Y/y] for yes - anything else will skip: " -r
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+          apt-get remove screenfetch -y ; apt-get remove neofetch -y || true
+          apt-get autoremove -y || true
+          echo -e "\n${BL:-} fetch uninstalled${CL:-}"
+        fi
       fi
       echo -e "\n\n${BL:-} The Ultimate Updater has gone${CL:-}\n\
 ${BL:-} crontab file restored (old one backed up as crontab.bak)${CL:-}\n"

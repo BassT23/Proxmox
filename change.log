@@ -1,7 +1,29 @@
 Changelog:
 ==========
 
+**v4.5.x** (beta/develop)
+- change Logo
+- respect start delay from config also in check-updates
+- add README to local files / add Repo in config file #270
+- add option for disable daily check email notification in config file #273
+- add option for disable email notification on successful run in config file #268
+- add Alpine check - thx to @beer73 #276
+- add Alpine check also to VM
+- add Reboot VM/Container after update option in config file
+- add option to send email only if security updates are available
+- add backup mode in config by @Ben Olson #258
+- add Kali Linux support - thx to @Richard Hollis #262
+- add screenfetch also during install #253
+- add hostname in mail notification subject #254
+- fix timout problem during welcome-screen by @MarvinFS #271
+- fix unifi headless update - thx to @Perjan-smul #274
+- fix password promt during update check
+- fix uninstall issue
+- fix community script - thx to Christoph Stiller #257
+- hide mail error
+
 **v4.5.2** (24.08.2025)
+- add EMAIL_NO_UPDATES in config file
 - add Backup when Snapshot is not available #204
 - fix fs-trim
 - fix "error code 1" on start
