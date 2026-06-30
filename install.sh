@@ -280,10 +280,10 @@ UPDATE () {
       # change crontab entry
       CRON_FILE="/etc/crontab"
       BACKUP="/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
-      if grep -q "update -check" "$CRON_FILE"; then
+      if grep -Eq "check-updates\.sh|update -check" "$CRON_FILE"; then
         if ! grep -q "RUN_FROM_CRON=true.*update -check" "$CRON_FILE"; then
           cp "$CRON_FILE" "$BACKUP"
-          sed -i '/update -check/d' "$CRON_FILE"
+          sed -i '/check-updates\.sh/d; /update -check/d' "$CRON_FILE"
           echo "00 06   * * *   root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> "$CRON_FILE"
         fi
       fi
@@ -402,7 +402,7 @@ WELCOME_SCREEN_INSTALL () {
   cp $TEMP_FOLDER/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
   chmod +x /etc/update-motd.d/01-welcome-screen
   if ! [[ -f $LOCAL_FILES/check-output ]]; then touch $LOCAL_FILES/check-output; fi
-  if ! grep -q "check-updates.sh" /etc/crontab; then
+  if ! grep -Eq "check-updates\.sh|update -check" /etc/crontab; then
     echo "00 06   * * *   root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> /etc/crontab
   fi
   # Fetch tool install (neofetch or screenfetch)
@@ -443,7 +443,8 @@ UNINSTALL () {
         echo -e "${BL:-}Should fetch be uninstalled also?${CL:-}"
         read -p "Type [Y/y] for yes - anything else will skip: " -r
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-          apt-get remove screenfetch -y ; apt-get remove neofetch -y || true
+          apt-get remove screenfetch -y || true
+          apt-get remove neofetch -y || true
           apt-get autoremove -y || true
           echo -e "\n${BL:-} fetch uninstalled${CL:-}"
         fi

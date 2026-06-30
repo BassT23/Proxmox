@@ -459,7 +459,7 @@ CONTAINER_BACKUP () {
       # Use BACKUP_MODE from config, default to 'stop' if not set
       MODE=${BACKUP_MODE:-stop}
       echo -e "💾${OR:-} Create a backup for LXC (this will take some time - please wait)${CL:-}"
-      if vzdump "$CONTAINER" --mode stop --notes-template "{{guestname}} - Ultimate-Updater" --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd; then
+      if vzdump "$CONTAINER" --mode "$MODE" --notes-template "{{guestname}} - Ultimate-Updater" --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd; then
         echo -e "✅${GN:-} Backup created${CL:-}\n"
       else
         echo -e "❌${RD:-} Backup of LXC $CONTAINER failed - skipping update${CL:-}\n"
@@ -493,7 +493,7 @@ VM_BACKUP () {
       # Use BACKUP_MODE from config, default to 'stop' if not set
       MODE=${BACKUP_MODE:-stop}
       echo -e "💾${OR:-} Create a backup for the VM (this will take some time - please wait)${CL:-}"
-      if vzdump "$VM" --mode stop --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd; then
+      if vzdump "$VM" --mode "$MODE" --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd; then
         echo -e "✅${GN:-} Backup created${CL:-}"
       else
         echo -e "❌${RD:-} Backup of VM $VM failed - skipping update${CL:-}"

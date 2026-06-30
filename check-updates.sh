@@ -96,10 +96,13 @@ READ_WRITE_CONFIG () {
   RUNNING_VM=$(awk -F'"' '/^CHECK_RUNNING_VM=/ {print $2}' $CONFIG_FILE)
   STOPPED_VM=$(awk -F'"' '/^CHECK_STOPPED_VM=/ {print $2}' $CONFIG_FILE)
   PAUSED_VM=$(awk -F'"' '/^CHECK_PAUSED_VM=/ {print $2}' $CONFIG_FILE)
-  REEBOOT_IF_NEEDED=$(awk -F'"' '/^REEBOOT_IF_NEEDED=/ {print $2}' "$CONFIG_FILE")
+  REBOOT_IF_NEEDED=$(awk -F'"' '/^REBOOT_IF_NEEDED=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
+  LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
+  LXC_START_DELAY=$(SANITIZE_NUMBER "$LXC_START_DELAY")
+  LXC_START_DELAY="${LXC_START_DELAY:-5}"
   VM_START_DELAY=$(awk -F'"' '/^VM_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   VM_START_DELAY=$(SANITIZE_NUMBER "$VM_START_DELAY")
   VM_START_DELAY="${VM_START_DELAY:-45}"
@@ -366,7 +369,7 @@ CHECK_VM () {
       elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
         echo -e "N: $NORMAL_APT_UPDATES"
       fi
-      if [[ "$REBOOT_REQUIRED" == true ]] && [[ "$REEBOOT_IF_NEEDED" == true ]] && [[ "$VM_NOT_STOPPED" == true ]]; then
+      if [[ "$REBOOT_REQUIRED" == true ]] && [[ "$REBOOT_IF_NEEDED" == true ]] && [[ "$VM_NOT_STOPPED" == true ]]; then
         ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "reboot" >/dev/null 2>&1
       fi
     elif [[ "$OS" =~ Fedora ]]; then
