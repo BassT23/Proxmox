@@ -1,7 +1,7 @@
 Changelog:
 ==========
 
-**v4.5.x** (beta/develop)
+**v5.0** (30.06.2026)
 - change Logo
 - respect start delay from config also in check-updates
 - add README to local files / add Repo in config file #270
