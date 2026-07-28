@@ -409,28 +409,47 @@ CHECK_VM_QEMU () {
 # Output to file
 OUTPUT_TO_FILE () {
   if [[ "$RDU" != true && "$RICM" != true ]]; then
-    touch $LOCAL_FILES/check-output
-    exec > >(tee $LOCAL_FILES/check-output)
-    # create mail output file
-    touch $LOCAL_FILES/mail-output
-    echo -e "Available Updates:"  > $LOCAL_FILES/mail-output
-    echo -e "S = Security / N = Normal\n" >> $LOCAL_FILES/mail-output
-    exec > >(tee -a $LOCAL_FILES/mail-output)
+    # Preserve the original stdout so command output remains visible.
+    exec 3>&1
+
+    # Truncate the previous output before starting a new check.
+    : > "$LOCAL_FILES/check-output"
+
+    # Display and store the complete check output.
+    exec > >(tee "$LOCAL_FILES/check-output" >&3)
   fi
 }
 
 # Exit
 # shellcheck disable=SC2329
 EXIT () {
-  # clean email output file
   if [[ "$RDU" != true && "$RICM" != true ]]; then
-    if [[ -f "$LOCAL_FILES/mail-output" ]]; then
-      cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
+    # Disconnect stdout from tee and restore the original output.
+    exec 1>&3
+    exec 3>&-
+
+    # Wait until tee has completely written check-output.
+    wait
+
+    if [[ -f "$LOCAL_FILES/check-output" ]]; then
+      {
+        echo "Available Updates:"
+        echo
+        echo "S = Security / N = Normal"
+        echo
+        cat "$LOCAL_FILES/check-output"
+      } |
+        sed -r 's/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g' \
+        > "$LOCAL_FILES/mail-output"
+
       chmod 640 "$LOCAL_FILES/mail-output"
-      if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
-        mail -s "Ultimate Updater summary" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+
+      if [[ -s "$LOCAL_FILES/check-output" ]]; then
+        mail -s "Ultimate Updater summary" \
+          "$EMAIL_USER" < "$LOCAL_FILES/mail-output"
       elif [[ "$EMAIL_NO_UPDATES" == true ]]; then
-        echo "No updates found during search" | mail -s "Ultimate Updater" root
+        echo "No updates found during search" |
+          mail -s "Ultimate Updater" "$EMAIL_USER"
       fi
     fi
   fi
