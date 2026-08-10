@@ -10,6 +10,12 @@ VERSION="4.5.5"
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 USER_SCRIPTS="/etc/ultimate-updater/scripts.d"
+# A dpkg conffile question is not answered by "-y": dpkg waits on stdin and keeps
+# the lock, so the guest stays locked and every later run on it fails. These three
+# options make the upgrade decide on its own. --force-confmiss matters as much as
+# the other two: it restores a conffile the admin deleted, which is a prompt that
+# DEBIAN_FRONTEND=noninteractive does not cover.
+DPKG_OPTS="-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confmiss"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
@@ -609,7 +615,7 @@ DIST_UPGRADE () {
       echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
       pct exec "$CONTAINER" -- bash -c "apt-get update -y"
       echo -e "${OR:-}--- APT UPGRADE ---${CL:-}"
-      pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y"
       echo -e "${OR:-}--- Cleaning ---${CL:-}"
       pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
       echo -e "\n${OR:-}--- Need 5Gig on root folder for upgrade - check it now ---${CL:-}"
@@ -626,7 +632,7 @@ DIST_UPGRADE () {
           echo -e "${OR:-}--- APT UPDATE for Trixie ---${CL:-}"
           pct exec "$CONTAINER" -- bash -c "apt-get update -y"
           echo -e "${OR:-}--- APT UPGRADE for Trixie ---${CL:-}"
-          pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y"
+          pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y"
           echo -e "\n${GR:-}✅ UPGRADE to Trixie done ${CL:-}"
           echo -e "\n${OR:-}--- Restart the container now for you ---${CL:-}"
           pct exec "$CONTAINER" -- bash -c "reboot"
@@ -762,16 +768,16 @@ UPDATE_HOST_ITSELF () {
   echo -e "${OR:-}--- PVE UPDATE ---${CL:-}" && pveupdate || true
   if [[ "$HEADLESS" == true ]]; then
     echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}" && \
-    DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y 2>&1) || ERROR
+    DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
   else
     if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}" && \
-      apt-get dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(apt-get dist-upgrade -y 2>&1) || ERROR
+      DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
     else
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}" && \
-      apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y 2>&1) || ERROR
+      DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y 2>&1) || ERROR
       if [[ $ERROR_CODE != "" ]]; then return; fi
     fi
   fi
@@ -890,22 +896,21 @@ UPDATE_CONTAINER () {
     # Check END
     if [[ "$HEADLESS" == true ]]; then
       echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}"
-      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y" 2>&1) || ERROR
+      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y" 2>&1) || ERROR
       UNIFI=""
       if [[ $ERROR_CODE != "" ]]; then return; fi
     elif [[ "$UNIFI" == true ]]; then
       echo -e "\n${OR:-}--- APT UPGRADE HEADLESS (Unifi) ---${CL:-}"
-      # Use --force-confdef/--force-confold to suppress Unifi interactive prompts
-      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confold'" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confold'" 2>&1) || ERROR
+      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y" 2>&1) || ERROR
       UNIFI=""
       if [[ $ERROR_CODE != "" ]]; then return; fi
     else
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-        pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y" 2>&1)  || ERROR
+        pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS dist-upgrade -y" 2>&1)  || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
       else
-        pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" 2>&1) || ERROR
+        pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTS -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" 2>&1) || ERROR
         if [[ $ERROR_CODE != "" ]]; then return; fi
       fi
     fi
