@@ -28,21 +28,6 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 **YOU HAVE BEEN WARNED!**
 
 </div>
-
----
-## ⚠️ Project Status
-
-Development has slowed down recently due to personal circumstances (limited working environment after a water damage situation).
-
-The project is **not abandoned**:
-- It is actively used in real environments
-- Core functionality is stable and working
-- Updates will continue as time allows
-
-There are already new features and improvements in the `develop` branch, which will be merged into a future release.
-
-Thanks for your patience and for using the project ❤️
----
 <br>
 
 ### What does the script do:
