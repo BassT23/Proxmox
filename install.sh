@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="1.8.8"
+VERSION="2.0"
 
 # Branch
 

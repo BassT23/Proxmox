@@ -1,7 +1,7 @@
 Changelog:
 ==========
 
-**v4.5.x** (beta/develop)
+**v5.0** (beta/develop)
 - change Logo
 - respect start delay from config also in check-updates
 - add README to local files / add Repo in config file #270
@@ -12,18 +12,22 @@ Changelog:
 - add Reboot VM/Container after update option in config file
 - add option to send email only if security updates are available
 - add backup mode in config by @Ben Olson #258
-- add Kali Linux support - thx to @Richard Hollis #262
+- add Kali Linux support - thx to @Richard Hollis #263
 - add screenfetch also during install #253
 - add hostname in mail notification subject #254
-- fix timout problem during welcome-screen by @MarvinFS #271
+- fix timeout problem during welcome-screen by @MarvinFS #271
 - fix unifi headless update - thx to @Perjan-smul #274
 - fix password promt during update check
-- fix uninstall issue
+- fix uninstaller issue #241
 - fix community script - thx to Christoph Stiller #257
 - hide mail error
+- add configurable email sender #277
+- fix QEMU guest output and numeric update parsing #265
+- fix VM SSH/QEMU path selection #264
 - fix VM user scripts path #287
 - fix update-check email output race condition #289
 - fix unattended apt upgrades with modified conffiles #292
+- fix GitHub merge-conflict labeler permissions
 
 **v4.5.2** (24.08.2025)
 - add EMAIL_NO_UPDATES in config file
