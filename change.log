@@ -21,6 +21,8 @@ Changelog:
 - fix uninstall issue
 - fix community script - thx to Christoph Stiller #257
 - hide mail error
+- fix VM user scripts path #287
+- fix update-check email output race condition #289
 
 **v4.5.2** (24.08.2025)
 - add EMAIL_NO_UPDATES in config file
