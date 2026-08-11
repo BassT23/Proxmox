@@ -484,21 +484,24 @@ OUTPUT_TO_FILE () {
   if [[ "$RDU" != true && "$RICM" != true ]]; then
     touch $LOCAL_FILES/check-output
     exec > >(tee $LOCAL_FILES/check-output)
-    # create mail output file
     touch $LOCAL_FILES/mail-output
-    echo -e "Available Updates:"  > $LOCAL_FILES/mail-output
-    echo -e "S = Security / N = Normal\n" >> $LOCAL_FILES/mail-output
-    exec > >(tee -a $LOCAL_FILES/mail-output)
   fi
 }
 
 # Exit
 # shellcheck disable=SC2329
 EXIT () {
-  # clean email output file
+  # Create the mail output from the completed check output.
   if [[ "$RDU" != true && "$RICM" != true ]]; then
-    if [[ -f "$LOCAL_FILES/mail-output" ]]; then
-      cat "$LOCAL_FILES/mail-output" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOCAL_FILES/mail-output" >/dev/null 2>&1
+    # Close the tee input before waiting for its final writes.
+    exec 1>/dev/null
+    wait
+    if [[ -f "$LOCAL_FILES/check-output" ]]; then
+      {
+        echo -e "Available Updates:"
+        echo -e "S = Security / N = Normal\n"
+        sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" "$LOCAL_FILES/check-output"
+      } > "$LOCAL_FILES/mail-output"
       chmod 640 "$LOCAL_FILES/mail-output"
       if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
         # check variable !!!
