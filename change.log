@@ -23,6 +23,7 @@ Changelog:
 - hide mail error
 - fix VM user scripts path #287
 - fix update-check email output race condition #289
+- fix unattended apt upgrades with modified conffiles #292
 
 **v4.5.2** (24.08.2025)
 - add EMAIL_NO_UPDATES in config file
