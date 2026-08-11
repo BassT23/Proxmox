@@ -209,5 +209,9 @@ To go back to master, choose `update -up`
   </tbody>
 </table>
 
+<div align="center">
+
 **AI-assisted development:** OpenAI ChatGPT & Codex
 Used for code review, debugging, test planning, documentation and release preparation. Changes are reviewed and validated before being included in a release.
+
+</div>
