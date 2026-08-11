@@ -526,7 +526,7 @@ USER_SCRIPTS_VM () {
     USER_SCRIPTS_LS=$(ls "$USER_SCRIPTS"/"$VM")
     ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/user-scripts/
     for SCRIPT in $USER_SCRIPTS_LS; do
-      scp "$USER_SCRIPTS"/"$CONTAINER"/"$SCRIPT" "$IP":$LOCAL_FILES/user-scripts/"$SCRIPT"
+      scp "$USER_SCRIPTS"/"$VM"/"$SCRIPT" "$IP":$LOCAL_FILES/user-scripts/"$SCRIPT"
       ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
                 $LOCAL_FILES/user-scripts/$SCRIPT"
     done
