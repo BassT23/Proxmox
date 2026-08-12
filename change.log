@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- wait for QEMU Guest Agent readiness after starting stopped VMs #296
 - harden Community-Scripts updates with timeout and error reporting
 - add per-guest script-only update mode #243
 

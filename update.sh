@@ -421,7 +421,6 @@ READ_CONFIG () {
   BACKUP_LXC_MP=$(awk -F'"' '/^BACKUP_LXC_MP=/ {print $2}' "$CONFIG_FILE")
   BACKUP_MODE=$(awk -F'"' '/^BACKUP_MODE=/ {print $2}' "$CONFIG_FILE")
   LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
-  VM_START_DELAY=$(awk -F'"' '/^VM_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
@@ -683,12 +682,13 @@ SCRIPT_ONLY_VM () {
       return
     fi
   fi
-  if qm guest exec "$VM" -- test >/dev/null 2>&1; then
+  QGA_ERROR=""
+  if WAIT_FOR_QGA && CHECK_QGA_EXEC; then
     SCRIPT_ONLY_QEMU_VM
     return
   fi
-  SCRIPT_ONLY_ERROR="Neither SSH nor QEMU Guest Agent is available for VM $VM"
-  echo -e "⚠ ${OR:-}Script-only mode enabled for VM $VM, but neither SSH nor QEMU Guest Agent is available.${CL:-}"
+  SCRIPT_ONLY_ERROR="${QGA_ERROR:-Neither SSH nor QEMU Guest Agent is available for VM $VM}"
+  echo -e "⚠ ${OR:-}Script-only mode enabled for VM $VM, but the QEMU path is unavailable: ${SCRIPT_ONLY_ERROR}${CL:-}"
   return 1
 }
 
@@ -869,6 +869,40 @@ WAIT_FOR_BOOTUP_SSH () {
     echo -e "❌${RD:-} Connection to $VM after $MAX_RETRIES failed.${CL:-}\n"
     return 0
   fi
+}
+
+# QEMU Guest Agent readiness
+WAIT_FOR_QGA () {
+  local QGA_MAX_WAIT=180
+  local QGA_INTERVAL=2
+  local QGA_DEADLINE=$((SECONDS + QGA_MAX_WAIT))
+
+  if [[ "$START_WAITING" == true ]]; then
+    echo -e "⏳${OR:-} Wait for QEMU Guest Agent on VM $VM (up to ${QGA_MAX_WAIT}s)${CL:-}\n"
+  fi
+  while (( SECONDS < QGA_DEADLINE )); do
+    if qm agent "$VM" ping >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$QGA_INTERVAL"
+  done
+  QGA_ERROR="Timed out waiting for QEMU Guest Agent on VM $VM."
+  return 1
+}
+
+CHECK_QGA_EXEC () {
+  local QGA_EXEC_OUTPUT
+  QGA_EXEC_OUTPUT=$(qm guest exec "$VM" -- true 2>&1)
+  local QGA_EXEC_STATUS=$?
+  if [[ $QGA_EXEC_STATUS -eq 0 ]]; then
+    return 0
+  fi
+  if grep -Eqi 'not allowed|disabled|not permitted|permission denied' <<< "$QGA_EXEC_OUTPUT"; then
+    QGA_ERROR="QEMU Guest Agent is reachable on VM $VM, but guest-exec is disabled or not allowed: $QGA_EXEC_OUTPUT"
+  else
+    QGA_ERROR="QEMU Guest Agent guest-exec failed on VM $VM (exit code $QGA_EXEC_STATUS): $QGA_EXEC_OUTPUT"
+  fi
+  return 1
 }
 
 ############################
@@ -1319,12 +1353,8 @@ UPDATE_VM () {
 # shellcheck disable=SC2015
 UPDATE_VM_QEMU () {
   echo -e " ▶${GN:-} Try to connect via QEMU${CL:-}"
-  if [[ "$START_WAITING" == true ]]; then
-    echo -e "⏳${OR:-} Wait for bootup${CL:-}"
-    echo -e "⏳${OR:-} Sleep $VM_START_DELAY secounds - time could be set in config file${CL:-}\n"
-    sleep "$VM_START_DELAY"
-  fi
-  if qm guest exec "$VM" test >/dev/null 2>&1; then
+  QGA_ERROR=""
+  if WAIT_FOR_QGA && CHECK_QGA_EXEC; then
     echo -e "${OR:-}  QEMU found. SSH connection is also available - with better output.${CL:-}\n\
   Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
     # Run Update
@@ -1400,10 +1430,14 @@ UPDATE_VM_QEMU () {
       echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
     fi
   else
-    echo -e "${RD:-}  ❌ SSH or QEMU guest agent is not initialized on VM ${CL:-}\n\
+    echo -e "${RD:-}  ❌ ${QGA_ERROR:-SSH or QEMU guest agent is not initialized on VM $VM}${CL:-}\n\
   ${OR:-}If you want to update VMs, you must set up it by yourself!${CL:-}\n\
   For ssh (harder, but nicer output), check this: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n\
   For QEMU (easy connection), check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
+    ERROR_CODE=1
+    ID=$VM
+    ERROR_MSG="${QGA_ERROR:-SSH or QEMU guest agent is not initialized on VM $VM}"
+    ERROR
   fi
   CVM=""
 }
