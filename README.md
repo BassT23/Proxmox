@@ -178,6 +178,14 @@ here you can put in any script you like, which will be run during update also.
 
 these files are used in the "extra update" section at the end of the LXC/VM
 
+To skip the built-in OS update for one guest and run only its own scripts,
+create an empty `.script-only` marker in the guest directory:
+
+`/etc/ultimate-updater/scripts.d/<VMID>/.script-only`
+
+Snapshots/backups and the normal guest start/stop lifecycle still apply. The
+guest's user scripts are run instead of apt, dnf, yum, pacman or apk.
+
 # Welcome Screen:
 The Welcome Screen is an extra for you. It's optional!
 

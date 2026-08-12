@@ -537,6 +537,161 @@ USER_SCRIPTS_VM () {
   fi
 }
 
+# Script-only mode is enabled by placing a .script-only marker next to the
+# guest's user scripts. The hidden marker is ignored by the normal script path.
+SCRIPT_ONLY_ENABLED () {
+  [[ -f "$USER_SCRIPTS/$1/.script-only" ]]
+}
+SCRIPT_ONLY_FILES () {
+  SCRIPT_FILES=()
+  while IFS= read -r -d '' SCRIPT_FILE; do
+    SCRIPT_FILES+=("$SCRIPT_FILE")
+  done < <(find "$1" -maxdepth 1 -type f ! -name '.script-only' -print0 2>/dev/null | sort -z)
+}
+SCRIPT_ONLY_LXC () {
+  SCRIPT_ONLY_FILES "$USER_SCRIPTS/$CONTAINER"
+  if [[ ${#SCRIPT_FILES[@]} -eq 0 ]]; then
+    echo -e "⚠ ${OR:-}Script-only mode enabled for LXC $CONTAINER, but no user scripts were found.${CL:-}"
+    SCRIPT_ONLY_ERROR="No user scripts found for LXC $CONTAINER"
+    return 2
+  fi
+  echo -e "\n${OR:-}Script-only mode enabled for LXC $CONTAINER${CL:-}"
+  echo -e "${OR:-}Skipping built-in OS update; running user scripts${CL:-}\n"
+  SCRIPT_SHELL=bash
+  [[ "$OS" == alpine ]] && SCRIPT_SHELL=ash
+  if ! pct exec "$CONTAINER" -- "$SCRIPT_SHELL" -c "mkdir -p $LOCAL_FILES/user-scripts"; then
+    SCRIPT_ONLY_ERROR="Could not prepare user-script directory in LXC $CONTAINER"
+    return 1
+  fi
+  SCRIPT_ONLY_STATUS=0
+  for SCRIPT_FILE in "${SCRIPT_FILES[@]}"; do
+    SCRIPT=$(basename "$SCRIPT_FILE")
+    if pct push "$CONTAINER" -- "$SCRIPT_FILE" "$LOCAL_FILES/user-scripts/$SCRIPT"; then
+      :
+    else
+      SCRIPT_ONLY_STATUS=$?
+      SCRIPT_ONLY_ERROR="Could not transfer user script $SCRIPT to LXC $CONTAINER (exit code $SCRIPT_ONLY_STATUS)"
+      break
+    fi
+    if [[ "$OS" == alpine ]]; then
+      pct exec "$CONTAINER" -- ash -c "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && $LOCAL_FILES/user-scripts/$SCRIPT"
+    else
+      pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && $LOCAL_FILES/user-scripts/$SCRIPT"
+    fi
+    SCRIPT_ONLY_STATUS=$?
+    if [[ $SCRIPT_ONLY_STATUS -ne 0 ]]; then
+      SCRIPT_ONLY_ERROR="User script $SCRIPT in LXC $CONTAINER failed (exit code $SCRIPT_ONLY_STATUS)"
+      break
+    fi
+  done
+  pct exec "$CONTAINER" -- "$SCRIPT_SHELL" -c "rm -rf $LOCAL_FILES/user-scripts"
+  if [[ $SCRIPT_ONLY_STATUS -ne 0 ]]; then
+    return "$SCRIPT_ONLY_STATUS"
+  fi
+  echo -e "\n${GN:-}Script-only user scripts finished${CL:-}\n"
+}
+SCRIPT_ONLY_SSH_VM () {
+  SCRIPT_ONLY_FILES "$USER_SCRIPTS/$VM"
+  if [[ ${#SCRIPT_FILES[@]} -eq 0 ]]; then
+    echo -e "⚠ ${OR:-}Script-only mode enabled for VM $VM, but no user scripts were found.${CL:-}"
+    SCRIPT_ONLY_ERROR="No user scripts found for VM $VM"
+    return 2
+  fi
+  echo -e "\n${OR:-}Script-only mode enabled for VM $VM via SSH${CL:-}"
+  echo -e "${OR:-}Skipping built-in OS update; running user scripts${CL:-}\n"
+  if ! ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p "$LOCAL_FILES/user-scripts"; then
+    SCRIPT_ONLY_ERROR="Could not prepare user-script directory in VM $VM via SSH"
+    return 1
+  fi
+  SCRIPT_ONLY_STATUS=0
+  for SCRIPT_FILE in "${SCRIPT_FILES[@]}"; do
+    SCRIPT=$(basename "$SCRIPT_FILE")
+    if scp "$SCRIPT_FILE" "$IP":$LOCAL_FILES/user-scripts/"$SCRIPT"; then
+      :
+    else
+      SCRIPT_ONLY_STATUS=$?
+      SCRIPT_ONLY_ERROR="Could not transfer user script $SCRIPT to VM $VM (exit code $SCRIPT_ONLY_STATUS)"
+      break
+    fi
+    ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && $LOCAL_FILES/user-scripts/$SCRIPT"
+    SCRIPT_ONLY_STATUS=$?
+    if [[ $SCRIPT_ONLY_STATUS -ne 0 ]]; then
+      SCRIPT_ONLY_ERROR="User script $SCRIPT in VM $VM failed (exit code $SCRIPT_ONLY_STATUS)"
+      break
+    fi
+  done
+  ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "rm -rf $LOCAL_FILES/user-scripts"
+  [[ $SCRIPT_ONLY_STATUS -ne 0 ]] && return "$SCRIPT_ONLY_STATUS"
+  echo -e "\n${GN:-}Script-only user scripts finished${CL:-}\n"
+}
+SCRIPT_ONLY_QEMU_VM () {
+  SCRIPT_ONLY_FILES "$USER_SCRIPTS/$VM"
+  if [[ ${#SCRIPT_FILES[@]} -eq 0 ]]; then
+    echo -e "⚠ ${OR:-}Script-only mode enabled for VM $VM, but no user scripts were found.${CL:-}"
+    SCRIPT_ONLY_ERROR="No user scripts found for VM $VM"
+    return 2
+  fi
+  echo -e "\n${OR:-}Script-only mode enabled for VM $VM via QEMU Guest Agent${CL:-}"
+  echo -e "${OR:-}Skipping built-in OS update; running user scripts${CL:-}\n"
+  if ! qm guest exec "$VM" -- bash -c "mkdir -p $LOCAL_FILES/user-scripts" >/dev/null; then
+    SCRIPT_ONLY_ERROR="Could not prepare user-script directory in VM $VM via QEMU Guest Agent"
+    return 1
+  fi
+  SCRIPT_ONLY_STATUS=0
+  for SCRIPT_FILE in "${SCRIPT_FILES[@]}"; do
+    SCRIPT=$(basename "$SCRIPT_FILE")
+    if SCRIPT_DATA=$(base64 -w0 "$SCRIPT_FILE"); then
+      :
+    else
+      SCRIPT_ONLY_STATUS=$?
+      SCRIPT_ONLY_ERROR="Could not encode user script $SCRIPT for VM $VM (exit code $SCRIPT_ONLY_STATUS)"
+      break
+    fi
+    if qm guest exec "$VM" -- bash -c "printf '%s' '$SCRIPT_DATA' | base64 -d > '$LOCAL_FILES/user-scripts/$SCRIPT'" >/dev/null; then
+      :
+    else
+      SCRIPT_ONLY_STATUS=$?
+      SCRIPT_ONLY_ERROR="Could not transfer user script $SCRIPT to VM $VM via QEMU Guest Agent (exit code $SCRIPT_ONLY_STATUS)"
+      break
+    fi
+    qm guest exec "$VM" -- bash -c "chmod +x '$LOCAL_FILES/user-scripts/$SCRIPT' && '$LOCAL_FILES/user-scripts/$SCRIPT'"
+    SCRIPT_ONLY_STATUS=$?
+    if [[ $SCRIPT_ONLY_STATUS -ne 0 ]]; then
+      SCRIPT_ONLY_ERROR="User script $SCRIPT in VM $VM failed via QEMU Guest Agent (exit code $SCRIPT_ONLY_STATUS)"
+      break
+    fi
+  done
+  qm guest exec "$VM" -- bash -c "rm -rf $LOCAL_FILES/user-scripts" >/dev/null
+  [[ $SCRIPT_ONLY_STATUS -ne 0 ]] && return "$SCRIPT_ONLY_STATUS"
+  echo -e "\n${GN:-}Script-only user scripts finished${CL:-}\n"
+}
+SCRIPT_ONLY_VM () {
+  SCRIPT_ONLY_FILES "$USER_SCRIPTS/$VM"
+  if [[ ${#SCRIPT_FILES[@]} -eq 0 ]]; then
+    echo -e "⚠ ${OR:-}Script-only mode enabled for VM $VM, but no user scripts were found.${CL:-}"
+    SCRIPT_ONLY_ERROR="No user scripts found for VM $VM"
+    return 2
+  fi
+  if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
+    IP=$(awk -F'"' '/^IP=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    USER=$(awk -F'"' '/^USER=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    USER="${USER:-root}"
+    SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    SSH_VM_PORT="${SSH_VM_PORT:-22}"
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER@$IP" exit >/dev/null 2>&1; then
+      SCRIPT_ONLY_SSH_VM
+      return
+    fi
+  fi
+  if qm guest exec "$VM" -- test >/dev/null 2>&1; then
+    SCRIPT_ONLY_QEMU_VM
+    return
+  fi
+  SCRIPT_ONLY_ERROR="Neither SSH nor QEMU Guest Agent is available for VM $VM"
+  echo -e "⚠ ${OR:-}Script-only mode enabled for VM $VM, but neither SSH nor QEMU Guest Agent is available.${CL:-}"
+  return 1
+}
+
 # Extras
 EXTRAS () {
   if [[ "$EXTRA_GLOBAL" != true ]]; then
@@ -677,9 +832,11 @@ UPDATE_CHECK () {
 WAIT_FOR_BOOTUP_LXC () {
   MAX_RETRIES=10
   COUNT=1
+  BOOT_SHELL=bash
+  [[ "$(pct config "$CONTAINER" | awk '/^ostype/ {print $2}')" == alpine ]] && BOOT_SHELL=ash
   sleep "$LXC_START_DELAY"
   while [ $COUNT -le $MAX_RETRIES ]; do
-    if pct exec "$CONTAINER" -- bash -c "exit" >/dev/null 2>&1; then
+    if pct exec "$CONTAINER" -- "$BOOT_SHELL" -c "exit" >/dev/null 2>&1; then
       echo -e "✅${GN:-} $CONTAINER reachable (tryout $COUNT)\n${CL:-}"
       break
     else
@@ -868,6 +1025,17 @@ UPDATE_CONTAINER () {
     CONTAINER_BACKUP || return
     echo
   fi
+  if SCRIPT_ONLY_ENABLED "$CONTAINER"; then
+    SCRIPT_ONLY_RUN=true
+    SCRIPT_ONLY_LXC || {
+      ERROR_CODE=$?
+      ID=$CONTAINER
+      ERROR_MSG="${SCRIPT_ONLY_ERROR:-Script-only user scripts failed or were not found}"
+      ERROR
+    }
+    CCONTAINER=""
+    return
+  fi
   # Run dist-upgrade
   if [[ $CHECK_DIST == true && $OS =~ debian ]]; then
     DIST_UPGRADE
@@ -1020,6 +1188,17 @@ UPDATE_VM () {
   echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
   VM_BACKUP || return
   echo
+  if SCRIPT_ONLY_ENABLED "$VM"; then
+    SCRIPT_ONLY_RUN=true
+    SCRIPT_ONLY_VM || {
+      ERROR_CODE=$?
+      ID=$VM
+      ERROR_MSG="${SCRIPT_ONLY_ERROR:-Script-only user scripts failed or were not found}"
+      ERROR
+    }
+    CVM=""
+    return
+  fi
   # Read SSH config file - check how update is possible
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
@@ -1305,7 +1484,11 @@ EXIT () {
         CLEAN_LOGFILE
         mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$ERROR_LOG_FILE" 2>/dev/null ||true
       else
-        echo -e "${GN:-}✅ Finished, all updates done.${CL:-}\n"
+        if [[ "$SCRIPT_ONLY_RUN" == true ]]; then
+          echo -e "${GN:-}✅ Finished, all configured script-only updates done.${CL:-}\n"
+        else
+          echo -e "${GN:-}✅ Finished, all updates done.${CL:-}\n"
+        fi
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
         if [[ "$EMAIL_ONLY_ERROR" != true ]]; then

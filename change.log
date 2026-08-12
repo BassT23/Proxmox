@@ -3,6 +3,7 @@ Changelog:
 
 **develop**
 - harden Community-Scripts updates with timeout and error reporting
+- add per-guest script-only update mode #243
 
 **v5.0** (11.08.2026)
 - change Logo
