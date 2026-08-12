@@ -135,6 +135,19 @@ fi
 # Community / Helper Scripts
 if grep -q "community-scripts" /usr/bin/update 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]]; then
   echo -e "\n*** Updating Community-Scripts ***"
-  PHS_SILENT=1 update > /dev/null 2>&1
-  echo -e "✅ Update process completed\n"
+  COMMUNITY_UPDATE_LOG=$(mktemp)
+  if timeout 1800s env PHS_SILENT=1 update >"$COMMUNITY_UPDATE_LOG" 2>&1; then
+    echo -e "✅ Update process completed\n"
+  else
+    COMMUNITY_UPDATE_EXIT=$?
+    if [[ $COMMUNITY_UPDATE_EXIT == 124 ]]; then
+      echo -e "⚠️ Community-Scripts update timed out after 30 minutes"
+    else
+      echo -e "⚠️ Community-Scripts update failed with exit code $COMMUNITY_UPDATE_EXIT"
+    fi
+    echo -e "Community-Scripts output:\n"
+    cat "$COMMUNITY_UPDATE_LOG"
+    echo
+  fi
+  rm -f "$COMMUNITY_UPDATE_LOG"
 fi
