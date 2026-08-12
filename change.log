@@ -1,6 +1,9 @@
 Changelog:
 ==========
 
+**develop**
+- harden Community-Scripts updates with timeout and error reporting
+
 **v5.0** (11.08.2026)
 - change Logo
 - respect start delay from config also in check-updates
