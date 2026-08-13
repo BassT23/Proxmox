@@ -668,7 +668,7 @@ SCRIPT_ONLY_QEMU_VM () {
   fi
   echo -e "\n${OR:-}Script-only mode enabled for VM $VM via QEMU Guest Agent${CL:-}"
   echo -e "${OR:-}Skipping built-in OS update; running user scripts${CL:-}\n"
-  if ! qm guest exec "$VM" -- bash -c "mkdir -p $LOCAL_FILES/user-scripts" >/dev/null; then
+  if ! RUN_QEMU_COMMAND "$VM" -- bash -c "mkdir -p $LOCAL_FILES/user-scripts" >/dev/null; then
     SCRIPT_ONLY_ERROR="Could not prepare user-script directory in VM $VM via QEMU Guest Agent"
     return 1
   fi
@@ -682,21 +682,21 @@ SCRIPT_ONLY_QEMU_VM () {
       SCRIPT_ONLY_ERROR="Could not encode user script $SCRIPT for VM $VM (exit code $SCRIPT_ONLY_STATUS)"
       break
     fi
-    if qm guest exec "$VM" -- bash -c "printf '%s' '$SCRIPT_DATA' | base64 -d > '$LOCAL_FILES/user-scripts/$SCRIPT'" >/dev/null; then
+    if RUN_QEMU_COMMAND "$VM" -- bash -c "printf '%s' '$SCRIPT_DATA' | base64 -d > '$LOCAL_FILES/user-scripts/$SCRIPT'" >/dev/null; then
       :
     else
       SCRIPT_ONLY_STATUS=$?
       SCRIPT_ONLY_ERROR="Could not transfer user script $SCRIPT to VM $VM via QEMU Guest Agent (exit code $SCRIPT_ONLY_STATUS)"
       break
     fi
-    qm guest exec "$VM" -- bash -c "chmod +x '$LOCAL_FILES/user-scripts/$SCRIPT' && '$LOCAL_FILES/user-scripts/$SCRIPT'"
+    RUN_QEMU_COMMAND "$VM" -- bash -c "chmod +x '$LOCAL_FILES/user-scripts/$SCRIPT' && '$LOCAL_FILES/user-scripts/$SCRIPT'"
     SCRIPT_ONLY_STATUS=$?
     if [[ $SCRIPT_ONLY_STATUS -ne 0 ]]; then
       SCRIPT_ONLY_ERROR="User script $SCRIPT in VM $VM failed via QEMU Guest Agent (exit code $SCRIPT_ONLY_STATUS)"
       break
     fi
   done
-  qm guest exec "$VM" -- bash -c "rm -rf $LOCAL_FILES/user-scripts" >/dev/null
+  RUN_QEMU_COMMAND "$VM" -- bash -c "rm -rf $LOCAL_FILES/user-scripts" >/dev/null
   [[ $SCRIPT_ONLY_STATUS -ne 0 ]] && return "$SCRIPT_ONLY_STATUS"
   echo -e "\n${GN:-}Script-only user scripts finished${CL:-}\n"
 }
@@ -926,17 +926,101 @@ WAIT_FOR_QGA () {
   return 1
 }
 
-CHECK_QGA_EXEC () {
-  local QGA_EXEC_OUTPUT
-  QGA_EXEC_OUTPUT=$(qm guest exec "$VM" -- true 2>&1)
-  local QGA_EXEC_STATUS=$?
-  if [[ $QGA_EXEC_STATUS -eq 0 ]]; then
+# Execute one QEMU Guest Agent command and decode the structured response.
+# The qm CLI returns zero when the request succeeded, even if the command in
+# the guest returned a non-zero exit code. Keep both statuses available to
+# callers so transport and guest failures are not conflated.
+QEMU_GUEST_EXEC () {
+  QEMU_EXEC_STDOUT=""
+  QEMU_EXEC_STDERR=""
+  QEMU_EXEC_OUTPUT=""
+  QEMU_EXEC_EXITCODE=""
+  QEMU_EXEC_TRANSPORT_RC=0
+  local QEMU_RAW QEMU_PARSED QEMU_STATUS
+
+  QEMU_RAW=$(qm guest exec "$@" 2>&1)
+  QEMU_STATUS=$?
+  if [[ $QEMU_STATUS -ne 0 ]]; then
+    QEMU_EXEC_STDERR="$QEMU_RAW"
+    QEMU_EXEC_OUTPUT="$QEMU_RAW"
+    QEMU_EXEC_TRANSPORT_RC=$QEMU_STATUS
     return 0
   fi
-  if grep -Eqi 'not allowed|disabled|not permitted|permission denied' <<< "$QGA_EXEC_OUTPUT"; then
-    QGA_ERROR="QEMU Guest Agent is reachable on VM $VM, but guest-exec is disabled or not allowed: $QGA_EXEC_OUTPUT"
+
+  if ! QEMU_PARSED=$(printf '%s' "$QEMU_RAW" | python3 -c '
+import base64
+import json
+import sys
+
+try:
+    response = json.load(sys.stdin)
+except (TypeError, ValueError):
+    sys.exit(1)
+
+for key in ("out-data", "err-data"):
+    value = response.get(key, "")
+    if not isinstance(value, str):
+        value = str(value)
+    print(base64.b64encode(value.encode()).decode())
+
+exitcode = response.get("exitcode", 0)
+if not isinstance(exitcode, int) or exitcode < 0:
+    sys.exit(1)
+print(exitcode)
+'); then
+    QEMU_EXEC_STDERR="$QEMU_RAW"
+    QEMU_EXEC_OUTPUT="$QEMU_RAW"
+    QEMU_EXEC_TRANSPORT_RC=1
+    return 0
+  fi
+
+  local -a QEMU_FIELDS
+  mapfile -t QEMU_FIELDS <<< "$QEMU_PARSED"
+  if [[ ${#QEMU_FIELDS[@]} -ne 3 || ! ${QEMU_FIELDS[2]} =~ ^[0-9]+$ ]]; then
+    QEMU_EXEC_STDERR="$QEMU_RAW"
+    QEMU_EXEC_OUTPUT="$QEMU_RAW"
+    QEMU_EXEC_TRANSPORT_RC=1
+    return 0
+  fi
+  IFS= read -r -d '' QEMU_EXEC_STDOUT < <(printf '%s' "${QEMU_FIELDS[0]}" | base64 -d) || true
+  IFS= read -r -d '' QEMU_EXEC_STDERR < <(printf '%s' "${QEMU_FIELDS[1]}" | base64 -d) || true
+  QEMU_EXEC_EXITCODE=${QEMU_FIELDS[2]}
+  if [[ -n "$QEMU_EXEC_STDOUT" && -n "$QEMU_EXEC_STDERR" ]]; then
+    QEMU_EXEC_OUTPUT="${QEMU_EXEC_STDOUT}
+${QEMU_EXEC_STDERR}"
   else
-    QGA_ERROR="QEMU Guest Agent guest-exec failed on VM $VM (exit code $QGA_EXEC_STATUS): $QGA_EXEC_OUTPUT"
+    QEMU_EXEC_OUTPUT="${QEMU_EXEC_STDOUT}${QEMU_EXEC_STDERR}"
+  fi
+  return 0
+}
+
+# Run a QEMU command once, display its output, and return the guest exit code.
+# A non-zero transport status is returned unchanged.
+RUN_QEMU_COMMAND () {
+  QEMU_GUEST_EXEC "$@"
+  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
+    [[ -n "$QEMU_EXEC_OUTPUT" ]] && printf '%s\n' "$QEMU_EXEC_OUTPUT"
+    return "$QEMU_EXEC_TRANSPORT_RC"
+  fi
+  printf '%s' "$QEMU_EXEC_STDOUT"
+  if [[ -n "$QEMU_EXEC_STDERR" ]]; then
+    [[ -n "$QEMU_EXEC_STDOUT" && "${QEMU_EXEC_STDOUT: -1}" != $'\n' ]] && printf '\n'
+    printf '%s' "$QEMU_EXEC_STDERR"
+  fi
+  return "$QEMU_EXEC_EXITCODE"
+}
+
+CHECK_QGA_EXEC () {
+  QEMU_GUEST_EXEC "$VM" -- true
+  if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
+    return 0
+  fi
+  if grep -Eqi 'not allowed|disabled|not permitted|permission denied' <<< "$QEMU_EXEC_OUTPUT"; then
+    QGA_ERROR="QEMU Guest Agent is reachable on VM $VM, but guest-exec is disabled or not allowed: $QEMU_EXEC_OUTPUT"
+  elif [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 ]]; then
+    QGA_ERROR="QEMU Guest Agent command failed on VM $VM (guest exit code $QEMU_EXEC_EXITCODE): $QEMU_EXEC_OUTPUT"
+  else
+    QGA_ERROR="QEMU Guest Agent guest-exec failed on VM $VM (transport exit code $QEMU_EXEC_TRANSPORT_RC): $QEMU_EXEC_OUTPUT"
   fi
   return 1
 }
@@ -1398,13 +1482,13 @@ UPDATE_VM_QEMU () {
     OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
     if [[ $KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true ]]; then
       echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
-      qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg update" | tail -n +4 | head -n -1 | cut -c 17- 2>&1); ERROR; }
+      RUN_QEMU_COMMAND "$VM" -- tcsh -c "pkg update" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo -e "\n${OR:-}--- PKG UPGRADE ---${CL:-}"
-      qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1 || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg upgrade -y" | tail -n +2 | head -n -1 2>&1); ERROR; }
+      RUN_QEMU_COMMAND "$VM" -- tcsh -c "pkg upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo -e "\n${OR:-}--- PKG CLEANING ---${CL:-}"
-      qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" -- tcsh -c "pkg autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1); ERROR; }
+      RUN_QEMU_COMMAND "$VM" -- tcsh -c "pkg autoremove -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
@@ -1414,50 +1498,50 @@ UPDATE_VM_QEMU () {
       return
     elif [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
       # Check Internet connection
-      if ! (qm guest exec "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"); then
+      if ! (RUN_QEMU_COMMAND "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"); then
         echo -e "${OR:-} ❌ Internet is not reachable - skip the update${CL:-}\n"
         return
       fi
       echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
-      qm guest exec "$VM" -- bash -c "apt-get update -y" | tail -n +4 | head -n -1 | cut -c 17- || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get update -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1); ERROR; }
+      RUN_QEMU_COMMAND "$VM" -- bash -c "apt-get update -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get $DPKG_OPTIONS_STRING upgrade -y" | tail -n +2 | head -n -1 || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" --timeout 120 -- bash -c "apt-get $DPKG_OPTIONS_STRING upgrade -y" | tail -n +2 | head -n -1 2>&1); ERROR; }
+        RUN_QEMU_COMMAND "$VM" --timeout 120 -- bash -c "apt-get $DPKG_OPTIONS_STRING upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
       else
-        qm guest exec "$VM" --timeout 120 -- bash -c "apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1 || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" --timeout 120 -- bash -c "apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" | tail -n +2 | head -n -1 2>&1); ERROR; }
+        RUN_QEMU_COMMAND "$VM" --timeout 120 -- bash -c "apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
       fi
       echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
-      qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get --purge autoremove -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1); ERROR; }
+      RUN_QEMU_COMMAND "$VM" -- bash -c "apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
-      qm guest exec "$VM" -- bash -c "apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17- || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" -- bash -c "apt-get autoclean -y" | tail -n +4 | head -n -1 | cut -c 17- 2>&1); ERROR; }
+      RUN_QEMU_COMMAND "$VM" -- bash -c "apt-get autoclean -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Fedora ]]; then
       echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
-      qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1 || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" -- bash -c "dnf -y upgrade" | tail -n +2 | head -n -1 2>&1); ERROR; }
+      RUN_QEMU_COMMAND "$VM" -- bash -c "dnf -y upgrade" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
-      qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17- || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" -- bash -c "dnf -y --purge autoremove" | tail -n +4 | head -n -1 | cut -c 17- 2>&1); ERROR; }
+      RUN_QEMU_COMMAND "$VM" -- bash -c "dnf -y --purge autoremove" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Arch ]]; then
       echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
-      qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1 || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" -- bash -c "pacman -Su --noconfirm" | tail -n +2 | head -n -1 2>&1); ERROR; }
+      RUN_QEMU_COMMAND "$VM" -- bash -c "pacman -Su --noconfirm" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
     elif [[ "$OS" =~ Alpine ]]; then
       echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
-      qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1 || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" -- ash -c "apk -U upgrade" | tail -n +2 | head -n -1 2>&1); ERROR; }
+      RUN_QEMU_COMMAND "$VM" -- ash -c "apk -U upgrade" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
     elif [[ "$OS" =~ CentOS ]]; then
       echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
-      qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1 || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(qm guest exec "$VM" -- bash -c "yum -y update" | tail -n +2 | head -n -1 2>&1); ERROR; }
+      RUN_QEMU_COMMAND "$VM" -- bash -c "yum -y update" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK

@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- fix QEMU guest-exec exit-code and output handling #297
 - fix duplicate command execution in error handlers #293
 - add configurable backup storage in update.conf #269
 - wait for QEMU Guest Agent readiness after starting stopped VMs #296

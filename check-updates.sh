@@ -27,6 +27,93 @@ SANITIZE_NUMBER() {
   echo "$1" | tr -cd '0-9'
 }
 
+# Decode one structured qm guest exec response without losing the guest
+# exitcode. The qm CLI itself can return zero when only the guest command
+# failed, so transport and guest status are kept separate.
+QEMU_GUEST_EXEC () {
+  QEMU_EXEC_STDOUT=""
+  QEMU_EXEC_STDERR=""
+  QEMU_EXEC_OUTPUT=""
+  QEMU_EXEC_EXITCODE=""
+  QEMU_EXEC_TRANSPORT_RC=0
+  local QEMU_RAW QEMU_PARSED QEMU_STATUS
+
+  QEMU_RAW=$(qm guest exec "$@" 2>&1)
+  QEMU_STATUS=$?
+  if [[ $QEMU_STATUS -ne 0 ]]; then
+    QEMU_EXEC_STDERR="$QEMU_RAW"
+    QEMU_EXEC_OUTPUT="$QEMU_RAW"
+    QEMU_EXEC_TRANSPORT_RC=$QEMU_STATUS
+    return 0
+  fi
+
+  if ! QEMU_PARSED=$(printf '%s' "$QEMU_RAW" | python3 -c '
+import base64
+import json
+import sys
+
+try:
+    response = json.load(sys.stdin)
+except (TypeError, ValueError):
+    sys.exit(1)
+
+for key in ("out-data", "err-data"):
+    value = response.get(key, "")
+    if not isinstance(value, str):
+        value = str(value)
+    print(base64.b64encode(value.encode()).decode())
+
+exitcode = response.get("exitcode", 0)
+if not isinstance(exitcode, int) or exitcode < 0:
+    sys.exit(1)
+print(exitcode)
+'); then
+    QEMU_EXEC_STDERR="$QEMU_RAW"
+    QEMU_EXEC_OUTPUT="$QEMU_RAW"
+    QEMU_EXEC_TRANSPORT_RC=1
+    return 0
+  fi
+
+  local -a QEMU_FIELDS
+  mapfile -t QEMU_FIELDS <<< "$QEMU_PARSED"
+  if [[ ${#QEMU_FIELDS[@]} -ne 3 || ! ${QEMU_FIELDS[2]} =~ ^[0-9]+$ ]]; then
+    QEMU_EXEC_STDERR="$QEMU_RAW"
+    QEMU_EXEC_OUTPUT="$QEMU_RAW"
+    QEMU_EXEC_TRANSPORT_RC=1
+    return 0
+  fi
+  IFS= read -r -d '' QEMU_EXEC_STDOUT < <(printf '%s' "${QEMU_FIELDS[0]}" | base64 -d) || true
+  IFS= read -r -d '' QEMU_EXEC_STDERR < <(printf '%s' "${QEMU_FIELDS[1]}" | base64 -d) || true
+  QEMU_EXEC_EXITCODE=${QEMU_FIELDS[2]}
+  if [[ -n "$QEMU_EXEC_STDOUT" && -n "$QEMU_EXEC_STDERR" ]]; then
+    QEMU_EXEC_OUTPUT="${QEMU_EXEC_STDOUT}
+${QEMU_EXEC_STDERR}"
+  else
+    QEMU_EXEC_OUTPUT="${QEMU_EXEC_STDOUT}${QEMU_EXEC_STDERR}"
+  fi
+  return 0
+}
+
+QEMU_COUNT_RESULT_OK () {
+  local QEMU_COUNT_LABEL="$1"
+  local QEMU_COUNT_ZERO=false
+  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
+    echo -e "${RD}${QEMU_COUNT_LABEL} failed: ${QEMU_EXEC_OUTPUT}${CL}"
+    return 1
+  fi
+  # grep -c returns 1 for zero matches. That is the only non-zero guest
+  # status accepted for numeric update-count commands; all other failures
+  # must remain visible instead of being treated as zero updates.
+  if [[ "$QEMU_EXEC_EXITCODE" -eq 1 && "$QEMU_EXEC_STDOUT" =~ ^[[:space:]]*0[[:space:]]*$ && -z "$QEMU_EXEC_STDERR" ]]; then
+    QEMU_COUNT_ZERO=true
+  fi
+  if [[ "$QEMU_EXEC_EXITCODE" -ne 0 && "$QEMU_COUNT_ZERO" != true ]]; then
+    echo -e "${RD}${QEMU_COUNT_LABEL} failed (guest exit code $QEMU_EXEC_EXITCODE): ${QEMU_EXEC_OUTPUT}${CL}"
+    return 1
+  fi
+  return 0
+}
+
 ARGUMENTS () {
   while [[ $# -gt 0 ]]; do
     local ARGUMENT="$1"
@@ -410,7 +497,8 @@ CHECK_VM () {
 }
 
 CHECK_VM_QEMU () {
-  if qm guest exec "$VM" test >/dev/null 2>&1; then
+  QEMU_GUEST_EXEC "$VM" test
+  if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
     OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
 #    if [[ "$KERNEL" =~ FreeBSD ]]; then
@@ -418,15 +506,28 @@ CHECK_VM_QEMU () {
 #      return
 #    fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
-      qm guest exec "$VM" --timeout 0 -- bash -c "apt-get update" >/dev/null 2>&1
-      SECURITY_APT_UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
+      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "apt-get update"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        echo -e "${RD}QEMU apt update failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
+        return 1
+      fi
+      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'"
+      QEMU_COUNT_RESULT_OK "QEMU security update check for VM $VM" || return 1
+      SECURITY_APT_UPDATES="$QEMU_EXEC_STDOUT"
       SECURITY_APT_UPDATES=$(SANITIZE_NUMBER "$SECURITY_APT_UPDATES")
       SECURITY_APT_UPDATES=${SECURITY_APT_UPDATES:-0}
       if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
-      NORMAL_APT_UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.'" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
+      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.'"
+      QEMU_COUNT_RESULT_OK "QEMU update check for VM $VM" || return 1
+      NORMAL_APT_UPDATES="$QEMU_EXEC_STDOUT"
       NORMAL_APT_UPDATES=$(SANITIZE_NUMBER "$NORMAL_APT_UPDATES")
       NORMAL_APT_UPDATES=${NORMAL_APT_UPDATES:-0}
-      EXITCODE=$(qm guest exec "$VM" --timeout 0 -- bash -c '[ -f /var/run/reboot-required.pkgs ]' 2>/dev/null | grep -o '"exitcode"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]\+')
+      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c '[ -f /var/run/reboot-required.pkgs ]'
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
+        echo -e "${RD}QEMU reboot check failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
+        return 1
+      fi
+      EXITCODE=$QEMU_EXEC_EXITCODE
       EXITCODE=${EXITCODE:-1}
       if [[ "$EXITCODE" -eq 0 ]]; then
         REBOOT_REQUIRED=true
@@ -443,8 +544,14 @@ CHECK_VM_QEMU () {
         echo -e "N: $NORMAL_APT_UPDATES"
       fi
     elif [[ "$OS" =~ Fedora ]]; then
-      qm guest exec "$VM" --timeout 0 -- bash -c "dnf -y update" >/dev/null 2>&1
-      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "dnf check-update | grep -Ec ' updates$'" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
+      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "dnf -y update"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        echo -e "${RD}QEMU dnf update failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
+        return 1
+      fi
+      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "dnf check-update | grep -Ec ' updates$'"
+      QEMU_COUNT_RESULT_OK "QEMU dnf check for VM $VM" || return 1
+      UPDATES="$QEMU_EXEC_STDOUT"
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -452,7 +559,9 @@ CHECK_VM_QEMU () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Arch ]]; then
-      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "pacman -Qu | wc -l" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
+      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "pacman -Qu | wc -l"
+      QEMU_COUNT_RESULT_OK "QEMU pacman check for VM $VM" || return 1
+      UPDATES="$QEMU_EXEC_STDOUT"
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -460,7 +569,9 @@ CHECK_VM_QEMU () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Alpine ]]; then
-      UPDATES=$(qm guest exec "$VM" --timeout 0 -- ash -c "apk list -u | wc -l" | tail -n +4 | head -n -1 | cut -c 18- | rev | cut -c 2- | rev)
+      QEMU_GUEST_EXEC "$VM" --timeout 0 -- ash -c "apk list -u | wc -l"
+      QEMU_COUNT_RESULT_OK "QEMU apk check for VM $VM" || return 1
+      UPDATES="$QEMU_EXEC_STDOUT"
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -468,7 +579,9 @@ CHECK_VM_QEMU () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ CentOS ]]; then
-      UPDATES=$(qm guest exec "$VM" --timeout 0 -- bash -c "yum -q check-update | wc -l" | python3 -c "import sys,json; print(json.load(sys.stdin).get('out-data','0').strip())")
+      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "yum -q check-update | wc -l"
+      QEMU_COUNT_RESULT_OK "QEMU yum check for VM $VM" || return 1
+      UPDATES="$QEMU_EXEC_STDOUT"
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
