@@ -60,7 +60,7 @@ Thanks for your patience and for using the project ❤️
 - Logging - location can be change in config file
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/etc/ultimate-updater/exit`)
 - [Config file](https://github.com/BassT23/Proxmox/tree/master#config-file)
-- [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/tree/beta#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
+- [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/tree/develop#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
 - send email after update/check
 - Trim filesystem on ext4 nodes
 
@@ -195,10 +195,10 @@ The Welcome Screen is an extra for you. It's optional!
 - To force the check, you can run `/etc/ultimate-updater/check-updates.sh` in Terminal.
 - You can choose, if screenfetch will be show also (if screenfetch is not installed, script will make it automatically)
 
-# Beta Testing:
-If anybody wants to help with failure search, please test our beta (if available).
+# Development Testing:
+If anybody wants to help with failure search, please test our `develop` branch.
 
-Install beta update with `update beta -up`
+Install the develop update with `update develop -up`
 To go back to master, choose `update -up`
 
 # Q&A:
