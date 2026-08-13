@@ -128,6 +128,7 @@ With this file, you can manage the updater. For example; if you don't want to up
 - Extra updates
 - "stopped" or "running" LXC/VM
 - "only" or "exclude" LXC/VM - see below
+- Full backup storage: set `BACKUP_STORAGE="<storage-id>"` to select a specific active backup storage. Leave it empty for the existing automatic selection. An invalid or inactive storage is rejected.
 
 # New Only/Exclude handling in config file:
 Expands ONLY/EXCLUDE into a space-separated list of numeric VMIDs.

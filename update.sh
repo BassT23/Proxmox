@@ -420,6 +420,7 @@ READ_CONFIG () {
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
   BACKUP_LXC_MP=$(awk -F'"' '/^BACKUP_LXC_MP=/ {print $2}' "$CONFIG_FILE")
   BACKUP_MODE=$(awk -F'"' '/^BACKUP_MODE=/ {print $2}' "$CONFIG_FILE")
+  BACKUP_STORAGE=$(awk -F'"' '/^BACKUP_STORAGE=/ {print $2}' "$CONFIG_FILE")
   LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
@@ -432,6 +433,33 @@ READ_CONFIG () {
   declare -f apply_only_exclude_tags >/dev/null 2>&1 && apply_only_exclude_tags ONLY EXCLUDED
   EMAIL_ONLY_ERROR=$(awk -F'"' '/^EMAIL_ONLY_ERROR=/ {print $2}' "$CONFIG_FILE")
   EMAIL_SENDER=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' $CONFIG_FILE)
+}
+
+GET_BACKUP_STORAGE () {
+  local configured_storage storage_status backup_storage
+
+  configured_storage="$BACKUP_STORAGE"
+  if [[ -n "$configured_storage" ]]; then
+    storage_status=$(pvesm status -content backup 2>/dev/null |
+      awk -v storage="$configured_storage" '$1 == storage {print $3; exit}')
+    if [[ -z "$storage_status" ]]; then
+      echo -e "❌${RD:-} Configured backup storage '$configured_storage' does not exist or does not support backups${CL:-}" >&2
+      return 1
+    elif [[ "$storage_status" != active ]]; then
+      echo -e "❌${RD:-} Configured backup storage '$configured_storage' is not active${CL:-}" >&2
+      return 1
+    fi
+    printf '%s\n' "$configured_storage"
+    return 0
+  fi
+
+  backup_storage=$(pvesm status -content backup 2>/dev/null |
+    awk 'NR > 1 && $3 == "active" {print $1; exit}')
+  if [[ -z "$backup_storage" ]]; then
+    echo -e "❌${RD:-} No active backup storage is available${CL:-}" >&2
+    return 1
+  fi
+  printf '%s\n' "$backup_storage"
 }
 
 # Snapshot/Backup
@@ -459,8 +487,12 @@ CONTAINER_BACKUP () {
     if [[ "$BACKUP" == true ]]; then
       # Use BACKUP_MODE from config, default to 'stop' if not set
       MODE=${BACKUP_MODE:-stop}
+      if ! STORAGE=$(GET_BACKUP_STORAGE); then
+        echo -e "❌${RD:-} Backup of LXC $CONTAINER failed - no usable backup storage${CL:-}\n"
+        return 1
+      fi
       echo -e "💾${OR:-} Create a backup for LXC (this will take some time - please wait)${CL:-}"
-      if vzdump "$CONTAINER" --mode "$MODE" --notes-template "{{guestname}} - Ultimate-Updater" --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd; then
+      if vzdump "$CONTAINER" --mode "$MODE" --notes-template "{{guestname}} - Ultimate-Updater" --storage "$STORAGE" --compress zstd; then
         echo -e "✅${GN:-} Backup created${CL:-}\n"
       else
         echo -e "❌${RD:-} Backup of LXC $CONTAINER failed - skipping update${CL:-}\n"
@@ -493,8 +525,12 @@ VM_BACKUP () {
     if [[ "$BACKUP" == true ]]; then
       # Use BACKUP_MODE from config, default to 'stop' if not set
       MODE=${BACKUP_MODE:-stop}
+      if ! STORAGE=$(GET_BACKUP_STORAGE); then
+        echo -e "❌${RD:-} Backup of VM $VM failed - no usable backup storage${CL:-}"
+        return 1
+      fi
       echo -e "💾${OR:-} Create a backup for the VM (this will take some time - please wait)${CL:-}"
-      if vzdump "$VM" --mode "$MODE" --storage "$(pvesm status -content backup | grep -m 1 -v ^Name | cut -d ' ' -f1)" --compress zstd; then
+      if vzdump "$VM" --mode "$MODE" --storage "$STORAGE" --compress zstd; then
         echo -e "✅${GN:-} Backup created${CL:-}"
       else
         echo -e "❌${RD:-} Backup of VM $VM failed - skipping update${CL:-}"
