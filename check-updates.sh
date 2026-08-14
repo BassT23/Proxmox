@@ -14,7 +14,8 @@ CONFIG_FILE="$LOCAL_FILES/update.conf"
 
 # Tag filter
 # shellcheck disable=SC1091
-. "$LOCAL_FILES/tag-filter.sh"
+TAG_FILTER_FILE="${TAG_FILTER_FILE:-$LOCAL_FILES/tag-filter.sh}"
+. "$TAG_FILTER_FILE"
 
 # Colors
 BL="\e[36m"
@@ -247,10 +248,23 @@ HOST_CHECK_START () {
 
 # Host Check
 CHECK_HOST () {
-  HOST=$1
-  ssh "$HOST" -p "$SSH_PORT" mkdir -p $LOCAL_FILES
-  scp $LOCAL_FILES/update.conf "$HOST":$LOCAL_FILES/update.conf >/dev/null 2>&1
-  ssh "$HOST" -p "$SSH_PORT" 'bash -s' < "$0" -- "-c host"
+  local HOST=$1 remote_check_dir remote_status
+  remote_check_dir="/tmp/ultimate-updater-check-$$"
+  if ! ssh "$HOST" -p "$SSH_PORT" "mkdir -p '$LOCAL_FILES' '$remote_check_dir'" ||
+    ! scp "$LOCAL_FILES/update.conf" "$HOST:$LOCAL_FILES/update.conf" >/dev/null 2>&1 ||
+    ! scp "$TAG_FILTER_FILE" "$HOST:$remote_check_dir/tag-filter.sh" >/dev/null 2>&1; then
+    ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    echo -e "${RD}Could not prepare matching check helper on remote host $HOST${CL}"
+    return 1
+  fi
+  if ssh "$HOST" -p "$SSH_PORT" \
+    "TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh' bash -s -- -c host" < "$0"; then
+    remote_status=0
+  else
+    remote_status=$?
+  fi
+  ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+  return "$remote_status"
 }
 
 CHECK_HOST_ITSELF () {
