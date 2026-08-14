@@ -157,12 +157,12 @@ ARGUMENTS () {
       ccontainer)
         COMMAND=true
         OUTPUT_TO_FILE
-        CHECK_CONTAINER
+        if [[ -n "${2:-}" ]]; then CHECK_CONTAINER "$2"; shift; else CHECK_CONTAINER; fi
         ;;
       cvm)
         COMMAND=true
         OUTPUT_TO_FILE
-        CHECK_VM
+        if [[ -n "${2:-}" ]]; then CHECK_VM "$2"; shift; else CHECK_VM; fi
         ;;
       host)
         COMMAND=true

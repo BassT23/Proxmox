@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- add a unified target/status CLI frontend #309
 - separate shared target transport wrappers from existing updater paths #308
 - add schema-versioned machine-readable check status output #306
 - define optional target inventory and validate target-specific reachability data #305

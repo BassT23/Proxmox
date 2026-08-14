@@ -207,6 +207,24 @@ Possible check states are `ok`, `updates_available`, `offline`,
 `unsupported`, `not_checked`, and `error`. The JSON is data-only; presentation
 belongs to future CLI, notification, or web interfaces.
 
+## Unified CLI
+
+The `ultimate-updater` command is a small frontend for the existing update and
+check scripts:
+
+```text
+ultimate-updater list
+ultimate-updater check [TARGET]
+ultimate-updater update TARGET
+ultimate-updater status
+ultimate-updater status --json
+```
+
+`status --json` prints the same `/etc/ultimate-updater/status.json` data used by
+the read-only web preview. Existing direct calls to `update.sh` and
+`check-updates.sh` remain supported. Updates currently run synchronously;
+session-independent job execution is planned separately in #316.
+
 ## Read-only web preview
 
 A small browser preview is included at `web-ui/server.py`. It uses only the
