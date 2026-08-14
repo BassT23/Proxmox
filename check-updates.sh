@@ -13,8 +13,8 @@ LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 
 # Tag filter
-# shellcheck disable=SC1090,SC1091
 TAG_FILTER_FILE="${TAG_FILTER_FILE:-$LOCAL_FILES/tag-filter.sh}"
+# shellcheck disable=SC1090,SC1091
 . "$TAG_FILTER_FILE"
 
 # Colors
