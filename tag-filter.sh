@@ -120,9 +120,12 @@ READ_VERSION_CACHE() {
   now=$(date +%s)
   CACHE_AGE=$((now - timestamp))
   (( CACHE_AGE < 0 )) && CACHE_AGE=0
+  # These globals are consumed by welcome-screen.sh after this function returns.
+  # shellcheck disable=SC2034
   CACHE_MASTER_VERSION=$master_version
   CACHE_DEVELOP_VERSION=$develop_version
   if (( CACHE_AGE <= VERSION_CACHE_TTL )); then
+    # shellcheck disable=SC2034
     CACHE_FRESH=true
   else
     CACHE_FRESH=false
