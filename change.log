@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- synchronize USED_BRANCH with explicit branch updates #303
 - simplify branch/version handling and cache remote versions for the welcome screen
 - remove obsolete beta runtime handling and avoid network calls during SSH/MOTD login
 - use exact guest ID matching and restore released #229 behavior #302

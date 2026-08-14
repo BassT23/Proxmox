@@ -308,6 +308,15 @@ UPDATE () {
       cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf"
       cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
     fi
+    if grep -q '^USED_BRANCH=' "$LOCAL_FILES/update.conf"; then
+      if grep -q '^USED_BRANCH="[^"]*"' "$LOCAL_FILES/update.conf"; then
+        sed -i -E "s|^(USED_BRANCH=\")[^\"]*(\".*)$|\1$BRANCH\2|" "$LOCAL_FILES/update.conf"
+      else
+        sed -i "s|^USED_BRANCH=.*$|USED_BRANCH=\"$BRANCH\"|" "$LOCAL_FILES/update.conf"
+      fi
+    else
+      printf '\nUSED_BRANCH="%s"    # could be "master/develop"\n' "$BRANCH" >> "$LOCAL_FILES/update.conf"
+    fi
     rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
     # Check if files are different
     rm -rf "$TEMP_FILES"/.github || true

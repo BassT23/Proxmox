@@ -35,9 +35,11 @@ VERSION_CHECK () {
   local_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh")
   echo -e "${BL}  Repo: ${OR}https://github.com/BassT23/Proxmox${CL}"
   echo -e "  Branch: ${OR}${BRANCH}${CL}"
+  echo
   if ! READ_VERSION_CACHE; then
     echo -e "${OR}  Version cache unavailable; showing local version only.${CL}"
     echo -e "              Version: $local_version"
+    echo
     return 0
   fi
   if [[ "$CACHE_FRESH" != true ]]; then
@@ -54,6 +56,7 @@ VERSION_CHECK () {
     *)
       echo -e "${OR}  Unknown branch '$BRANCH'; showing local version only.${CL}"
       echo -e "              Version: $local_version"
+      echo
       return 0
       ;;
   esac
@@ -67,8 +70,9 @@ VERSION_CHECK () {
     fi
     if version_is_less "$local_version" "$remote_version"; then
       echo -e "${OR}       *** A newer version is available ***${CL}\n\
-       Installed: $local_version / $candidate: $remote_version\n\
+        Installed: $local_version / $candidate: $remote_version\n\
         ${OR}You can update with <update -up>${CL}"
+      echo
       VERSION_NOT_SHOW=true
       break
     fi
@@ -76,8 +80,8 @@ VERSION_CHECK () {
   if [[ "$VERSION_NOT_SHOW" != true ]]; then
     echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
     echo -e "              Version: $local_version"
+    echo
   fi
-  echo -e "  Cache age: ${CACHE_AGE}s"
 }
 
 READ_WRITE_CONFIG () {
