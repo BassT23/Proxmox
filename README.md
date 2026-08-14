@@ -212,6 +212,13 @@ Possible check states are `ok`, `updates_available`, `offline`,
 `unsupported`, `not_checked`, and `error`. The JSON is data-only; presentation
 belongs to future CLI, notification, or web interfaces.
 
+Update-check notifications use the same status data when it is available. They
+summarize Proxmox and external SSH/APT targets together, distinguish available
+updates from offline, unsupported, not-checked, and error states, and show
+targets that require a reboot. Unknown update counts are not added to the
+total. Existing email settings remain in effect; security-only notifications
+continue to use the existing security classification from the check output.
+
 ## Unified CLI
 
 The `ultimate-updater` command is a small frontend for the existing update and

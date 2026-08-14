@@ -756,26 +756,33 @@ OUTPUT_TO_FILE () {
 # shellcheck disable=SC2329
 EXIT () {
   # Create the mail output from the completed check output.
-  if [[ "$RDU" != true && "$RICM" != true ]]; then
+  if [[ "$RDU" != true && "$RICM" != true && "${UU_DEFER_NOTIFICATION:-false}" != true ]]; then
     # Close the tee input before waiting for its final writes.
     exec 1>/dev/null
     wait
     if [[ -f "$LOCAL_FILES/check-output" ]]; then
-      {
-        echo -e "Available Updates:"
-        echo -e "S = Security / N = Normal\n"
-        sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" "$LOCAL_FILES/check-output"
-      } > "$LOCAL_FILES/mail-output"
-      chmod 640 "$LOCAL_FILES/mail-output"
-      if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
-        # check variable !!!
-        if [[ "$EMAIL_ONLY_SECURITY" == true && "$SECURITY_UPDATES_AVALABLE" == true ]]; then
-          mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
-        else
-          mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+      local status_notification_sent=false
+      if declare -f STATUS_MODEL_SEND_NOTIFICATION >/dev/null 2>&1 &&
+        STATUS_MODEL_SEND_NOTIFICATION "$LOCAL_FILES/status.json" "$CONFIG_FILE"; then
+        status_notification_sent=true
+      fi
+      if [[ "$status_notification_sent" != true ]]; then
+        {
+          echo -e "Available Updates:"
+          echo -e "S = Security / N = Normal\n"
+          sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" "$LOCAL_FILES/check-output"
+        } > "$LOCAL_FILES/mail-output"
+        chmod 640 "$LOCAL_FILES/mail-output"
+        if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
+          # check variable !!!
+          if [[ "$EMAIL_ONLY_SECURITY" == true && "$SECURITY_UPDATES_AVALABLE" == true ]]; then
+            mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+          else
+            mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+          fi
+        elif [[ "$EMAIL_NO_UPDATES" == true ]]; then
+          echo "No updates found during search" | mail -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER"
         fi
-      elif [[ "$EMAIL_NO_UPDATES" == true ]]; then
-        echo "No updates found during search" | mail -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER"
       fi
     fi
   fi

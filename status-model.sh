@@ -235,3 +235,166 @@ except Exception:
     raise
 PY
 }
+
+# Render and optionally send one notification from the unified status model.
+# The first output line is an internal decision marker; callers remove it
+# before writing the human-readable mail body.
+STATUS_MODEL_SEND_NOTIFICATION() {
+  local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
+  local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
+  local email_user email_sender email_no_updates email_only_security
+
+  email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
+  email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
+  email_no_updates=$(awk -F'"' '/^EMAIL_NO_UPDATES=/ {print $2}' "$config_file" 2>/dev/null)
+  email_only_security=$(awk -F'"' '/^EMAIL_ONLY_SECURITY=/ {print $2}' "$config_file" 2>/dev/null)
+  email_user="${email_user:-root}"
+  email_sender="${email_sender:-$USER}"
+  email_no_updates="${email_no_updates:-false}"
+  email_only_security="${email_only_security:-false}"
+
+  local notification state body
+  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file") || return 1
+  state=${notification%%$'\n'*}
+  state=${state#STATE=}
+  body=${notification#*$'\n'}
+
+  # The status schema does not classify security updates. Preserve the
+  # existing security-only policy by using the check output as the gate.
+  if [[ "$email_only_security" == true ]]; then
+    if [[ ! -f "${LOCAL_FILES:-/etc/ultimate-updater}/check-output" ]] ||
+      ! grep -q 'S' "${LOCAL_FILES:-/etc/ultimate-updater}/check-output"; then
+      return 0
+    fi
+  fi
+
+  case "$state" in
+    updates|issues)
+      printf '%s\n' "$body" | mail -r "$email_sender" \
+        -s "Ultimate Updater summary - $HOSTNAME" "$email_user" || true
+      ;;
+    current)
+      if [[ "$email_no_updates" == true ]]; then
+        echo "No updates found during search" | mail -r "$email_sender" \
+          -s "Ultimate Updater" "$email_user" || true
+      fi
+      ;;
+    empty)
+      return 1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+STATUS_MODEL_RENDER_NOTIFICATION() {
+  local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
+  python3 - "$status_file" <<'PY'
+import json
+import sys
+
+status_file = sys.argv[1]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError):
+    raise SystemExit(1)
+
+targets = payload.get("targets")
+if not isinstance(targets, list):
+    raise SystemExit(1)
+
+updates = []
+current = []
+offline = []
+unsupported = []
+errors = []
+not_checked = []
+reboots = []
+total = 0
+has_known_count = False
+
+def name(target):
+    return str(target.get("id") or "unknown")
+
+def short_error(target):
+    error = target.get("error")
+    if isinstance(error, dict):
+        message = error.get("message") or error.get("code")
+        if message:
+            return str(message).replace("\n", " ").strip()
+    return "check failed"
+
+for target in targets:
+    if not isinstance(target, dict):
+        continue
+    target_name = name(target)
+    status = target.get("check_status") or "not_checked"
+    reachable = target.get("reachable")
+    values = target.get("updates")
+    available = values.get("available") if isinstance(values, dict) else None
+    count_known = isinstance(available, int) and not isinstance(available, bool)
+    countable = status in ("ok", "updates_available")
+
+    if countable and count_known:
+        available = max(0, available)
+        total += available
+        has_known_count = True
+        if available > 0:
+            updates.append((target_name, available))
+        elif status == "ok":
+            current.append(target_name)
+    if target.get("reboot_required") is True:
+        reboots.append(target_name)
+
+    if status == "offline" or reachable is False:
+        offline.append(target_name)
+    elif status == "unsupported":
+        unsupported.append(target_name)
+    elif status == "error":
+        errors.append((target_name, short_error(target)))
+    elif status == "not_checked":
+        not_checked.append(target_name)
+
+has_issues = bool(offline or unsupported or errors or not_checked)
+if updates or reboots:
+    state = "updates"
+elif has_issues:
+    state = "issues"
+elif current and has_known_count:
+    state = "current"
+else:
+    state = "empty"
+
+lines = ["Ultimate Updater status", "=======================", ""]
+if updates:
+    lines.append("Available updates:")
+    lines.extend(f"- {target}: {count}" for target, count in updates)
+else:
+    lines.append("Available updates: none")
+if has_known_count:
+    lines.extend(["", f"Total available updates: {total}"])
+if current:
+    lines.extend(["", "Current:"])
+    lines.extend(f"- {target}" for target in current)
+if reboots:
+    lines.extend(["", "Reboot required:"])
+    lines.extend(f"- {target}" for target in reboots)
+if offline:
+    lines.extend(["", "Not reachable:"])
+    lines.extend(f"- {target}" for target in offline)
+if errors:
+    lines.extend(["", "Errors:"])
+    lines.extend(f"- {target}: {message}" for target, message in errors)
+if unsupported:
+    lines.extend(["", "Unsupported:"])
+    lines.extend(f"- {target}" for target in unsupported)
+if not_checked:
+    lines.extend(["", "Not checked:"])
+    lines.extend(f"- {target}" for target in not_checked)
+
+print(f"STATE={state}")
+print("\n".join(lines))
+PY
+}
