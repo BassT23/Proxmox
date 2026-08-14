@@ -216,6 +216,11 @@ INSTALL () {
     chmod -R +x "$LOCAL_FILES"/check-updates.sh
     cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
+    if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
+      cp "$TEMP_FILES"/update.conf.dist $LOCAL_FILES/update.conf.dist
+    else
+      cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf.dist
+    fi
     cp "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     echo -e "${OR:-}Finished. Run The Ultimate Updater with 'update'.${CL:-}"
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
@@ -291,6 +296,21 @@ UPDATE () {
       rm -rf "$TEMP_FILES"/welcome-screen.sh || true
       rm -rf "$TEMP_FILES"/check-updates.sh || true
     fi
+    # Preserve the active user configuration and install the current
+    # distribution template separately. Older archives may not contain the
+    # distribution file yet, so fall back to their update.conf template.
+    if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
+      CONFIG_DIST_SOURCE="$TEMP_FILES/update.conf.dist"
+    else
+      CONFIG_DIST_SOURCE="$TEMP_FILES/update.conf"
+    fi
+    if [[ -f "$LOCAL_FILES/update.conf" ]]; then
+      cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
+    else
+      cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf"
+      cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
+    fi
+    rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
     # Check if files are different
     rm -rf "$TEMP_FILES"/.github || true
     rm -rf "$TEMP_FILES"/VMs || true

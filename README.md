@@ -121,6 +121,13 @@ and install new
 # Config File:
 The config file is stored under `/etc/ultimate-updater/update.conf`
 
+The active `update.conf` contains your personal settings and is preserved when
+the updater is updated. The current project template is provided separately as
+`/etc/ultimate-updater/update.conf.dist`. Compare both files to review new or
+changed options:
+
+`diff -u /etc/ultimate-updater/update.conf /etc/ultimate-updater/update.conf.dist`
+
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
 
 - Host / LXC / VM

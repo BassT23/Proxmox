@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- preserve user update.conf and provide current update.conf.dist #298
 - fix QEMU guest-exec exit-code and output handling #297
 - fix duplicate command execution in error handlers #293
 - add configurable backup storage in update.conf #269

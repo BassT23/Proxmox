@@ -416,12 +416,18 @@ READ_CONFIG () {
   STOPPED_VM=$(awk -F'"' '/^STOPPED_VM=/ {print $2}' "$CONFIG_FILE")
   FREEBSD_UPDATES=$(awk -F'"' '/^FREEBSD_UPDATES=/ {print $2}' "$CONFIG_FILE")
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
-  KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOT/ {print $2}' "$CONFIG_FILE")
+  KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOTS=/ {print $2}' "$CONFIG_FILE")
+  KEEP_SNAPSHOT="${KEEP_SNAPSHOT:-$(awk -F'"' '/^KEEP_SNAPSHOT=/ {print $2}' "$CONFIG_FILE")}"
+  KEEP_SNAPSHOT="${KEEP_SNAPSHOT:-3}"
   BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
   BACKUP_LXC_MP=$(awk -F'"' '/^BACKUP_LXC_MP=/ {print $2}' "$CONFIG_FILE")
   BACKUP_MODE=$(awk -F'"' '/^BACKUP_MODE=/ {print $2}' "$CONFIG_FILE")
   BACKUP_STORAGE=$(awk -F'"' '/^BACKUP_STORAGE=/ {print $2}' "$CONFIG_FILE")
+  BACKUP_LXC_MP="${BACKUP_LXC_MP:-true}"
+  BACKUP_MODE="${BACKUP_MODE:-stop}"
+  BACKUP_STORAGE="${BACKUP_STORAGE-}"
   LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
+  LXC_START_DELAY="${LXC_START_DELAY:-5}"
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
@@ -433,6 +439,8 @@ READ_CONFIG () {
   declare -f apply_only_exclude_tags >/dev/null 2>&1 && apply_only_exclude_tags ONLY EXCLUDED
   EMAIL_ONLY_ERROR=$(awk -F'"' '/^EMAIL_ONLY_ERROR=/ {print $2}' "$CONFIG_FILE")
   EMAIL_SENDER=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' $CONFIG_FILE)
+  EMAIL_ONLY_ERROR="${EMAIL_ONLY_ERROR:-false}"
+  EMAIL_SENDER="${EMAIL_SENDER:-$USER}"
 }
 
 GET_BACKUP_STORAGE () {
@@ -1048,9 +1056,13 @@ UPDATE_HOST () {
   START_HOST=$(hostname -i | cut -d ' ' -f1)
   if [[ "$HOST" != "$START_HOST" ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
+    ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf ]]; then cp -p $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf.uu-backup; else rm -f $LOCAL_FILES/update.conf.uu-backup; fi"
     scp "$0" "$HOST":$LOCAL_FILES/update
     scp $LOCAL_FILES/update-extras.sh "$HOST":$LOCAL_FILES/update-extras.sh
     scp $LOCAL_FILES/update.conf "$HOST":$LOCAL_FILES/update.conf
+    if [[ -f $LOCAL_FILES/update.conf.dist ]]; then
+      scp $LOCAL_FILES/update.conf.dist "$HOST":$LOCAL_FILES/update.conf.dist
+    fi
     if [[ "$WELCOME_SCREEN" == true ]]; then
       scp $LOCAL_FILES/check-updates.sh "$HOST":$LOCAL_FILES/check-updates.sh
       scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
@@ -1063,11 +1075,18 @@ UPDATE_HOST () {
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
+    REMOTE_UPDATE_STATUS=$?
   elif [[ "$WELCOME_SCREEN" == true ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c -w host"
+    REMOTE_UPDATE_STATUS=$?
   else
     ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c host"
+    REMOTE_UPDATE_STATUS=$?
   fi
+  if [[ "$HOST" != "$START_HOST" ]]; then
+    ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf.uu-backup ]]; then mv -f $LOCAL_FILES/update.conf.uu-backup $LOCAL_FILES/update.conf; else rm -f $LOCAL_FILES/update.conf; fi"
+  fi
+  return "${REMOTE_UPDATE_STATUS:-0}"
 }
 
 # shellcheck disable=SC2015
