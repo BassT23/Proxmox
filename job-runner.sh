@@ -134,15 +134,19 @@ run_job() {
 }
 
 refresh_running_jobs() {
-  local file unit target state
+  local file unit target state active_state
   command -v systemctl >/dev/null 2>&1 || return 0
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
     unit=$(state_value "$file" unit)
     target=$(state_value "$file" target)
     state=$(state_value "$file" state)
-    if [[ "$state" == running ]] && ! systemctl is-active --quiet "$unit" 2>/dev/null; then
-      write_state "$unit" "$target" interrupted "$(state_value "$file" started_at)" "$(now)" '' "unit no longer active" || true
+    if [[ "$state" == running ]]; then
+      active_state=$(systemctl show "$unit" -p ActiveState --value 2>/dev/null || true)
+      case "$active_state" in
+        active|activating|deactivating) ;;
+        *) write_state "$unit" "$target" interrupted "$(state_value "$file" started_at)" "$(now)" '' "unit no longer active" || true ;;
+      esac
     fi
   done
 }
