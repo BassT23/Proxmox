@@ -123,11 +123,13 @@ READ_VERSION_CACHE() {
   # These globals are consumed by welcome-screen.sh after this function returns.
   # shellcheck disable=SC2034
   CACHE_MASTER_VERSION=$master_version
+  # shellcheck disable=SC2034
   CACHE_DEVELOP_VERSION=$develop_version
   if (( CACHE_AGE <= VERSION_CACHE_TTL )); then
     # shellcheck disable=SC2034
     CACHE_FRESH=true
   else
+    # shellcheck disable=SC2034
     CACHE_FRESH=false
   fi
   return 0
