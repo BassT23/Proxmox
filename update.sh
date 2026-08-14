@@ -218,7 +218,7 @@ VERSION_CHECK () {
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.sh)
   if [[ "$BRANCH" == develop ]]; then
     echo -e "${OR:-}*** The Ultimate Updater is on develop branch ***${CL:-}"
-    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+    if version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
       echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
        Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION"
       if [[ "$HEADLESS" != true ]]; then
@@ -230,7 +230,7 @@ VERSION_CHECK () {
         echo
       fi
       VERSION_NOT_SHOW=true
-    elif [[ "$LOCAL_VERSION" < "$BETA_VERSION" ]]; then
+    elif version_is_less "$LOCAL_VERSION" "$BETA_VERSION"; then
       echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
        Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION"
       if [[ "$HEADLESS" != true ]]; then
@@ -242,7 +242,7 @@ VERSION_CHECK () {
         echo
       fi
       VERSION_NOT_SHOW=true
-    elif [[ "$LOCAL_VERSION" < "$DEVELOP_VERSION" ]]; then
+    elif version_is_less "$LOCAL_VERSION" "$DEVELOP_VERSION"; then
       echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
        Installed: $LOCAL_VERSION / Github-Develop: $DEVELOP_VERSION"
       if [[ "$HEADLESS" != true ]]; then
@@ -260,7 +260,7 @@ VERSION_CHECK () {
   fi
   if [[ "$BRANCH" == beta ]]; then
     echo -e "${OR:-}*** The Ultimate Updater is on beta branch ***${CL:-}"
-    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+    if version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
       echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
        Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION"
       if [[ "$HEADLESS" != true ]]; then
@@ -272,7 +272,7 @@ VERSION_CHECK () {
         echo
       fi
       VERSION_NOT_SHOW=true
-    elif [[ "$LOCAL_VERSION" < "$BETA_VERSION" ]]; then
+    elif version_is_less "$LOCAL_VERSION" "$BETA_VERSION"; then
       echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
        Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION"
       if [[ "$HEADLESS" != true ]]; then
@@ -289,7 +289,7 @@ VERSION_CHECK () {
     fi
   fi
   if [[ "$BRANCH" == master ]]; then
-    if [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+    if version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
       echo -e "${OR:-}    *** A newer version is available ***${CL:-}\n\
         Installed: $LOCAL_VERSION / Server: $MASTER_VERSION"
       if [[ "$HEADLESS" != true ]]; then
@@ -891,7 +891,7 @@ WAIT_FOR_BOOTUP_LXC () {
   done
   if [ $COUNT -gt $MAX_RETRIES ]; then
     echo -e "❌${RD:-} Connection to $CONTAINER after $MAX_RETRIES failed.${CL:-}\n"
-    return 0
+    return 1
   fi
 }
 # VM-SSH
@@ -911,7 +911,7 @@ WAIT_FOR_BOOTUP_SSH () {
   done
   if [ $COUNT -gt $MAX_RETRIES ]; then
     echo -e "❌${RD:-} Connection to $VM after $MAX_RETRIES failed.${CL:-}\n"
-    return 0
+    return 1
   fi
 }
 
@@ -1127,9 +1127,9 @@ CONTAINER_UPDATE_START () {
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     ERROR_CODE=""
-    if [[ "$ONLY" == "" && "$EXCLUDED" =~ $CONTAINER ]]; then
+    if [[ "$ONLY" == "" ]] && guest_id_matches "$EXCLUDED" "$CONTAINER"; then
       echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
-    elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
+    elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$CONTAINER"; then
       if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"; else continue; fi
     elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
       echo -e "⏩ ${OR:-}LXC $CONTAINER is a template - skip update${CL:-}\n\n"
@@ -1143,8 +1143,15 @@ CONTAINER_UPDATE_START () {
         pct start "$CONTAINER"
         echo -e "⏳${GN:-} Waiting for LXC ${BL:-}$CONTAINER${CL:-}${GN:-} to start ${CL:-}"
 #        sleep "$LXC_START_DELAY"
-        WAIT_FOR_BOOTUP_LXC
-        UPDATE_CONTAINER "$CONTAINER"
+        if WAIT_FOR_BOOTUP_LXC; then
+          UPDATE_CONTAINER "$CONTAINER"
+        else
+          ERROR_CODE=$?
+          ID=$CONTAINER
+          NAME="LXC $CONTAINER"
+          ERROR_MSG="LXC $CONTAINER did not become reachable after the boot wait timeout"
+          ERROR
+        fi
         # Stop the container
         echo -e "⏹ ${GN:-} Shutting down LXC ${BL:-}$CONTAINER ${CL:-}\n\n"
         pct shutdown "$CONTAINER" &
@@ -1307,9 +1314,9 @@ VM_UPDATE_START () {
   # Loop through the VMs
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep ostype || true)
-    if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
+    if [[ "$ONLY" == "" ]] && guest_id_matches "$EXCLUDED" "$VM"; then
       echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
-    elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
+    elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
       if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"; else continue; fi
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
       echo -e "⏩${BL:-} ${OR:-}VM $VM is a template - skip update${CL:-}\n\n"
@@ -1384,7 +1391,11 @@ UPDATE_VM () {
     if [[ "$START_WAITING" == true ]]; then
       echo -e "⏳${OR:-} Wait for bootup${CL:-}"
       echo -e "ℹ ${OR:-} $SSH_START_DELAY_TIME seconds is set for sleep between tryouts in SSH-VM config file${CL:-}\n"
-      WAIT_FOR_BOOTUP_SSH
+      if ! WAIT_FOR_BOOTUP_SSH; then
+        START_WAITING=false
+        UPDATE_VM_QEMU
+        return
+      fi
     fi
     if ! (ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
       echo -e "${RD:-}  ❌ File for ssh connection found, but not correctly set?\n\

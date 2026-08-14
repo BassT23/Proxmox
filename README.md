@@ -118,6 +118,17 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 ```
 and install new
 
+# Testing / Validation
+
+Development changes are validated on dedicated non-production Proxmox test
+environments before being pushed to the development branch. Validation covers
+single-node and multi-node/cluster scenarios, multiple Linux distributions in
+LXC guests, QEMU VMs through SSH and QEMU Guest Agent paths, running and stopped
+guest lifecycles, templates, controlled failure cases, normal/check-only and
+script-only paths, backup/snapshot handling, and configuration migration from
+older updater versions. Technical test-environment details are documented in
+[`TESTING.md`](TESTING.md).
+
 # Config File:
 The config file is stored under `/etc/ultimate-updater/update.conf`
 

@@ -42,6 +42,41 @@
 # shellcheck disable=SC2155  # Command substitution in local assignment is intentional
 # shellcheck disable=SC2086  # Intended word splitting for tag token arrays
 
+guest_id_matches() {
+  local requested_list=${1:-} guest_id=${2:-} id
+  local -a requested_ids
+  read -r -a requested_ids <<< "$requested_list"
+  for id in "${requested_ids[@]}"; do
+    [[ "$id" == "$guest_id" ]] && return 0
+  done
+  return 1
+}
+
+version_is_less() {
+  local left=${1:-} right=${2:-}
+  local -a left_parts right_parts
+  local i max left_part right_part
+
+  IFS=. read -r -a left_parts <<< "$left"
+  IFS=. read -r -a right_parts <<< "$right"
+  max=${#left_parts[@]}
+  (( ${#right_parts[@]} > max )) && max=${#right_parts[@]}
+
+  for ((i = 0; i < max; i++)); do
+    left_part=${left_parts[i]:-0}
+    right_part=${right_parts[i]:-0}
+    [[ "$left_part" =~ ^[0-9]+$ && "$right_part" =~ ^[0-9]+$ ]] || return 1
+    left_part=$((10#$left_part))
+    right_part=$((10#$right_part))
+    if (( left_part < right_part )); then
+      return 0
+    elif (( left_part > right_part )); then
+      return 1
+    fi
+  done
+  return 1
+}
+
 # Store the last processed message; caller prints when desired.
 _record_tag_log() { TAG_FILTER_LAST_LOG="$*"; }
 print_tag_log() { [[ -n ${TAG_FILTER_LAST_LOG:-} ]] && printf "%b" "$TAG_FILTER_LAST_LOG"; }

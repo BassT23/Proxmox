@@ -2,6 +2,10 @@ Changelog:
 ==========
 
 **develop**
+- use exact guest ID matching and restore released #229 behavior #302
+- fail LXC/SSH boot readiness after timeout #300
+- compare version components numerically #301
+- avoid empty VM startup delay in VM check path #299
 - preserve user update.conf and provide current update.conf.dist #298
 - fix QEMU guest-exec exit-code and output handling #297
 - fix duplicate command execution in error handlers #293

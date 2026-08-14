@@ -220,8 +220,20 @@ WAIT_FOR_BOOTUP_LXC () {
     COUNT=$((COUNT+1))
   done
   if [ $COUNT -gt $MAX_RETRIES ]; then
-    return 0
+    return 1
   fi
+}
+
+WAIT_FOR_QGA () {
+  local max_wait=180 interval=2 deadline=$((SECONDS + max_wait))
+  while (( SECONDS < deadline )); do
+    if qm agent "$VM" ping >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$interval"
+  done
+  echo -e "${RD}QEMU Guest Agent did not become ready for VM $VM${CL}"
+  return 1
 }
 
 ## HOST ##
@@ -267,9 +279,9 @@ CONTAINER_CHECK_START () {
   # Loop through the containers
   if ! [[ -d $LOCAL_FILES/temp/ ]]; then mkdir $LOCAL_FILES/temp/; fi
   for CONTAINER in $CONTAINERS; do
-    if [[ "$ONLY" == "" ]] && [[ "$EXCLUDED" =~ $CONTAINER ]]; then
+    if [[ "$ONLY" == "" ]] && guest_id_matches "$EXCLUDED" "$CONTAINER"; then
       continue
-    elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $CONTAINER ]]; then
+    elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$CONTAINER"; then
       continue
     elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
       continue
@@ -278,8 +290,11 @@ CONTAINER_CHECK_START () {
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
         pct start "$CONTAINER"
-        WAIT_FOR_BOOTUP_LXC
-        CHECK_CONTAINER "$CONTAINER"
+        if WAIT_FOR_BOOTUP_LXC; then
+          CHECK_CONTAINER "$CONTAINER"
+        else
+          echo -e "${RD}Skipping LXC $CONTAINER because it did not become reachable${CL}"
+        fi
         # Stop the container
         pct shutdown "$CONTAINER"
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
@@ -355,13 +370,15 @@ VM_CHECK_START () {
   # Loop through VMs
   for VM in $VMS; do
     REBOOT_REQUIRED=false
+    SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "${VM_START_DELAY:-45}")
+    SSH_START_DELAY_TIME=${SSH_START_DELAY_TIME:-45}
     # Check if connection is available
     if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
       # Check VM
       PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-      if [[ "$ONLY" == "" && "$EXCLUDED" =~ $VM ]]; then
+      if [[ "$ONLY" == "" ]] && guest_id_matches "$EXCLUDED" "$VM"; then
         continue
-      elif [[ "$ONLY" != "" ]] && ! [[ "$ONLY" =~ $VM ]]; then
+      elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
         continue
       elif [[ "$PRE_OS" =~ w ]]; then
         continue
@@ -386,9 +403,14 @@ VM_CHECK_START () {
           fi
           # Start VM
           qm start "$VM" >/dev/null 2>&1
-          sleep "$SSH_START_DELAY_TIME"
-          sleep "$SSH_START_DELAY_TIME"
-          CHECK_VM "$VM"
+          if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
+            sleep "$SSH_START_DELAY_TIME"
+            CHECK_VM "$VM"
+          elif WAIT_FOR_QGA; then
+            CHECK_VM "$VM"
+          else
+            echo -e "${RD}Skipping VM $VM because QEMU Guest Agent is not ready${CL}"
+          fi
           # Stop/Suspend VM
           qm stop "$VM"
           SUSPEND=

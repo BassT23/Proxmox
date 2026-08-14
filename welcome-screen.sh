@@ -21,6 +21,9 @@ OR="\e[1;33m"
 GN="\e[1;92m"
 CL="\e[0m"
 
+# shellcheck disable=SC1091
+. "$LOCAL_FILES/tag-filter.sh"
+
 # Version Check
 VERSION_CHECK () {
   curl -s --connect-timeout 3 --max-time 15 https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update_master.sh
@@ -34,17 +37,17 @@ VERSION_CHECK () {
     if  [[ ! -s /root/update_develop.sh ]]; then
       echo -e "${OR}*** You are offline - can't check version ***${CL}\n"
       echo -e "${OR}*** The Ultimate Updater is on develop branch ***${CL}"
-    elif [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+    elif version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
       echo -e "${OR}       *** A newer version is available ***${CL}\n\
        Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION\n\
         ${OR}You can update with <update -up>${CL}\n"
       VERSION_NOT_SHOW=true
-    elif [[ "$LOCAL_VERSION" < "$BETA_VERSION" ]]; then
+    elif version_is_less "$LOCAL_VERSION" "$BETA_VERSION"; then
       echo -e "${OR}       *** A newer version is available ***${CL}\n\
        Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION\n\
          ${OR}You can update with <update -up>${CL}\n"
       VERSION_NOT_SHOW=true
-    elif [[ "$LOCAL_VERSION" < "$DEVELOP_VERSION" ]]; then
+    elif version_is_less "$LOCAL_VERSION" "$DEVELOP_VERSION"; then
       echo -e "${OR}       *** A newer version is available ***${CL}\n\
      Installed: $LOCAL_VERSION / Github-Develop: $DEVELOP_VERSION\n\
         ${OR}You can update with <update -up>${CL}\n"
@@ -57,17 +60,17 @@ VERSION_CHECK () {
     if  [[ ! -s /root/update_beta.sh ]]; then
       echo -e "${OR}*** You are offline - can't check version ***${CL}\n"
       echo -e "${OR}*** The Ultimate Updater is on beta branch ***${CL}"
-    elif [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+    elif version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
       echo -e "${OR}       *** A newer version is available ***${CL}\n\
        Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION\n\
         ${OR}You can update with <update -up>${CL}\n"
       VERSION_NOT_SHOW=true
-    elif [[ "$LOCAL_VERSION" < "$BETA_VERSION" ]]; then
+    elif version_is_less "$LOCAL_VERSION" "$BETA_VERSION"; then
       echo -e "${OR}       *** A newer version is available ***${CL}\n\
        Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION\n\
          ${OR}You can update with <update -up>${CL}\n"
       VERSION_NOT_SHOW=true
-    elif [[ "$LOCAL_VERSION" < "$DEVELOP_VERSION" ]]; then
+    elif version_is_less "$LOCAL_VERSION" "$DEVELOP_VERSION"; then
       echo -e "${OR}       *** A newer version is available ***${CL}\n\
      Installed: $LOCAL_VERSION / Github-Develop: $DEVELOP_VERSION\n\
         ${OR}You can update with <update -up>${CL}\n"
@@ -79,7 +82,7 @@ VERSION_CHECK () {
   if [[ "$BRANCH" == master ]]; then
     if  [[ ! -s /root/update_master.sh ]]; then
       echo -e "${OR}*** You are offline - can't check version ***${CL}\n"
-    elif [[ "$LOCAL_VERSION" < "$MASTER_VERSION" ]]; then
+    elif version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
       echo -e "${OR}    *** A newer version is available ***${CL}\n\
         Installed: $LOCAL_VERSION / Server: $MASTER_VERSION\n\
         ${OR}You can update with <update -up>${CL}\n"
