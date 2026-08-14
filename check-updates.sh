@@ -12,6 +12,17 @@ VERSION="2.1"
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 
+# Optional additive machine-readable status output. Older installations can
+# continue without the helper until their next updater update.
+if [[ -f "$LOCAL_FILES/status-model.sh" ]]; then
+  # shellcheck disable=SC1091
+  . "$LOCAL_FILES/status-model.sh"
+else
+  STATUS_MODEL_INIT() { :; }
+  STATUS_MODEL_RECORD() { :; }
+  STATUS_MODEL_FINISH() { :; }
+fi
+
 # Tag filter
 TAG_FILTER_FILE="${TAG_FILTER_FILE:-$LOCAL_FILES/tag-filter.sh}"
 # shellcheck disable=SC1090,SC1091
@@ -255,6 +266,7 @@ CHECK_HOST () {
     ! scp "$TAG_FILTER_FILE" "$HOST:$remote_check_dir/tag-filter.sh" >/dev/null 2>&1; then
     ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
     echo -e "${RD}Could not prepare matching check helper on remote host $HOST${CL}"
+    STATUS_MODEL_RECORD "$HOST" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote check"
     return 1
   fi
   if ssh "$HOST" -p "$SSH_PORT" \
@@ -264,6 +276,9 @@ CHECK_HOST () {
     remote_status=$?
   fi
   ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+  if [[ "$remote_status" -ne 0 ]]; then
+    STATUS_MODEL_RECORD "$HOST" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "Remote check exited with $remote_status"
+  fi
   return "$remote_status"
 }
 
@@ -284,6 +299,12 @@ CHECK_HOST_ITSELF () {
   elif [[ $NORMAL_APT_UPDATES != 0 ]]; then
     echo -e "N: $NORMAL_APT_UPDATES"
   fi
+  local HOST_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
+  local HOST_STATUS=ok
+  [[ "$HOST_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && HOST_STATUS=updates_available
+  local HOST_OS
+  HOST_OS=$(awk -F= '/^PRETTY_NAME=/{gsub(/^"|"$/, "", $2); print $2; exit}' /etc/os-release 2>/dev/null)
+  STATUS_MODEL_RECORD "host:$HOSTNAME" host local true "${HOST_OS:-unknown}" apt "$HOST_UPDATES" "${REBOOT_REQUIRED:-false}" "$HOST_STATUS" "" ""
 }
 
 ## Container ##
@@ -327,6 +348,7 @@ CHECK_CONTAINER () {
   else
     CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' $LOCAL_FILES/temp/var)
   fi
+  local CONTAINER_UPDATES=0 CONTAINER_STATUS=ok CONTAINER_REBOOT=false
   pct config "$CONTAINER" > $LOCAL_FILES/temp/temp
   OS=$(awk '/^ostype/' $LOCAL_FILES/temp/temp | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
@@ -336,6 +358,7 @@ CHECK_CONTAINER () {
     SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security' || true)
     if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
     NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.' || true)
+    CONTAINER_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
     if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" != 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
     fi
@@ -349,6 +372,8 @@ CHECK_CONTAINER () {
   elif [[ "$OS" =~ fedora ]]; then
     pct exec "$CONTAINER" -- bash -c "dnf update" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update | grep -Ec ' updates$'")
+    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
     if [[ "$UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
@@ -356,6 +381,8 @@ CHECK_CONTAINER () {
   elif [[ "$OS" =~ archlinux ]]; then
     pct exec "$CONTAINER" -- bash -c "pacman -Syu" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "pacman -Qu | wc -l")
+    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
     if [[ "$UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
@@ -363,6 +390,8 @@ CHECK_CONTAINER () {
   elif [[ "$OS" =~ alpine ]]; then
     pct exec "$CONTAINER" -- ash -c "apk update" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- ash -c "apk list -u | wc -l")
+    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
     if [[ "$UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
@@ -370,11 +399,15 @@ CHECK_CONTAINER () {
   else
     pct exec "$CONTAINER" -- bash -c "yum update" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "yum -q check-update | wc -l")
+    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
     if [[ "$UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
       echo -e "$UPDATES"
     fi
   fi
+  [[ "$CONTAINER_UPDATES" -gt 0 ]] && CONTAINER_STATUS=updates_available
+  STATUS_MODEL_RECORD "$CONTAINER" lxc pct true "$OS" "${OS,,}" "$CONTAINER_UPDATES" "$CONTAINER_REBOOT" "$CONTAINER_STATUS" "" ""
 }
 
 ## VM ##
@@ -425,6 +458,7 @@ VM_CHECK_START () {
             CHECK_VM "$VM"
           else
             echo -e "${RD}Skipping VM $VM because QEMU Guest Agent is not ready${CL}"
+            STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" offline QGA_NOT_READY "QEMU Guest Agent was not ready"
           fi
           # Stop/Suspend VM
           qm stop "$VM"
@@ -536,11 +570,43 @@ CHECK_VM () {
         echo -e "$UPDATES"
       fi
     fi
+    if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
+      SSH_MODEL_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
+      SSH_MODEL_STATUS=ok
+      [[ "$SSH_MODEL_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && SSH_MODEL_STATUS=updates_available
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "$SSH_MODEL_UPDATES" "${REBOOT_REQUIRED:-false}" "$SSH_MODEL_STATUS" "" ""
+    elif [[ ${OS,,} =~ fedora ]]; then
+      STATUS_MODEL_STATUS=ok
+      [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" ""
+    elif [[ ${OS,,} =~ arch ]]; then
+      STATUS_MODEL_STATUS=ok
+      [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pacman "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" ""
+    elif [[ ${OS,,} =~ alpine ]]; then
+      STATUS_MODEL_STATUS=ok
+      [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apk "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" ""
+    elif [[ ${OS,,} =~ centos ]]; then
+      STATUS_MODEL_STATUS=ok
+      [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" ""
+    else
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" "" "null" "null" unsupported UNSUPPORTED_OS "No supported updater detected"
+    fi
   fi
 }
 
 CHECK_VM_QEMU () {
   QEMU_GUEST_EXEC "$VM" test
+  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" error QGA_TRANSPORT "${QEMU_EXEC_OUTPUT}"
+    return 1
+  fi
+  if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error QGA_GUEST_EXEC "${QEMU_EXEC_OUTPUT}"
+    return 1
+  fi
   if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
     OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
@@ -586,6 +652,10 @@ CHECK_VM_QEMU () {
       elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
         echo -e "N: $NORMAL_APT_UPDATES"
       fi
+      QEMU_APT_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
+      QEMU_APT_STATUS=ok
+      [[ "$QEMU_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && QEMU_APT_STATUS=updates_available
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "$QEMU_APT_UPDATES" "$REBOOT_REQUIRED" "$QEMU_APT_STATUS" "" ""
     elif [[ "$OS" =~ Fedora ]]; then
       QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "dnf -y update"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
@@ -601,6 +671,9 @@ CHECK_VM_QEMU () {
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
+      QEMU_DNF_STATUS=ok
+      [[ "$UPDATES" -gt 0 ]] && QEMU_DNF_STATUS=updates_available
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "$UPDATES" false "$QEMU_DNF_STATUS" "" ""
     elif [[ "$OS" =~ Arch ]]; then
       QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "pacman -Qu | wc -l"
       QEMU_COUNT_RESULT_OK "QEMU pacman check for VM $VM" || return 1
@@ -611,6 +684,9 @@ CHECK_VM_QEMU () {
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
+      QEMU_PACMAN_STATUS=ok
+      [[ "$UPDATES" -gt 0 ]] && QEMU_PACMAN_STATUS=updates_available
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "$UPDATES" false "$QEMU_PACMAN_STATUS" "" ""
     elif [[ "$OS" =~ Alpine ]]; then
       QEMU_GUEST_EXEC "$VM" --timeout 0 -- ash -c "apk list -u | wc -l"
       QEMU_COUNT_RESULT_OK "QEMU apk check for VM $VM" || return 1
@@ -621,6 +697,9 @@ CHECK_VM_QEMU () {
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
+      QEMU_APK_STATUS=ok
+      [[ "$UPDATES" -gt 0 ]] && QEMU_APK_STATUS=updates_available
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "$UPDATES" false "$QEMU_APK_STATUS" "" ""
     elif [[ "$OS" =~ CentOS ]]; then
       QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "yum -q check-update | wc -l"
       QEMU_COUNT_RESULT_OK "QEMU yum check for VM $VM" || return 1
@@ -631,6 +710,11 @@ CHECK_VM_QEMU () {
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
         echo -e "$UPDATES"
       fi
+      QEMU_YUM_STATUS=ok
+      [[ "$UPDATES" -gt 0 ]] && QEMU_YUM_STATUS=updates_available
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "$UPDATES" false "$QEMU_YUM_STATUS" "" ""
+    else
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" "" "null" "null" unsupported UNSUPPORTED_OS "No supported updater detected"
     fi
   fi
 }
@@ -671,6 +755,9 @@ EXIT () {
       fi
     fi
   fi
+  if declare -f STATUS_MODEL_CLEANUP >/dev/null 2>&1; then
+    STATUS_MODEL_CLEANUP
+  fi
 }
 trap EXIT EXIT
 
@@ -692,6 +779,10 @@ fi
 
 # Read config
 READ_WRITE_CONFIG
+STATUS_MODEL_ENABLED=false
+if STATUS_MODEL_INIT; then
+  STATUS_MODEL_ENABLED=true
+fi
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   ARGUMENTS "$@"
   # Print any tag selection summary captured during config parse
@@ -715,5 +806,8 @@ fi
 
 # Refresh the local MOTD version cache without making the login path depend on GitHub.
 UPDATE_VERSION_CACHE >/dev/null 2>&1 || true
+if [[ "$STATUS_MODEL_ENABLED" == true ]]; then
+  STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+fi
 
 exit 0

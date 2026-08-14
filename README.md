@@ -187,6 +187,21 @@ The current `target-inventory.sh` only validates and reads this optional
 inventory; it does not execute SSH, QGA, or updates yet. An absent or empty
 `targets.conf` therefore leaves the existing Proxmox workflow unchanged.
 
+## Machine-readable status
+
+`check-updates.sh` additionally writes `/etc/ultimate-updater/status.json`
+after a completed check. The file uses `schema_version: 1` and contains one
+record per target that produced a result. It is written atomically, so a
+failed generation keeps the previous complete file.
+
+Each target record contains its `id`, `type`, `transport`, `reachable`,
+detected `os`, selected `updater`, update count, `reboot_required`,
+`last_check`, `check_status`, `last_update`, and `error`. Values that cannot
+be determined are `null`, rather than being reported as zero or success.
+Possible check states are `ok`, `updates_available`, `offline`,
+`unsupported`, `not_checked`, and `error`. The JSON is data-only; presentation
+belongs to future CLI, notification, or web interfaces.
+
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
 
 - Host / LXC / VM

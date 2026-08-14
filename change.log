@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- add schema-versioned machine-readable check status output #306
 - define optional target inventory and validate target-specific reachability data #305
 - use a matching tag-filter helper for remote cluster checks #304
 - synchronize USED_BRANCH with explicit branch updates #303
