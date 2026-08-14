@@ -202,6 +202,24 @@ Possible check states are `ok`, `updates_available`, `offline`,
 `unsupported`, `not_checked`, and `error`. The JSON is data-only; presentation
 belongs to future CLI, notification, or web interfaces.
 
+## Read-only web preview
+
+A small browser preview is included at `web-ui/server.py`. It uses only the
+Python 3 standard library and reads the generated `status.json`; it does not
+run package managers, contact targets, or start update jobs. Start it locally
+with:
+
+```bash
+python3 web-ui/server.py
+```
+
+By default it binds to `127.0.0.1:8765` and serves a compact, responsive
+overview with a simple target detail view. Use `--bind` and `--port` only when
+you intentionally want another local/LAN binding, and use `--status-file` for
+a different read-only status source. Missing or invalid status data is shown
+as a clear message. The first preview has no check, update, reboot, backup, or
+configuration actions; those belong to later roadmap work.
+
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
 
 - Host / LXC / VM
