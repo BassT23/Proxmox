@@ -12,6 +12,23 @@ VERSION="2.1"
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 
+TARGET_RUNTIME_FILE="${TARGET_RUNTIME_FILE:-$LOCAL_FILES/target-runtime.sh}"
+if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
+  # shellcheck disable=SC1090,SC1091
+  . "$TARGET_RUNTIME_FILE"
+else
+  # These indirect transport calls are used by the legacy-compatible paths
+  # below when an older installation has no shared runtime helper yet.
+  # shellcheck disable=SC2317
+  RUN_LOCAL_COMMAND() { "$@"; }
+  RUN_PCT_COMMAND() { local target_id="$1"; shift; pct exec "$target_id" -- "$@"; }
+  RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
+  READ_APT_UPDATE_COUNTS() {
+    SECURITY_APT_UPDATES=$(printf '%s\n' "$1" | grep -ci '^inst.*security' || true)
+    NORMAL_APT_UPDATES=$(printf '%s\n' "$1" | grep -ci '^inst.' || true)
+  }
+fi
+
 # Optional additive machine-readable status output. Older installations can
 # continue without the helper until their next updater update.
 if [[ -f "$LOCAL_FILES/status-model.sh" ]]; then
@@ -261,6 +278,7 @@ HOST_CHECK_START () {
 CHECK_HOST () {
   local HOST=$1 remote_check_dir remote_status
   remote_check_dir="/tmp/ultimate-updater-check-$$"
+  remote_runtime_env=""
   if ! ssh "$HOST" -p "$SSH_PORT" "mkdir -p '$LOCAL_FILES' '$remote_check_dir'" ||
     ! scp "$LOCAL_FILES/update.conf" "$HOST:$LOCAL_FILES/update.conf" >/dev/null 2>&1 ||
     ! scp "$TAG_FILTER_FILE" "$HOST:$remote_check_dir/tag-filter.sh" >/dev/null 2>&1; then
@@ -269,8 +287,17 @@ CHECK_HOST () {
     STATUS_MODEL_RECORD "$HOST" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote check"
     return 1
   fi
+  if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
+    if ! scp "$TARGET_RUNTIME_FILE" "$HOST:$remote_check_dir/target-runtime.sh" >/dev/null 2>&1; then
+      ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare target runtime helper on remote host $HOST${CL}"
+      STATUS_MODEL_RECORD "$HOST" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote target runtime"
+      return 1
+    fi
+    remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh'"
+  fi
   if ssh "$HOST" -p "$SSH_PORT" \
-    "TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh' bash -s -- -c host" < "$0"; then
+    "TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env bash -s -- -c host" < "$0"; then
     remote_status=0
   else
     remote_status=$?
@@ -353,11 +380,10 @@ CHECK_CONTAINER () {
   OS=$(awk '/^ostype/' $LOCAL_FILES/temp/temp | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
-    pct exec "$CONTAINER" -- bash -c "apt-get update" >/dev/null 2>&1
-    APT_OUTPUT=$(pct exec "$CONTAINER" -- bash -c "apt-get -s upgrade")
-    SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security' || true)
+    RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get update" >/dev/null 2>&1
+    APT_OUTPUT=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get -s upgrade")
+    READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
     if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
-    NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.' || true)
     CONTAINER_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
     if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" != 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
@@ -503,8 +529,7 @@ CHECK_VM () {
     CHECK_VM_QEMU
     return
   fi
-  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 \
-    -p "$SSH_VM_PORT" "$USER@$IP" "true" >/dev/null 2>&1; then
+  if ! RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "true" >/dev/null 2>&1; then
     CHECK_VM_QEMU
     return
   fi
@@ -515,8 +540,7 @@ CHECK_VM () {
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
       ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "apt-get update" >/dev/null 2>&1
       APT_OUTPUT=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "apt-get -s upgrade")
-      SECURITY_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.*security')
-      NORMAL_APT_UPDATES=$(echo "$APT_OUTPUT" | grep -ci '^inst.')
+      READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
       if ssh -q -p "$SSH_VM_PORT" "$USER@$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then
         REBOOT_REQUIRED=true
       fi

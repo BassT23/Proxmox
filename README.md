@@ -187,6 +187,11 @@ The current `target-inventory.sh` only validates and reads this optional
 inventory; it does not execute SSH, QGA, or updates yet. An absent or empty
 `targets.conf` therefore leaves the existing Proxmox workflow unchanged.
 
+Internally, the current Proxmox paths use small shared transport wrappers for
+local, LXC (`pct`), and SSH execution. QEMU Guest Agent execution keeps its
+existing readiness and policy handling. This prepares a Target → Transport →
+Updater split without changing the existing Proxmox target behavior.
+
 ## Machine-readable status
 
 `check-updates.sh` additionally writes `/etc/ultimate-updater/status.json`

@@ -220,6 +220,8 @@ INSTALL () {
     cp "$TEMP_FILES"/targets.conf $LOCAL_FILES/targets.conf
     cp "$TEMP_FILES"/status-model.sh $LOCAL_FILES/status-model.sh
     chmod 750 $LOCAL_FILES/status-model.sh
+    cp "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
+    chmod 750 $LOCAL_FILES/target-runtime.sh
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
     if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
       cp "$TEMP_FILES"/update.conf.dist $LOCAL_FILES/update.conf.dist
@@ -272,6 +274,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/status-model.sh ]]; then
       mv "$TEMP_FILES"/status-model.sh $LOCAL_FILES/status-model.sh
       chmod 750 $LOCAL_FILES/status-model.sh
+    fi
+    if [[ -f "$TEMP_FILES"/target-runtime.sh ]]; then
+      mv "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
+      chmod 750 $LOCAL_FILES/target-runtime.sh
     fi
     mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod +x $LOCAL_FILES/check-updates.sh

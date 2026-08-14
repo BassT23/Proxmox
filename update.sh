@@ -10,6 +10,18 @@ VERSION="5.0.1"
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 USER_SCRIPTS="/etc/ultimate-updater/scripts.d"
+TARGET_RUNTIME_FILE="${TARGET_RUNTIME_FILE:-$LOCAL_FILES/target-runtime.sh}"
+if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
+  # shellcheck disable=SC1090,SC1091
+  . "$TARGET_RUNTIME_FILE"
+else
+  # These indirect transport calls are used by the legacy-compatible paths
+  # below when an older installation has no shared runtime helper yet.
+  # shellcheck disable=SC2317
+  RUN_LOCAL_COMMAND() { "$@"; }
+  RUN_PCT_COMMAND() { local target_id="$1"; shift; pct exec "$target_id" -- "$@"; }
+  RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
+fi
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 if [[ "$BRANCH" == beta ]]; then
@@ -1017,6 +1029,9 @@ UPDATE_HOST () {
     if [[ -f $LOCAL_FILES/tag-filter.sh ]]; then
       scp $LOCAL_FILES/tag-filter.sh "$HOST":$LOCAL_FILES/tag-filter.sh
     fi
+    if [[ -f "$LOCAL_FILES/target-runtime.sh" ]]; then
+      scp "$LOCAL_FILES/target-runtime.sh" "$HOST":$LOCAL_FILES/target-runtime.sh
+    fi
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
@@ -1134,7 +1149,7 @@ UPDATE_CONTAINER () {
   fi
   # Check Internet connection
   if [[ "$OS" != alpine ]]; then
-    if ! pct exec "$CONTAINER" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"; then
+    if ! RUN_PCT_COMMAND "$CONTAINER" bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"; then
       echo -e "${OR:-} ❌ Internet check fail - skip this container${CL:-}\n"
       return
     fi
@@ -1342,7 +1357,7 @@ UPDATE_VM () {
         return
       fi
     fi
-    if ! (ssh -o BatchMode=yes -o ConnectTimeout=5 -q -p "$SSH_VM_PORT" "$USER"@"$IP" exit >/dev/null 2>&1); then
+    if ! RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" exit >/dev/null 2>&1; then
       echo -e "${RD:-}  ❌ File for ssh connection found, but not correctly set?\n\
   ${BL:-}Please check SSH Key-Based Authentication${CL:-}\n\
   Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
