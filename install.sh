@@ -245,8 +245,6 @@ UPDATE () {
     if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
     if [[ "$BRANCH" == master ]]; then
       curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
-    elif [[ "$BRANCH" == beta ]]; then
-      curl -s -L https://github.com/BassT23/Proxmox/tarball/beta > $TEMP_FOLDER/ultimate-updater.tar.gz
     elif [[ "$BRANCH" == develop ]]; then
       curl -s -L https://github.com/BassT23/Proxmox/tarball/develop > $TEMP_FOLDER/ultimate-updater.tar.gz
     fi

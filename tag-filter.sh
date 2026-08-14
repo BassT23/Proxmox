@@ -77,6 +77,59 @@ version_is_less() {
   return 1
 }
 
+VERSION_CACHE_FILE=${VERSION_CACHE_FILE:-/var/cache/ultimate-updater/versions}
+VERSION_CACHE_TTL=${VERSION_CACHE_TTL:-21600}
+
+FETCH_REMOTE_VERSION() {
+  local branch=$1 component=$2 max_time=${3:-10} content version
+
+  content=$(curl -fsSL --connect-timeout 3 --max-time "$max_time" \
+    "https://raw.githubusercontent.com/BassT23/Proxmox/$branch/$component") || return 1
+  version=$(printf '%s\n' "$content" | awk -F'"' '/^VERSION=/ {print $2; exit}')
+  [[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1
+  printf '%s\n' "$version"
+}
+
+UPDATE_VERSION_CACHE() {
+  local master_version develop_version cache_dir temp_file
+
+  master_version=$(FETCH_REMOTE_VERSION master update.sh 5) || return 1
+  develop_version=$(FETCH_REMOTE_VERSION develop update.sh 5) || return 1
+  cache_dir=${VERSION_CACHE_FILE%/*}
+  mkdir -p "$cache_dir" || return 1
+  temp_file=$(mktemp "$cache_dir/.versions.XXXXXX") || return 1
+  {
+    printf 'TIMESTAMP="%s"\n' "$(date +%s)"
+    printf 'MASTER_VERSION="%s"\n' "$master_version"
+    printf 'DEVELOP_VERSION="%s"\n' "$develop_version"
+  } > "$temp_file" || { rm -f -- "$temp_file"; return 1; }
+  chmod 644 "$temp_file" || { rm -f -- "$temp_file"; return 1; }
+  mv -f -- "$temp_file" "$VERSION_CACHE_FILE" || { rm -f -- "$temp_file"; return 1; }
+}
+
+READ_VERSION_CACHE() {
+  local timestamp master_version develop_version now
+
+  [[ -r "$VERSION_CACHE_FILE" ]] || return 1
+  timestamp=$(awk -F'"' '/^TIMESTAMP=/ {print $2; exit}' "$VERSION_CACHE_FILE")
+  master_version=$(awk -F'"' '/^MASTER_VERSION=/ {print $2; exit}' "$VERSION_CACHE_FILE")
+  develop_version=$(awk -F'"' '/^DEVELOP_VERSION=/ {print $2; exit}' "$VERSION_CACHE_FILE")
+  [[ "$timestamp" =~ ^[0-9]+$ ]] || return 1
+  [[ "$master_version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1
+  [[ "$develop_version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1
+  now=$(date +%s)
+  CACHE_AGE=$((now - timestamp))
+  (( CACHE_AGE < 0 )) && CACHE_AGE=0
+  CACHE_MASTER_VERSION=$master_version
+  CACHE_DEVELOP_VERSION=$develop_version
+  if (( CACHE_AGE <= VERSION_CACHE_TTL )); then
+    CACHE_FRESH=true
+  else
+    CACHE_FRESH=false
+  fi
+  return 0
+}
+
 # Store the last processed message; caller prints when desired.
 _record_tag_log() { TAG_FILTER_LAST_LOG="$*"; }
 print_tag_log() { [[ -n ${TAG_FILTER_LAST_LOG:-} ]] && printf "%b" "$TAG_FILTER_LAST_LOG"; }

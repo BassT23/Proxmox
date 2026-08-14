@@ -12,6 +12,11 @@ CONFIG_FILE="$LOCAL_FILES/update.conf"
 USER_SCRIPTS="/etc/ultimate-updater/scripts.d"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
+if [[ "$BRANCH" == beta ]]; then
+  echo -e "${OR:-}The beta branch is no longer active; using develop instead.${CL:-}"
+  BRANCH=develop
+  SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
+fi
 DPKG_OPTIONS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 DPKG_OPTIONS_STRING="${DPKG_OPTIONS[*]}"
 
@@ -135,7 +140,7 @@ ARGUMENTS () {
         # shellcheck disable=SC2317
         exit 2
         ;;
-      master|beta|develop)
+      master|develop)
         if [[ "$2" != -up ]]; then
           echo -e "\n${OR:-}  Wrong usage! Use branch update like this:${CL:-}"
           echo -e "  update $ARGUMENT -up\n"
@@ -189,7 +194,6 @@ USAGE () {
     echo -e "[OPTIONS] Manages the Ultimate Updater:"
     echo -e "======================================"
     echo -e "  master               Use master branch"
-    echo -e "  beta                 Use beta branch"
     echo -e "  develop              Use develop branch\n"
     echo -e "{COMMAND}:"
     echo -e "========="
@@ -208,108 +212,70 @@ USAGE () {
 }
 
 # Version Check / Update Message in Header
+RUN_BRANCH_UPDATE () {
+  local target_branch=$1 installer
+
+  if ! installer=$(curl -fsSL --connect-timeout 3 --max-time 10 \
+    "https://raw.githubusercontent.com/BassT23/Proxmox/$target_branch/install.sh"); then
+    echo -e "${RD:-}Unable to download the $target_branch installer.${CL:-}"
+    return 1
+  fi
+  printf '%s\n' "$installer" | bash -s update
+}
+
+SHOW_UPDATE_NOTICE () {
+  local target_branch=$1 remote_version=$2
+
+  echo -e "${OR:-}*** A newer version is available ***${CL:-}\n\
+       Installed: $LOCAL_VERSION / $target_branch: $remote_version"
+  if [[ "$HEADLESS" != true ]]; then
+    echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
+    read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
+    if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
+      RUN_BRANCH_UPDATE "$target_branch"
+    fi
+    echo
+  fi
+}
+
 VERSION_CHECK () {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > $LOCAL_FILES/temp/update_master.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/update.sh > $LOCAL_FILES/temp/update_beta.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/update.sh > $LOCAL_FILES/temp/update_develop.sh
-  MASTER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update_master.sh)
-  BETA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update_beta.sh)
-  DEVELOP_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update_develop.sh)
-  LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.sh)
+  local candidate remote_version remote_available=false
+  local -a candidates
+
+  LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh")
+  case "$BRANCH" in
+    master) candidates=(master) ;;
+    develop) candidates=(master develop) ;;
+    *)
+      echo -e "${OR:-}The configured branch '$BRANCH' is not active; use master or develop.${CL:-}"
+      echo -e "                 Version: $VERSION"
+      return 0
+      ;;
+  esac
+
   if [[ "$BRANCH" == develop ]]; then
     echo -e "${OR:-}*** The Ultimate Updater is on develop branch ***${CL:-}"
-    if version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
-      echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
-       Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION"
-      if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
-        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
-        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
-        fi
-        echo
-      fi
-      VERSION_NOT_SHOW=true
-    elif version_is_less "$LOCAL_VERSION" "$BETA_VERSION"; then
-      echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
-       Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION"
-      if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
-        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
-        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
-        fi
-        echo
-      fi
-      VERSION_NOT_SHOW=true
-    elif version_is_less "$LOCAL_VERSION" "$DEVELOP_VERSION"; then
-      echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
-       Installed: $LOCAL_VERSION / Github-Develop: $DEVELOP_VERSION"
-      if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
-        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
-        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/install.sh) update
-        fi
-        echo
-      fi
-      VERSION_NOT_SHOW=true
-    else
-      echo -e "${GN:-}       The Ultimate Updater is UpToDate${CL:-}"
-    fi
   fi
-  if [[ "$BRANCH" == beta ]]; then
-    echo -e "${OR:-}*** The Ultimate Updater is on beta branch ***${CL:-}"
-    if version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
-      echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
-       Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION"
-      if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
-        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
-        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
-        fi
-        echo
-      fi
-      VERSION_NOT_SHOW=true
-    elif version_is_less "$LOCAL_VERSION" "$BETA_VERSION"; then
-      echo -e "${OR:-}       *** A newer version is available ***${CL:-}\n\
-       Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION"
-      if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
-        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
-        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-          bash <(curl -s "$SERVER_URL"/install.sh) update
-        fi
-        echo
-      fi
-      VERSION_NOT_SHOW=true
-    else
-      echo -e "\n              ${GN:-}Script is UpToDate${CL:-}"
+  VERSION_NOT_SHOW=false
+  for candidate in "${candidates[@]}"; do
+    if ! remote_version=$(FETCH_REMOTE_VERSION "$candidate" update.sh); then
+      echo -e "${OR:-}Unable to read the $candidate version from GitHub.${CL:-}"
+      continue
     fi
-  fi
-  if [[ "$BRANCH" == master ]]; then
-    if version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
-      echo -e "${OR:-}    *** A newer version is available ***${CL:-}\n\
-        Installed: $LOCAL_VERSION / Server: $MASTER_VERSION"
-      if [[ "$HEADLESS" != true ]]; then
-        echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
-        read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
-        if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-          bash <(curl -s "$SERVER_URL"/install.sh) update
-        fi
-        echo
-      fi
+    remote_available=true
+    if version_is_less "$LOCAL_VERSION" "$remote_version"; then
+      SHOW_UPDATE_NOTICE "$candidate" "$remote_version"
       VERSION_NOT_SHOW=true
-    else
-      echo -e "\n              ${GN:-}Script is UpToDate${CL:-}"
+      break
     fi
+  done
+  if [[ "$VERSION_NOT_SHOW" != true && "$remote_available" == true ]]; then
+    echo -e "${GN:-}       The Ultimate Updater is UpToDate${CL:-}"
+    echo -e "                 Version: $VERSION"
+  elif [[ "$VERSION_NOT_SHOW" != true ]]; then
+    echo -e "${OR:-}       Unable to verify the remote version${CL:-}"
+    echo -e "                 Version: $VERSION"
   fi
-  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "                 Version: $VERSION"; fi
-  rm -rf $LOCAL_FILES/temp/update_master.sh
-  rm -rf $LOCAL_FILES/temp/update_beta.sh
-  rm -rf $LOCAL_FILES/temp/update_develop.sh
-  rm -rf $LOCAL_FILES/temp/update.sh && echo
 }
 
 # Update The Ultimate Updater
@@ -338,63 +304,42 @@ UNINSTALL () {
 
 # Get Server Versions
 STATUS () {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.sh > $LOCAL_FILES/temp/update.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update-extras.sh > $LOCAL_FILES/temp/update-extras.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.conf > $LOCAL_FILES/temp/update.conf
-  SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update.sh)
-  SERVER_EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update-extras.sh)
-  SERVER_CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update.conf)
-  EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update-extras.sh)
-  CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.conf)
+  local branch_for_status=$BRANCH component label local_file local_version remote_version
+  local -a components=(
+    "Updater|update.sh|$LOCAL_FILES/update.sh"
+    "Extras|update-extras.sh|$LOCAL_FILES/update-extras.sh"
+    "Config|update.conf|$LOCAL_FILES/update.conf"
+  )
+
   if [[ "$WELCOME_SCREEN" == true ]]; then
-    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/welcome-screen.sh > $LOCAL_FILES/temp/welcome-screen.sh
-    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/check-updates.sh > $LOCAL_FILES/temp/check-updates.sh
-    SERVER_WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/welcome-screen.sh)
-    SERVER_CHECK_UPDATE_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/check-updates.sh)
-    WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /etc/update-motd.d/01-welcome-screen)
-    CHECK_UPDATE_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/check-updates.sh)
+    components+=("Welcome|welcome-screen.sh|/etc/update-motd.d/01-welcome-screen")
+    components+=("Check|check-updates.sh|$LOCAL_FILES/check-updates.sh")
   fi
-  MODIFICATION=$(curl -s https://api.github.com/repos/BassT23/Proxmox | grep pushed_at | cut -d: -f2- | cut -c 3- | rev | cut -c 3- | rev)
-  echo -e "Last modification (on GitHub): $MODIFICATION\n"
-  if [[ "$BRANCH" == master ]]; then echo -e "${OR:-}  Version overview${CL:-}"; else
-    echo -e "${OR:-}  Version overview ($BRANCH)${CL:-}"
+  if [[ "$branch_for_status" == beta ]]; then
+    branch_for_status=develop
+    echo -e "${OR:-}The beta branch is no longer active; showing develop instead.${CL:-}"
   fi
-  if [[ $SERVER_VERSION         != [[$VERSION]]         || 
-        $SERVER_EXTRA_VERSION   != [[$EXTRA_VERSION]]   || 
-        $SERVER_CONFIG_VERSION  != [[$CONFIG_VERSION]]  || 
-        $SERVER_WELCOME_VERSION != [[$WELCOME_VERSION]] || 
-        $SERVER_CHECK_UPDATE_VERSION != [[$CHECK_UPDATE_VERSION]] ]]; then
-    echo -e "           Local / Server\n"
+  if [[ "$branch_for_status" != master && "$branch_for_status" != develop ]]; then
+    echo -e "${RD:-}Unknown branch '$BRANCH'; status cannot be retrieved.${CL:-}"
+    return 1
   fi
-  if [[ "$SERVER_VERSION" == "$VERSION" ]]; then
-    echo -e "  Updater: ${GN:-}$VERSION${CL:-}"
-  else
-    echo -e "  Updater: $VERSION / ${OR:-}$SERVER_VERSION${CL:-}"
-  fi
-  if [[ "$SERVER_EXTRA_VERSION" == "$EXTRA_VERSION" ]]; then
-    echo -e "  Extras:  ${GN:-}$EXTRA_VERSION${CL:-}"
-  else
-    echo -e "  Extras:  $EXTRA_VERSION / ${OR:-}$SERVER_EXTRA_VERSION${CL:-}"
-  fi
-  if [[ "$SERVER_CONFIG_VERSION" == "$CONFIG_VERSION" ]]; then
-    echo -e "  Config:  ${GN:-}$CONFIG_VERSION${CL:-}"
-  else
-    echo -e "  Config:  $CONFIG_VERSION / ${OR:-}$SERVER_CONFIG_VERSION${CL:-}"
-  fi
-  if [[ "$WELCOME_SCREEN" == true ]]; then
-    if [[ "$SERVER_WELCOME_VERSION" == "$WELCOME_VERSION" ]]; then
-      echo -e "  Welcome: ${GN:-}$WELCOME_VERSION${CL:-}"
+
+  echo -e "${OR:-}  Version overview ($branch_for_status)${CL:-}\n"
+  printf '%-12s %-9s %-9s\n' "Component" "Local" "Server"
+  printf '%-12s %-9s %-9s\n' "---------" "-----" "------"
+  for component in "${components[@]}"; do
+    IFS='|' read -r label component local_file <<< "$component"
+    local_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$local_file" 2>/dev/null || true)
+    remote_version=$(FETCH_REMOTE_VERSION "$branch_for_status" "$component" 5 || true)
+    if [[ -z "$local_version" ]]; then local_version="unknown"; fi
+    if [[ -z "$remote_version" ]]; then remote_version="unavailable"; fi
+    if [[ "$local_version" == "$remote_version" ]]; then
+      printf '%-12s %b%-9s%b %-9s\n' "$label" "${GN:-}" "$local_version" "${CL:-}" "$remote_version"
     else
-      echo -e "  Welcome: $WELCOME_VERSION / ${OR:-}$SERVER_WELCOME_VERSION${CL:-}"
+      printf '%-12s %-9s %b%-9s%b\n' "$label" "$local_version" "${OR:-}" "$remote_version" "${CL:-}"
     fi
-    if [[ "$SERVER_CHECK_UPDATE_VERSION" == "$CHECK_UPDATE_VERSION" ]]; then
-      echo -e "  Check:   ${GN:-}$CHECK_UPDATE_VERSION${CL:-}"
-    else
-      echo -e "  Check:   $CHECK_UPDATE_VERSION / ${OR:-}$SERVER_CHECK_UPDATE_VERSION${CL:-}"
-    fi
-  fi
+  done
   echo
-  rm -r $LOCAL_FILES/temp/*.*
 }
 
 # Read Config File

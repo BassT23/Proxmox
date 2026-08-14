@@ -699,4 +699,7 @@ elif [[ "$COMMAND" != true ]]; then
   fi
 fi
 
+# Refresh the local MOTD version cache without making the login path depend on GitHub.
+UPDATE_VERSION_CACHE >/dev/null 2>&1 || true
+
 exit 0
