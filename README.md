@@ -164,6 +164,29 @@ changed options:
 
 `diff -u /etc/ultimate-updater/update.conf /etc/ultimate-updater/update.conf.dist`
 
+## Target inventory
+
+Global updater settings remain in `update.conf`. The optional
+`/etc/ultimate-updater/targets.conf` is reserved for reachability information
+about additional systems, so `update.conf` does not have to grow with every
+future target. Existing Proxmox hosts, LXC containers, VMs, and `VMs/<VMID>`
+definitions continue to use their current mechanisms.
+
+The inventory uses small INI-style sections. A future target implementation
+should detect the operating system, distribution, package manager, and update
+method automatically where possible:
+
+```ini
+[raspi]
+host=192.168.10.50
+transport=ssh
+user=basst
+```
+
+The current `target-inventory.sh` only validates and reads this optional
+inventory; it does not execute SSH, QGA, or updates yet. An absent or empty
+`targets.conf` therefore leaves the existing Proxmox workflow unchanged.
+
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
 
 - Host / LXC / VM

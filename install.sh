@@ -215,6 +215,9 @@ INSTALL () {
     cp "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod -R +x "$LOCAL_FILES"/check-updates.sh
     cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
+    cp "$TEMP_FILES"/target-inventory.sh $LOCAL_FILES/target-inventory.sh
+    chmod 750 $LOCAL_FILES/target-inventory.sh
+    cp "$TEMP_FILES"/targets.conf $LOCAL_FILES/targets.conf
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
     if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
       cp "$TEMP_FILES"/update.conf.dist $LOCAL_FILES/update.conf.dist
@@ -260,6 +263,10 @@ UPDATE () {
     chmod 750 $LOCAL_FILES/update.sh
     mv "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     mv "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
+    if [[ -f "$TEMP_FILES"/target-inventory.sh ]]; then
+      mv "$TEMP_FILES"/target-inventory.sh $LOCAL_FILES/target-inventory.sh
+      chmod 750 $LOCAL_FILES/target-inventory.sh
+    fi
     mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod +x $LOCAL_FILES/check-updates.sh
     mv "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
