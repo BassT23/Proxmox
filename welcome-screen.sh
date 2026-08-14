@@ -12,7 +12,10 @@ VERSION="3.0"
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
-CHECK_OUTPUT=$(stat -c%s "$LOCAL_FILES/check-output")
+CHECK_OUTPUT=0
+if [[ -f "$LOCAL_FILES/check-output" ]]; then
+  CHECK_OUTPUT=$(stat -c%s "$LOCAL_FILES/check-output")
+fi
 
 # Colors
 BL="\e[36m"
