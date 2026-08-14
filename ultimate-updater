@@ -11,6 +11,7 @@ SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 UPDATE_SCRIPT="$LOCAL_FILES/update.sh"
 CHECK_SCRIPT="$LOCAL_FILES/check-updates.sh"
 INVENTORY_SCRIPT="$LOCAL_FILES/target-inventory.sh"
+JOB_RUNNER="$LOCAL_FILES/job-runner.sh"
 STATUS_FILE="$LOCAL_FILES/status.json"
 
 if [[ ! -f "$UPDATE_SCRIPT" && -f "$SCRIPT_DIR/update.sh" ]]; then
@@ -21,6 +22,9 @@ if [[ ! -f "$CHECK_SCRIPT" && -f "$SCRIPT_DIR/check-updates.sh" ]]; then
 fi
 if [[ ! -f "$INVENTORY_SCRIPT" && -f "$SCRIPT_DIR/target-inventory.sh" ]]; then
   INVENTORY_SCRIPT="$SCRIPT_DIR/target-inventory.sh"
+fi
+if [[ ! -f "$JOB_RUNNER" && -f "$SCRIPT_DIR/job-runner.sh" ]]; then
+  JOB_RUNNER="$SCRIPT_DIR/job-runner.sh"
 fi
 
 usage() {
@@ -103,8 +107,11 @@ PY
 }
 
 status_human() {
-  require_file "$STATUS_FILE" "status file" || return 4
-  python3 - "$STATUS_FILE" <<'PY'
+  local status_result=0
+  if [[ ! -f "$STATUS_FILE" ]]; then
+    printf 'ultimate-updater: status file is not available: %s\n' "$STATUS_FILE" >&2
+    status_result=4
+  elif ! python3 - "$STATUS_FILE" <<'PY'
 import json
 import sys
 
@@ -134,6 +141,22 @@ for target in targets:
           f"{updates_text:<9} {str(target.get('check_status') or 'not_checked'):<18} "
           f"{target.get('last_check') or 'unknown'}")
 PY
+  then
+    printf 'ultimate-updater: status file is not valid or readable: %s\n' "$STATUS_FILE" >&2
+    status_result=4
+  fi
+  if [[ -x "$JOB_RUNNER" ]]; then
+    local jobs
+    jobs=$("$JOB_RUNNER" list 2>/dev/null || true)
+    if [[ -n "$jobs" ]]; then
+      printf '\nUpdate jobs\n'
+      printf '%-55s %-12s %-12s %-20s\n' "Job" "Target" "State" "Exit"
+      while IFS=$'\t' read -r unit target state _ _ exit_code; do
+        printf '%-55s %-12s %-12s %-20s\n' "$unit" "$target" "$state" "${exit_code:-pending}"
+      done <<< "$jobs"
+    fi
+  fi
+  return "$status_result"
 }
 
 resolve_target_kind() {
@@ -169,15 +192,17 @@ run_check() {
 
 run_update() {
   require_file "$UPDATE_SCRIPT" "update script" || return 1
+  require_file "$JOB_RUNNER" "job runner" || return 1
   local target="${1:-}" kind
   [[ -n "$target" ]] || { usage >&2; return 2; }
+  [[ "$EUID" -eq 0 ]] || { printf 'ultimate-updater: update jobs require root\n' >&2; return 2; }
   kind=$(resolve_target_kind "$target") || {
     printf 'ultimate-updater: target not found: %s\n' "$target" >&2
     return 3
   }
   case "$kind" in
-    host) "$UPDATE_SCRIPT" host ;;
-    container|vm) "$UPDATE_SCRIPT" "$target" ;;
+    host) "$JOB_RUNNER" start "$UPDATE_SCRIPT" host ;;
+    container|vm) "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$target" ;;
   esac
 }
 

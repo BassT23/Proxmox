@@ -225,6 +225,8 @@ INSTALL () {
     cp "$TEMP_FILES"/ultimate-updater $LOCAL_FILES/ultimate-updater
     chmod 750 $LOCAL_FILES/ultimate-updater
     ln -sf $LOCAL_FILES/ultimate-updater /usr/local/sbin/ultimate-updater
+    cp "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
+    chmod 750 $LOCAL_FILES/job-runner.sh
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
     if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
       cp "$TEMP_FILES"/update.conf.dist $LOCAL_FILES/update.conf.dist
@@ -286,6 +288,10 @@ UPDATE () {
       mv "$TEMP_FILES"/ultimate-updater $LOCAL_FILES/ultimate-updater
       chmod 750 $LOCAL_FILES/ultimate-updater
       ln -sf $LOCAL_FILES/ultimate-updater /usr/local/sbin/ultimate-updater
+    fi
+    if [[ -f "$TEMP_FILES"/job-runner.sh ]]; then
+      mv "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
+      chmod 750 $LOCAL_FILES/job-runner.sh
     fi
     mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod +x $LOCAL_FILES/check-updates.sh

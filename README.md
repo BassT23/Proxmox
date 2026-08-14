@@ -223,7 +223,14 @@ ultimate-updater status --json
 `status --json` prints the same `/etc/ultimate-updater/status.json` data used by
 the read-only web preview. Existing direct calls to `update.sh` and
 `check-updates.sh` remain supported. Updates currently run synchronously;
-session-independent job execution is planned separately in #316.
+`ultimate-updater update TARGET` starts a transient systemd job instead. The
+command returns after the job is accepted, so the client session may disconnect.
+Use `ultimate-updater status` and `journalctl -u <unit>` to inspect the result
+and logs. Direct calls to `update.sh` remain synchronous. A job interrupted by
+reboot or shutdown is reported as `interrupted` rather than as a successful
+update. Job state is kept in `/var/lib/ultimate-updater/jobs`; `status --json`
+continues to expose the existing check-status schema while the human-readable
+`status` command includes recorded update jobs.
 
 ## Read-only web preview
 
