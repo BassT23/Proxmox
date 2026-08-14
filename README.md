@@ -89,9 +89,50 @@ So connect from first node (on which you install the Proxmox-Updater) to node2 w
 
      more infos here: [QEMU Guest Agent](https://pve.proxmox.com/wiki/Qemu-guest-agent)
 
+   A reachable QEMU Guest Agent alone is not sufficient for the updater. The
+   `guest-exec` capability is also required. Verify both commands from the
+   Proxmox host:
+
+   ```bash
+   qm agent <VMID> ping
+   qm guest exec <VMID> -- true
+   ```
+
+   If `qm agent <VMID> ping` works but `guest-exec` is disabled or not
+   allowed, check the guest distribution's QEMU Guest Agent policy or use the
+   SSH alternative below.
+
 2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
 
      more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/master/ssh.md)
+
+### Kali Linux VMs
+
+Kali Linux is supported as a Debian-based guest. The VM still has to be
+prepared for one of the supported VM connection methods.
+
+For QEMU Guest Agent updates, enable the agent for the VM in Proxmox and
+install and start it inside Kali:
+
+```bash
+sudo apt update
+sudo apt install qemu-guest-agent
+sudo systemctl enable --now qemu-guest-agent
+```
+
+Then verify from the Proxmox host:
+
+```bash
+qm agent <VMID> ping
+qm guest exec <VMID> -- true
+```
+
+Both commands must work for QEMU-based guest updates. A reachable Guest Agent
+is not sufficient if the `guest-exec` capability is disabled. Alternatively,
+configure key-based SSH access as described in [SSH Connection](https://github.com/BassT23/Proxmox/blob/master/ssh.md).
+
+Kali is handled by the Ultimate Updater as a Debian-based system and uses
+`apt` for update checks and updates.
 
 # Update the script:
 `update -up`
