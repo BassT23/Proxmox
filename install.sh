@@ -319,6 +319,7 @@ UPDATE () {
     rm -rf "$TEMP_FILES"/ssh.md || true
     rm -rf "$TEMP_FILES"/CODE_OF_CONDUCT.md || true
     rm -rf "$TEMP_FILES"/SECURITY.md || true
+    rm -rf "$TEMP_FILES"/TESTING.md || true
     chmod -R +x "$TEMP_FILES"/exit/*.sh
     cd "$TEMP_FILES"
     FILES="*.* **/*.*"
@@ -347,6 +348,12 @@ UPDATE () {
 }
 
 CHECK_DIFF () {
+  if [[ ! -f "$LOCAL_FILES/$FILE" ]]; then
+    mkdir -p "$(dirname "$LOCAL_FILES/$FILE")"
+    mv "$TEMP_FILES/$FILE" "$LOCAL_FILES/$FILE"
+    return
+  fi
+
   if ! cmp -s "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"; then
     echo -e "The file ${OR:-}$FILE${CL:-}\n \
  was modified (by you or by a script) since installation.\n \
