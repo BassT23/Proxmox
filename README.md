@@ -209,6 +209,7 @@ guest's user scripts are run instead of apt, dnf, yum, pacman or apk.
 The Welcome Screen is an extra for you. It's optional!
 
 - The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
+- The login screen reads cached version information and does not wait for GitHub. The cache is refreshed by the regular update check.
 - The update-checker also uses the config file!
 - To force the check, you can run `/etc/ultimate-updater/check-updates.sh` in Terminal.
 - You can choose, if screenfetch will be show also (if screenfetch is not installed, script will make it automatically)
@@ -218,6 +219,10 @@ If anybody wants to help with failure search, please test our `develop` branch.
 
 Install the develop update with `update develop -up`
 To go back to master, choose `update -up`
+
+The active update branches are `master` and `develop`. The former beta branch is
+no longer an active update channel; `beta-outdated` is retained only as a
+historical archive.
 
 # Q&A:
 [Discussion](https://github.com/BassT23/Proxmox/discussions/60)

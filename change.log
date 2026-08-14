@@ -2,6 +2,8 @@ Changelog:
 ==========
 
 **develop**
+- simplify branch/version handling and cache remote versions for the welcome screen
+- remove obsolete beta runtime handling and avoid network calls during SSH/MOTD login
 - use exact guest ID matching and restore released #229 behavior #302
 - fail LXC/SSH boot readiness after timeout #300
 - compare version components numerically #301

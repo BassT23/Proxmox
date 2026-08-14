@@ -12,8 +12,7 @@ VERSION="3.0"
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
-CHECK_OUTPUT=$(stat -c%s $LOCAL_FILES/check-output)
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
+CHECK_OUTPUT=$(stat -c%s "$LOCAL_FILES/check-output")
 
 # Colors
 BL="\e[36m"
@@ -24,88 +23,68 @@ CL="\e[0m"
 # shellcheck disable=SC1091
 . "$LOCAL_FILES/tag-filter.sh"
 
-# Version Check
+# Version Check. This path intentionally uses only the local cache so SSH/MOTD
+# login never waits for GitHub or another external service.
 VERSION_CHECK () {
-  curl -s --connect-timeout 3 --max-time 15 https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update_master.sh
-  curl -s --connect-timeout 3 --max-time 15 https://raw.githubusercontent.com/BassT23/Proxmox/beta/update.sh > /root/update_beta.sh
-  curl -s --connect-timeout 3 --max-time 15 https://raw.githubusercontent.com/BassT23/Proxmox/develop/update.sh > /root/update_develop.sh
-  MASTER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_master.sh)
-  BETA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_beta.sh)
-  DEVELOP_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_develop.sh)
-  LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.sh)
-  if [[ "$BRANCH" == develop ]]; then
-    if  [[ ! -s /root/update_develop.sh ]]; then
-      echo -e "${OR}*** You are offline - can't check version ***${CL}\n"
-      echo -e "${OR}*** The Ultimate Updater is on develop branch ***${CL}"
-    elif version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
-      echo -e "${OR}       *** A newer version is available ***${CL}\n\
-       Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION\n\
-        ${OR}You can update with <update -up>${CL}\n"
-      VERSION_NOT_SHOW=true
-    elif version_is_less "$LOCAL_VERSION" "$BETA_VERSION"; then
-      echo -e "${OR}       *** A newer version is available ***${CL}\n\
-       Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION\n\
-         ${OR}You can update with <update -up>${CL}\n"
-      VERSION_NOT_SHOW=true
-    elif version_is_less "$LOCAL_VERSION" "$DEVELOP_VERSION"; then
-      echo -e "${OR}       *** A newer version is available ***${CL}\n\
-     Installed: $LOCAL_VERSION / Github-Develop: $DEVELOP_VERSION\n\
-        ${OR}You can update with <update -up>${CL}\n"
-      VERSION_NOT_SHOW=true
-    else
-      echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
-    fi
+  local local_version candidate remote_version
+  local -a candidates
+
+  local_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh")
+  echo -e "${BL}  Repo: ${OR}https://github.com/BassT23/Proxmox${CL}"
+  echo -e "  Branch: ${OR}${BRANCH}${CL}"
+  if ! READ_VERSION_CACHE; then
+    echo -e "${OR}  Version cache unavailable; showing local version only.${CL}"
+    echo -e "              Version: $local_version"
+    return 0
   fi
-  if [[ "$BRANCH" == beta ]]; then
-    if  [[ ! -s /root/update_beta.sh ]]; then
-      echo -e "${OR}*** You are offline - can't check version ***${CL}\n"
-      echo -e "${OR}*** The Ultimate Updater is on beta branch ***${CL}"
-    elif version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
-      echo -e "${OR}       *** A newer version is available ***${CL}\n\
-       Installed: $LOCAL_VERSION / Github-Master: $MASTER_VERSION\n\
-        ${OR}You can update with <update -up>${CL}\n"
-      VERSION_NOT_SHOW=true
-    elif version_is_less "$LOCAL_VERSION" "$BETA_VERSION"; then
-      echo -e "${OR}       *** A newer version is available ***${CL}\n\
-       Installed: $LOCAL_VERSION / Github-Beta: $BETA_VERSION\n\
-         ${OR}You can update with <update -up>${CL}\n"
-      VERSION_NOT_SHOW=true
-    elif version_is_less "$LOCAL_VERSION" "$DEVELOP_VERSION"; then
-      echo -e "${OR}       *** A newer version is available ***${CL}\n\
-     Installed: $LOCAL_VERSION / Github-Develop: $DEVELOP_VERSION\n\
-        ${OR}You can update with <update -up>${CL}\n"
-      VERSION_NOT_SHOW=true
-    else
-      echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
-    fi
+  if [[ "$CACHE_FRESH" != true ]]; then
+    echo -e "${OR}  Cached version information is stale.${CL}"
   fi
-  if [[ "$BRANCH" == master ]]; then
-    if  [[ ! -s /root/update_master.sh ]]; then
-      echo -e "${OR}*** You are offline - can't check version ***${CL}\n"
-    elif version_is_less "$LOCAL_VERSION" "$MASTER_VERSION"; then
-      echo -e "${OR}    *** A newer version is available ***${CL}\n\
-        Installed: $LOCAL_VERSION / Server: $MASTER_VERSION\n\
-        ${OR}You can update with <update -up>${CL}\n"
-      VERSION_NOT_SHOW=true
+
+  case "$BRANCH" in
+    master) candidates=(master) ;;
+    develop) candidates=(master develop) ;;
+    beta)
+      echo -e "${OR}  The beta branch is no longer active; use develop.${CL}"
+      candidates=(master develop)
+      ;;
+    *)
+      echo -e "${OR}  Unknown branch '$BRANCH'; showing local version only.${CL}"
+      echo -e "              Version: $local_version"
+      return 0
+      ;;
+  esac
+
+  VERSION_NOT_SHOW=false
+  for candidate in "${candidates[@]}"; do
+    if [[ "$candidate" == master ]]; then
+      remote_version=$CACHE_MASTER_VERSION
     else
-        echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
+      remote_version=$CACHE_DEVELOP_VERSION
     fi
+    if version_is_less "$local_version" "$remote_version"; then
+      echo -e "${OR}       *** A newer version is available ***${CL}\n\
+       Installed: $local_version / $candidate: $remote_version\n\
+        ${OR}You can update with <update -up>${CL}"
+      VERSION_NOT_SHOW=true
+      break
+    fi
+  done
+  if [[ "$VERSION_NOT_SHOW" != true ]]; then
+    echo -e "${GN}       The Ultimate Updater is UpToDate${CL}"
+    echo -e "              Version: $local_version"
   fi
-  if [[ "$VERSION_NOT_SHOW" != true ]]; then echo -e "              Version: $LOCAL_VERSION"; fi
-  echo -e "\n${BL}  Repo: ${OR}https://github.com/BassT23/Proxmox\n${CL}"
-  rm -rf /root/update_master.sh
-  rm -rf /root/update_beta.sh
-  rm -rf /root/update_develop.sh
+  echo -e "  Cache age: ${CACHE_AGE}s"
 }
 
 READ_WRITE_CONFIG () {
-  WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' $CONFIG_FILE)
-  WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' $CONFIG_FILE)
-  WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' $CONFIG_FILE)
-  RUNNING=$(awk -F'"' '/^CHECK_RUNNING_CONTAINER=/ {print $2}' $CONFIG_FILE)
-  STOPPED=$(awk -F'"' '/^CHECK_STOPPED_CONTAINER=/ {print $2}' $CONFIG_FILE)
-  EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
-  ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
+  WITH_HOST=$(awk -F'"' '/^CHECK_WITH_HOST=/ {print $2}' "$CONFIG_FILE")
+  WITH_LXC=$(awk -F'"' '/^CHECK_WITH_LXC=/ {print $2}' "$CONFIG_FILE")
+  WITH_VM=$(awk -F'"' '/^CHECK_WITH_VM=/ {print $2}' "$CONFIG_FILE")
+  RUNNING=$(awk -F'"' '/^CHECK_RUNNING_CONTAINER=/ {print $2}' "$CONFIG_FILE")
+  STOPPED=$(awk -F'"' '/^CHECK_STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
+  EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' "$CONFIG_FILE")
+  ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' "$CONFIG_FILE")
   if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then
     # shellcheck disable=SC1091
     . "$LOCAL_FILES/tag-filter.sh"
@@ -117,17 +96,17 @@ READ_WRITE_CONFIG () {
     echo -e "${OR}Only is set. Not all machines are checked.${CL}\n"
   elif [[ $ONLY == "" && $EXCLUDED != "" ]]; then
     echo -e "${OR}Exclude is set. Not all machines are checked.${CL}\n"
-  elif [[ $WITH_HOST != true || $WITH_LXC != true || $WITH_VM != true ||$RUNNING != true || $STOPPED != true ]]; then
+  elif [[ $WITH_HOST != true || $WITH_LXC != true || $WITH_VM != true || $RUNNING != true || $STOPPED != true ]]; then
     echo -e "${OR}The variable is set in config file. Some machines will not be checked!${CL}\n"
   fi
 }
 
 TIME_CALCULTION () {
-MOD=$(date -r "$LOCAL_FILES/check-output" +%s)
-NOW=$(date +%s)
-DAYS=$(( (NOW - MOD) / 86400 ))
-HOURS=$(( (NOW - MOD) / 3600 ))
-MINUTES=$(( (NOW - MOD) / 60 ))
+  MOD=$(date -r "$LOCAL_FILES/check-output" +%s)
+  NOW=$(date +%s)
+  DAYS=$(( (NOW - MOD) / 86400 ))
+  HOURS=$(( (NOW - MOD) / 3600 ))
+  MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
 # Welcome
@@ -141,7 +120,7 @@ else
 fi
 VERSION_CHECK
 READ_WRITE_CONFIG
-if [[ -f $LOCAL_FILES/check-output ]]; then
+if [[ -f "$LOCAL_FILES/check-output" ]]; then
   TIME_CALCULTION
   if [[ $DAYS -gt 0 ]]; then
     echo -e "     Last Update Check: $DAYS day(s) ago\n"
@@ -150,10 +129,10 @@ if [[ -f $LOCAL_FILES/check-output ]]; then
   else
     echo -e "     Last Update Check: $MINUTES minute(s) ago\n"
   fi
-  if [[ -f $LOCAL_FILES/check-output ]] && [[ $CHECK_OUTPUT -gt 0 ]]; then
+  if [[ $CHECK_OUTPUT -gt 0 ]]; then
     echo -e "${OR}Available Updates:${CL}"
     echo -e "S = Security / N = Normal"
-    cat $LOCAL_FILES/check-output
+    cat "$LOCAL_FILES/check-output"
   fi
   echo
 fi
