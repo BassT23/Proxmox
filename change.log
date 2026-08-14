@@ -3,6 +3,7 @@ Changelog:
 
 **develop**
 - IMPORTANT: reboot the node after updating to this version before using the new session-independent update jobs
+- support external apt-based systems over SSH #310
 - run CLI updates through session-independent transient systemd jobs #316
 - add a unified target/status CLI frontend #309
 - separate shared target transport wrappers from existing updater paths #308

@@ -13,6 +13,7 @@ CHECK_SCRIPT="$LOCAL_FILES/check-updates.sh"
 INVENTORY_SCRIPT="$LOCAL_FILES/target-inventory.sh"
 JOB_RUNNER="$LOCAL_FILES/job-runner.sh"
 STATUS_FILE="$LOCAL_FILES/status.json"
+EXTERNAL_APT_SCRIPT="$LOCAL_FILES/external-apt.sh"
 
 if [[ ! -f "$UPDATE_SCRIPT" && -f "$SCRIPT_DIR/update.sh" ]]; then
   UPDATE_SCRIPT="$SCRIPT_DIR/update.sh"
@@ -26,6 +27,9 @@ fi
 if [[ ! -f "$JOB_RUNNER" && -f "$SCRIPT_DIR/job-runner.sh" ]]; then
   JOB_RUNNER="$SCRIPT_DIR/job-runner.sh"
 fi
+if [[ ! -f "$EXTERNAL_APT_SCRIPT" && -f "$SCRIPT_DIR/external-apt.sh" ]]; then
+  EXTERNAL_APT_SCRIPT="$SCRIPT_DIR/external-apt.sh"
+fi
 
 usage() {
   cat <<EOF
@@ -34,13 +38,13 @@ Usage: $(basename "$0") COMMAND [TARGET|OPTIONS]
 Commands:
   list                    List known local Proxmox and inventory targets
   check [TARGET]          Run the existing check, optionally for one target
-  update TARGET           Run the existing synchronous update path
+  update TARGET           Start a session-independent update job
   status                  Show the latest machine-readable status summary
   status --json           Print the existing status JSON unchanged
   help                    Show this help
 
 Legacy ./update.sh and ./check-updates.sh invocations remain supported.
-Updates are synchronous for now; session-independent jobs are planned in #316.
+Proxmox and external SSH/APT updates use the session-independent #316 job runner.
 EOF
 }
 
@@ -68,7 +72,7 @@ list_inventory() {
     source "$1"
     TARGET_INVENTORY_VALIDATE "$2" || exit 1
     for target in "${TARGET_NAMES[@]}"; do
-      printf "%-18s %-12s %-8s\n" "$target" "inventory" "${TARGET_TRANSPORT[$target]}"
+      printf "%-18s %-12s %-8s\n" "$target" "external" "${TARGET_TRANSPORT[$target]}"
     done
   ' _ "$INVENTORY_SCRIPT" "$inventory_file"
 }
@@ -88,6 +92,29 @@ list_targets() {
   printf '%-18s %-12s %-8s\n' "local-host" "host" "local"
   list_proxmox
   list_inventory
+}
+
+inventory_target_exists() {
+  local target="$1" inventory_file="$LOCAL_FILES/targets.conf"
+  [[ -f "$inventory_file" && -f "$INVENTORY_SCRIPT" ]] || return 1
+  TARGET_INVENTORY_FILE="$inventory_file" bash -c '
+    source "$1"
+    TARGET_INVENTORY_VALIDATE "$2" >/dev/null 2>&1 || exit 1
+    for target in "${TARGET_NAMES[@]}"; do
+      [[ "$target" == "$3" ]] && exit 0
+    done
+    exit 1
+  ' _ "$INVENTORY_SCRIPT" "$inventory_file" "$target"
+}
+
+inventory_targets() {
+  local inventory_file="$LOCAL_FILES/targets.conf"
+  [[ -f "$inventory_file" && -f "$INVENTORY_SCRIPT" ]] || return 0
+  TARGET_INVENTORY_FILE="$inventory_file" bash -c '
+    source "$1"
+    TARGET_INVENTORY_VALIDATE "$2" || exit 1
+    printf "%s\n" "${TARGET_NAMES[@]}"
+  ' _ "$INVENTORY_SCRIPT" "$inventory_file"
 }
 
 status_json() {
@@ -160,38 +187,58 @@ PY
 }
 
 resolve_target_kind() {
-  local target="$1"
+  local target="$1" proxmox_kind="" inventory_kind=false
   if [[ "$target" == host || "$target" == local-host ]]; then
     printf '%s\n' host
-  elif command -v pct >/dev/null 2>&1 && pct config "$target" >/dev/null 2>&1; then
-    printf '%s\n' container
-  elif command -v qm >/dev/null 2>&1 && qm config "$target" >/dev/null 2>&1; then
-    printf '%s\n' vm
-  else
-    return 1
+    return 0
   fi
+  if command -v pct >/dev/null 2>&1 && pct config "$target" >/dev/null 2>&1; then proxmox_kind=container; fi
+  if command -v qm >/dev/null 2>&1 && qm config "$target" >/dev/null 2>&1; then proxmox_kind=vm; fi
+  if inventory_target_exists "$target"; then inventory_kind=true; fi
+  if [[ -n "$proxmox_kind" && "$inventory_kind" == true ]]; then
+    printf 'ultimate-updater: target is ambiguous in Proxmox and inventory: %s\n' "$target" >&2
+    return 4
+  fi
+  if [[ -n "$proxmox_kind" ]]; then printf '%s\n' "$proxmox_kind"; return 0; fi
+  if [[ "$inventory_kind" == true ]]; then printf '%s\n' external; return 0; fi
+  return 1
+}
+
+run_external_checks() {
+  local target result=0 targets
+  targets=$(inventory_targets) || return 1
+  [[ -n "$targets" ]] || return 0
+  require_file "$EXTERNAL_APT_SCRIPT" "external APT helper" || return 1
+  while IFS= read -r target; do
+    [[ -n "$target" ]] || continue
+    "$EXTERNAL_APT_SCRIPT" check "$target" || result=$?
+  done <<< "$targets"
+  return "$result"
 }
 
 run_check() {
-  require_file "$CHECK_SCRIPT" "check script" || return 1
   local target="${1:-}" kind
   if [[ -z "$target" ]]; then
-    "$CHECK_SCRIPT"
-    return $?
+    require_file "$CHECK_SCRIPT" "check script" || return 1
+    local check_result external_result
+    "$CHECK_SCRIPT"; check_result=$?
+    run_external_checks; external_result=$?
+    [[ "$check_result" -eq 0 ]] || return "$check_result"
+    return "$external_result"
   fi
   kind=$(resolve_target_kind "$target") || {
     printf 'ultimate-updater: target not found: %s\n' "$target" >&2
     return 3
   }
   case "$kind" in
-    host) "$CHECK_SCRIPT" chost ;;
-    container) "$CHECK_SCRIPT" ccontainer "$target" ;;
-    vm) "$CHECK_SCRIPT" cvm "$target" ;;
+    host) require_file "$CHECK_SCRIPT" "check script" || return 1; "$CHECK_SCRIPT" chost ;;
+    container) require_file "$CHECK_SCRIPT" "check script" || return 1; "$CHECK_SCRIPT" ccontainer "$target" ;;
+    vm) require_file "$CHECK_SCRIPT" "check script" || return 1; "$CHECK_SCRIPT" cvm "$target" ;;
+    external) require_file "$EXTERNAL_APT_SCRIPT" "external APT helper" || return 1; "$EXTERNAL_APT_SCRIPT" check "$target" ;;
   esac
 }
 
 run_update() {
-  require_file "$UPDATE_SCRIPT" "update script" || return 1
   require_file "$JOB_RUNNER" "job runner" || return 1
   local target="${1:-}" kind
   [[ -n "$target" ]] || { usage >&2; return 2; }
@@ -201,8 +248,8 @@ run_update() {
     return 3
   }
   case "$kind" in
-    host) "$JOB_RUNNER" start "$UPDATE_SCRIPT" host ;;
-    container|vm) "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$target" ;;
+    host|container|vm) require_file "$UPDATE_SCRIPT" "update script" || return 1; "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")" ;;
+    external) require_file "$EXTERNAL_APT_SCRIPT" "external APT helper" || return 1; "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target" ;;
   esac
 }
 

@@ -67,7 +67,10 @@ TARGET_INVENTORY_LOAD() {
     seen_keys["$section|$key"]="$value"
 
     case "$key" in
-      host) TARGET_HOST["$section"]="$value" ;;
+      host)
+        [[ "$value" =~ ^[A-Za-z0-9_.:-]+$ ]] || { TARGET_INVENTORY_FAIL "invalid host for [$section]"; return 1; }
+        TARGET_HOST["$section"]="$value"
+        ;;
       port)
         [[ "$value" =~ ^[0-9]+$ ]] && (( value >= 1 && value <= 65535 )) || { TARGET_INVENTORY_FAIL "invalid port for [$section]"; return 1; }
         TARGET_PORT["$section"]="$value"
@@ -76,7 +79,10 @@ TARGET_INVENTORY_LOAD() {
         [[ "$value" =~ ^(local|pct|qga|ssh)$ ]] || { TARGET_INVENTORY_FAIL "unsupported transport '$value' in [$section]"; return 1; }
         TARGET_TRANSPORT["$section"]="$value"
         ;;
-      user) TARGET_USER["$section"]="$value" ;;
+      user)
+        [[ "$value" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]] || { TARGET_INVENTORY_FAIL "invalid user for [$section]"; return 1; }
+        TARGET_USER["$section"]="$value"
+        ;;
     esac
   done < "$file" || { TARGET_INVENTORY_FAIL "cannot read $file"; return 1; }
 

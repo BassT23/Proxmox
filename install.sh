@@ -221,6 +221,10 @@ INSTALL () {
     cp "$TEMP_FILES"/status-model.sh $LOCAL_FILES/status-model.sh
     chmod 750 $LOCAL_FILES/status-model.sh
     cp "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
+    if [[ -f "$TEMP_FILES"/external-apt.sh ]]; then
+      cp "$TEMP_FILES"/external-apt.sh $LOCAL_FILES/external-apt.sh
+      chmod 750 $LOCAL_FILES/external-apt.sh
+    fi
     chmod 750 $LOCAL_FILES/target-runtime.sh
     cp "$TEMP_FILES"/ultimate-updater $LOCAL_FILES/ultimate-updater
     chmod 750 $LOCAL_FILES/ultimate-updater
@@ -283,6 +287,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/target-runtime.sh ]]; then
       mv "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
       chmod 750 $LOCAL_FILES/target-runtime.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-apt.sh ]]; then
+      mv "$TEMP_FILES"/external-apt.sh $LOCAL_FILES/external-apt.sh
+      chmod 750 $LOCAL_FILES/external-apt.sh
     fi
     if [[ -f "$TEMP_FILES"/ultimate-updater ]]; then
       mv "$TEMP_FILES"/ultimate-updater $LOCAL_FILES/ultimate-updater

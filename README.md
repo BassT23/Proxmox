@@ -172,9 +172,9 @@ about additional systems, so `update.conf` does not have to grow with every
 future target. Existing Proxmox hosts, LXC containers, VMs, and `VMs/<VMID>`
 definitions continue to use their current mechanisms.
 
-The inventory uses small INI-style sections. A future target implementation
-should detect the operating system, distribution, package manager, and update
-method automatically where possible:
+The inventory uses small INI-style sections. The current external-target
+implementation detects the operating system, distribution, package manager,
+and update method automatically where possible:
 
 ```ini
 [raspi]
@@ -183,9 +183,14 @@ transport=ssh
 user=basst
 ```
 
-The current `target-inventory.sh` only validates and reads this optional
-inventory; it does not execute SSH, QGA, or updates yet. An absent or empty
-`targets.conf` therefore leaves the existing Proxmox workflow unchanged.
+External Debian, Ubuntu, and Raspberry Pi OS style apt-based systems can be
+checked and updated over SSH. The operating system and package manager are
+detected from `/etc/os-release`; do not add `os` or `updater` fields to the
+inventory. SSH key authentication is required, using either root or a user
+with passwordless `sudo`. No Ultimate Updater agent is installed on the
+remote system. An absent or empty `targets.conf` leaves the existing Proxmox
+workflow unchanged. External targets do not receive Proxmox vzdump backups or
+snapshots.
 
 Internally, the current Proxmox paths use small shared transport wrappers for
 local, LXC (`pct`), and SSH execution. QEMU Guest Agent execution keeps its
@@ -222,8 +227,8 @@ ultimate-updater status --json
 
 `status --json` prints the same `/etc/ultimate-updater/status.json` data used by
 the read-only web preview. Existing direct calls to `update.sh` and
-`check-updates.sh` remain supported. Updates currently run synchronously;
-`ultimate-updater update TARGET` starts a transient systemd job instead. The
+`check-updates.sh` remain supported and remain synchronous. The
+`ultimate-updater update TARGET` command starts a transient systemd job instead. The
 command returns after the job is accepted, so the client session may disconnect.
 Use `ultimate-updater status` and `journalctl -u <unit>` to inspect the result
 and logs. Direct calls to `update.sh` remain synchronous. A job interrupted by
@@ -231,6 +236,18 @@ reboot or shutdown is reported as `interrupted` rather than as a successful
 update. Job state is kept in `/var/lib/ultimate-updater/jobs`; `status --json`
 continues to expose the existing check-status schema while the human-readable
 `status` command includes recorded update jobs.
+
+For an external apt-based target, use the same commands:
+
+```text
+ultimate-updater check raspi
+ultimate-updater update raspi
+```
+
+The update is handed to the node-local session-independent job runner. The
+remote system only needs SSH and apt; it does not need an updater agent. A
+remote update does not create a Proxmox backup or snapshot, and it is not
+automatically rebooted when `/var/run/reboot-required` is present.
 
 ## Read-only web preview
 

@@ -16,7 +16,7 @@ usage() {
 
 valid_target() {
   case "$1" in
-    host|local-host|[0-9]|[0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9]) return 0 ;;
+    host|local-host|[A-Za-z0-9][A-Za-z0-9_.-]*) return 0 ;;
     *) return 1 ;;
   esac
 }

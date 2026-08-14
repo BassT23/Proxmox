@@ -110,3 +110,128 @@ STATUS_MODEL_CLEANUP() {
     rm -f -- "$STATUS_MODEL_RECORD_FILE"
   fi
 }
+
+STATUS_MODEL_UPSERT() {
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  local target_id="$1" target_type="$2" transport="$3" reachable="$4"
+  local os_name="$5" os_version="$6" updater="$7" updates="$8"
+  local reboot_required="$9" check_status="${10}" error_code="${11:-}"
+  local error_message="${12:-}"
+
+  python3 - "$status_file" "$target_id" "$target_type" "$transport" \
+    "$reachable" "$os_name" "$os_version" "$updater" "$updates" \
+    "$reboot_required" "$check_status" "$error_code" "$error_message" <<'PY'
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+(status_file, target_id, target_type, transport, reachable, os_name,
+ os_version, updater, updates, reboot_required, check_status, error_code,
+ error_message) = sys.argv[1:]
+
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (FileNotFoundError, OSError, ValueError):
+    payload = {"schema_version": 1, "generated_at": None, "targets": []}
+if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
+    payload = {"schema_version": 1, "generated_at": None, "targets": []}
+
+generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+payload["schema_version"] = payload.get("schema_version", 1)
+payload["generated_at"] = generated_at
+targets = payload["targets"]
+record = next((item for item in targets if isinstance(item, dict) and item.get("id") == target_id), None)
+if record is None:
+    record = {"id": target_id}
+    targets.append(record)
+
+def nullable_bool(value):
+    return None if value in ("", "null") else value == "true"
+
+def nullable_int(value):
+    return None if value in ("", "null") else int(value)
+
+record.update({
+    "type": target_type or None,
+    "transport": transport or None,
+    "reachable": nullable_bool(reachable),
+    "os": os_name or None,
+    "os_version": os_version or None,
+    "updater": updater or None,
+    "updates": {"available": nullable_int(updates)},
+    "reboot_required": nullable_bool(reboot_required),
+    "last_check": generated_at,
+    "check_status": check_status or "not_checked",
+    "error": ({"code": error_code or None, "message": error_message or None}
+              if error_code or error_message else None),
+})
+record.setdefault("last_update", {"status": "unknown", "timestamp": None})
+
+directory = os.path.dirname(os.path.abspath(status_file)) or "."
+os.makedirs(directory, exist_ok=True)
+fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(payload, output, indent=2)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, status_file)
+except Exception:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
+}
+
+STATUS_MODEL_UPDATE_RESULT() {
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  local target_id="$1" update_status="$2" exit_code="$3"
+  python3 - "$status_file" "$target_id" "$update_status" "$exit_code" <<'PY'
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+status_file, target_id, update_status, exit_code = sys.argv[1:]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (FileNotFoundError, OSError, ValueError):
+    payload = {"schema_version": 1, "generated_at": None, "targets": []}
+if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
+    payload = {"schema_version": 1, "generated_at": None, "targets": []}
+targets = payload.setdefault("targets", [])
+record = next((item for item in targets if isinstance(item, dict) and item.get("id") == target_id), None)
+if record is None:
+    record = {"id": target_id, "type": "external", "transport": "ssh"}
+    targets.append(record)
+timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+record["last_update"] = {"status": update_status, "timestamp": timestamp, "exit_code": int(exit_code)}
+payload["generated_at"] = timestamp
+directory = os.path.dirname(os.path.abspath(status_file)) or "."
+os.makedirs(directory, exist_ok=True)
+fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(payload, output, indent=2)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, status_file)
+except Exception:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
+}
