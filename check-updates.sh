@@ -225,7 +225,8 @@ WAIT_FOR_BOOTUP_LXC () {
 }
 
 WAIT_FOR_QGA () {
-  local max_wait=180 interval=2 deadline=$((SECONDS + max_wait))
+  local max_wait=180 interval=2
+  local deadline=$((SECONDS + max_wait))
   while (( SECONDS < deadline )); do
     if qm agent "$VM" ping >/dev/null 2>&1; then
       return 0
