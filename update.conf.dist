@@ -14,7 +14,7 @@
 │                    General                   │
 └──────────────────────────────────────────────┘
 
-VERSION="2.0"
+VERSION="2.1"
 USED_BRANCH="develop"    # could be "master/beta/develop"
 
 # Debug mode - set to true for debug output

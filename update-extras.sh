@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="3.0"
+VERSION="3.1"
 
 # Variables
 CONFIG_FILE="/etc/ultimate-updater/update.conf"
