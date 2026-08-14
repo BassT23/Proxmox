@@ -95,6 +95,7 @@ start_job() {
   unit="${JOB_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --unit="$unit" --description="Ultimate Updater update for $target" \
+    --setenv=UU_JOB_STATE_DIR="$JOB_STATE_DIR" \
     --property=Type=oneshot --property=StandardOutput=journal \
     --property=StandardError=journal "$RUNNER_PATH" run "$unit" "$target" "$update_script"; then
     write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
