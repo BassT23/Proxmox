@@ -17,7 +17,7 @@ if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
 else
   # These indirect transport calls are used by the legacy-compatible paths
   # below when an older installation has no shared runtime helper yet.
-  # shellcheck disable=SC2317
+  # shellcheck disable=SC2317,SC2329
   RUN_LOCAL_COMMAND() { "$@"; }
   RUN_PCT_COMMAND() { local target_id="$1"; shift; pct exec "$target_id" -- "$@"; }
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
