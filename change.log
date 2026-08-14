@@ -73,13 +73,11 @@ Changelog:
 - check "paused" VMs during update-check and bring them back in pause
 - fix check for VM with ssh connection
 - fix #203 Error on apt clean
+- fix unsupported neofetch under trixie - change to screenfetch
+- fix #201 (abbort after template detection)
 - fix VM ID in error-log-file
-- fix fedora autoremove
-- fix missing kernel infos
-- fix template detection
-- fix internet check
-- modify config file - checker settings now on the buttom
-- modify version check - check now all branches
+- fix shell check
+- fix typo
 - code cleaning
 
 **v4.4** (10.05.2025)
@@ -121,3 +119,118 @@ Changelog:
 - fix VM Template error
 - fix Unifi-Controller Container
 - fix FreeBSD VM error
+- fix docker compose
+- fix node hopping without welcome screen installed
+- rebuild waiting for VM start (could now be set in config file)
+
+**v4.1** (07.04.2024)
+- disable/enable Snapshots and Backups in config file
+- set, how many snapshots will be keep, in config file
+- delete old (Update_) snapshots
+- name changing ("Proxmox Updater" is now "The Ultimate Updater for Proxmox VE")
+- move program to correct folder system
+- edit config file, for better usage
+- update-check can now be better set (in config file)
+- support Docker Compose v1 and v2
+- bug fixing
+
+**v4.0** (18.12.2023)
+- fix loop through vms
+- fix new docker compose command
+- fix alpine issue (disable internet check for now)
+- add real snapshot support before update - if your storage setup support it
+- you can now choose, if neofetch will be installed during installation
+- code cleaning
+
+**v3.9** (07.11.2023)
+- make backup before update (must be enabled in config by user)
+- code cleaning
+- check internet connection on each LXC/VM
+- config file:
+  - check for updates on excluded
+  - include phased updates
+- make snapshot from LXC/VM before update (thanks to @elbim) 
+
+**v3.8.5** (18.06.2023)
+- Skip node, if not reachable
+- check internet status
+- <update -up> will always use master version
+- fix restore crontab, during uninstall
+- fix version info
+
+**v3.8.4** (01.04.2023)
+- Speed up start in cluster mode
+- Speed up installation
+- Bug fixing
+- Code cleaning
+
+**v3.8** (28.03.2023)
+- Add SSH Connection for VM - with extra update support
+- Add "Global Extra" in config file, for disable/enable Extra Updates
+- Info, if you are on beta/development version
+- Add "Status/Version" Info
+- Bug fixing
+- Code cleaning
+- Welcome Screen:
+  - Ask for Welcome-Screen during install
+  - Make update check during update now - not at the end
+  - Fix time calculation
+  - Add "reboot required"
+
+**v3.7** (09.03.2023)
+- Fixing code
+- Support "only" LXC/VM
+- Fix docker-compose update
+- VM-Update show errors 
+- Add Welcome Screen with periodic update check
+- Need neofetch (will install automatic)
+
+**v3.6** (22.02.2023)
+- Add config file
+- Cleaning code
+- More colorful
+- Fixing logging
+
+**v3.4** (not released)
+- Add VM Update
+- Cleaning code
+- Fixed Docker Update
+
+**v3.3** (15.02.2023)
+- Add Update Info
+- Add extra Updates
+- Add version check by user
+
+**v3.1.1** (13.02.2023)
+- Fixed update failure with CentOS
+
+**v3.1** (12.02.2023)
+- Add better usage
+- Cleanup overall code
+
+**v3.0** (10.02.2023)
+- Implement single install url
+
+**v2.8** (09.02.2023)
+- Cleanup overall code
+
+**v2.7.1** (06.02.2023)
+- Small fixes
+
+**v2.7** (31.01.2023)
+- Add root check
+- Cleanup overall code
+
+**v2.6** (30.01.2023)
+- Cleanup overall code
+- Fix promt of update
+- Add updating package that been kept back
+
+**v2.5** (30.01.2023)
+- Added "Headless Mode" as option with `update -3` otherwise runs in "Interactive Mode"
+
+**v2.4** (29.01.2023)
+- Visual and Name changes
+
+**v2.3** (29.01.2023)
+- Update script itself with `update -u`
