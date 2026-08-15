@@ -298,9 +298,23 @@ CLUSTER_HOST_NODE () {
 }
 
 # Host Check Start
+HOST_IS_LOCAL () {
+  local candidate="$1" local_address
+  [[ "$candidate" == "$HOSTNAME" || "$candidate" == "$(hostname -s 2>/dev/null)" ||
+    "$candidate" == "$(hostname -f 2>/dev/null)" ]] && return 0
+  for local_address in $(hostname -I 2>/dev/null); do
+    [[ "$candidate" == "$local_address" ]] && return 0
+  done
+  return 1
+}
+
 HOST_CHECK_START () {
   for HOST in $HOSTS; do
-    CHECK_HOST "$HOST"
+    if HOST_IS_LOCAL "$HOST"; then
+      CHECK_HOST_ITSELF
+    else
+      CHECK_HOST "$HOST"
+    fi
   done
 }
 
