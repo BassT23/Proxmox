@@ -255,7 +255,7 @@ WAIT_FOR_BOOTUP_LXC () {
   COUNT=1
   sleep "$LXC_START_DELAY"
   while [ $COUNT -le $MAX_RETRIES ]; do
-    if pct exec "$CONTAINER" -- bash -c "exit" >/dev/null 2>&1; then
+    if timeout 10 pct exec "$CONTAINER" -- bash -c "exit" >/dev/null 2>&1; then
       break
     else
       sleep "$LXC_START_DELAY"
