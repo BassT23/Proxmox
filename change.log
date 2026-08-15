@@ -3,6 +3,7 @@ Changelog:
 
 **develop**
 - IMPORTANT: reboot the node after updating to this version before using the new session-independent update jobs
+- support Rocky/RHEL-family systems with dnf #313
 - support Windows Update through QGA and PowerShell #312
 - extend update-check notifications across all system targets #311
 - support external apt-based systems over SSH #310

@@ -50,7 +50,7 @@ Commands:
   help                    Show this help
 
 Legacy ./update.sh and ./check-updates.sh invocations remain supported.
-Proxmox and external SSH/APT updates use the session-independent #316 job runner.
+Proxmox and external SSH apt/dnf updates use the session-independent #316 job runner.
 EOF
 }
 
@@ -214,7 +214,7 @@ run_external_checks() {
   local target result=0 targets
   targets=$(inventory_targets) || return 1
   [[ -n "$targets" ]] || return 0
-  require_file "$EXTERNAL_APT_SCRIPT" "external APT helper" || return 1
+  require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1
   while IFS= read -r target; do
     [[ -n "$target" ]] || continue
     "$EXTERNAL_APT_SCRIPT" check "$target" || result=$?
@@ -243,7 +243,7 @@ run_check() {
     host) require_file "$CHECK_SCRIPT" "check script" || return 1; "$CHECK_SCRIPT" chost ;;
     container) require_file "$CHECK_SCRIPT" "check script" || return 1; "$CHECK_SCRIPT" ccontainer "$target" ;;
     vm) require_file "$CHECK_SCRIPT" "check script" || return 1; "$CHECK_SCRIPT" cvm "$target" ;;
-    external) require_file "$EXTERNAL_APT_SCRIPT" "external APT helper" || return 1; "$EXTERNAL_APT_SCRIPT" check "$target" ;;
+    external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; "$EXTERNAL_APT_SCRIPT" check "$target" ;;
   esac
 }
 
@@ -258,7 +258,7 @@ run_update() {
   }
   case "$kind" in
     host|container|vm) require_file "$UPDATE_SCRIPT" "update script" || return 1; "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")" ;;
-    external) require_file "$EXTERNAL_APT_SCRIPT" "external APT helper" || return 1; "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target" ;;
+    external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target" ;;
   esac
 }
 

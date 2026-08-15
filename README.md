@@ -196,14 +196,16 @@ transport=ssh
 user=basst
 ```
 
-External Debian, Ubuntu, and Raspberry Pi OS style apt-based systems can be
+External Debian, Ubuntu, and Raspberry Pi OS style apt-based systems, as well
+as Rocky Linux, RHEL-compatible AlmaLinux, and Fedora dnf systems, can be
 checked and updated over SSH. The operating system and package manager are
 detected from `/etc/os-release`; do not add `os` or `updater` fields to the
 inventory. SSH key authentication is required, using either root or a user
 with passwordless `sudo`. No Ultimate Updater agent is installed on the
 remote system. An absent or empty `targets.conf` leaves the existing Proxmox
 workflow unchanged. External targets do not receive Proxmox vzdump backups or
-snapshots.
+snapshots. Unknown RPM-like systems remain unsupported rather than being
+treated as Rocky/RHEL automatically.
 
 Internally, the current Proxmox paths use small shared transport wrappers for
 local, LXC (`pct`), and SSH execution. QEMU Guest Agent execution keeps its
@@ -226,7 +228,7 @@ Possible check states are `ok`, `updates_available`, `offline`,
 belongs to future CLI, notification, or web interfaces.
 
 Update-check notifications use the same status data when it is available. They
-summarize Proxmox and external SSH/APT targets together, distinguish available
+summarize Proxmox and external SSH apt/dnf targets together, distinguish available
 updates from offline, unsupported, not-checked, and error states, and show
 targets that require a reboot. Unknown update counts are not added to the
 total. Existing email settings remain in effect; security-only notifications
@@ -257,7 +259,7 @@ update. Job state is kept in `/var/lib/ultimate-updater/jobs`; `status --json`
 continues to expose the existing check-status schema while the human-readable
 `status` command includes recorded update jobs.
 
-For an external apt-based target, use the same commands:
+For an external apt- or dnf-based target, use the same commands:
 
 ```text
 ultimate-updater check raspi
