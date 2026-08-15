@@ -35,7 +35,7 @@ Changelog:
 - fail LXC/SSH boot readiness after timeout #300
 - compare version components numerically #301
 - avoid empty VM startup delay in VM check path #299
-- preserve user update.conf and provide current update.conf.dist #298
+- merge new config defaults without overwriting user values #298
 - fix QEMU guest-exec exit-code and output handling #297
 - fix duplicate command execution in error handlers #293
 - add configurable backup storage in update.conf #269

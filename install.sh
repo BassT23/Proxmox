@@ -246,6 +246,8 @@ INSTALL () {
     cp "$TEMP_FILES"/windows-update.sh $LOCAL_FILES/windows-update.sh
     chmod 750 $LOCAL_FILES/windows-update.sh
     cp "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
+    cp "$TEMP_FILES"/config-merge.sh $LOCAL_FILES/config-merge.sh
+    chmod 750 $LOCAL_FILES/config-merge.sh
     if [[ -f "$TEMP_FILES"/cluster-target.sh ]]; then
       cp "$TEMP_FILES"/cluster-target.sh $LOCAL_FILES/cluster-target.sh
       chmod 750 $LOCAL_FILES/cluster-target.sh
@@ -349,6 +351,10 @@ UPDATE () {
       mv "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
       chmod 750 $LOCAL_FILES/job-runner.sh
     fi
+    if [[ -f "$TEMP_FILES"/config-merge.sh ]]; then
+      mv "$TEMP_FILES"/config-merge.sh $LOCAL_FILES/config-merge.sh
+      chmod 750 $LOCAL_FILES/config-merge.sh
+    fi
     if [[ -f "$TEMP_FILES"/web-ui/server.py ]]; then
       mkdir -p "$LOCAL_FILES/web-ui"
       mv "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
@@ -399,28 +405,24 @@ UPDATE () {
       rm -rf "$TEMP_FILES"/welcome-screen.sh || true
       rm -rf "$TEMP_FILES"/check-updates.sh || true
     fi
-    # Preserve the active user configuration and install the current
-    # distribution template separately. Older archives may not contain the
+    # Keep the active user values while adding assignments introduced by the
+    # current distribution template. Older archives may not contain the
     # distribution file yet, so fall back to their update.conf template.
     if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
       CONFIG_DIST_SOURCE="$TEMP_FILES/update.conf.dist"
     else
       CONFIG_DIST_SOURCE="$TEMP_FILES/update.conf"
     fi
+    cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
     if [[ -f "$LOCAL_FILES/update.conf" ]]; then
-      cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
-    else
-      cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf"
-      cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
-    fi
-    if grep -q '^USED_BRANCH=' "$LOCAL_FILES/update.conf"; then
-      if grep -q '^USED_BRANCH="[^"]*"' "$LOCAL_FILES/update.conf"; then
-        sed -i -E "s|^(USED_BRANCH=\")[^\"]*(\".*)$|\1$BRANCH\2|" "$LOCAL_FILES/update.conf"
-      else
-        sed -i "s|^USED_BRANCH=.*$|USED_BRANCH=\"$BRANCH\"|" "$LOCAL_FILES/update.conf"
+      if ! source "$LOCAL_FILES/config-merge.sh" ||
+         ! MERGE_UPDATE_CONFIG "$LOCAL_FILES/update.conf" "$CONFIG_DIST_SOURCE" "$BRANCH"; then
+        echo -e "❌${RD:-} Configuration migration failed; the existing update.conf was kept.${CL:-}" >&2
+        rm -rf "$TEMP_FOLDER" || true
+        return 1
       fi
     else
-      printf '\nUSED_BRANCH="%s"    # could be "master/develop"\n' "$BRANCH" >> "$LOCAL_FILES/update.conf"
+      cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf"
     fi
     rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
     rm -rf "$TEMP_FILES"/web-ui || true
