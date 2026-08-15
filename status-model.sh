@@ -34,6 +34,57 @@ STATUS_MODEL_RECORD() {
     "$(STATUS_MODEL_B64 "$error_message")" >> "$STATUS_MODEL_RECORD_FILE"
 }
 
+STATUS_MODEL_IMPORT_FILE() {
+  local import_file="$1"
+  python3 - "$import_file" "$STATUS_MODEL_RECORD_FILE" <<'PY'
+import base64
+import json
+import sys
+
+import_file, record_file = sys.argv[1:]
+with open(import_file, encoding="utf-8") as source:
+    payload = json.load(source)
+
+targets = payload.get("targets") if isinstance(payload, dict) else None
+if not isinstance(targets, list):
+    raise ValueError("status file has no target list")
+
+def encode(value, null_value=""):
+    if value is None:
+        value = null_value
+    elif isinstance(value, bool):
+        value = "true" if value else "false"
+    else:
+        value = str(value)
+    return base64.b64encode(value.encode()).decode()
+
+with open(record_file, "a", encoding="utf-8") as records:
+    for target in targets:
+        if not isinstance(target, dict) or not target.get("id"):
+            continue
+        updates = target.get("updates")
+        if isinstance(updates, dict):
+            updates = updates.get("available")
+        error = target.get("error")
+        if not isinstance(error, dict):
+            error = {}
+        fields = [
+            encode(target.get("id")),
+            encode(target.get("type")),
+            encode(target.get("transport")),
+            encode(target.get("reachable"), "null"),
+            encode(target.get("os")),
+            encode(target.get("updater")),
+            encode(updates, "null"),
+            encode(target.get("reboot_required"), "null"),
+            encode(target.get("check_status")),
+            encode(error.get("code")),
+            encode(error.get("message")),
+        ]
+        records.write("\t".join(fields) + "\n")
+PY
+}
+
 STATUS_MODEL_FINISH() {
   local status_file="$STATUS_MODEL_FILE" record_file="$STATUS_MODEL_RECORD_FILE"
   python3 - "$record_file" "$status_file" <<'PY'

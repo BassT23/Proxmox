@@ -29,6 +29,7 @@ else
   }
 fi
 
+STATUS_MODEL_SCRIPT="${STATUS_MODEL_SCRIPT:-$LOCAL_FILES/status-model.sh}"
 WINDOWS_UPDATE_FILE="${WINDOWS_UPDATE_FILE:-$LOCAL_FILES/windows-update.sh}"
 if [[ -f "$WINDOWS_UPDATE_FILE" ]]; then
   # shellcheck disable=SC1090
@@ -37,12 +38,13 @@ fi
 
 # Optional additive machine-readable status output. Older installations can
 # continue without the helper until their next updater update.
-if [[ -f "$LOCAL_FILES/status-model.sh" ]]; then
-  # shellcheck disable=SC1091
-  . "$LOCAL_FILES/status-model.sh"
+if [[ -f "$STATUS_MODEL_SCRIPT" ]]; then
+  # shellcheck disable=SC1090,SC1091
+  . "$STATUS_MODEL_SCRIPT"
 else
   STATUS_MODEL_INIT() { :; }
   STATUS_MODEL_RECORD() { :; }
+  STATUS_MODEL_IMPORT_FILE() { :; }
   STATUS_MODEL_FINISH() { :; }
 fi
 
@@ -282,9 +284,11 @@ HOST_CHECK_START () {
 
 # Host Check
 CHECK_HOST () {
-  local HOST=$1 remote_check_dir remote_status
+  local HOST=$1 remote_check_dir remote_status remote_status_file
   remote_check_dir="/tmp/ultimate-updater-check-$$"
   remote_runtime_env=""
+  remote_status_env=""
+  remote_status_file="/tmp/ultimate-updater-remote-status-$$-$RANDOM.json"
   if ! ssh "$HOST" -p "$SSH_PORT" "mkdir -p '$LOCAL_FILES' '$remote_check_dir'" ||
     ! scp "$LOCAL_FILES/update.conf" "$HOST:$LOCAL_FILES/update.conf" >/dev/null 2>&1 ||
     ! scp "$TAG_FILTER_FILE" "$HOST:$remote_check_dir/tag-filter.sh" >/dev/null 2>&1; then
@@ -302,11 +306,26 @@ CHECK_HOST () {
     fi
     remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh'"
   fi
+  if [[ -f "$STATUS_MODEL_SCRIPT" ]]; then
+    if ! scp "$STATUS_MODEL_SCRIPT" "$HOST:$remote_check_dir/status-model.sh" >/dev/null 2>&1; then
+      ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare matching status helper on remote host $HOST${CL}"
+      STATUS_MODEL_RECORD "$HOST" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote status helper"
+      return 1
+    fi
+    remote_status_env=" STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'"
+  fi
   if ssh "$HOST" -p "$SSH_PORT" \
-    "TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env bash -s -- -c host" < "$0"; then
+    "TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env bash -s -- -c host" < "$0"; then
     remote_status=0
   else
     remote_status=$?
+  fi
+  if scp "$HOST:$remote_check_dir/status.json" "$remote_status_file" >/dev/null 2>&1; then
+    if ! STATUS_MODEL_IMPORT_FILE "$remote_status_file"; then
+      echo -e "${RD}Could not import status from remote host $HOST${CL}"
+    fi
+    rm -f -- "$remote_status_file"
   fi
   ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
   if [[ "$remote_status" -ne 0 ]]; then
