@@ -616,6 +616,7 @@ VM_CHECK_START () {
 # VM Check
 CHECK_VM () {
   local IP USER SSH_VM_PORT SSH_START_DELAY_TIME
+  REBOOT_REQUIRED=false
   if [[ "$RDU" != true ]]; then
     VM=$1
   else
