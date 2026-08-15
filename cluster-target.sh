@@ -26,7 +26,8 @@ cluster_target_node_host() {
     return 0
   fi
   if [[ -f "$config" ]]; then
-    python3 - "$config" "$node" <<'PY'
+    local mapped_host
+    mapped_host=$(python3 - "$config" "$node" <<'PY'
 import re
 import sys
 
@@ -43,6 +44,11 @@ for block in re.findall(r"node\s*\{(.*?)\}", text, re.S):
         print(address.group(1))
         raise SystemExit(0)
 PY
+    )
+    if [[ -n "$mapped_host" ]]; then
+      printf '%s\n' "$mapped_host"
+      return 0
+    fi
   fi
   printf '%s\n' "$node"
 }
