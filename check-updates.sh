@@ -664,12 +664,12 @@ CHECK_VM () {
   OS_BASE=$(qm config "$VM" | grep ostype || true)
   if [[ "$OS_BASE" =~ l2 ]]; then
     KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
-    OS=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" hostnamectl 2>/dev/null | grep System || true)
+    OS=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" hostnamectl 2>/dev/null | grep System || true)
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
-      ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "apt-get update" >/dev/null 2>&1
-      APT_OUTPUT=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "apt-get -s upgrade")
+      RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apt-get update" >/dev/null 2>&1
+      APT_OUTPUT=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apt-get -s upgrade")
       READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
-      if ssh -q -p "$SSH_VM_PORT" "$USER@$IP" stat /var/run/reboot-required.pkgs \> /dev/null 2\>\&1; then
+      if RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" stat /var/run/reboot-required.pkgs >/dev/null 2>&1; then
         REBOOT_REQUIRED=true
       fi
       if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]]; then
@@ -686,11 +686,11 @@ CHECK_VM () {
         echo -e "N: $NORMAL_APT_UPDATES"
       fi
       if [[ "$REBOOT_REQUIRED" == true ]] && [[ "$REBOOT_IF_NEEDED" == true ]] && [[ "$VM_NOT_STOPPED" == true ]]; then
-        ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "reboot" >/dev/null 2>&1
+        RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "reboot" >/dev/null 2>&1
       fi
     elif [[ "$OS" =~ Fedora ]]; then
-      ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "dnf -y update" >/dev/null 2>&1
-      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "dnf check-update | grep -Ec ' updates$'")
+      RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "dnf -y update" >/dev/null 2>&1
+      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "dnf check-update | grep -Ec ' updates$'")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -698,7 +698,7 @@ CHECK_VM () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Arch ]]; then
-      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "pacman -Qu | wc -l")
+      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "pacman -Qu | wc -l")
       UPDATES=${UPDATES//[^0-9]/}
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -706,7 +706,7 @@ CHECK_VM () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ Alpine ]]; then
-      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "apk list -u | wc -l")
+      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apk list -u | wc -l")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
@@ -714,7 +714,7 @@ CHECK_VM () {
         echo -e "$UPDATES"
       fi
     elif [[ "$OS" =~ CentOS ]]; then
-      UPDATES=$(ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "yum -q check-update | wc -l")
+      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "yum -q check-update | wc -l")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
