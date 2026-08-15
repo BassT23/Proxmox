@@ -275,6 +275,22 @@ WAIT_FOR_QGA () {
 }
 
 ## HOST ##
+# Resolve a cluster member's stable node name before attempting SSH.  HOSTS is
+# intentionally kept as the corosync ring address list for the existing
+# transport path, but status identity must not change when a node is offline.
+CLUSTER_HOST_NODE () {
+  local host="$1"
+  if [[ -f /etc/pve/corosync.conf ]]; then
+    awk -v address="$host" '
+      /name[[:space:]]*:/ { name=$2 }
+      /ring0_addr[[:space:]]*:/ && $2 == address { print name; found=1; exit }
+      END { if (!found) print address }
+    ' /etc/pve/corosync.conf
+  else
+    printf '%s\n' "$host"
+  fi
+}
+
 # Host Check Start
 HOST_CHECK_START () {
   for HOST in $HOSTS; do
@@ -284,7 +300,9 @@ HOST_CHECK_START () {
 
 # Host Check
 CHECK_HOST () {
-  local HOST=$1 remote_check_dir remote_status remote_status_file
+  local HOST=$1 remote_check_dir remote_status remote_status_file HOST_NODE HOST_ID
+  HOST_NODE=$(CLUSTER_HOST_NODE "$HOST")
+  HOST_ID="host:$HOST_NODE"
   remote_check_dir="/tmp/ultimate-updater-check-$$"
   remote_runtime_env=""
   remote_status_env=""
@@ -294,14 +312,14 @@ CHECK_HOST () {
     ! scp "$TAG_FILTER_FILE" "$HOST:$remote_check_dir/tag-filter.sh" >/dev/null 2>&1; then
     ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
     echo -e "${RD}Could not prepare matching check helper on remote host $HOST${CL}"
-    STATUS_MODEL_RECORD "$HOST" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote check"
+    STATUS_MODEL_RECORD "$HOST_ID" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote check" "$HOST_NODE"
     return 1
   fi
   if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
     if ! scp "$TARGET_RUNTIME_FILE" "$HOST:$remote_check_dir/target-runtime.sh" >/dev/null 2>&1; then
       ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
       echo -e "${RD}Could not prepare target runtime helper on remote host $HOST${CL}"
-      STATUS_MODEL_RECORD "$HOST" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote target runtime"
+      STATUS_MODEL_RECORD "$HOST_ID" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote target runtime" "$HOST_NODE"
       return 1
     fi
     remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh'"
@@ -310,10 +328,10 @@ CHECK_HOST () {
     if ! scp "$STATUS_MODEL_SCRIPT" "$HOST:$remote_check_dir/status-model.sh" >/dev/null 2>&1; then
       ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
       echo -e "${RD}Could not prepare matching status helper on remote host $HOST${CL}"
-      STATUS_MODEL_RECORD "$HOST" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote status helper"
+      STATUS_MODEL_RECORD "$HOST_ID" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote status helper" "$HOST_NODE"
       return 1
     fi
-    remote_status_env=" STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'"
+    remote_status_env=" STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'"
   fi
   if ssh "$HOST" -p "$SSH_PORT" \
     "TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env bash -s -- -c host" < "$0"; then
@@ -324,21 +342,22 @@ CHECK_HOST () {
   if scp "$HOST:$remote_check_dir/status.json" "$remote_status_file" >/dev/null 2>&1; then
     if ! STATUS_MODEL_IMPORT_FILE "$remote_status_file"; then
       echo -e "${RD}Could not import status from remote host $HOST${CL}"
-      STATUS_MODEL_RECORD "$HOST" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not import remote check status"
+      STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not import remote check status" "$HOST_NODE"
     fi
     rm -f -- "$remote_status_file"
   elif [[ "$remote_status" -eq 0 ]]; then
     echo -e "${RD}Could not retrieve status from remote host $HOST${CL}"
-    STATUS_MODEL_RECORD "$HOST" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not retrieve remote check status"
+    STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not retrieve remote check status" "$HOST_NODE"
   fi
   ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
   if [[ "$remote_status" -ne 0 ]]; then
-    STATUS_MODEL_RECORD "$HOST" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "Remote check exited with $remote_status"
+    STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "Remote check exited with $remote_status" "$HOST_NODE"
   fi
   return "$remote_status"
 }
 
 CHECK_HOST_ITSELF () {
+  local STATUS_HOST_NAME="${STATUS_MODEL_NODE:-$HOSTNAME}"
   apt-get update >/dev/null 2>&1
   SECURITY_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst.*security" | tr -d '\n')
   if [[ $SECURITY_APT_UPDATES != 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
@@ -360,7 +379,7 @@ CHECK_HOST_ITSELF () {
   [[ "$HOST_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && HOST_STATUS=updates_available
   local HOST_OS
   HOST_OS=$(awk -F= '/^PRETTY_NAME=/{gsub(/^"|"$/, "", $2); print $2; exit}' /etc/os-release 2>/dev/null)
-  STATUS_MODEL_RECORD "host:$HOSTNAME" host local true "${HOST_OS:-unknown}" apt "$HOST_UPDATES" "${REBOOT_REQUIRED:-false}" "$HOST_STATUS" "" ""
+  STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true "${HOST_OS:-unknown}" apt "$HOST_UPDATES" "${REBOOT_REQUIRED:-false}" "$HOST_STATUS" "" "" "$STATUS_HOST_NAME"
 }
 
 ## Container ##
