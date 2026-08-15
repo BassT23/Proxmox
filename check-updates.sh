@@ -312,6 +312,8 @@ HOST_CHECK_START () {
   for HOST in $HOSTS; do
     if HOST_IS_LOCAL "$HOST"; then
       CHECK_HOST_ITSELF
+      if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
+      if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
     else
       CHECK_HOST "$HOST"
     fi
