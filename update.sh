@@ -132,6 +132,7 @@ ARGUMENTS () {
                 return 6
               fi
               REMOTE_TARGET_DISPATCHED=true
+              shift
               continue
             fi
           else
