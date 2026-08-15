@@ -776,23 +776,23 @@ CHECK_VM_QEMU () {
 #      return
 #    fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "apt-get update"
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "apt-get update"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         echo -e "${RD}QEMU apt update failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'"
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'"
       QEMU_COUNT_RESULT_OK "QEMU security update check for VM $VM" || return 1
       SECURITY_APT_UPDATES="$QEMU_EXEC_STDOUT"
       SECURITY_APT_UPDATES=$(SANITIZE_NUMBER "$SECURITY_APT_UPDATES")
       SECURITY_APT_UPDATES=${SECURITY_APT_UPDATES:-0}
       if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
-      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "apt-get -s upgrade | grep -ci '^inst.'"
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "apt-get -s upgrade | grep -ci '^inst.'"
       QEMU_COUNT_RESULT_OK "QEMU update check for VM $VM" || return 1
       NORMAL_APT_UPDATES="$QEMU_EXEC_STDOUT"
       NORMAL_APT_UPDATES=$(SANITIZE_NUMBER "$NORMAL_APT_UPDATES")
       NORMAL_APT_UPDATES=${NORMAL_APT_UPDATES:-0}
-      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c '[ -f /var/run/reboot-required.pkgs ]'
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c '[ -f /var/run/reboot-required.pkgs ]'
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
         echo -e "${RD}QEMU reboot check failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
         return 1
@@ -818,12 +818,12 @@ CHECK_VM_QEMU () {
       [[ "$QEMU_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && QEMU_APT_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "$QEMU_APT_UPDATES" "$REBOOT_REQUIRED" "$QEMU_APT_STATUS" "" ""
     elif [[ "$OS" =~ Fedora ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "dnf -y update"
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "dnf -y update"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         echo -e "${RD}QEMU dnf update failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "dnf check-update | grep -Ec ' updates$'"
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "dnf check-update | grep -Ec ' updates$'"
       QEMU_COUNT_RESULT_OK "QEMU dnf check for VM $VM" || return 1
       UPDATES="$QEMU_EXEC_STDOUT"
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
@@ -836,7 +836,7 @@ CHECK_VM_QEMU () {
       [[ "$UPDATES" -gt 0 ]] && QEMU_DNF_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "$UPDATES" false "$QEMU_DNF_STATUS" "" ""
     elif [[ "$OS" =~ Arch ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "pacman -Qu | wc -l"
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "pacman -Qu | wc -l"
       QEMU_COUNT_RESULT_OK "QEMU pacman check for VM $VM" || return 1
       UPDATES="$QEMU_EXEC_STDOUT"
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
@@ -849,7 +849,7 @@ CHECK_VM_QEMU () {
       [[ "$UPDATES" -gt 0 ]] && QEMU_PACMAN_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "$UPDATES" false "$QEMU_PACMAN_STATUS" "" ""
     elif [[ "$OS" =~ Alpine ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 0 -- ash -c "apk list -u | wc -l"
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- ash -c "apk list -u | wc -l"
       QEMU_COUNT_RESULT_OK "QEMU apk check for VM $VM" || return 1
       UPDATES="$QEMU_EXEC_STDOUT"
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
@@ -862,7 +862,7 @@ CHECK_VM_QEMU () {
       [[ "$UPDATES" -gt 0 ]] && QEMU_APK_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "$UPDATES" false "$QEMU_APK_STATUS" "" ""
     elif [[ "$OS" =~ CentOS ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 0 -- bash -c "yum -q check-update | wc -l"
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "yum -q check-update | wc -l"
       QEMU_COUNT_RESULT_OK "QEMU yum check for VM $VM" || return 1
       UPDATES="$QEMU_EXEC_STDOUT"
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
