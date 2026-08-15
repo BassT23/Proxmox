@@ -324,8 +324,12 @@ CHECK_HOST () {
   if scp "$HOST:$remote_check_dir/status.json" "$remote_status_file" >/dev/null 2>&1; then
     if ! STATUS_MODEL_IMPORT_FILE "$remote_status_file"; then
       echo -e "${RD}Could not import status from remote host $HOST${CL}"
+      STATUS_MODEL_RECORD "$HOST" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not import remote check status"
     fi
     rm -f -- "$remote_status_file"
+  elif [[ "$remote_status" -eq 0 ]]; then
+    echo -e "${RD}Could not retrieve status from remote host $HOST${CL}"
+    STATUS_MODEL_RECORD "$HOST" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not retrieve remote check status"
   fi
   ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
   if [[ "$remote_status" -ne 0 ]]; then
