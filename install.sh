@@ -415,6 +415,7 @@ UPDATE () {
     fi
     cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
     if [[ -f "$LOCAL_FILES/update.conf" ]]; then
+      # shellcheck source=config-merge.sh
       if ! source "$LOCAL_FILES/config-merge.sh" ||
          ! MERGE_UPDATE_CONFIG "$LOCAL_FILES/update.conf" "$CONFIG_DIST_SOURCE" "$BRANCH"; then
         echo -e "❌${RD:-} Configuration migration failed; the existing update.conf was kept.${CL:-}" >&2

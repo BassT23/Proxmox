@@ -6,6 +6,7 @@ ROOT_DIR=$(cd -- "$ROOT_DIR" && pwd)
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
+# shellcheck source=../config-merge.sh
 source "$ROOT_DIR/config-merge.sh"
 
 cat > "$WORK_DIR/default.conf" <<'EOF'
