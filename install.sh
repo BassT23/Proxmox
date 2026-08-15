@@ -14,6 +14,8 @@ BRANCH="develop"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
+WEB_SERVICE_NAME="ultimate-updater-web.service"
+WEB_SERVICE_PATH="/etc/systemd/system/$WEB_SERVICE_NAME"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
@@ -53,6 +55,23 @@ CHECK_ROOT () {
   if [[ "$EUID" -ne 0 ]]; then
       echo -e >&2 "⚠${RD:-} --- Please run this as root --- ⚠${CL:-}";
       exit 1
+  fi
+}
+
+SETUP_WEB_SERVICE () {
+  local action="${1:-start}"
+
+  if [[ ! -f "$WEB_SERVICE_PATH" || ! -f "$LOCAL_FILES/web-ui/server.py" ]]; then
+    echo -e "⚠${OR:-} Web UI service files are incomplete${CL:-}" >&2
+    return 1
+  fi
+
+  systemctl daemon-reload
+  systemctl enable "$WEB_SERVICE_NAME"
+  if [[ "$action" == restart ]]; then
+    systemctl restart "$WEB_SERVICE_NAME"
+  else
+    systemctl start "$WEB_SERVICE_NAME"
   fi
 }
 
@@ -199,7 +218,11 @@ INSTALL () {
     mkdir -p $LOCAL_FILES/scripts.d/000
     # Download latest release
     if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
+      if [[ "$BRANCH" == master ]]; then
+        curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
+      else
+        curl -s -L https://github.com/BassT23/Proxmox/tarball/$BRANCH > $TEMP_FOLDER/ultimate-updater.tar.gz
+      fi
       tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
       rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
       TEMP_FILES=$TEMP_FOLDER
@@ -233,6 +256,10 @@ INSTALL () {
     ln -sf $LOCAL_FILES/ultimate-updater /usr/local/sbin/ultimate-updater
     cp "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
     chmod 750 $LOCAL_FILES/job-runner.sh
+    mkdir -p "$LOCAL_FILES/web-ui"
+    cp "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
+    chmod 750 "$LOCAL_FILES/web-ui/server.py"
+    install -m 0644 "$TEMP_FILES/$WEB_SERVICE_NAME" "$WEB_SERVICE_PATH"
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
     if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
       cp "$TEMP_FILES"/update.conf.dist $LOCAL_FILES/update.conf.dist
@@ -240,6 +267,7 @@ INSTALL () {
       cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf.dist
     fi
     cp "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
+    SETUP_WEB_SERVICE start
     echo -e "${OR:-}Finished. Run The Ultimate Updater with 'update'.${CL:-}"
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
     echo -e "${OR:-}Also want to install the Welcome-Screen?${CL:-}"
@@ -307,6 +335,14 @@ UPDATE () {
       mv "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
       chmod 750 $LOCAL_FILES/job-runner.sh
     fi
+    if [[ -f "$TEMP_FILES"/web-ui/server.py ]]; then
+      mkdir -p "$LOCAL_FILES/web-ui"
+      mv "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
+      chmod 750 "$LOCAL_FILES/web-ui/server.py"
+    fi
+    if [[ -f "$TEMP_FILES/$WEB_SERVICE_NAME" ]]; then
+      install -m 0644 "$TEMP_FILES/$WEB_SERVICE_NAME" "$WEB_SERVICE_PATH"
+    fi
     mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod +x $LOCAL_FILES/check-updates.sh
     mv "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
@@ -365,6 +401,8 @@ UPDATE () {
       printf '\nUSED_BRANCH="%s"    # could be "master/develop"\n' "$BRANCH" >> "$LOCAL_FILES/update.conf"
     fi
     rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
+    rm -rf "$TEMP_FILES"/web-ui || true
+    rm -f "$TEMP_FILES/$WEB_SERVICE_NAME"
     # Check if files are different
     rm -rf "$TEMP_FILES"/.github || true
     rm -rf "$TEMP_FILES"/VMs || true
@@ -383,6 +421,7 @@ UPDATE () {
     do
      CHECK_DIFF
     done
+    SETUP_WEB_SERVICE restart
     rm -rf $TEMP_FOLDER || true
     echo -e "✅${GN:-} The Ultimate Updater updated successfully.${CL:-}"
     if [[ "$BRANCH" != master ]]; then echo -e "${OR:-}   Installed: $BRANCH version${CL:-}"; fi
@@ -511,6 +550,9 @@ UNINSTALL () {
     read -p "Type [Y/y] for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/sbin/update
+      systemctl disable --now "$WEB_SERVICE_NAME" || true
+      rm -f "$WEB_SERVICE_PATH"
+      systemctl daemon-reload
       rm -r $LOCAL_FILES
       if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
         rm -rf /etc/update-motd.d/01-welcome-screen

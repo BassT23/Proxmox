@@ -3,6 +3,7 @@ Changelog:
 
 **develop**
 - IMPORTANT: reboot the node after updating to this version before using the new session-independent update jobs
+- run the web UI automatically as a systemd service
 - add web UI check/update actions with persistent job status #314
 - support Rocky/RHEL-family systems with dnf #313
 - support Windows Update through QGA and PowerShell #312

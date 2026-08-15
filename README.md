@@ -274,22 +274,46 @@ automatically rebooted when `/var/run/reboot-required` is present.
 ## Web UI preview
 
 A small browser UI is included at `web-ui/server.py`. It uses only the
-Python 3 standard library. It reads the generated `status.json` and delegates
+Python 3 standard library. Installed systems run it automatically as the
+`ultimate-updater-web.service` systemd service after boot and updates. It reads the generated `status.json` and delegates
 checks and updates to the existing `ultimate-updater` CLI; it does not contain
 package-manager, SSH, QGA, or Windows update logic.
 
-Start it locally with:
+The service listens on `0.0.0.0:8765` so it can be reached from a phone,
+desktop, or tablet in the trusted management/LAN network:
+
+```text
+http://<updater-node>:8765/
+```
+
+Do not expose this action-enabled service to the Internet or an untrusted
+network. No firewall, TLS, reverse proxy, or authentication setup is added by
+the updater; provide those controls separately when needed. The service runs
+as root because the existing CLI and job runner require the updater's local
+permissions.
+
+Service control and logs:
+
+```bash
+systemctl status ultimate-updater-web
+systemctl restart ultimate-updater-web
+systemctl stop ultimate-updater-web
+journalctl -u ultimate-updater-web
+```
+
+For development/debugging, it can still be started manually:
 
 ```bash
 python3 web-ui/server.py
 ```
 
-By default it binds to `127.0.0.1:8765` and serves a compact, responsive
+The manual command binds to `127.0.0.1:8765` by default. The service uses the
+explicit LAN bind above and serves a compact, responsive
 overview, target actions, server-side job state, and a simple log view. Use
 `--bind` and `--port` only when you intentionally want another local/LAN
-binding. The default is `127.0.0.1:8765`; do not expose the action-enabled UI
-to an untrusted network without adding suitable access control. Missing or
-invalid status data is shown as a clear message.
+binding. Do not expose the action-enabled UI to an untrusted network without
+adding suitable access control. Missing or invalid status data is shown as a
+clear message.
 
 The process serving action endpoints must already have the local permissions
 needed by the existing CLI (normally a controlled root-owned test/service
