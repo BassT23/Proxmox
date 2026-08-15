@@ -29,6 +29,12 @@ else
   }
 fi
 
+WINDOWS_UPDATE_FILE="${WINDOWS_UPDATE_FILE:-$LOCAL_FILES/windows-update.sh}"
+if [[ -f "$WINDOWS_UPDATE_FILE" ]]; then
+  # shellcheck disable=SC1090
+  . "$WINDOWS_UPDATE_FILE"
+fi
+
 # Optional additive machine-readable status output. Older installations can
 # continue without the helper until their next updater update.
 if [[ -f "$LOCAL_FILES/status-model.sh" ]]; then
@@ -622,6 +628,13 @@ CHECK_VM () {
 }
 
 CHECK_VM_QEMU () {
+  local OS_INFO
+  OS_INFO=$(qm guest cmd "$VM" get-osinfo 2>/dev/null || true)
+  OS=$(printf '%s\n' "$OS_INFO" | grep name || true)
+  if [[ "${OS_INFO,,}" =~ windows ]]; then
+    CHECK_VM_QEMU_WINDOWS
+    return
+  fi
   QEMU_GUEST_EXEC "$VM" test
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" error QGA_TRANSPORT "${QEMU_EXEC_OUTPUT}"
@@ -632,8 +645,7 @@ CHECK_VM_QEMU () {
     return 1
   fi
   if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
-    KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
-    OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
+    KERNEL=$(printf '%s\n' "$OS_INFO" | grep kernel-version || true)
 #    if [[ "$KERNEL" =~ FreeBSD ]]; then
 #      qm guest exec "$VM" -- tcsh -c "pkg update"
 #      return
@@ -741,6 +753,44 @@ CHECK_VM_QEMU () {
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" "" "null" "null" unsupported UNSUPPORTED_OS "No supported updater detected"
     fi
   fi
+}
+
+CHECK_VM_QEMU_WINDOWS () {
+  local result marker check_status updates reboot message windows_os reachable=true error_code=WINDOWS_UPDATE_CHECK
+  windows_os=$(printf '%s\n' "$OS" | sed -E 's/^[[:space:]]*name[[:space:]]*:[[:space:]]*//')
+  windows_os="${windows_os:-Windows}"
+  if ! declare -f WINDOWS_POWERSHELL_ENCODE >/dev/null 2>&1; then
+    STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_HELPER_MISSING "Windows update helper is not installed"
+    return 1
+  fi
+  QEMU_GUEST_EXEC "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE check)"
+  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
+    reachable=false
+    error_code=QGA_TRANSPORT
+    STATUS_MODEL_RECORD "$VM" vm qga "$reachable" "$windows_os" windows-update "null" "null" error "$error_code" "${QEMU_EXEC_OUTPUT}"
+    return 1
+  fi
+  if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+    if grep -Eqi 'disabled|not allowed|not permitted|permission denied' <<< "$QEMU_EXEC_OUTPUT"; then
+      error_code=QGA_GUEST_EXEC_DISABLED
+    fi
+    STATUS_MODEL_RECORD "$VM" vm qga "$reachable" "$windows_os" windows-update "null" "null" error "$error_code" "${QEMU_EXEC_OUTPUT}"
+    return 1
+  fi
+  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | tail -n 1)
+  IFS='|' read -r marker check_status updates reboot message <<< "$result"
+  if [[ "$marker" != UU_WINDOWS || "$check_status" != ok || ! "$updates" =~ ^[0-9]+$ || ("$reboot" != true && "$reboot" != false) ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_UPDATE_CHECK "Invalid Windows Update response: $result"
+    return 1
+  fi
+  STATUS_MODEL_STATUS=ok
+  [[ "$updates" -gt 0 || "$reboot" == true ]] && STATUS_MODEL_STATUS=updates_available
+  STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "$updates" "$reboot" "$STATUS_MODEL_STATUS" "" ""
+  if [[ "$updates" -gt 0 || "$reboot" == true ]]; then
+    echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+    echo -e "Windows updates: $updates"
+  fi
+  [[ "$reboot" == true ]] && echo -e "${OR} Reboot required${CL}"
 }
 
 # Output to file

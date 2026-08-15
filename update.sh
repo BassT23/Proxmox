@@ -22,6 +22,15 @@ else
   RUN_PCT_COMMAND() { local target_id="$1"; shift; pct exec "$target_id" -- "$@"; }
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
 fi
+WINDOWS_UPDATE_FILE="${WINDOWS_UPDATE_FILE:-$LOCAL_FILES/windows-update.sh}"
+if [[ -f "$WINDOWS_UPDATE_FILE" ]]; then
+  # shellcheck disable=SC1090
+  . "$WINDOWS_UPDATE_FILE"
+fi
+if [[ -f "$LOCAL_FILES/status-model.sh" ]]; then
+  # shellcheck disable=SC1090
+  . "$LOCAL_FILES/status-model.sh"
+fi
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 if [[ "$BRANCH" == beta ]]; then
@@ -1462,14 +1471,23 @@ UPDATE_VM () {
 # QEMU
 # shellcheck disable=SC2015
 UPDATE_VM_QEMU () {
+  local qga_ready=false
   echo -e " ▶${GN:-} Try to connect via QEMU${CL:-}"
   QGA_ERROR=""
-  if WAIT_FOR_QGA && CHECK_QGA_EXEC; then
-    echo -e "${OR:-}  QEMU found. SSH connection is also available - with better output.${CL:-}\n\
-  Please look here: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n"
-    # Run Update
+  if WAIT_FOR_QGA; then
+    qga_ready=true
     KERNEL=$(qm guest cmd "$VM" get-osinfo | grep kernel-version || true)
     OS=$(qm guest cmd "$VM" get-osinfo | grep name || true)
+    if [[ "${OS,,}" =~ windows ]]; then
+      UPDATE_VM_QEMU_WINDOWS
+      local windows_status=$?
+      CVM=""
+      return "$windows_status"
+    fi
+  fi
+  if [[ "$qga_ready" == true ]] && CHECK_QGA_EXEC; then
+    echo -e "${OR:-}  QEMU Guest Agent is available.${CL:-}\n"
+    # Run Update
     if [[ $KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true ]]; then
       echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
       RUN_QEMU_COMMAND "$VM" -- tcsh -c "pkg update" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
@@ -1535,6 +1553,8 @@ UPDATE_VM_QEMU () {
       if [[ $ERROR_CODE != "" ]]; then return; fi
       echo
       UPDATE_CHECK
+    elif [[ "${OS,,}" =~ windows ]]; then
+      UPDATE_VM_QEMU_WINDOWS
     else
       echo -e "${RD:-}  The system is not supported.\n  Maybe with later version ;)\n${CL:-}"
       echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
@@ -1550,6 +1570,57 @@ UPDATE_VM_QEMU () {
     ERROR
   fi
   CVM=""
+}
+
+UPDATE_VM_QEMU_WINDOWS () {
+  local encoded result marker update_status processed reboot message
+
+  if ! declare -f WINDOWS_POWERSHELL_ENCODE >/dev/null 2>&1; then
+    ERROR_CODE=1
+    ID=$VM
+    ERROR_MSG="Windows update helper is not installed"
+    declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+    ERROR
+    return
+  fi
+
+  if ! encoded=$(WINDOWS_POWERSHELL_ENCODE install); then
+    ERROR_CODE=1
+    ID=$VM
+    ERROR_MSG="Could not encode the Windows Update PowerShell command"
+    declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+    ERROR
+    return
+  fi
+
+  echo -e "${OR:-}--- WINDOWS UPDATE ---${CL:-}"
+  QEMU_GUEST_EXEC "$VM" --timeout 180 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+    ERROR_CODE=${QEMU_EXEC_EXITCODE:-1}
+    ID=$VM
+    ERROR_MSG="${QEMU_EXEC_OUTPUT:-Windows Update command failed}"
+    declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+    ERROR
+    return
+  fi
+
+  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | tail -n 1)
+  # shellcheck disable=SC2034
+  IFS='|' read -r marker update_status processed reboot message <<< "$result"
+  if [[ "$marker" != UU_WINDOWS || "$update_status" != ok || ! "$processed" =~ ^[0-9]+$ || ("$reboot" != true && "$reboot" != false) ]]; then
+    ERROR_CODE=1
+    ID=$VM
+    ERROR_MSG="Invalid Windows Update response: $result"
+    declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+    ERROR
+    return
+  fi
+
+  echo "Windows updates processed: $processed"
+  declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" success 0 || true
+  if [[ "$reboot" == true ]]; then
+    echo -e "${OR:-}Reboot required; no automatic reboot was performed.${CL:-}"
+  fi
 }
 
 ## General ##

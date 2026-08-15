@@ -134,6 +134,19 @@ configure key-based SSH access as described in [SSH Connection](https://github.c
 Kali is handled by the Ultimate Updater as a Debian-based system and uses
 `apt` for update checks and updates.
 
+### Windows VMs
+
+Windows VMs can use the QEMU Guest Agent and the built-in Windows PowerShell
+and Windows Update APIs. The VM must provide both a working QEMU Guest Agent
+and the `guest-exec` capability; a successful agent ping alone is not enough.
+No SSH, WinRM, additional agent, or PowerShell module is required. Updates
+are started through the node-local session-independent job runner, so the
+client connection may be closed after the job has started.
+
+The updater reports whether Windows requires a reboot, but never reboots the
+VM automatically. This first Windows path does not use `winget` and does not
+force Windows feature upgrades.
+
 # Update the script:
 `update -up`
 

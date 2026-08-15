@@ -220,6 +220,8 @@ INSTALL () {
     cp "$TEMP_FILES"/targets.conf $LOCAL_FILES/targets.conf
     cp "$TEMP_FILES"/status-model.sh $LOCAL_FILES/status-model.sh
     chmod 750 $LOCAL_FILES/status-model.sh
+    cp "$TEMP_FILES"/windows-update.sh $LOCAL_FILES/windows-update.sh
+    chmod 750 $LOCAL_FILES/windows-update.sh
     cp "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
     if [[ -f "$TEMP_FILES"/external-apt.sh ]]; then
       cp "$TEMP_FILES"/external-apt.sh $LOCAL_FILES/external-apt.sh
@@ -283,6 +285,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/status-model.sh ]]; then
       mv "$TEMP_FILES"/status-model.sh $LOCAL_FILES/status-model.sh
       chmod 750 $LOCAL_FILES/status-model.sh
+    fi
+    if [[ -f "$TEMP_FILES"/windows-update.sh ]]; then
+      mv "$TEMP_FILES"/windows-update.sh $LOCAL_FILES/windows-update.sh
+      chmod 750 $LOCAL_FILES/windows-update.sh
     fi
     if [[ -f "$TEMP_FILES"/target-runtime.sh ]]; then
       mv "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
