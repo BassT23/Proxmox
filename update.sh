@@ -222,7 +222,7 @@ ARGUMENTS () {
           BRANCH=master
         fi
         UPDATE
-        exit 2
+        exit $?
         ;;
       -dist-upgrade)
         INFO=false
@@ -348,11 +348,16 @@ VERSION_CHECK () {
 # Update The Ultimate Updater
 UPDATE () {
   echo -e "Update to $BRANCH branch?"
+  if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
+    UU_NONINTERACTIVE=true bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+    return $?
+  fi
   read -p "Type [Y/y] or [Enter] for yes - anything else will exit: " -r
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
     bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+    return $?
   else
-    exit 2
+    return 2
   fi
 }
 

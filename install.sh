@@ -486,6 +486,10 @@ CHECK_DIFF () {
     N or n  : keep your currently-installed version\n \
     S or s  : show the differences between the versions\n \
  The default action is to install new version and backup current file."
+    if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
+      echo -e "\nℹ${GN:-} Kept old file (non-interactive update)${CL:-}\n"
+      return 0
+    fi
     read -p "*** $FILE (Y/y/N/n/S/s) [default=Y] ?" -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         echo -e "\nℹ ${GN:-} Installed server version and backed up old file${CL:-}\n"
