@@ -281,10 +281,10 @@ Python 3 standard library. Installed systems run it automatically as the
 checks and updates to the existing `ultimate-updater` CLI; it does not contain
 package-manager, SSH, QGA, or Windows update logic.
 
-The UI uses the official project graphic as its branding source. Only the
-derived runtime icon and favicon are installed under
-`/etc/ultimate-updater/web-ui/assets/`; the large source graphic remains a
-repository asset and is not installed on nodes.
+The UI uses the official project graphic as its branding source. The compact
+header wordmark, runtime icon, and favicon are derived local assets installed
+under `/etc/ultimate-updater/web-ui/assets/`; the large source graphic remains
+a repository asset and is not installed on nodes.
 
 The service listens on `0.0.0.0:8765` so it can be reached from a phone,
 desktop, or tablet in the trusted management/LAN network:
