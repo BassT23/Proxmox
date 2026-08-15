@@ -154,7 +154,9 @@ with open(record_file, encoding="utf-8") as records:
         })
         if name:
             record["name"] = name
-        if partial != "true" or "last_update" not in record:
+        # A check refreshes observation fields, but must not erase the last
+        # update result.  This applies to full checks as well as partial ones.
+        if "last_update" not in record:
             record["last_update"] = {"status": "unknown", "timestamp": None}
 
 payload = {"schema_version": 1, "generated_at": generated_at, "targets": list(targets.values())}
