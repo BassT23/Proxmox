@@ -88,6 +88,9 @@ with open(record_file, "a", encoding="utf-8") as records:
             encode(target.get("node")),
             encode(target.get("name")),
         ]
+        last_update = target.get("last_update")
+        if isinstance(last_update, dict):
+            fields.append(encode(json.dumps(last_update, separators=(",", ":"))))
         records.write("\t".join(fields) + "\n")
 PY
 }
@@ -127,11 +130,15 @@ def decode(value):
 with open(record_file, encoding="utf-8") as records:
     for line in records:
         fields = line.rstrip("\n").split("\t")
-        if len(fields) not in (12, 13):
+        if len(fields) not in (12, 13, 14):
             raise ValueError("invalid status record")
         (target_id, target_type, transport, reachable, os_name, updater,
          updates, reboot_required, check_status, error_code, error_message,
-         node, *name_fields) = map(decode, fields)
+         node, *optional_fields) = map(decode, fields)
+        name_fields = optional_fields[:1]
+        imported_last_update = None
+        if len(optional_fields) > 1 and optional_fields[1]:
+            imported_last_update = json.loads(optional_fields[1])
         name = name_fields[0] if name_fields else ""
         available = None if updates in ("", "null") else int(updates)
         reboot = None if reboot_required in ("", "null") else reboot_required == "true"
@@ -156,6 +163,8 @@ with open(record_file, encoding="utf-8") as records:
         })
         if name:
             record["name"] = name
+        if isinstance(imported_last_update, dict):
+            record["last_update"] = imported_last_update
         # A check refreshes observation fields, but must not erase the last
         # update result.  This applies to full checks as well as partial ones.
         if "last_update" not in record:
