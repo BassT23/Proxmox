@@ -6,6 +6,10 @@
 
 VERSION="5.0.1"
 
+# A protection failure must make the overall update job fail, even when the
+# configured continue-on-error mode allows other guests to be processed.
+SAFETY_FAILURE=false
+
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
@@ -480,8 +484,11 @@ GET_BACKUP_STORAGE () {
 
 # Snapshot/Backup
 CONTAINER_BACKUP () {
-  if [[ $SNAPSHOT == true || $BACKUP == true ]]; then
-    if [[ "$SNAPSHOT" == true ]]; then
+  local snapshot_requested="$SNAPSHOT"
+  local backup_requested="$BACKUP"
+
+  if [[ "$snapshot_requested" == true || "$backup_requested" == true ]]; then
+    if [[ "$snapshot_requested" == true ]]; then
       if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "✅${GN:-} Snapshot created${CL:-}"
         echo -e "ℹ ${GN:-} Delete old snapshots${CL:-}"
@@ -491,16 +498,22 @@ CONTAINER_BACKUP () {
         done
       echo -e "✅${GN:-} Done${CL:-}"
       else
-        echo -e "❌${RD:-} Snapshot is not possible on your setup${CL:-}"
-        if [[ $BACKUP_LXC_MP == true && $(pct config "$CONTAINER" | grep -q '^mp' && echo true) == true ]]; then
-          BACKUP=true
-          SNAPSHOT=false
-          BACKUP_RESET=true
+        echo -e "❌${RD:-} Snapshot creation failed for LXC $CONTAINER${CL:-}"
+        if [[ "$backup_requested" == true ]]; then
+          backup_requested=true
+          snapshot_requested=false
+          echo -e "ℹ ${OR:-} Attempting configured backup fallback${CL:-}"
+        elif [[ "$BACKUP_LXC_MP" == true ]] && pct config "$CONTAINER" | grep -q '^mp'; then
+          backup_requested=true
+          snapshot_requested=false
           echo -e "ℹ ${OR:-} Changed to backup, because of mount points${CL:-}"
+        else
+          echo -e "❌${RD:-} Guest update aborted: configured snapshot protection was not created${CL:-}"
+          return 1
         fi
       fi
     fi
-    if [[ "$BACKUP" == true ]]; then
+    if [[ "$backup_requested" == true ]]; then
       # Use BACKUP_MODE from config, default to 'stop' if not set
       MODE=${BACKUP_MODE:-stop}
       if ! STORAGE=$(GET_BACKUP_STORAGE); then
@@ -514,18 +527,17 @@ CONTAINER_BACKUP () {
         echo -e "❌${RD:-} Backup of LXC $CONTAINER failed - skipping update${CL:-}\n"
         return 1
       fi
-      if [[ $BACKUP_RESET == true ]]; then
-        BACKUP=$(awk -F'"' '/^BACKUP=/ {print $2}' "$CONFIG_FILE")
-        SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
-      fi
     fi
   else
     echo -e "⏩${OR:-} Snapshot and Backup skipped by the user${CL:-}"
   fi
 }
 VM_BACKUP () {
-  if [[ $SNAPSHOT == true || $BACKUP == true ]]; then
-    if [[ "$SNAPSHOT" == true ]]; then
+  local snapshot_requested="$SNAPSHOT"
+  local backup_requested="$BACKUP"
+
+  if [[ "$snapshot_requested" == true || "$backup_requested" == true ]]; then
+    if [[ "$snapshot_requested" == true ]]; then
       if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
         echo -e "✅${GN:-} Snapshot created${CL:-}"
         echo -e "ℹ ${GN:-} Delete old snapshot(s)${CL:-}"
@@ -535,10 +547,17 @@ VM_BACKUP () {
         done
       echo -e "✅${GN:-} Done${CL:-}"
       else
-        echo -e "❌${RD:-} Snapshot is not possible on your storage${CL:-}"
+        echo -e "❌${RD:-} Snapshot creation failed for VM $VM${CL:-}"
+        if [[ "$backup_requested" == true ]]; then
+          snapshot_requested=false
+          echo -e "ℹ ${OR:-} Attempting configured backup fallback${CL:-}"
+        else
+          echo -e "❌${RD:-} Guest update aborted: configured snapshot protection was not created${CL:-}"
+          return 1
+        fi
       fi
     fi
-    if [[ "$BACKUP" == true ]]; then
+    if [[ "$backup_requested" == true ]]; then
       # Use BACKUP_MODE from config, default to 'stop' if not set
       MODE=${BACKUP_MODE:-stop}
       if ! STORAGE=$(GET_BACKUP_STORAGE); then
@@ -811,7 +830,14 @@ DIST_UPGRADE () {
       SNAPSHOT=
       BACKUP=true
       echo
-      CONTAINER_BACKUP || return
+      if ! CONTAINER_BACKUP; then
+        SAFETY_FAILURE=true
+        ERROR_CODE=1
+        ID=$CONTAINER
+        ERROR_MSG="Configured snapshot/backup protection failed; distribution upgrade aborted"
+        ERROR
+        return 1
+      fi
       echo -e "${GR:-}⏩ Upgrade to Debian 13 (Trixie) now:${CL:-}"
       echo -e "${OR:-}--- Enable stop on error ---\n${CL:-}"
       set -e
@@ -1223,7 +1249,14 @@ UPDATE_CONTAINER () {
   # Backup
   if [[ "$CHECK_DIST" != true ]]; then
     echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
-    CONTAINER_BACKUP || return
+    if ! CONTAINER_BACKUP; then
+      SAFETY_FAILURE=true
+      ERROR_CODE=1
+      ID=$CONTAINER
+      ERROR_MSG="Configured snapshot/backup protection failed; LXC update aborted"
+      ERROR
+      return 1
+    fi
     echo
   fi
   if SCRIPT_ONLY_ENABLED "$CONTAINER"; then
@@ -1387,7 +1420,14 @@ UPDATE_VM () {
   echo -e "🔄${GN:-} Updating VM ${BL:-}$VM${CL:-} : ${GN:-}$NAME${CL:-}\n"
   # Backup
   echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
-  VM_BACKUP || return
+  if ! VM_BACKUP; then
+    SAFETY_FAILURE=true
+    ERROR_CODE=1
+    ID=$VM
+    ERROR_MSG="Configured snapshot/backup protection failed; VM update aborted"
+    ERROR
+    return 1
+  fi
   echo
   if SCRIPT_ONLY_ENABLED "$VM"; then
     SCRIPT_ONLY_RUN=true
@@ -1826,6 +1866,10 @@ if [[ "$COMMAND" != true ]]; then
       echo -e "⏩${BL:-} Skipped all VMs by the user${CL:-}\n"
     fi
   fi
+fi
+
+if [[ "$SAFETY_FAILURE" == true ]]; then
+  exit 1
 fi
 
 exit 0
