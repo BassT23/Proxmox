@@ -87,7 +87,7 @@ PY
 
 STATUS_MODEL_FINISH() {
   local status_file="$STATUS_MODEL_FILE" record_file="$STATUS_MODEL_RECORD_FILE"
-  python3 - "$record_file" "$status_file" <<'PY'
+  python3 - "$record_file" "$status_file" "${STATUS_MODEL_PARTIAL:-false}" <<'PY'
 import base64
 import json
 import os
@@ -95,9 +95,22 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 
-record_file, status_file = sys.argv[1:]
+record_file, status_file, partial = sys.argv[1:]
 generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 targets = {}
+
+if partial == "true":
+    try:
+        with open(status_file, encoding="utf-8") as source:
+            payload = json.load(source)
+        existing = payload.get("targets") if isinstance(payload, dict) else None
+        if isinstance(existing, list):
+            targets = {
+                item.get("id"): item for item in existing
+                if isinstance(item, dict) and item.get("id")
+            }
+    except (FileNotFoundError, OSError, ValueError):
+        pass
 
 def decode(value):
     return base64.b64decode(value.encode()).decode()
@@ -114,7 +127,8 @@ with open(record_file, encoding="utf-8") as records:
         error = None
         if error_code or error_message:
             error = {"code": error_code or None, "message": error_message or None}
-        targets[target_id] = {
+        record = targets.setdefault(target_id, {})
+        record.update({
             "id": target_id,
             "type": target_type or None,
             "transport": transport or None,
@@ -126,9 +140,10 @@ with open(record_file, encoding="utf-8") as records:
             "reboot_required": reboot,
             "last_check": generated_at,
             "check_status": check_status or "not_checked",
-            "last_update": {"status": "unknown", "timestamp": None},
             "error": error,
-        }
+        })
+        if partial != "true" or "last_update" not in record:
+            record["last_update"] = {"status": "unknown", "timestamp": None}
 
 payload = {"schema_version": 1, "generated_at": generated_at, "targets": list(targets.values())}
 directory = os.path.dirname(os.path.abspath(status_file)) or "."
