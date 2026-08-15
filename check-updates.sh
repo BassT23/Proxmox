@@ -268,12 +268,12 @@ WAIT_FOR_BOOTUP_LXC () {
 }
 
 WAIT_FOR_QGA () {
-  local max_wait=180 interval=2
-  local deadline=$((SECONDS + max_wait))
-  while (( SECONDS < deadline )); do
+  local attempts=15 interval=2
+  while (( attempts > 0 )); do
     if timeout 10 qm agent "$VM" ping >/dev/null 2>&1; then
       return 0
     fi
+    attempts=$((attempts - 1))
     sleep "$interval"
   done
   echo -e "${RD}QEMU Guest Agent did not become ready for VM $VM${CL}"
