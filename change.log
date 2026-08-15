@@ -5,6 +5,7 @@ Changelog:
 - IMPORTANT: reboot the node after updating to this version before using the new session-independent update jobs
 - resolve Proxmox guest IDs cluster-wide for check/update commands
 - preserve legacy update <ID> workflow across cluster nodes
+- expose cluster-remote update jobs through the calling node's CLI and Web UI
 - refine the official Web UI header branding and node guest accordion layout
 - use the official Ultimate Updater gear/update artwork in the web UI
 - add web UI configuration for supported updater settings

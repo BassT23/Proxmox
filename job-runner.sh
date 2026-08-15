@@ -7,6 +7,7 @@
 set -o pipefail
 
 JOB_STATE_DIR="${UU_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
+REMOTE_REF_DIR="$JOB_STATE_DIR/remote"
 JOB_PREFIX="ultimate-updater-update-"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 
@@ -37,6 +38,10 @@ state_file() {
   printf '%s/%s.state' "$JOB_STATE_DIR" "$1"
 }
 
+remote_ref_file() {
+  printf '%s/%s.ref' "$REMOTE_REF_DIR" "$1"
+}
+
 state_value() {
   local file="$1" key="$2"
   awk -F= -v wanted="$key" '$1 == wanted {sub(/^[^=]*=/, ""); print; exit}' "$file"
@@ -64,6 +69,63 @@ write_state() {
 ensure_state_dir() {
   mkdir -p "$JOB_STATE_DIR" || return 1
   chmod 0755 "$JOB_STATE_DIR" || return 1
+}
+
+valid_unit() {
+  [[ "$1" =~ ^ultimate-updater-update-[A-Za-z0-9_.-]+$ ]]
+}
+
+valid_remote_value() {
+  [[ -n "$1" && "$1" != *[!A-Za-z0-9_.:-]* ]]
+}
+
+write_remote_ref() {
+  local unit="$1" target="$2" owner_node="$3" owner_host="$4" port="$5" file temp
+  valid_unit "$unit" || return 2
+  valid_target "$target" || return 2
+  valid_remote_value "$owner_node" || return 2
+  valid_remote_value "$owner_host" || return 2
+  [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]] || return 2
+  mkdir -p "$REMOTE_REF_DIR" || return 1
+  chmod 0755 "$REMOTE_REF_DIR" || return 1
+  file=$(remote_ref_file "$unit")
+  temp="$file.tmp.$$"
+  {
+    printf 'schema_version=1\n'
+    printf 'unit=%s\n' "$unit"
+    printf 'target=%s\n' "$target"
+    printf 'owner_node=%s\n' "$owner_node"
+    printf 'owner_host=%s\n' "$owner_host"
+    printf 'port=%s\n' "$port"
+  } > "$temp" || return 1
+  chmod 0644 "$temp" || return 1
+  mv -f -- "$temp" "$file"
+}
+
+remote_ref_line() {
+  local unit="$1" file
+  valid_unit "$unit" || return 2
+  file=$(remote_ref_file "$unit")
+  [[ -f "$file" ]] || return 1
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "$(state_value "$file" unit)" "$(state_value "$file" target)" \
+    "$(state_value "$file" owner_node)" "$(state_value "$file" owner_host)" \
+    "$(state_value "$file" port)"
+}
+
+remote_state_line() {
+  local unit="$1" target="$2" owner_node="$3" owner_host="$4" port="$5" output
+  if ! output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" \
+      /etc/ultimate-updater/job-runner.sh list 2>/dev/null); then
+    printf '%s\t%s\tremote_unavailable\t\t\t\t%s\n' "$unit" "$target" "$owner_node"
+    return 0
+  fi
+  if awk -F '\t' -v wanted="$unit" -v owner="$owner_node" \
+      '$1 == wanted { print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" owner; found=1; exit } END { exit(found ? 0 : 1) }' \
+      <<< "$output"; then
+    return 0
+  fi
+  printf '%s\t%s\tremote_unavailable\t\t\t\t%s\n' "$unit" "$target" "$owner_node"
 }
 
 target_running() {
@@ -154,7 +216,7 @@ refresh_running_jobs() {
 list_jobs() {
   [[ -d "$JOB_STATE_DIR" ]] || return 0
   refresh_running_jobs
-  local file unit target state started finished exit_code
+  local file unit target state started finished exit_code owner_node owner_host port
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
     unit=$(state_value "$file" unit)
@@ -163,8 +225,26 @@ list_jobs() {
     started=$(state_value "$file" started_at)
     finished=$(state_value "$file" finished_at)
     exit_code=$(state_value "$file" exit_code)
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$unit" "$target" "$state" "$started" "$finished" "$exit_code"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t\n' "$unit" "$target" "$state" "$started" "$finished" "$exit_code"
   done
+  shopt -s nullglob
+  for file in "$REMOTE_REF_DIR"/*.ref; do
+    unit=$(state_value "$file" unit)
+    target=$(state_value "$file" target)
+    owner_node=$(state_value "$file" owner_node)
+    owner_host=$(state_value "$file" owner_host)
+    port=$(state_value "$file" port)
+    [[ -n "$unit" && -n "$target" && -n "$owner_node" && -n "$owner_host" && -n "$port" ]] || continue
+    remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port"
+  done
+}
+
+remote_log() {
+  local unit="$1" ref_line target owner_node owner_host port remote_command
+  ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  printf -v remote_command 'journalctl -u %q -n 200 --no-pager -o cat' "$unit"
+  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
 }
 
 case "${1:-}" in
@@ -179,6 +259,14 @@ case "${1:-}" in
   list)
     [[ $# -eq 1 ]] || { usage >&2; exit 2; }
     list_jobs
+    ;;
+  record-remote)
+    [[ $# -eq 6 ]] || { usage >&2; exit 2; }
+    write_remote_ref "$2" "$3" "$4" "$5" "$6"
+    ;;
+  remote-log)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    remote_log "$2"
     ;;
   *)
     usage >&2

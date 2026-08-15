@@ -277,7 +277,12 @@ and logs. Direct calls to `update.sh` remain synchronous. A job interrupted by
 reboot or shutdown is reported as `interrupted` rather than as a successful
 update. Job state is kept in `/var/lib/ultimate-updater/jobs`; `status --json`
 continues to expose the existing check-status schema while the human-readable
-`status` command includes recorded update jobs.
+`status` command includes recorded update jobs. When a cluster-remote job is
+started, the calling node stores only a small owner reference under the same
+job directory. The owner node remains the source of truth for state and
+journal output, while the calling node can continue to show the remote job and
+retrieve its log. If the owner is unavailable, the reference is retained and
+reported as unavailable rather than being treated as completed or failed.
 
 For an external apt- or dnf-based target, use the same commands:
 
@@ -372,7 +377,8 @@ validator, and are atomic.
 `Check` calls the existing check path. `Start update` calls the existing CLI,
 which hands the update to the session-independent #316 systemd job runner.
 The browser receives the job ID and may be closed; the job and its journal
-remain available to a later browser or device. The UI polls job state every
+remain available to a later browser or device, including when the job runs on
+another Proxmox cluster node. The UI polls job state every
 two seconds while a job is running and less often when idle. Updates require
 a browser confirmation. There are no reboot, backup, cancellation,
 configuration, or arbitrary-command actions. Configuration and external-target

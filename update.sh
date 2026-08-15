@@ -126,10 +126,19 @@ ARGUMENTS () {
               printf -v remote_command 'exec %q start %q %q' \
                 "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" "$ARGUMENT"
               echo -e "ℹ ${OR:-} Target $ARGUMENT resolved to $CLUSTER_TARGET_NODE; starting remote update job${CL:-}\n"
-              if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "${SSH_PORT:-22}" \
-                "$CLUSTER_TARGET_HOST" "$remote_command"; then
+              local remote_output remote_job_unit
+              if ! remote_output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "${SSH_PORT:-22}" \
+                "$CLUSTER_TARGET_HOST" "$remote_command"); then
                 echo -e "${RD:-}❌ Could not start update job on $CLUSTER_TARGET_NODE${CL:-}" >&2
                 return 6
+              fi
+              printf '%s\n' "$remote_output"
+              remote_job_unit=$(printf '%s\n' "$remote_output" | sed -n 's/^Job:[[:space:]]*//p' | head -n 1)
+              if [[ ! "$remote_job_unit" =~ ^ultimate-updater-update-[A-Za-z0-9_.-]+$ ]] ||
+                ! "$LOCAL_FILES/job-runner.sh" record-remote "$remote_job_unit" "$ARGUMENT" \
+                  "$CLUSTER_TARGET_NODE" "$CLUSTER_TARGET_HOST" "${SSH_PORT:-22}"; then
+                echo -e "${RD:-}❌ Remote job started but could not be referenced locally${CL:-}" >&2
+                return 7
               fi
               REMOTE_TARGET_DISPATCHED=true
               shift

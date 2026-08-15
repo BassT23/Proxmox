@@ -189,9 +189,9 @@ PY
     jobs=$("$JOB_RUNNER" list 2>/dev/null || true)
     if [[ -n "$jobs" ]]; then
       printf '\nUpdate jobs\n'
-      printf '%-55s %-12s %-12s %-20s\n' "Job" "Target" "State" "Exit"
-      while IFS=$'\t' read -r unit target state _ _ exit_code; do
-        printf '%-55s %-12s %-12s %-20s\n' "$unit" "$target" "$state" "${exit_code:-pending}"
+      printf '%-55s %-12s %-20s %-12s %-20s\n' "Job" "Target" "State" "Exit" "Owner"
+      while IFS=$'\t' read -r unit target state _ _ exit_code owner_node; do
+        printf '%-55s %-12s %-20s %-12s %-20s\n' "$unit" "$target" "$state" "${exit_code:-pending}" "${owner_node:-local}"
       done <<< "$jobs"
     fi
   fi
@@ -318,15 +318,25 @@ PY
 }
 
 remote_target_update() {
-  local target="$1" node="$2" host="$3" port command
+  local target="$1" node="$2" host="$3" port command output job_unit
   port=$(configured_ssh_port)
   printf 'Target %s resolved to %s.\n' "$target" "$node"
   printf 'Starting update job on %s ...\n' "$node"
   printf -v command 'exec %q start %q %q' \
     "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" "$target"
-  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" "$command"; then
+  if ! output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" "$command"); then
     printf 'ultimate-updater: could not start update job on %s.\n' "$node" >&2
     return 6
+  fi
+  printf '%s\n' "$output"
+  job_unit=$(printf '%s\n' "$output" | sed -n 's/^Job:[[:space:]]*//p' | head -n 1)
+  if [[ ! "$job_unit" =~ ^ultimate-updater-update-[A-Za-z0-9_.-]+$ ]]; then
+    printf 'ultimate-updater: remote update returned no valid job ID.\n' >&2
+    return 6
+  fi
+  if ! "$JOB_RUNNER" record-remote "$job_unit" "$target" "$node" "$host" "$port"; then
+    printf 'ultimate-updater: remote job started but its local reference could not be saved.\n' >&2
+    return 7
   fi
 }
 
