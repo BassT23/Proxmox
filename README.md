@@ -328,13 +328,33 @@ The process serving action endpoints must already have the local permissions
 needed by the existing CLI (normally a controlled root-owned test/service
 context); the UI does not store passwords or add broad `sudo` rules.
 
+The dashboard includes a small, typed management area for the settings that
+are already understood by the updater. It edits selected values in
+`/etc/ultimate-updater/update.conf` in place, preserving comments, unknown
+variables, and the rest of the file; writes are validated and atomic. It is
+not a general file editor. The editable groups cover the existing check
+booleans, check filters, reboot/delay/backup settings, and currently used
+notification settings. No passwords, private keys, tokens, or sudo secrets
+are handled by the UI.
+
+External SSH systems can likewise be added, edited, tested, and removed from
+the dashboard. `/etc/ultimate-updater/targets.conf` remains the only source
+of truth and only the existing `host`, `user`, `port`, and `transport=ssh`
+fields are accepted. SSH key authentication must already be configured on
+the updater node; the UI does not upload or generate keys. OS, package
+manager, and update capability continue to be detected by the core. Target
+inventory writes preserve unrelated sections/comments, use the existing
+validator, and are atomic.
+
 `Check` calls the existing check path. `Start update` calls the existing CLI,
 which hands the update to the session-independent #316 systemd job runner.
 The browser receives the job ID and may be closed; the job and its journal
 remain available to a later browser or device. The UI polls job state every
 two seconds while a job is running and less often when idle. Updates require
 a browser confirmation. There are no reboot, backup, cancellation,
-configuration, or arbitrary-command actions.
+configuration, or arbitrary-command actions. Configuration and external-target
+management are limited to the typed controls described above; there is no
+generic file or command endpoint.
 
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
 

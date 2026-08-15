@@ -2,10 +2,14 @@
 """Small standard-library web UI for status and session-independent actions."""
 
 import argparse
+import fcntl
 import json
 import os
 import re
+import shlex
+import stat
 import subprocess
+import tempfile
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -13,6 +17,10 @@ from urllib.parse import unquote, urlsplit
 
 
 DEFAULT_STATUS_FILE = Path("/etc/ultimate-updater/status.json")
+DEFAULT_CONFIG_FILE = Path("/etc/ultimate-updater/update.conf")
+DEFAULT_INVENTORY_FILE = Path("/etc/ultimate-updater/targets.conf")
+DEFAULT_INVENTORY_SCRIPT = Path("/etc/ultimate-updater/target-inventory.sh")
+DEFAULT_EXTERNAL_SCRIPT = Path("/etc/ultimate-updater/external-apt.sh")
 DEFAULT_CLI = Path("/usr/local/sbin/ultimate-updater")
 DEFAULT_JOB_RUNNER = Path("/etc/ultimate-updater/job-runner.sh")
 DEFAULT_JOBS_DIR = Path("/var/lib/ultimate-updater/jobs")
@@ -20,13 +28,30 @@ DEFAULT_BIND = "127.0.0.1"
 DEFAULT_PORT = 8765
 TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 JOB_RE = re.compile(r"^ultimate-updater-update-[A-Za-z0-9_.-]+$")
+HOST_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
+USER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
+
+CONFIG_BOOLEAN_KEYS = {
+    "CHECK_WITH_HOST", "CHECK_WITH_LXC", "CHECK_WITH_VM",
+    "CHECK_RUNNING_CONTAINER", "CHECK_STOPPED_CONTAINER",
+    "CHECK_RUNNING_VM", "CHECK_STOPPED_VM", "CHECK_PAUSED_VM",
+    "REBOOT_IF_NEEDED", "EMAIL_DAILY_CHECK", "EMAIL_NO_UPDATES",
+    "EMAIL_ONLY_SECURITY", "EMAIL_ONLY_ERROR",
+}
+CONFIG_INTEGER_KEYS = {"LXC_START_DELAY", "VM_START_DELAY"}
+CONFIG_STRING_KEYS = {
+    "ONLY_UPDATE_CHECK", "EXCLUDE_UPDATE_CHECK", "BACKUP_STORAGE",
+    "EMAIL_USER", "EMAIL_SENDER",
+}
+CONFIG_KEYS = CONFIG_BOOLEAN_KEYS | CONFIG_INTEGER_KEYS | CONFIG_STRING_KEYS
+FAVICON_SVG = """<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\"><rect width=\"64\" height=\"64\" rx=\"16\" fill=\"#73a7ff\"/><path d=\"M18 25a18 18 0 0 1 29-5l4-4v14H37l5-5a12 12 0 0 0-18 3m22 14a18 18 0 0 1-29 5l-4 4V34h14l-5 5a12 12 0 0 0 18-3\" fill=\"#0b1020\"/><text x=\"32\" y=\"38\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"13\" font-weight=\"800\" fill=\"#edf3ff\">UU</text></svg>"""
 
 
 PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark"><title>Ultimate Updater</title>
+  <meta name="color-scheme" content="dark"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><title>Ultimate Updater</title>
   <style>
     :root { color-scheme:dark; --bg:#0b1020; --panel:#151d34e8; --strong:#19233f; --text:#edf3ff; --muted:#91a0bd; --line:#94a3b82e; --accent:#73a7ff; --good:#55d39a; --warn:#f7c66b; --bad:#ff7e8b; font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
     * { box-sizing:border-box } body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(circle at top right,#1e3567 0,var(--bg) 42rem) }
@@ -50,14 +75,20 @@ PAGE = r"""<!doctype html>
     .app-main { width:min(1600px,100%); margin:0 auto; padding:34px clamp(18px,4vw,52px) 54px } .app-header { display:flex; justify-content:space-between; gap:20px; align-items:end; margin-bottom:26px } .systems-panel { padding:22px; border:1px solid var(--line); border-radius:18px; background:#151d34aa; box-shadow:0 18px 50px #00000029 } .view-note { color:var(--muted); font-size:.75rem } .node-group,.external-group { margin-top:18px; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#0e162b99 } .group-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:15px 16px; cursor:pointer } .group-header:hover { background:#73a7ff0d } .group-title { display:flex; align-items:center; gap:10px } .group-title strong { font-size:1rem } .group-title small { color:var(--muted); font-size:.72rem } .group-summary { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:.75rem } .chevron { color:var(--accent); font-size:1.1rem; transition:transform .16s } .node-group.open .chevron,.external-group.open .chevron { transform:rotate(90deg) } .group-body { display:none; padding:0 12px 12px } .node-group.open .group-body,.external-group.open .group-body { display:block } .guest-list { display:grid; gap:6px } .target-row { display:grid; grid-template-columns:minmax(150px,1.5fr) .7fr .8fr .8fr .9fr auto; align-items:center; gap:10px; padding:10px 12px; border-top:1px solid #94a3b815; font-size:.78rem } .target-row:hover { background:#73a7ff0b } .target-row .target-name { font-size:.82rem } .target-row .target-id { margin-top:2px } .row-muted { color:var(--muted); font-size:.72rem } .row-actions { display:flex; justify-content:flex-end; gap:6px } .row-actions button { padding:7px 9px; font-size:.72rem } .target-card { min-height:205px; display:flex; flex-direction:column } .target-card .actions { margin-top:auto } .target-card .target-info { margin-top:15px } .external-group { grid-column:1 / -1; margin-top:20px } .external-group .group-body { padding-top:2px } .job-toggle { display:flex; align-items:center; gap:10px; border:0; padding:0; background:transparent; color:var(--text); font-weight:700; font-size:1rem } .job-count { color:var(--muted); font-size:.74rem; font-weight:500 } .jobs.collapsed .job-list { display:none } .job-list { margin-top:12px } .job-summary { color:var(--muted); font-size:.75rem } .detail-grid { grid-template-columns:repeat(3,1fr) }
     @media (max-width:900px) { .target-row { grid-template-columns:minmax(140px,1.4fr) .8fr .8fr auto; } .target-row .row-os { display:none } }
     @media (max-width:620px) { .app-main { padding:24px 11px 38px } .app-header { display:block } .meta { text-align:left; margin-top:13px } .systems-panel { padding:13px } .section-title { align-items:flex-start } .view-note { display:none } .group-summary { gap:6px; font-size:.68rem } .target-row { grid-template-columns:1fr auto; gap:5px 8px; padding:11px 8px } .target-row > :nth-child(2),.target-row > :nth-child(3),.target-row > :nth-child(4) { display:none } .row-actions { grid-column:2; grid-row:1 / span 2 } .row-actions button { min-height:38px } .detail-grid { grid-template-columns:1fr 1fr } }
+    .brand-lockup { display:flex; align-items:center; gap:12px } .brand-logo { width:42px; height:42px; flex:0 0 auto; border-radius:12px; box-shadow:0 8px 24px #0003 } .management-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:18px } .management-panel { border:1px solid var(--line); border-radius:16px; padding:20px; background:var(--panel); box-shadow:0 18px 50px #00000029 } .management-panel h2 { margin:0 } .management-panel .section-title { margin-bottom:16px } .management-form { display:none; gap:10px; grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:14px } .management-form.open { display:grid } .management-form label { color:var(--muted); font-size:.75rem } .management-form input,.management-form select { display:block; width:100%; margin-top:5px; border:1px solid var(--line); border-radius:8px; padding:9px 10px; color:var(--text); background:#0b1224; font:inherit } .management-form .form-wide { grid-column:1/-1 } .management-form .form-actions { display:flex; gap:8px; grid-column:1/-1 } .managed-target { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 0; border-top:1px solid #94a3b815; font-size:.8rem } .managed-target:first-child { border-top:0 } .managed-target small { color:var(--muted); display:block; margin-top:3px } .managed-actions { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end } .managed-actions button { padding:7px 9px; font-size:.72rem } .config-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px } .config-field { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:.78rem } .config-field input[type=checkbox] { accent-color:var(--accent); width:17px; height:17px } .config-field input[type=text],.config-field input[type=number] { flex:1; min-width:0; border:1px solid var(--line); border-radius:8px; padding:8px; color:var(--text); background:#0b1224; font:inherit } .config-actions { display:flex; gap:8px; margin-top:15px } .management-message { color:var(--muted); font-size:.76rem; min-height:1.2em; margin-top:10px } .management-message.error { color:var(--bad) } .modal-backdrop { position:fixed; inset:0; z-index:5; display:none; place-items:center; padding:18px; background:#030712aa } .modal-backdrop.open { display:grid } .modal { width:min(520px,100%); border:1px solid var(--line); border-radius:16px; padding:20px; background:#151d34; box-shadow:0 24px 80px #0008 } .modal h3 { margin:0 0 15px } .modal .form-actions { display:flex; gap:8px; margin-top:14px } .modal-close { margin-left:auto }
+    @media (max-width:760px) { .management-grid { grid-template-columns:1fr } .config-fields,.management-form { grid-template-columns:1fr } .management-form .form-wide { grid-column:auto } .management-form .form-actions { grid-column:auto } .managed-target { align-items:flex-start; flex-direction:column } .managed-actions { justify-content:flex-start } }
   </style>
 </head>
 <body>
   <main class="app-main" id="dashboard">
-    <header class="app-header"><div><div class="eyebrow">Universal Systems · Preview</div><h1>Ultimate Updater</h1><p class="subtitle">A compact dashboard for your Proxmox nodes, guests, and external systems.</p></div><div class="meta" id="generated">Loading status…</div></header>
+    <header class="app-header"><div class="brand-lockup"><img class="brand-logo" src="/favicon.svg" alt="Ultimate Updater logo"><div><div class="eyebrow">Universal Systems · Preview</div><h1>Ultimate Updater</h1><p class="subtitle">A compact dashboard for your Proxmox nodes, guests, and external systems.</p></div></div><div class="meta" id="generated">Loading status…</div></header>
     <div id="notice" hidden></div>
     <section class="summary"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="updates">–</strong><span>available updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section>
     <section id="systems" class="systems-panel"><div class="section-title"><div><h2>Systems</h2><span class="hint">Organized by Proxmox node and external target</span></div><span class="view-note">Checks and updates use the existing CLI</span></div><div id="targets" class="targets"></div></section>
+    <section class="management-grid">
+      <section class="management-panel" id="config-panel"><div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div><button id="config-open">Open settings</button></div><form id="config-form" class="management-form"></form><div id="config-message" class="management-message"></div></section>
+      <section class="management-panel" id="external-panel"><div class="section-title"><div><h2>External systems</h2><span class="hint">SSH targets from targets.conf</span></div><button id="target-add">+ Add system</button></div><div id="managed-targets"></div><form id="target-form" class="management-form"></form><div id="target-message" class="management-message"></div></section>
+    </section>
     <section id="details" class="details" hidden></section><section id="jobs" class="jobs" hidden></section>
     <footer>Local action preview · status: <code>/etc/ultimate-updater/status.json</code> · jobs: <code>/var/lib/ultimate-updater/jobs</code></footer>
   </main>
@@ -81,6 +112,7 @@ PAGE = r"""<!doctype html>
     async function loadJobs(){try{const r=await fetch('/api/jobs',{cache:'no-store'}),d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Jobs unavailable');jobs=Array.isArray(d.jobs)?d.jobs:[];renderJobs();clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,10000)}}
     loadStatus();loadJobs();
   </script>
+  <div id="target-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="target-modal-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="target-modal-title">External system</h3><button type="button" class="modal-close" id="target-modal-cancel">Close</button></div><div class="management-form open"><label>Name<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"></label><label>Host / IP<input name="host" required pattern="[A-Za-z0-9_.:-]+"></label><label>SSH user<input name="user" required pattern="[A-Za-z_][A-Za-z0-9_.-]*"></label><label>SSH port<input name="port" type="number" min="1" max="65535" value="22" required></label><div class="form-actions"><button type="submit" class="primary">Save</button><button type="button" id="target-modal-test">Test connection</button></div><div id="target-modal-message" class="management-message form-wide"></div></div></form></div>
   <script>
     let openNodes=new Set(), jobsExpanded=false;
     const nodeLabel=t=>String(t.id||'').replace(/^host:/,'');
@@ -95,6 +127,26 @@ PAGE = r"""<!doctype html>
     function render(data){currentStatus=data;const ts=Array.isArray(data.targets)?data.targets:[],nodes=ts.filter(isProxmoxNode),guests=ts.filter(t=>t.type==='lxc'||t.type==='vm'),external=ts.filter(t=>!isProxmoxNode(t)&&t.type!=='lxc'&&t.type!=='vm');set('total',ts.length);set('online',ts.filter(t=>t.reachable===true).length);set('updates',ts.map(knownUpdates).filter(Number.isInteger).reduce((a,v)=>a+v,0));set('attention',ts.filter(t=>t.check_status!=='ok').length);set('generated',`Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}`);const list=document.getElementById('targets');list.replaceChildren();if(!ts.length){list.innerHTML='<div class="empty">No target status is available yet. Run a check to populate the view.</div>';return}if(nodes.length){const assigned=new Set();nodes.forEach(host=>{const node=nodeLabel(host),members=guests.filter(t=>targetNode(t,nodes)===node);members.forEach(t=>assigned.add(t.id));list.appendChild(nodeGroup(node,members,host))});const unassigned=guests.filter(t=>!assigned.has(t.id));if(unassigned.length)list.appendChild(nodeGroup('Guests without node assignment',unassigned,null))}else if(guests.length){list.appendChild(nodeGroup('Guests without node assignment',guests,null))}if(external.length)list.appendChild(externalGroup(external))}
     function renderJobs(){const n=document.getElementById('jobs');if(!jobs.length){n.hidden=true;openJobLogId=null;return}if(openJobLogId&&!jobs.some(j=>j.unit===openJobLogId))openJobLogId=null;const runningCount=jobs.filter(j=>j.state==='running').length,finished=jobs.length-runningCount;n.hidden=false;suppressLogScroll=true;n.innerHTML=`<div class="section-title"><button class="job-toggle"><span class="chevron">›</span><span>Update jobs <span class="job-count">(${runningCount} running, ${finished} finished)</span></span></button><span class="job-summary">Server-side state · safe across browser/device changes</span></div><div class="job-list"></div>`;suppressLogScroll=false;n.classList.toggle('collapsed',!jobsExpanded);n.querySelector('.job-toggle').addEventListener('click',()=>{jobsExpanded=!jobsExpanded;n.classList.toggle('collapsed',!jobsExpanded)});const list=n.querySelector('.job-list');jobs.forEach(j=>{const item=document.createElement('div');item.className='job';const open=j.unit===openJobLogId;item.innerHTML=`<code>${esc(j.unit)}</code><span>${esc(j.target)}</span><span class="pill ${j.state==='completed'?'good':j.state==='failed'||j.state==='interrupted'?'bad':'warn'}">${esc(j.state)}</span><button data-job="${esc(j.unit)}">${open?'Hide log':'Show log'}</button><div class="log" id="log-${esc(j.unit)}"${open?'':' hidden'}></div>`;list.appendChild(item)});n.querySelectorAll('button[data-job]').forEach(b=>b.addEventListener('click',async()=>{const unit=b.dataset.job,node=document.getElementById(`log-${unit}`);jobsExpanded=true;n.classList.remove('collapsed');if(openJobLogId===unit){openJobLogId=null;node.hidden=true;b.textContent='Show log';return}openJobLogId=unit;logAutoFollow=true;logScrollTop=0;node.hidden=false;b.textContent='Hide log';await loadJobLog(unit,node);attachLogScroll(node)}));if(openJobLogId){const node=document.getElementById(`log-${openJobLogId}`);if(node){node.scrollTop=logAutoFollow?node.scrollHeight:logScrollTop;loadJobLog(openJobLogId,node).then(()=>{if(openJobLogId===node.id.slice(4))attachLogScroll(node)})}}}
     clearTimeout(pollTimer);loadStatus();loadJobs();
+  </script>
+  <script>
+    const configBooleanKeys=['CHECK_WITH_HOST','CHECK_WITH_LXC','CHECK_WITH_VM','CHECK_RUNNING_CONTAINER','CHECK_STOPPED_CONTAINER','CHECK_RUNNING_VM','CHECK_STOPPED_VM','CHECK_PAUSED_VM','REBOOT_IF_NEEDED','EMAIL_DAILY_CHECK','EMAIL_NO_UPDATES','EMAIL_ONLY_SECURITY','EMAIL_ONLY_ERROR'];
+    const configNumberKeys=['LXC_START_DELAY','VM_START_DELAY'];
+    const configStringKeys=['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','BACKUP_STORAGE','EMAIL_USER','EMAIL_SENDER'];
+    const configLabels={CHECK_WITH_HOST:'Check host',CHECK_WITH_LXC:'Check LXC',CHECK_WITH_VM:'Check VM',CHECK_RUNNING_CONTAINER:'Check running containers',CHECK_STOPPED_CONTAINER:'Check stopped containers',CHECK_RUNNING_VM:'Check running VMs',CHECK_STOPPED_VM:'Check stopped VMs',CHECK_PAUSED_VM:'Check paused VMs',REBOOT_IF_NEEDED:'Reboot if needed',EMAIL_DAILY_CHECK:'Daily email check',EMAIL_NO_UPDATES:'Email when no updates',EMAIL_ONLY_SECURITY:'Email security updates only',EMAIL_ONLY_ERROR:'Email errors only',LXC_START_DELAY:'LXC start delay (seconds)',VM_START_DELAY:'VM start delay (seconds)',ONLY_UPDATE_CHECK:'Only update-check filter',EXCLUDE_UPDATE_CHECK:'Exclude update-check filter',BACKUP_STORAGE:'Backup storage',EMAIL_USER:'Email recipient',EMAIL_SENDER:'Email sender'};
+    let managedTargets=[], editingTarget=null;
+    function managementMessage(id,message,error=false){const n=document.getElementById(id);n.textContent=message||'';n.className=`management-message${error?' error':''}`}
+    async function api(path,options={}){const r=await fetch(path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});const d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Request failed');return d}
+    function buildConfigForm(values){const form=document.getElementById('config-form');form.innerHTML='';for(const key of [...configBooleanKeys,...configNumberKeys,...configStringKeys]){const label=document.createElement('label');label.className='config-field';label.textContent=configLabels[key]||key;let input=document.createElement('input');input.name=key;input.dataset.key=key;if(configBooleanKeys.includes(key)){input.type='checkbox';input.checked=values[key]===true}else{input.type=configNumberKeys.includes(key)?'number':'text';input.value=values[key]??'';if(input.type==='number'){input.min='0';input.max='86400'}}label.appendChild(input);form.appendChild(label)}const actions=document.createElement('div');actions.className='config-actions';actions.innerHTML='<button type="submit" class="primary">Save settings</button><button type="button" id="config-close">Cancel</button>';form.appendChild(actions);form.onsubmit=async e=>{e.preventDefault();const next={};for(const input of form.querySelectorAll('[data-key]'))next[input.dataset.key]=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value;try{const d=await api('/api/config',{method:'POST',body:JSON.stringify({values:next})});buildConfigForm(d.config);form.classList.remove('open');managementMessage('config-message','Configuration saved.')}catch(error){managementMessage('config-message',error.message,true)}};document.getElementById('config-close').onclick=()=>form.classList.remove('open')}
+    async function loadConfig(){try{const d=await api('/api/config');buildConfigForm(d.config)}catch(error){managementMessage('config-message',error.message,true)}}
+    function renderManagedTargets(){const box=document.getElementById('managed-targets');if(!managedTargets.length){box.innerHTML='<div class="empty">No external systems configured.</div>';return}box.innerHTML=managedTargets.map(t=>`<div class="managed-target"><div><strong>${esc(t.id)}</strong><small>${esc(t.user)}@${esc(t.host)}:${esc(t.port)} · SSH</small></div><div class="managed-actions"><button data-edit="${esc(t.id)}">Edit</button><button data-test="${esc(t.id)}">Test connection</button><button data-remove="${esc(t.id)}">Remove</button></div></div>`).join('');box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openTargetModal(managedTargets.find(t=>t.id===b.dataset.edit)));box.querySelectorAll('[data-test]').forEach(b=>b.onclick=()=>testTarget(b.dataset.test));box.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>removeTarget(b.dataset.remove))}
+    async function loadTargets(){try{managedTargets=(await api('/api/targets')).targets||[];renderManagedTargets()}catch(error){managementMessage('target-message',error.message,true)}}
+    function openTargetModal(target=null){editingTarget=target;const form=document.getElementById('target-modal-form');form.reset();form.elements.id.value=target?.id||'';form.elements.host.value=target?.host||'';form.elements.user.value=target?.user||'root';form.elements.port.value=target?.port||22;form.elements.id.readOnly=Boolean(target);document.getElementById('target-modal-title').textContent=target?'Edit external system':'Add external system';managementMessage('target-modal-message','');document.getElementById('target-modal').classList.add('open')}
+    function closeTargetModal(){document.getElementById('target-modal').classList.remove('open');editingTarget=null}
+    async function saveTarget(e){e.preventDefault();const form=e.currentTarget;const payload={id:form.elements.id.value,host:form.elements.host.value,user:form.elements.user.value,port:Number(form.elements.port.value)};try{await api(editingTarget?`/api/targets/${encodeURIComponent(editingTarget.id)}`:'/api/targets',{method:editingTarget?'PUT':'POST',body:JSON.stringify(payload)});closeTargetModal();await loadTargets();await loadStatus();managementMessage('target-message','External target saved.')}catch(error){managementMessage('target-modal-message',error.message,true)}}
+    async function removeTarget(id){if(!confirm(`Remove external system "${id}"?`))return;try{await api(`/api/targets/${encodeURIComponent(id)}`,{method:'DELETE'});await loadTargets();await loadStatus();managementMessage('target-message','External target removed.')}catch(error){managementMessage('target-message',error.message,true)}}
+    async function testTarget(id){try{const d=await api(`/api/targets/${encodeURIComponent(id)}/test`,{method:'POST',body:'{}'});const t=d.target||{};managementMessage('target-message',`Connection successful · ${t.os||'OS unknown'} · ${t.updater||'updater unknown'}`)}catch(error){managementMessage('target-message',error.message,true)}}
+    function targetRow(t){const row=document.createElement('div');row.className='target-row';const external=String(t.type||'').toLowerCase()==='external';row.innerHTML=`<div><div class="target-name">${esc(t.id)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div>${statusTone(t)}</div><div><strong>${knownUpdates(t)===null?'Unknown':knownUpdates(t)}</strong><div class="row-muted">Updates</div></div><div><strong>${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong><div class="row-muted">Reboot</div></div><div class="row-os"><strong>${esc(t.os)}</strong><div class="row-muted">Last check ${esc(date(t.last_check))}</div></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button>${external?'<button class="edit-target">Edit</button><button class="remove-target">Remove</button>':''}</div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const update=row.querySelector('.update');update.disabled=running(t.id)||!TARGET_UPDATEABLE(t);update.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});if(external){row.querySelector('.edit-target').onclick=e=>{e.stopPropagation();openTargetModal(managedTargets.find(x=>x.id===t.id))};row.querySelector('.remove-target').onclick=e=>{e.stopPropagation();removeTarget(t.id)}}return row}
+    document.getElementById('config-open').onclick=()=>{document.getElementById('config-form').classList.add('open');loadConfig()};document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').onclick=()=>{const id=document.querySelector('#target-modal-form [name=id]').value;if(id)testTarget(id)};document.getElementById('target-modal-form').onsubmit=saveTarget;loadConfig();loadTargets();
   </script>
 </main></body></html>"""
 
@@ -111,6 +163,200 @@ def parse_state_line(line):
     return {"unit": unit, "target": target, "state": state,
             "started_at": started or None, "finished_at": finished or None,
             "exit_code": int(exit_code) if exit_code.lstrip("-").isdigit() else None}
+
+
+def parse_config_text(content):
+    values = {}
+    for line in content.splitlines():
+        match = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)(?:\s+#.*)?$", line)
+        if not match or match.group(1) not in CONFIG_KEYS:
+            continue
+        raw = match.group(2).strip()
+        try:
+            parsed = shlex.split(raw, comments=False, posix=True)
+        except ValueError:
+            parsed = []
+        values[match.group(1)] = parsed[0] if parsed else raw.strip("\"'")
+    return values
+
+
+def config_value_map(content):
+    values = parse_config_text(content)
+    result = {}
+    for key in sorted(CONFIG_KEYS):
+        value = values.get(key)
+        if key in CONFIG_BOOLEAN_KEYS and value is not None:
+            result[key] = value.lower() == "true"
+        elif key in CONFIG_INTEGER_KEYS and value is not None and value.isdigit():
+            result[key] = int(value)
+        else:
+            result[key] = value
+    return result
+
+
+def validate_config_values(values):
+    if not isinstance(values, dict) or not values:
+        raise ValueError("No configuration values were supplied.")
+    unknown = set(values) - CONFIG_KEYS
+    if unknown:
+        raise ValueError("Unsupported configuration key: " + sorted(unknown)[0])
+    normalized = {}
+    for key, value in values.items():
+        if key in CONFIG_BOOLEAN_KEYS:
+            if not isinstance(value, bool):
+                raise ValueError(f"{key} must be boolean.")
+            normalized[key] = "true" if value else "false"
+        elif key in CONFIG_INTEGER_KEYS:
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 86400:
+                raise ValueError(f"{key} must be an integer between 0 and 86400.")
+            normalized[key] = str(value)
+        else:
+            if not isinstance(value, str) or "\n" in value or "\r" in value or len(value) > 512:
+                raise ValueError(f"{key} must be a short single-line value.")
+            if key == "BACKUP_STORAGE" and value and not re.fullmatch(r"[A-Za-z0-9_.-]+", value):
+                raise ValueError("BACKUP_STORAGE contains unsupported characters.")
+            normalized[key] = value
+    return normalized
+
+
+def update_config_text(content, normalized):
+    lines = content.splitlines(keepends=True)
+    found = set()
+    output = []
+    for line in lines:
+        match = re.match(r"^(\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(\"[^\"]*\"|'[^']*'|[^#\s]*)(.*?)(\r?\n)?$", line)
+        if not match or match.group(2) not in normalized:
+            output.append(line)
+            continue
+        key = match.group(2)
+        found.add(key)
+        tail = match.group(5) or ""
+        output.append(f"{match.group(1)}{key}{match.group(3)}{json.dumps(normalized[key])}{tail}{match.group(6) or ''}")
+    if output and not output[-1].endswith("\n"):
+        output[-1] += "\n"
+    for key in normalized:
+        if key not in found:
+            output.append(f"{key}={json.dumps(normalized[key])}\n")
+    return "".join(output)
+
+
+def parse_inventory_text(content):
+    sections = []
+    current = None
+    for line in content.splitlines(keepends=True):
+        section_match = re.match(r"^\[([A-Za-z0-9_.-]+)\]\s*(?:#.*)?(?:\r?\n)?$", line)
+        if section_match:
+            current = {"id": section_match.group(1), "lines": [line], "values": {}}
+            sections.append(current)
+            continue
+        if current is not None:
+            current["lines"].append(line)
+            key_match = re.match(r"^\s*(host|port|transport|user)\s*=\s*([^#\r\n]*?)\s*(?:#.*)?(?:\r?\n)?$", line)
+            if key_match:
+                current["values"][key_match.group(1)] = key_match.group(2).strip()
+    return sections
+
+
+def inventory_payload(content):
+    result = []
+    for section in parse_inventory_text(content):
+        values = section["values"]
+        result.append({"id": section["id"], "host": values.get("host", ""),
+                       "user": values.get("user", "root"),
+                       "port": int(values.get("port", "22")),
+                       "transport": values.get("transport", "ssh")})
+    return result
+
+
+def validate_inventory_text(content, script):
+    if not script.is_file():
+        raise ValueError("Target inventory validator is not installed.")
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+        handle.write(content)
+        candidate = Path(handle.name)
+    try:
+        result = subprocess.run(["bash", str(script), str(candidate)], capture_output=True,
+                                text=True, timeout=15, check=False)
+    finally:
+        candidate.unlink(missing_ok=True)
+    if result.returncode:
+        message = (result.stderr or result.stdout).strip()
+        raise ValueError(message or "Target inventory is invalid.")
+
+
+def validate_target_payload(payload, current_id=None):
+    if not isinstance(payload, dict):
+        raise ValueError("Target data must be an object.")
+    target_id = payload.get("id", current_id)
+    host = payload.get("host")
+    user = payload.get("user", "root")
+    port = payload.get("port", 22)
+    if not isinstance(target_id, str) or not TARGET_RE.fullmatch(target_id):
+        raise ValueError("Target name is invalid.")
+    if current_id is not None and target_id != current_id:
+        raise ValueError("Target names cannot be changed; remove and add a new target.")
+    if not isinstance(host, str) or not HOST_RE.fullmatch(host):
+        raise ValueError("Host or IP is invalid.")
+    if not isinstance(user, str) or not USER_RE.fullmatch(user):
+        raise ValueError("SSH user is invalid.")
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError("SSH port must be between 1 and 65535.")
+    return {"id": target_id, "host": host, "user": user, "port": port, "transport": "ssh"}
+
+
+def update_inventory_text(content, target, current_id=None, delete=False):
+    headers = list(re.finditer(r"(?m)^\[([A-Za-z0-9_.-]+)\]\s*(?:#.*)?(?:\r?\n|$)", content))
+    wanted_id = current_id or target["id"]
+    index = next((i for i, match in enumerate(headers) if match.group(1) == wanted_id), None)
+    if index is None and not delete:
+        if content and not content.endswith("\n"):
+            content += "\n"
+        content += (f"\n[{target['id']}]\n" if content else f"[{target['id']}]\n")
+        content += f"host={target['host']}\ntransport=ssh\nuser={target['user']}\nport={target['port']}\n"
+        return content
+    if index is None:
+        raise KeyError("target not found")
+    start = headers[index].start()
+    end = headers[index + 1].start() if index + 1 < len(headers) else len(content)
+    section_text = content[start:end]
+    if delete:
+        return content[:start] + content[end:]
+    replacements = {"host": target["host"], "transport": "ssh", "user": target["user"], "port": str(target["port"])}
+    found = set()
+    new_lines = []
+    for line in section_text.splitlines(keepends=True):
+        match = re.match(r"^(\s*)(host|port|transport|user)(\s*=\s*)([^#\r\n]*?)(\s*(?:#.*)?)?(\r?\n)?$", line)
+        if match and match.group(2) in replacements:
+            key = match.group(2); found.add(key)
+            new_lines.append(f"{match.group(1)}{key}{match.group(3)}{replacements[key]}{match.group(5) or ''}{match.group(6) or ''}")
+        else:
+            new_lines.append(line)
+    if new_lines and not new_lines[-1].endswith("\n"):
+        new_lines[-1] += "\n"
+    new_lines.extend(f"{key}={replacements[key]}\n" for key in replacements if key not in found)
+    return content[:start] + "".join(new_lines) + content[end:]
+
+
+def locked_atomic_update(path, updater):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = Path(str(path) + ".uu-lock")
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        content = path.read_text(encoding="utf-8") if path.exists() else ""
+        updated = updater(content)
+        mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o640
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as temp:
+            temp.write(updated)
+            temp.flush()
+            os.fsync(temp.fileno())
+            temporary = Path(temp.name)
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+        directory_fd = os.open(path.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
 
 
 class StatusHandler(BaseHTTPRequestHandler):
@@ -136,8 +382,14 @@ class StatusHandler(BaseHTTPRequestHandler):
             raise OverflowError("request body is too large")
         if length and not self.headers.get("Content-Type", "").split(";", 1)[0].lower() == "application/json":
             raise ValueError("JSON content type is required")
-        if length:
-            self.rfile.read(length)
+        if not length:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise ValueError("JSON body is invalid") from error
+        return payload
 
     def run_command(self, args, timeout=300, extra_env=None):
         environment = {**os.environ, "UU_JOB_STATE_DIR": str(self.server.jobs_dir)}
@@ -165,10 +417,105 @@ class StatusHandler(BaseHTTPRequestHandler):
             return False
         return any(row["unit"] == unit for row in self.jobs())
 
+    def config_content(self):
+        return self.server.config_file.read_text(encoding="utf-8") if self.server.config_file.exists() else ""
+
+    def inventory_content(self):
+        return self.server.inventory_file.read_text(encoding="utf-8") if self.server.inventory_file.exists() else ""
+
+    def inventory_data(self):
+        content = self.inventory_content()
+        validate_inventory_text(content, self.server.inventory_script)
+        return [item for item in inventory_payload(content) if item["transport"] == "ssh"]
+
+    def handle_config_update(self, payload):
+        normalized = validate_config_values(payload.get("values") if isinstance(payload, dict) else None)
+        locked_atomic_update(self.server.config_file,
+                             lambda content: update_config_text(content, normalized))
+        self.send_json({"message": "Configuration saved.", "config": config_value_map(self.config_content())})
+
+    def handle_target_add(self, payload):
+        target = validate_target_payload(payload)
+        content = self.inventory_content()
+        validate_inventory_text(content, self.server.inventory_script)
+        if any(item["id"] == target["id"] for item in inventory_payload(content)):
+            self.send_json(error_payload("TARGET_EXISTS", "That external target already exists."), HTTPStatus.CONFLICT)
+            return
+        updated = update_inventory_text(content, target)
+        validate_inventory_text(updated, self.server.inventory_script)
+        locked_atomic_update(self.server.inventory_file, lambda _: updated)
+        self.send_json({"message": "External target added.", "target": target}, HTTPStatus.CREATED)
+
+    def handle_target_update(self, target_id, payload):
+        current = validate_target_payload({"id": target_id, **(payload if isinstance(payload, dict) else {})}, target_id)
+        content = self.inventory_content()
+        validate_inventory_text(content, self.server.inventory_script)
+        existing = next((item for item in inventory_payload(content) if item["id"] == target_id), None)
+        if not existing:
+            self.send_json(error_payload("TARGET_NOT_FOUND", "That external target does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        if existing["transport"] != "ssh":
+            raise ValueError("Only external SSH targets can be managed in the web UI.")
+        updated = update_inventory_text(content, current, target_id)
+        validate_inventory_text(updated, self.server.inventory_script)
+        locked_atomic_update(self.server.inventory_file, lambda _: updated)
+        self.send_json({"message": "External target saved.", "target": current})
+
+    def handle_target_delete(self, target_id):
+        content = self.inventory_content()
+        validate_inventory_text(content, self.server.inventory_script)
+        existing = next((item for item in inventory_payload(content) if item["id"] == target_id), None)
+        if not existing:
+            self.send_json(error_payload("TARGET_NOT_FOUND", "That external target does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        if existing["transport"] != "ssh":
+            raise ValueError("Only external SSH targets can be managed in the web UI.")
+        updated = update_inventory_text(content, {"id": target_id}, target_id, delete=True)
+        validate_inventory_text(updated, self.server.inventory_script)
+        locked_atomic_update(self.server.inventory_file, lambda _: updated)
+        self.send_json({"message": "External target removed.", "target": target_id})
+
+    def handle_target_test(self, target_id):
+        if not self.valid_target(target_id):
+            self.send_json(error_payload("INVALID_TARGET", "The target name is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            if not any(item["id"] == target_id for item in self.inventory_data()):
+                self.send_json(error_payload("TARGET_NOT_FOUND", "That external target does not exist."), HTTPStatus.NOT_FOUND)
+                return
+            result = self.run_command([str(self.server.external_script), "check", target_id], timeout=150)
+            status = None
+            if self.server.status_file.exists():
+                payload = json.loads(self.server.status_file.read_text(encoding="utf-8"))
+                status = next((item for item in payload.get("targets", []) if item.get("id") == target_id), None)
+        except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("CONNECTION_TEST_FAILED", "The connection test failed."), HTTPStatus.BAD_GATEWAY)
+            return
+        if result.returncode or not status:
+            message = (status or {}).get("error", {}).get("message") if status else "The target could not be checked."
+            self.send_json(error_payload("CONNECTION_TEST_FAILED", message or "The target could not be checked."), HTTPStatus.BAD_GATEWAY)
+            return
+        self.send_json({"message": "Connection test completed.", "target": status})
+
     def do_GET(self):  # noqa: N802 - stdlib handler API
         path = urlsplit(self.path).path
         if path == "/":
             self.send_bytes(PAGE.encode(), "text/html; charset=utf-8")
+            return
+        if path == "/favicon.svg":
+            self.send_bytes(FAVICON_SVG.encode(), "image/svg+xml")
+            return
+        if path == "/api/config":
+            try:
+                self.send_json({"config": config_value_map(self.config_content()), "editable": sorted(CONFIG_KEYS)})
+            except (OSError, UnicodeError):
+                self.send_json(error_payload("CONFIG_UNAVAILABLE", "Configuration is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        if path == "/api/targets":
+            try:
+                self.send_json({"targets": self.inventory_data()})
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("TARGETS_INVALID", "External target inventory is invalid or unavailable."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         if path == "/api/status":
             try:
@@ -206,7 +553,7 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802 - stdlib handler API
         try:
-            self.read_body()
+            payload = self.read_body()
         except OverflowError as error:
             self.send_json(error_payload("REQUEST_TOO_LARGE", str(error)), HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             return
@@ -214,6 +561,21 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("BAD_REQUEST", str(error)), HTTPStatus.BAD_REQUEST)
             return
         parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
+        if urlsplit(self.path).path == "/api/config":
+            try:
+                self.handle_config_update(payload)
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("CONFIG_NOT_SAVED", "Configuration was rejected and not changed."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        if parts == ["api", "targets"]:
+            try:
+                self.handle_target_add(payload)
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("TARGET_NOT_SAVED", "External target was rejected and not changed."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "targets"] and parts[3] == "test":
+            self.handle_target_test(parts[2])
+            return
         if len(parts) == 3 and parts[:2] == ["api", "check"]:
             self.action_check(parts[2])
             return
@@ -262,10 +624,31 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_json({"target": target, "job": job_match.group(1), "state": "running", "message": "Update job started."}, HTTPStatus.ACCEPTED)
 
     def do_PUT(self):  # noqa: N802
-        self.do_POST()
+        try:
+            payload = self.read_body()
+        except (OverflowError, ValueError) as error:
+            self.send_json(error_payload("BAD_REQUEST", str(error)), HTTPStatus.BAD_REQUEST)
+            return
+        parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
+        if len(parts) == 3 and parts[:2] == ["api", "targets"]:
+            try:
+                self.handle_target_update(parts[2], payload)
+            except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("TARGET_NOT_SAVED", "External target was rejected and not changed."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json(error_payload("METHOD_NOT_ALLOWED", "Only defined configuration actions are available."), HTTPStatus.METHOD_NOT_ALLOWED)
+
+    def do_DELETE(self):  # noqa: N802
+        parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
+        if len(parts) == 3 and parts[:2] == ["api", "targets"]:
+            try:
+                self.handle_target_delete(parts[2])
+            except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("TARGET_NOT_REMOVED", "External target was not removed."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json(error_payload("METHOD_NOT_ALLOWED", "Only defined target actions are available."), HTTPStatus.METHOD_NOT_ALLOWED)
 
     do_PATCH = do_PUT
-    do_DELETE = do_PUT
 
     def log_message(self, format_string, *args):
         return
@@ -274,6 +657,10 @@ class StatusHandler(BaseHTTPRequestHandler):
 def parse_args():
     parser = argparse.ArgumentParser(description="Serve the Ultimate Updater status and action preview.")
     parser.add_argument("--status-file", type=Path, default=DEFAULT_STATUS_FILE)
+    parser.add_argument("--config-file", type=Path, default=DEFAULT_CONFIG_FILE)
+    parser.add_argument("--inventory-file", type=Path, default=DEFAULT_INVENTORY_FILE)
+    parser.add_argument("--inventory-script", type=Path, default=DEFAULT_INVENTORY_SCRIPT)
+    parser.add_argument("--external-script", type=Path, default=DEFAULT_EXTERNAL_SCRIPT)
     parser.add_argument("--cli", type=Path, default=DEFAULT_CLI, help="ultimate-updater CLI path")
     parser.add_argument("--job-runner", type=Path, default=DEFAULT_JOB_RUNNER)
     parser.add_argument("--jobs-dir", type=Path, default=DEFAULT_JOBS_DIR)
@@ -288,6 +675,8 @@ def main():
         raise SystemExit("port must be between 1 and 65535")
     server = ThreadingHTTPServer((args.bind, args.port), StatusHandler)
     server.status_file, server.cli = args.status_file, args.cli
+    server.config_file, server.inventory_file = args.config_file, args.inventory_file
+    server.inventory_script, server.external_script = args.inventory_script, args.external_script
     server.job_runner, server.jobs_dir = args.job_runner, args.jobs_dir
     print(f"Ultimate Updater UI: http://{args.bind}:{args.port}/", flush=True)
     try:
