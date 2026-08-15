@@ -15,6 +15,7 @@ JOB_RUNNER="$LOCAL_FILES/job-runner.sh"
 STATUS_FILE="$LOCAL_FILES/status.json"
 EXTERNAL_APT_SCRIPT="$LOCAL_FILES/external-apt.sh"
 STATUS_MODEL_SCRIPT="$LOCAL_FILES/status-model.sh"
+CLUSTER_TARGET_SCRIPT="$LOCAL_FILES/cluster-target.sh"
 
 if [[ ! -f "$UPDATE_SCRIPT" && -f "$SCRIPT_DIR/update.sh" ]]; then
   UPDATE_SCRIPT="$SCRIPT_DIR/update.sh"
@@ -34,8 +35,13 @@ fi
 if [[ ! -f "$STATUS_MODEL_SCRIPT" && -f "$SCRIPT_DIR/status-model.sh" ]]; then
   STATUS_MODEL_SCRIPT="$SCRIPT_DIR/status-model.sh"
 fi
+if [[ ! -f "$CLUSTER_TARGET_SCRIPT" && -f "$SCRIPT_DIR/cluster-target.sh" ]]; then
+  CLUSTER_TARGET_SCRIPT="$SCRIPT_DIR/cluster-target.sh"
+fi
 # shellcheck disable=SC1090
 [[ -f "$STATUS_MODEL_SCRIPT" ]] && source "$STATUS_MODEL_SCRIPT"
+# shellcheck disable=SC1090
+[[ -f "$CLUSTER_TARGET_SCRIPT" ]] && source "$CLUSTER_TARGET_SCRIPT"
 
 usage() {
   cat <<EOF
@@ -193,10 +199,37 @@ PY
 }
 
 resolve_target_kind() {
-  local target="$1" proxmox_kind="" inventory_kind=false
+  local target="$1" proxmox_kind="" inventory_kind=false cluster_rc
+  RESOLVED_TARGET_KIND=""
+  RESOLVED_TARGET_NODE=""
+  RESOLVED_TARGET_HOST=""
+  RESOLVED_TARGET_LOCAL=true
   if [[ "$target" == host || "$target" == local-host ]]; then
+    RESOLVED_TARGET_KIND=host
     printf '%s\n' host
     return 0
+  fi
+  if declare -f cluster_target_resolve >/dev/null 2>&1 && cluster_target_is_id "$target" &&
+    { [[ -n "${UU_CLUSTER_RESOURCES_JSON:-}" ]] || command -v pvesh >/dev/null 2>&1; }; then
+    cluster_target_resolve "$target"
+    cluster_rc=$?
+    if [[ "$cluster_rc" -eq 0 ]]; then
+      RESOLVED_TARGET_NODE="$CLUSTER_TARGET_NODE"
+      RESOLVED_TARGET_HOST="$CLUSTER_TARGET_HOST"
+      RESOLVED_TARGET_LOCAL="$CLUSTER_TARGET_LOCAL"
+      RESOLVED_TARGET_KIND="$CLUSTER_TARGET_KIND"
+      printf '%s\n' "$CLUSTER_TARGET_KIND"
+      return 0
+    fi
+    if [[ "$cluster_rc" -eq 4 ]]; then
+      printf 'ultimate-updater: target ID %s is ambiguous across the cluster.\n' "$target" >&2
+      return 4
+    fi
+    if [[ "$cluster_rc" -eq 1 ]]; then
+      return 1
+    fi
+    printf 'ultimate-updater: could not read the Proxmox cluster inventory.\n' >&2
+    return 5
   fi
   if command -v pct >/dev/null 2>&1 && pct config "$target" >/dev/null 2>&1; then proxmox_kind=container; fi
   if command -v qm >/dev/null 2>&1 && qm config "$target" >/dev/null 2>&1; then proxmox_kind=vm; fi
@@ -205,9 +238,96 @@ resolve_target_kind() {
     printf 'ultimate-updater: target is ambiguous in Proxmox and inventory: %s\n' "$target" >&2
     return 4
   fi
-  if [[ -n "$proxmox_kind" ]]; then printf '%s\n' "$proxmox_kind"; return 0; fi
-  if [[ "$inventory_kind" == true ]]; then printf '%s\n' external; return 0; fi
+  if [[ -n "$proxmox_kind" ]]; then RESOLVED_TARGET_KIND="$proxmox_kind"; printf '%s\n' "$proxmox_kind"; return 0; fi
+  if [[ "$inventory_kind" == true ]]; then RESOLVED_TARGET_KIND=external; printf '%s\n' external; return 0; fi
   return 1
+}
+
+configured_ssh_port() {
+  local config="$LOCAL_FILES/update.conf" port
+  port=$(awk -F'"' '/^SSH_PORT=/ {print $2; exit}' "$config" 2>/dev/null || true)
+  printf '%s\n' "${port:-22}"
+}
+
+finish_partial_status() {
+  local result=$1
+  if declare -f STATUS_MODEL_FINISH >/dev/null 2>&1; then
+    STATUS_MODEL_PARTIAL=true STATUS_MODEL_FINISH || result=$?
+  fi
+  return "$result"
+}
+
+record_remote_target_error() {
+  local target="$1" kind="$2" node="$3" code="$4" message="$5" result=${6:-1}
+  if declare -f STATUS_MODEL_INIT >/dev/null 2>&1 && STATUS_MODEL_INIT; then
+    STATUS_MODEL_RECORD "$target" "$kind" ssh false "" "" null null offline "$code" "$message" "$node"
+    finish_partial_status "$result"
+  fi
+  return "$result"
+}
+
+remote_target_check() {
+  local target="$1" kind="$2" node="$3" host="$4" port mode remote_file local_file rc remote_check_script
+  port=$(configured_ssh_port)
+  mode=$([[ "$kind" == container ]] && printf ccontainer || printf cvm)
+  remote_check_script="/etc/ultimate-updater/check-updates.sh"
+  remote_file="/tmp/ultimate-updater-target-status-$$-$RANDOM.json"
+  local_file=$(mktemp)
+  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" true
+  rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    rm -f -- "$local_file"
+    printf 'Target %s is located on %s, but the node is unreachable.\n' "$target" "$node" >&2
+    record_remote_target_error "$target" "$kind" "$node" SSH_UNREACHABLE "Could not run remote check on $node" "$rc"
+    return "$rc"
+  fi
+  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" \
+    "STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE='$node' STATUS_MODEL_FILE='$remote_file' STATUS_MODEL_RECORD_FILE='$remote_file.records' bash '$remote_check_script' '$mode' '$target' >/dev/null 2>&1"
+  rc=$?
+  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" \
+    "cat '$remote_file'; rm -f -- '$remote_file' '$remote_file.records'" > "$local_file"; then
+    rm -f -- "$local_file"
+    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_IMPORT_FAILED "Could not retrieve remote check status" 1
+    return 1
+  fi
+  if ! python3 - "$local_file" "$target" > "${local_file}.filtered" <<'PY'
+import json
+import sys
+
+source, wanted = sys.argv[1:]
+with open(source, encoding="utf-8") as handle:
+    payload = json.load(handle)
+targets = [item for item in payload.get("targets", [])
+           if isinstance(item, dict) and str(item.get("id")) == wanted]
+if len(targets) != 1:
+    raise SystemExit(1)
+json.dump({"schema_version": payload.get("schema_version", 1),
+           "targets": targets}, sys.stdout)
+PY
+  then
+    rm -f -- "$local_file" "${local_file}.filtered"
+    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_IMPORT_FAILED "Remote status did not contain target $target" 1
+    return 1
+  fi
+  if ! STATUS_MODEL_INIT || ! STATUS_MODEL_IMPORT_FILE "${local_file}.filtered"; then
+    rm -f -- "$local_file" "${local_file}.filtered"
+    return 1
+  fi
+  rm -f -- "$local_file" "${local_file}.filtered"
+  finish_partial_status "$rc"
+}
+
+remote_target_update() {
+  local target="$1" node="$2" host="$3" port command
+  port=$(configured_ssh_port)
+  printf 'Target %s resolved to %s.\n' "$target" "$node"
+  printf 'Starting update job on %s ...\n' "$node"
+  printf -v command 'exec %q start %q %q' \
+    "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" "$target"
+  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" "$command"; then
+    printf 'ultimate-updater: could not start update job on %s.\n' "$node" >&2
+    return 6
+  fi
 }
 
 run_external_checks() {
@@ -223,7 +343,7 @@ run_external_checks() {
 }
 
 run_check() {
-  local target="${1:-}" kind
+  local target="${1:-}" kind resolve_result
   if [[ -z "$target" ]]; then
     require_file "$CHECK_SCRIPT" "check script" || return 1
     local check_result external_result
@@ -235,10 +355,20 @@ run_check() {
     [[ "$check_result" -eq 0 ]] || return "$check_result"
     return "$external_result"
   fi
-  kind=$(resolve_target_kind "$target") || {
-    printf 'ultimate-updater: target not found: %s\n' "$target" >&2
-    return 3
-  }
+  resolve_target_kind "$target" >/dev/null
+  resolve_result=$?
+  kind="$RESOLVED_TARGET_KIND"
+  if [[ "$resolve_result" -ne 0 ]]; then
+    case "$resolve_result" in
+      1) printf 'ultimate-updater: target not found: %s\n' "$target" >&2; return 3 ;;
+      4) return 4 ;;
+      *) return "$resolve_result" ;;
+    esac
+  fi
+  if [[ "$RESOLVED_TARGET_LOCAL" == false ]]; then
+    remote_target_check "$target" "$kind" "$RESOLVED_TARGET_NODE" "$RESOLVED_TARGET_HOST"
+    return $?
+  fi
   case "$kind" in
     host) require_file "$CHECK_SCRIPT" "check script" || return 1; STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" chost ;;
     container) require_file "$CHECK_SCRIPT" "check script" || return 1; STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" ccontainer "$target" ;;
@@ -252,10 +382,20 @@ run_update() {
   local target="${1:-}" kind
   [[ -n "$target" ]] || { usage >&2; return 2; }
   [[ "$EUID" -eq 0 ]] || { printf 'ultimate-updater: update jobs require root\n' >&2; return 2; }
-  kind=$(resolve_target_kind "$target") || {
-    printf 'ultimate-updater: target not found: %s\n' "$target" >&2
-    return 3
-  }
+  resolve_target_kind "$target" >/dev/null
+  local resolve_result=$?
+  kind="$RESOLVED_TARGET_KIND"
+  if [[ "$resolve_result" -ne 0 ]]; then
+    case "$resolve_result" in
+      1) printf 'ultimate-updater: target not found: %s\n' "$target" >&2; return 3 ;;
+      4) return 4 ;;
+      *) return "$resolve_result" ;;
+    esac
+  fi
+  if [[ "$RESOLVED_TARGET_LOCAL" == false ]]; then
+    remote_target_update "$target" "$RESOLVED_TARGET_NODE" "$RESOLVED_TARGET_HOST"
+    return $?
+  fi
   case "$kind" in
     host|container|vm) require_file "$UPDATE_SCRIPT" "update script" || return 1; "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")" ;;
     external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target" ;;

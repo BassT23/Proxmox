@@ -22,6 +22,11 @@ else
   RUN_PCT_COMMAND() { local target_id="$1"; shift; pct exec "$target_id" -- "$@"; }
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
 fi
+CLUSTER_TARGET_FILE="${CLUSTER_TARGET_FILE:-$LOCAL_FILES/cluster-target.sh}"
+if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
+  # shellcheck disable=SC1090,SC1091
+  . "$CLUSTER_TARGET_FILE"
+fi
 WINDOWS_UPDATE_FILE="${WINDOWS_UPDATE_FILE:-$LOCAL_FILES/windows-update.sh}"
 if [[ -f "$WINDOWS_UPDATE_FILE" ]]; then
   # shellcheck disable=SC1090
@@ -113,6 +118,33 @@ ARGUMENTS () {
         SINGLE_UPDATE=true
         MODE=" Single "
         ONLY=$ARGUMENT
+        if declare -f cluster_target_resolve >/dev/null 2>&1 &&
+          { [[ -n "${UU_CLUSTER_RESOURCES_JSON:-}" ]] || command -v pvesh >/dev/null 2>&1; }; then
+          if cluster_target_resolve "$ARGUMENT"; then
+            if [[ "$CLUSTER_TARGET_LOCAL" == false ]]; then
+              local remote_command
+              printf -v remote_command 'exec %q start %q %q' \
+                "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" "$ARGUMENT"
+              echo -e "ℹ ${OR:-} Target $ARGUMENT resolved to $CLUSTER_TARGET_NODE; starting remote update job${CL:-}\n"
+              if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "${SSH_PORT:-22}" \
+                "$CLUSTER_TARGET_HOST" "$remote_command"; then
+                echo -e "${RD:-}❌ Could not start update job on $CLUSTER_TARGET_NODE${CL:-}" >&2
+                return 6
+              fi
+              REMOTE_TARGET_DISPATCHED=true
+              continue
+            fi
+          else
+            local cluster_result=$?
+            case "$cluster_result" in
+              1) echo -e "${RD:-}❌ Target $ARGUMENT not found in Proxmox cluster${CL:-}" >&2 ;;
+              2) echo -e "${RD:-}❌ Target ID must be numeric: $ARGUMENT${CL:-}" >&2 ;;
+              4) echo -e "${RD:-}❌ Target ID $ARGUMENT is ambiguous across the cluster${CL:-}" >&2 ;;
+              *) echo -e "${RD:-}❌ Could not read the Proxmox cluster inventory${CL:-}" >&2 ;;
+            esac
+            return "$cluster_result"
+          fi
+        fi
         HEADER_INFO
         if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Exit, if error come up, is disabled${CL:-}\n"; fi
         echo -e "ℹ ${OR:-} Update only LXC/VM $ARGUMENT - work only on main host!${CL:-}\n"
@@ -1041,6 +1073,9 @@ UPDATE_HOST () {
     if [[ -f "$LOCAL_FILES/target-runtime.sh" ]]; then
       scp "$LOCAL_FILES/target-runtime.sh" "$HOST":$LOCAL_FILES/target-runtime.sh
     fi
+    if [[ -f "$LOCAL_FILES/cluster-target.sh" ]]; then
+      scp "$LOCAL_FILES/cluster-target.sh" "$HOST":$LOCAL_FILES/cluster-target.sh
+    fi
   fi
   if [[ "$HEADLESS" == true ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
@@ -1741,6 +1776,13 @@ if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/tem
 OUTPUT_TO_FILE
 IP=$(hostname -i | cut -d ' ' -f1)
 ARGUMENTS "$@"
+ARGUMENT_RESULT=$?
+if [[ "$ARGUMENT_RESULT" -ne 0 ]]; then
+  exit "$ARGUMENT_RESULT"
+fi
+if [[ "$REMOTE_TARGET_DISPATCHED" == true ]]; then
+  exit 0
+fi
 
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true ]]; then

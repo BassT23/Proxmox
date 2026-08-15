@@ -249,9 +249,27 @@ ultimate-updater status
 ultimate-updater status --json
 ```
 
+On a Proxmox cluster, numeric guest IDs are resolved through the cluster
+inventory before a check or update is dispatched. Therefore a guest can be
+checked or updated from any cluster node, for example:
+
+```text
+ultimate-updater check 920
+ultimate-updater update 920
+update 920
+```
+
+The owning node runs the existing check path or starts the existing
+session-independent job runner. Local guests continue through the local path;
+the legacy `update <ID>` syntax remains supported (remote targets are handed
+to the owning node's job runner). Cluster node names and transport addresses
+come from Proxmox cluster data, not from VMID heuristics.
+
 `status --json` prints the same `/etc/ultimate-updater/status.json` data used by
 the read-only web preview. Existing direct calls to `update.sh` and
-`check-updates.sh` remain supported and remain synchronous. The
+`check-updates.sh` remain supported. Local direct update/check paths remain
+synchronous; a cluster-remote numeric update is handed to the owning node's
+job runner. The
 `ultimate-updater update TARGET` command starts a transient systemd job instead. The
 command returns after the job is accepted, so the client session may disconnect.
 Use `ultimate-updater status` and `journalctl -u <unit>` to inspect the result

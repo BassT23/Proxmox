@@ -246,6 +246,10 @@ INSTALL () {
     cp "$TEMP_FILES"/windows-update.sh $LOCAL_FILES/windows-update.sh
     chmod 750 $LOCAL_FILES/windows-update.sh
     cp "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
+    if [[ -f "$TEMP_FILES"/cluster-target.sh ]]; then
+      cp "$TEMP_FILES"/cluster-target.sh $LOCAL_FILES/cluster-target.sh
+      chmod 750 $LOCAL_FILES/cluster-target.sh
+    fi
     if [[ -f "$TEMP_FILES"/external-apt.sh ]]; then
       cp "$TEMP_FILES"/external-apt.sh $LOCAL_FILES/external-apt.sh
       chmod 750 $LOCAL_FILES/external-apt.sh
@@ -327,6 +331,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/target-runtime.sh ]]; then
       mv "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
       chmod 750 $LOCAL_FILES/target-runtime.sh
+    fi
+    if [[ -f "$TEMP_FILES"/cluster-target.sh ]]; then
+      mv "$TEMP_FILES"/cluster-target.sh $LOCAL_FILES/cluster-target.sh
+      chmod 750 $LOCAL_FILES/cluster-target.sh
     fi
     if [[ -f "$TEMP_FILES"/external-apt.sh ]]; then
       mv "$TEMP_FILES"/external-apt.sh $LOCAL_FILES/external-apt.sh
