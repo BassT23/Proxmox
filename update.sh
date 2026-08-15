@@ -853,15 +853,22 @@ DIST_UPGRADE () {
 # Check Updates for Welcome-Screen
 UPDATE_CHECK () {
   if [[ "$WELCOME_SCREEN" == true ]]; then
+    local status_target=""
     echo -e "${OR:-}--- Check Status for Welcome-Screen ---${CL:-}"
     if [[ "$CHOST" == true ]]; then
 #      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u chost" | tee -a "$LOCAL_FILES/check-output"
-      "$LOCAL_FILES/check-updates.sh" -u chost | tee -a "$LOCAL_FILES/check-output"
+      STATUS_MODEL_PARTIAL=true "$LOCAL_FILES/check-updates.sh" -u chost | tee -a "$LOCAL_FILES/check-output"
+      status_target="host:$HOSTNAME"
     elif [[ "$CCONTAINER" == true ]]; then
 #      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u ccontainer" | tee -a $LOCAL_FILES/check-output
-      "$LOCAL_FILES/check-updates.sh" -u ccontainer | tee -a "$LOCAL_FILES/check-output"
+      STATUS_MODEL_PARTIAL=true "$LOCAL_FILES/check-updates.sh" -u ccontainer | tee -a "$LOCAL_FILES/check-output"
+      status_target="$CONTAINER"
     elif [[ "$CVM" == true ]]; then
       ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u cvm" | tee -a $LOCAL_FILES/check-output
+      status_target="$VM"
+    fi
+    if [[ -n "$status_target" ]] && declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
+      STATUS_MODEL_UPDATE_RESULT "$status_target" success 0 || true
     fi
     echo -e "${GN:-}---          Finished check         ---${CL:-}\n"
     [[ "$WILL_STOP" != true ]] && echo
