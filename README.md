@@ -271,23 +271,37 @@ remote system only needs SSH and apt; it does not need an updater agent. A
 remote update does not create a Proxmox backup or snapshot, and it is not
 automatically rebooted when `/var/run/reboot-required` is present.
 
-## Read-only web preview
+## Web UI preview
 
-A small browser preview is included at `web-ui/server.py`. It uses only the
-Python 3 standard library and reads the generated `status.json`; it does not
-run package managers, contact targets, or start update jobs. Start it locally
-with:
+A small browser UI is included at `web-ui/server.py`. It uses only the
+Python 3 standard library. It reads the generated `status.json` and delegates
+checks and updates to the existing `ultimate-updater` CLI; it does not contain
+package-manager, SSH, QGA, or Windows update logic.
+
+Start it locally with:
 
 ```bash
 python3 web-ui/server.py
 ```
 
 By default it binds to `127.0.0.1:8765` and serves a compact, responsive
-overview with a simple target detail view. Use `--bind` and `--port` only when
-you intentionally want another local/LAN binding, and use `--status-file` for
-a different read-only status source. Missing or invalid status data is shown
-as a clear message. The first preview has no check, update, reboot, backup, or
-configuration actions; those belong to later roadmap work.
+overview, target actions, server-side job state, and a simple log view. Use
+`--bind` and `--port` only when you intentionally want another local/LAN
+binding. The default is `127.0.0.1:8765`; do not expose the action-enabled UI
+to an untrusted network without adding suitable access control. Missing or
+invalid status data is shown as a clear message.
+
+The process serving action endpoints must already have the local permissions
+needed by the existing CLI (normally a controlled root-owned test/service
+context); the UI does not store passwords or add broad `sudo` rules.
+
+`Check` calls the existing check path. `Start update` calls the existing CLI,
+which hands the update to the session-independent #316 systemd job runner.
+The browser receives the job ID and may be closed; the job and its journal
+remain available to a later browser or device. The UI polls job state every
+two seconds while a job is running and less often when idle. Updates require
+a browser confirmation. There are no reboot, backup, cancellation,
+configuration, or arbitrary-command actions.
 
 With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
 
