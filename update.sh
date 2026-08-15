@@ -1267,13 +1267,24 @@ UPDATE_CONTAINER () {
       ERROR_MSG="${SCRIPT_ONLY_ERROR:-Script-only user scripts failed or were not found}"
       ERROR
     }
+    if [[ -z "${ERROR_CODE:-}" ]] && declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
+      STATUS_MODEL_UPDATE_RESULT "$CONTAINER" success 0 || true
+    fi
     CCONTAINER=""
     return
   fi
   # Run dist-upgrade
   if [[ $CHECK_DIST == true && $OS =~ debian ]]; then
     DIST_UPGRADE
-    return 0
+    local dist_result=$?
+    if declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
+      if [[ $dist_result -eq 0 ]]; then
+        STATUS_MODEL_UPDATE_RESULT "$CONTAINER" success 0 || true
+      else
+        STATUS_MODEL_UPDATE_RESULT "$CONTAINER" failed "$dist_result" || true
+      fi
+    fi
+    return "$dist_result"
   elif [[ "$CHECK_DIST" == true ]]; then
     echo -e "${OR:-} ❌ Distribution not supported\n${CL:-}"
     return 0
@@ -1353,6 +1364,9 @@ UPDATE_CONTAINER () {
     UPDATE_CHECK
   else
     echo -e "${OR:-}The system could not be idetified.${CL:-}"
+  fi
+  if declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
+    STATUS_MODEL_UPDATE_RESULT "$CONTAINER" success 0 || true
   fi
   CCONTAINER=""
 }
@@ -1753,6 +1767,10 @@ CLEAN_LOGFILE () {
 
 # Error handling
 ERROR () {
+  if [[ "${CCONTAINER:-}" == true && "${ID:-}" =~ ^[0-9]+$ ]] &&
+    declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
+    STATUS_MODEL_UPDATE_RESULT "$ID" failed "${ERROR_CODE:-1}" || true
+  fi
   echo -e "$ID : $NAME" | tee -a "$ERROR_LOG_FILE" >/dev/null 2>&1
   echo -e "Error code:   $ERROR_CODE" | tee -a "$ERROR_LOG_FILE" >/dev/null 2>&1
   echo -e "Error output: $ERROR_MSG\n" | tee -a "$ERROR_LOG_FILE" >/dev/null 2>&1
