@@ -105,19 +105,21 @@ from datetime import datetime, timezone
 record_file, status_file, partial = sys.argv[1:]
 generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 targets = {}
+existing_targets = {}
 
-if partial == "true":
-    try:
-        with open(status_file, encoding="utf-8") as source:
-            payload = json.load(source)
-        existing = payload.get("targets") if isinstance(payload, dict) else None
-        if isinstance(existing, list):
-            targets = {
-                item.get("id"): item for item in existing
-                if isinstance(item, dict) and item.get("id")
-            }
-    except (FileNotFoundError, OSError, ValueError):
-        pass
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+    existing = payload.get("targets") if isinstance(payload, dict) else None
+    if isinstance(existing, list):
+        existing_targets = {
+            item.get("id"): item for item in existing
+            if isinstance(item, dict) and item.get("id")
+        }
+        if partial == "true":
+            targets = dict(existing_targets)
+except (FileNotFoundError, OSError, ValueError):
+    pass
 
 def decode(value):
     return base64.b64decode(value.encode()).decode()
@@ -157,7 +159,9 @@ with open(record_file, encoding="utf-8") as records:
         # A check refreshes observation fields, but must not erase the last
         # update result.  This applies to full checks as well as partial ones.
         if "last_update" not in record:
-            record["last_update"] = {"status": "unknown", "timestamp": None}
+            record["last_update"] = existing_targets.get(target_id, {}).get(
+                "last_update", {"status": "unknown", "timestamp": None}
+            )
 
 payload = {"schema_version": 1, "generated_at": generated_at, "targets": list(targets.values())}
 directory = os.path.dirname(os.path.abspath(status_file)) or "."
