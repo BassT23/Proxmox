@@ -28,7 +28,7 @@ if [[ -f "$WINDOWS_UPDATE_FILE" ]]; then
   . "$WINDOWS_UPDATE_FILE"
 fi
 if [[ -f "$LOCAL_FILES/status-model.sh" ]]; then
-  # shellcheck disable=SC1090
+  # shellcheck disable=SC1090,SC1091
   . "$LOCAL_FILES/status-model.sh"
 fi
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
