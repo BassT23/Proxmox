@@ -621,6 +621,10 @@ CHECK_VM () {
   else
     VM=$(awk -F'"' '/^VM=/ {print $2}' $LOCAL_FILES/temp/var)
   fi
+  STATUS_MODEL_GUEST_NAME=""
+  if declare -f cluster_target_guest_name >/dev/null 2>&1; then
+    STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$VM" 2>/dev/null || true)
+  fi
   if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
     USER=$(awk -F'"' '/^USER=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
@@ -736,7 +740,10 @@ CHECK_VM_QEMU () {
     CHECK_VM_QEMU_WINDOWS
     return
   fi
-  QEMU_GUEST_EXEC "$VM" test
+  # Use an explicit successful command for the QGA readiness probe.  The
+  # shell builtin/executable `test` without arguments intentionally exits 1,
+  # which must not be mistaken for a guest-agent transport failure.
+  QEMU_GUEST_EXEC "$VM" --timeout 30 -- /bin/true
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" error QGA_TRANSPORT "${QEMU_EXEC_OUTPUT}"
     return 1
