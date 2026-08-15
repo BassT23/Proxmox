@@ -6,6 +6,7 @@
 
 STATUS_MODEL_FILE="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
 STATUS_MODEL_RECORD_FILE="${STATUS_MODEL_RECORD_FILE:-$LOCAL_FILES/.status-records.$$}"
+STATUS_MODEL_NODE="${STATUS_MODEL_NODE:-${HOSTNAME:-}}"
 
 STATUS_MODEL_B64() {
   printf '%s' "${1:-}" | base64 | tr -d '\n'
@@ -19,8 +20,9 @@ STATUS_MODEL_RECORD() {
   local id="$1" type="$2" transport="$3" reachable="$4" os="$5"
   local updater="$6" updates="$7" reboot_required="$8" check_status="$9"
   local error_code="${10:-}" error_message="${11:-}"
+  local node="${12:-$STATUS_MODEL_NODE}"
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(STATUS_MODEL_B64 "$id")" \
     "$(STATUS_MODEL_B64 "$type")" \
     "$(STATUS_MODEL_B64 "$transport")" \
@@ -31,7 +33,8 @@ STATUS_MODEL_RECORD() {
     "$(STATUS_MODEL_B64 "$reboot_required")" \
     "$(STATUS_MODEL_B64 "$check_status")" \
     "$(STATUS_MODEL_B64 "$error_code")" \
-    "$(STATUS_MODEL_B64 "$error_message")" >> "$STATUS_MODEL_RECORD_FILE"
+    "$(STATUS_MODEL_B64 "$error_message")" \
+    "$(STATUS_MODEL_B64 "$node")" >> "$STATUS_MODEL_RECORD_FILE"
 }
 
 STATUS_MODEL_IMPORT_FILE() {
@@ -80,6 +83,7 @@ with open(record_file, "a", encoding="utf-8") as records:
             encode(target.get("check_status")),
             encode(error.get("code")),
             encode(error.get("message")),
+            encode(target.get("node")),
         ]
         records.write("\t".join(fields) + "\n")
 PY
@@ -118,10 +122,11 @@ def decode(value):
 with open(record_file, encoding="utf-8") as records:
     for line in records:
         fields = line.rstrip("\n").split("\t")
-        if len(fields) != 11:
+        if len(fields) != 12:
             raise ValueError("invalid status record")
         (target_id, target_type, transport, reachable, os_name, updater,
-         updates, reboot_required, check_status, error_code, error_message) = map(decode, fields)
+         updates, reboot_required, check_status, error_code, error_message,
+         node) = map(decode, fields)
         available = None if updates in ("", "null") else int(updates)
         reboot = None if reboot_required in ("", "null") else reboot_required == "true"
         error = None
@@ -141,6 +146,7 @@ with open(record_file, encoding="utf-8") as records:
             "last_check": generated_at,
             "check_status": check_status or "not_checked",
             "error": error,
+            "node": node or None,
         })
         if partial != "true" or "last_update" not in record:
             record["last_update"] = {"status": "unknown", "timestamp": None}
