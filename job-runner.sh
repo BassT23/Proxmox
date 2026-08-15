@@ -128,6 +128,59 @@ remote_state_line() {
   printf '%s\t%s\tremote_unavailable\t\t\t\t%s\n' "$unit" "$target" "$owner_node"
 }
 
+sync_remote_last_update() {
+  local target="$1" state="$2" finished="$3" exit_code="$4"
+  [[ "$state" == completed || "$state" == failed || "$state" == interrupted ]] || return 0
+  [[ "$target" =~ ^[0-9]+$ ]] || return 0
+  [[ "$exit_code" =~ ^[0-9]+$ ]] || exit_code=1
+  python3 - "${UU_STATUS_MODEL_FILE:-/etc/ultimate-updater/status.json}" \
+    "$target" "$state" "$finished" "$exit_code" <<'PY'
+import json
+import os
+import sys
+import tempfile
+
+status_file, target_id, job_state, finished, exit_code = sys.argv[1:]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (FileNotFoundError, OSError, ValueError):
+    return_code = 0
+    raise SystemExit(return_code)
+
+targets = payload.get("targets") if isinstance(payload, dict) else None
+if not isinstance(targets, list):
+    raise SystemExit(0)
+record = next((item for item in targets
+               if isinstance(item, dict) and str(item.get("id")) == target_id), None)
+if record is None:
+    raise SystemExit(0)
+
+status = "success" if job_state == "completed" and exit_code == "0" else "failed"
+record["last_update"] = {
+    "status": status,
+    "timestamp": finished or None,
+    "exit_code": int(exit_code),
+}
+directory = os.path.dirname(os.path.abspath(status_file)) or "."
+fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(payload, output, indent=2)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, status_file)
+except Exception:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
+}
+
 target_running() {
   local file target state
   shopt -s nullglob
@@ -253,7 +306,10 @@ list_jobs() {
     owner_host=$(state_value "$file" owner_host)
     port=$(state_value "$file" port)
     [[ -n "$unit" && -n "$target" && -n "$owner_node" && -n "$owner_host" && -n "$port" ]] || continue
-    remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port"
+    remote_state=$(remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port")
+    printf '%s\n' "$remote_state"
+    IFS=$'\t' read -r _ remote_target remote_status _ remote_finished remote_exit _ <<< "$remote_state"
+    sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true
   done
 }
 
