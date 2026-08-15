@@ -307,17 +307,17 @@ CHECK_HOST () {
   remote_runtime_env=""
   remote_status_env=""
   remote_status_file="/tmp/ultimate-updater-remote-status-$$-$RANDOM.json"
-  if ! ssh "$HOST" -p "$SSH_PORT" "mkdir -p '$LOCAL_FILES' '$remote_check_dir'" ||
-    ! scp "$LOCAL_FILES/update.conf" "$HOST:$LOCAL_FILES/update.conf" >/dev/null 2>&1 ||
-    ! scp "$TAG_FILTER_FILE" "$HOST:$remote_check_dir/tag-filter.sh" >/dev/null 2>&1; then
-    ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "mkdir -p '$LOCAL_FILES' '$remote_check_dir'" ||
+    ! scp -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$LOCAL_FILES/update.conf" "$HOST:$LOCAL_FILES/update.conf" >/dev/null 2>&1 ||
+    ! scp -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$TAG_FILTER_FILE" "$HOST:$remote_check_dir/tag-filter.sh" >/dev/null 2>&1; then
+    ssh -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
     echo -e "${RD}Could not prepare matching check helper on remote host $HOST${CL}"
     STATUS_MODEL_RECORD "$HOST_ID" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote check" "$HOST_NODE"
     return 1
   fi
   if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
-    if ! scp "$TARGET_RUNTIME_FILE" "$HOST:$remote_check_dir/target-runtime.sh" >/dev/null 2>&1; then
-      ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    if ! scp -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$TARGET_RUNTIME_FILE" "$HOST:$remote_check_dir/target-runtime.sh" >/dev/null 2>&1; then
+      ssh -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
       echo -e "${RD}Could not prepare target runtime helper on remote host $HOST${CL}"
       STATUS_MODEL_RECORD "$HOST_ID" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote target runtime" "$HOST_NODE"
       return 1
@@ -325,21 +325,21 @@ CHECK_HOST () {
     remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh'"
   fi
   if [[ -f "$STATUS_MODEL_SCRIPT" ]]; then
-    if ! scp "$STATUS_MODEL_SCRIPT" "$HOST:$remote_check_dir/status-model.sh" >/dev/null 2>&1; then
-      ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    if ! scp -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$STATUS_MODEL_SCRIPT" "$HOST:$remote_check_dir/status-model.sh" >/dev/null 2>&1; then
+      ssh -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
       echo -e "${RD}Could not prepare matching status helper on remote host $HOST${CL}"
       STATUS_MODEL_RECORD "$HOST_ID" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote status helper" "$HOST_NODE"
       return 1
     fi
     remote_status_env=" STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'"
   fi
-  if ssh "$HOST" -p "$SSH_PORT" \
+  if ssh -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" \
     "TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env bash -s -- -c host" < "$0"; then
     remote_status=0
   else
     remote_status=$?
   fi
-  if scp "$HOST:$remote_check_dir/status.json" "$remote_status_file" >/dev/null 2>&1; then
+  if scp -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_check_dir/status.json" "$remote_status_file" >/dev/null 2>&1; then
     if ! STATUS_MODEL_IMPORT_FILE "$remote_status_file"; then
       echo -e "${RD}Could not import status from remote host $HOST${CL}"
       STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not import remote check status" "$HOST_NODE"
@@ -349,7 +349,7 @@ CHECK_HOST () {
     echo -e "${RD}Could not retrieve status from remote host $HOST${CL}"
     STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not retrieve remote check status" "$HOST_NODE"
   fi
-  ssh "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+  ssh -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
   if [[ "$remote_status" -ne 0 ]]; then
     STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "Remote check exited with $remote_status" "$HOST_NODE"
   fi
