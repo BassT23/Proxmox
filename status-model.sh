@@ -163,6 +163,8 @@ with open(record_file, encoding="utf-8") as records:
         })
         if name:
             record["name"] = name
+        elif target_type == "host":
+            record.pop("name", None)
         if isinstance(imported_last_update, dict):
             record["last_update"] = imported_last_update
         # A check refreshes observation fields, but must not erase the last

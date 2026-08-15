@@ -474,7 +474,7 @@ CONTAINER_CHECK_START () {
           echo -e "${RD}Skipping LXC $CONTAINER because it did not become reachable${CL}"
         fi
         # Stop the container
-        pct shutdown "$CONTAINER"
+        pct shutdown "$CONTAINER" --timeout 60 --forceStop 1
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
         CHECK_CONTAINER "$CONTAINER"
       fi
