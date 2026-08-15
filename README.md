@@ -223,6 +223,8 @@ Each target record contains its `id`, `type`, `transport`, `reachable`,
 detected `os`, selected `updater`, update count, `reboot_required`,
 `last_check`, `check_status`, `last_update`, and `error`. Values that cannot
 be determined are `null`, rather than being reported as zero or success.
+Proxmox guest records may also contain a `node` value identifying their
+parent host; external targets are not assigned to a Proxmox node.
 Possible check states are `ok`, `updates_available`, `offline`,
 `unsupported`, `not_checked`, and `error`. The JSON is data-only; presentation
 belongs to future CLI, notification, or web interfaces.
@@ -314,6 +316,13 @@ overview, target actions, server-side job state, and a simple log view. Use
 binding. Do not expose the action-enabled UI to an untrusted network without
 adding suitable access control. Missing or invalid status data is shown as a
 clear message.
+
+The web preview groups multiple Proxmox host records as nodes and shows their
+LXC/VM guests below the corresponding node. With one Proxmox host, the same
+node-first view is used in a compact form. Targets from `targets.conf` remain
+in a separate External systems section. The UI is still an engineering
+preview, not a beta release: owner-approved real live update runs are still
+required before beta or release approval.
 
 The process serving action endpoints must already have the local permissions
 needed by the existing CLI (normally a controlled root-owned test/service
