@@ -196,7 +196,7 @@ run_job() {
 }
 
 refresh_running_jobs() {
-  local file unit target state active_state
+  local file unit target state active_state load_state started age_seconds
   command -v systemctl >/dev/null 2>&1 || return 0
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
@@ -204,10 +204,28 @@ refresh_running_jobs() {
     target=$(state_value "$file" target)
     state=$(state_value "$file" state)
     if [[ "$state" == running ]]; then
-      active_state=$(systemctl show "$unit" -p ActiveState --value 2>/dev/null || true)
+      # A transient unit can be briefly invisible between the state file
+      # write and systemd registering the unit.  Do not turn that startup
+      # window into a false interrupted state.
+      active_state=""
+      load_state=""
+      while IFS= read -r line; do
+        case "$line" in
+          ActiveState=*) active_state=${line#ActiveState=} ;;
+          LoadState=*) load_state=${line#LoadState=} ;;
+        esac
+      done < <(systemctl show "$unit" -p ActiveState -p LoadState 2>/dev/null || true)
       case "$active_state" in
         active|activating|deactivating) ;;
-        *) write_state "$unit" "$target" interrupted "$(state_value "$file" started_at)" "$(now)" '' "unit no longer active" || true ;;
+        *)
+          if [[ "$load_state" != loaded ]]; then
+            started=$(state_value "$file" started_at)
+            age_seconds=$(( $(date -u +%s) - $(date -u -d "$started" +%s 2>/dev/null || date -u +%s) ))
+            if (( age_seconds >= 30 )); then
+              write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit no longer active" || true
+            fi
+          fi
+          ;;
       esac
     fi
   done

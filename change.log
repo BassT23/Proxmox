@@ -3,6 +3,9 @@ Changelog:
 
 **develop**
 - IMPORTANT: reboot the node after updating to this version before using the new session-independent update jobs
+- detect pending Proxmox kernel reboots from selected bootable kernels
+- avoid false interrupted states while transient systemd jobs are starting
+- migrate and enable the web service during updater self-updates
 - resolve Proxmox guest IDs cluster-wide for check/update commands
 - preserve legacy update <ID> workflow across cluster nodes
 - show Proxmox guest names in the Web UI

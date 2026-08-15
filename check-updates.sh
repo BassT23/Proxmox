@@ -364,12 +364,16 @@ CHECK_HOST () {
 
 CHECK_HOST_ITSELF () {
   STATUS_MODEL_GUEST_NAME=""
+  REBOOT_REQUIRED=false
   local STATUS_HOST_NAME="${STATUS_MODEL_NODE:-$HOSTNAME}"
   apt-get update >/dev/null 2>&1
   SECURITY_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst.*security" | tr -d '\n')
   if [[ $SECURITY_APT_UPDATES != 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
   NORMAL_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst." | tr -d '\n')
-  if [[ -f /var/run/reboot-required.pkgs ]]; then REBOOT_REQUIRED=true; fi
+  if [[ -f /var/run/reboot-required || -f /var/run/reboot-required.pkgs ]] ||
+    HOST_KERNEL_REBOOT_REQUIRED; then
+    REBOOT_REQUIRED=true
+  fi
   if [[ $SECURITY_APT_UPDATES != 0 || $NORMAL_APT_UPDATES != 0 || $REBOOT_REQUIRED == true ]]; then
     echo -e "\n${BL}Host${CL} : ${GN}$HOSTNAME${CL}"
   fi
@@ -387,6 +391,46 @@ CHECK_HOST_ITSELF () {
   local HOST_OS
   HOST_OS=$(awk -F= '/^PRETTY_NAME=/{gsub(/^"|"$/, "", $2); print $2; exit}' /etc/os-release 2>/dev/null)
   STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true "${HOST_OS:-unknown}" apt "$HOST_UPDATES" "${REBOOT_REQUIRED:-false}" "$HOST_STATUS" "" "" "$STATUS_HOST_NAME"
+}
+
+# Proxmox kernel packages can install a new bootable kernel without leaving
+# Debian's /var/run/reboot-required marker.  Compare the currently running
+# kernel with the newest kernel selected by proxmox-boot-tool.  Respect an
+# explicit manual kernel selection; it is an intentional administrator choice.
+HOST_KERNEL_REBOOT_REQUIRED () {
+  local current_kernel newest_kernel manual_kernels automatic_kernels candidates kernel
+  current_kernel=$(uname -r 2>/dev/null || true)
+  [[ -n "$current_kernel" ]] || return 1
+
+  if command -v proxmox-boot-tool >/dev/null 2>&1; then
+    manual_kernels=$(proxmox-boot-tool kernel list 2>/dev/null | awk '
+      /Manually selected kernels:/ {section="manual"; next}
+      /Automatically selected kernels:/ {section="automatic"; next}
+      section == "manual" && $1 ~ /^[0-9].*-pve$/ {print $1}
+    ')
+    automatic_kernels=$(proxmox-boot-tool kernel list 2>/dev/null | awk '
+      /Manually selected kernels:/ {section="manual"; next}
+      /Automatically selected kernels:/ {section="automatic"; next}
+      section == "automatic" && $1 ~ /^[0-9].*-pve$/ {print $1}
+    ')
+    if [[ -n "$manual_kernels" ]]; then
+      candidates=$manual_kernels
+    else
+      candidates=$automatic_kernels
+    fi
+  else
+    candidates=$(find /boot -maxdepth 1 -type f -name 'vmlinuz-*-pve' -printf '%f\n' 2>/dev/null |
+      sed 's/^vmlinuz-//')
+  fi
+
+  while IFS= read -r kernel; do
+    [[ -n "$kernel" && -e "/boot/vmlinuz-$kernel" ]] || continue
+    if [[ -z "$newest_kernel" ]] || dpkg --compare-versions "$kernel" gt "$newest_kernel"; then
+      newest_kernel=$kernel
+    fi
+  done <<< "$candidates"
+
+  [[ -n "$newest_kernel" && "$newest_kernel" != "$current_kernel" ]]
 }
 
 ## Container ##
