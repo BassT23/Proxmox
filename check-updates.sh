@@ -29,6 +29,12 @@ else
   }
 fi
 
+CLUSTER_TARGET_FILE="${CLUSTER_TARGET_FILE:-$LOCAL_FILES/cluster-target.sh}"
+if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
+  # shellcheck disable=SC1090
+  . "$CLUSTER_TARGET_FILE"
+fi
+
 STATUS_MODEL_SCRIPT="${STATUS_MODEL_SCRIPT:-$LOCAL_FILES/status-model.sh}"
 WINDOWS_UPDATE_FILE="${WINDOWS_UPDATE_FILE:-$LOCAL_FILES/windows-update.sh}"
 if [[ -f "$WINDOWS_UPDATE_FILE" ]]; then
@@ -357,6 +363,7 @@ CHECK_HOST () {
 }
 
 CHECK_HOST_ITSELF () {
+  STATUS_MODEL_GUEST_NAME=""
   local STATUS_HOST_NAME="${STATUS_MODEL_NODE:-$HOSTNAME}"
   apt-get update >/dev/null 2>&1
   SECURITY_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst.*security" | tr -d '\n')
@@ -424,6 +431,10 @@ CHECK_CONTAINER () {
     CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' $LOCAL_FILES/temp/var)
   fi
   local CONTAINER_UPDATES=0 CONTAINER_STATUS=ok CONTAINER_REBOOT=false
+  STATUS_MODEL_GUEST_NAME=""
+  if declare -f cluster_target_guest_name >/dev/null 2>&1; then
+    STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$CONTAINER" 2>/dev/null || true)
+  fi
   pct config "$CONTAINER" > $LOCAL_FILES/temp/temp
   OS=$(awk '/^ostype/' $LOCAL_FILES/temp/temp | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
@@ -491,6 +502,10 @@ VM_CHECK_START () {
   VMS=$(qm list | tail -n +2 | cut -c -10)
   # Loop through VMs
   for VM in $VMS; do
+    STATUS_MODEL_GUEST_NAME=""
+    if declare -f cluster_target_guest_name >/dev/null 2>&1; then
+      STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$VM" 2>/dev/null || true)
+    fi
     REBOOT_REQUIRED=false
     SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "${VM_START_DELAY:-45}")
     SSH_START_DELAY_TIME=${SSH_START_DELAY_TIME:-45}

@@ -62,13 +62,13 @@ cluster_target_local_node() {
 }
 
 # Sets CLUSTER_TARGET_ID, CLUSTER_TARGET_KIND, CLUSTER_TARGET_NODE,
-# CLUSTER_TARGET_HOST and CLUSTER_TARGET_LOCAL. Return values:
+# CLUSTER_TARGET_NAME, CLUSTER_TARGET_HOST and CLUSTER_TARGET_LOCAL. Return values:
 #   0 resolved, 1 not found/unsupported inventory, 2 invalid ID,
 #   4 ambiguous, 5 cluster inventory unavailable.
 cluster_target_resolve() {
   local target="${1:-}" json result
   unset CLUSTER_TARGET_ID CLUSTER_TARGET_KIND CLUSTER_TARGET_NODE \
-    CLUSTER_TARGET_HOST CLUSTER_TARGET_LOCAL
+    CLUSTER_TARGET_NAME CLUSTER_TARGET_HOST CLUSTER_TARGET_LOCAL
   if ! cluster_target_is_id "$target"; then
     return 2
   fi
@@ -96,18 +96,18 @@ for item in resources if isinstance(resources, list) else []:
     if str(raw_id) != target:
         continue
     matches.append(("container" if kind == "lxc" else "vm",
-                    str(item.get("node") or "")))
+                    str(item.get("node") or ""), str(item.get("name") or "")))
 
 if len(matches) == 0:
     raise SystemExit(1)
 if len({match for match in matches}) != 1:
     raise SystemExit(4)
-kind, node = matches[0]
+kind, node, name = matches[0]
 if not node:
     raise SystemExit(5)
-print("\t".join((target, kind, node)))
+print("\t".join((target, kind, node, name)))
 ' "$target" <<< "$json") || return $?
-  IFS=$'\t' read -r CLUSTER_TARGET_ID CLUSTER_TARGET_KIND CLUSTER_TARGET_NODE <<< "$result"
+  IFS=$'\t' read -r CLUSTER_TARGET_ID CLUSTER_TARGET_KIND CLUSTER_TARGET_NODE CLUSTER_TARGET_NAME <<< "$result"
   [[ -n "$CLUSTER_TARGET_NODE" ]] || return 5
   CLUSTER_TARGET_HOST=$(cluster_target_node_host "$CLUSTER_TARGET_NODE")
   local local_node local_ips
@@ -120,7 +120,34 @@ print("\t".join((target, kind, node)))
     CLUSTER_TARGET_LOCAL=false
   fi
   export CLUSTER_TARGET_ID CLUSTER_TARGET_KIND CLUSTER_TARGET_NODE \
-    CLUSTER_TARGET_HOST CLUSTER_TARGET_LOCAL
+    CLUSTER_TARGET_NAME CLUSTER_TARGET_HOST CLUSTER_TARGET_LOCAL
+}
+
+cluster_target_guest_name() {
+  local target="${1:-}" json
+  json=$(cluster_target_resources_json) || return 1
+  python3 -c '
+import json
+import sys
+
+target = sys.argv[1]
+try:
+    resources = json.load(sys.stdin)
+except (ValueError, OSError):
+    raise SystemExit(1)
+for item in resources if isinstance(resources, list) else []:
+    if not isinstance(item, dict) or item.get("type") not in {"lxc", "qemu"}:
+        continue
+    raw_id = item.get("vmid", item.get("id"))
+    if isinstance(raw_id, str) and "/" in raw_id:
+        raw_id = raw_id.rsplit("/", 1)[-1]
+    if str(raw_id) == target:
+        name = item.get("name")
+        if isinstance(name, str) and name.strip():
+            print(name.strip())
+        raise SystemExit(0)
+raise SystemExit(1)
+' "$target" <<< "$json"
 }
 
 cluster_target_resolve_cli() {
@@ -134,9 +161,9 @@ cluster_target_resolve_cli() {
     esac
     return 1
   }
-  printf '%s\t%s\t%s\t%s\t%s\n' "$CLUSTER_TARGET_ID" \
-    "$CLUSTER_TARGET_KIND" "$CLUSTER_TARGET_NODE" "$CLUSTER_TARGET_HOST" \
-    "$CLUSTER_TARGET_LOCAL"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$CLUSTER_TARGET_ID" \
+    "$CLUSTER_TARGET_KIND" "$CLUSTER_TARGET_NODE" "$CLUSTER_TARGET_NAME" \
+    "$CLUSTER_TARGET_HOST" "$CLUSTER_TARGET_LOCAL"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

@@ -348,7 +348,11 @@ clear message.
 The web preview groups multiple Proxmox host records as nodes and shows their
 LXC/VM guests below the corresponding node. With one Proxmox host, the same
 node-first view is used in a compact form. Targets from `targets.conf` remain
-in a separate External systems section. The UI is still an engineering
+in a separate External systems section.
+
+Guest status records may include the Proxmox-provided guest name. The Web UI
+shows it next to the stable guest ID when available and keeps working with
+older status files that do not contain a name. The UI is still an engineering
 preview, not a beta release: owner-approved real live update runs are still
 required before beta or release approval.
 

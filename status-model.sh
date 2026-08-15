@@ -21,8 +21,9 @@ STATUS_MODEL_RECORD() {
   local updater="$6" updates="$7" reboot_required="$8" check_status="$9"
   local error_code="${10:-}" error_message="${11:-}"
   local node="${12:-$STATUS_MODEL_NODE}"
+  local name="${13:-${STATUS_MODEL_GUEST_NAME:-}}"
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(STATUS_MODEL_B64 "$id")" \
     "$(STATUS_MODEL_B64 "$type")" \
     "$(STATUS_MODEL_B64 "$transport")" \
@@ -34,7 +35,8 @@ STATUS_MODEL_RECORD() {
     "$(STATUS_MODEL_B64 "$check_status")" \
     "$(STATUS_MODEL_B64 "$error_code")" \
     "$(STATUS_MODEL_B64 "$error_message")" \
-    "$(STATUS_MODEL_B64 "$node")" >> "$STATUS_MODEL_RECORD_FILE"
+    "$(STATUS_MODEL_B64 "$node")" \
+    "$(STATUS_MODEL_B64 "$name")" >> "$STATUS_MODEL_RECORD_FILE"
 }
 
 STATUS_MODEL_IMPORT_FILE() {
@@ -84,6 +86,7 @@ with open(record_file, "a", encoding="utf-8") as records:
             encode(error.get("code")),
             encode(error.get("message")),
             encode(target.get("node")),
+            encode(target.get("name")),
         ]
         records.write("\t".join(fields) + "\n")
 PY
@@ -122,11 +125,12 @@ def decode(value):
 with open(record_file, encoding="utf-8") as records:
     for line in records:
         fields = line.rstrip("\n").split("\t")
-        if len(fields) != 12:
+        if len(fields) not in (12, 13):
             raise ValueError("invalid status record")
         (target_id, target_type, transport, reachable, os_name, updater,
          updates, reboot_required, check_status, error_code, error_message,
-         node) = map(decode, fields)
+         node, *name_fields) = map(decode, fields)
+        name = name_fields[0] if name_fields else ""
         available = None if updates in ("", "null") else int(updates)
         reboot = None if reboot_required in ("", "null") else reboot_required == "true"
         error = None
@@ -148,6 +152,8 @@ with open(record_file, encoding="utf-8") as records:
             "error": error,
             "node": node or None,
         })
+        if name:
+            record["name"] = name
         if partial != "true" or "last_update" not in record:
             record["last_update"] = {"status": "unknown", "timestamp": None}
 
