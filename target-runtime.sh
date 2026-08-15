@@ -17,7 +17,7 @@ RUN_PCT_COMMAND() {
 RUN_SSH_COMMAND() {
   local host="$1" port="$2" user="$3"
   shift 3
-  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"
+  timeout "${UU_SSH_COMMAND_TIMEOUT:-120}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"
 }
 
 READ_APT_UPDATE_COUNTS() {
