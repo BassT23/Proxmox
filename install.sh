@@ -259,6 +259,12 @@ INSTALL () {
     mkdir -p "$LOCAL_FILES/web-ui"
     cp "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
     chmod 750 "$LOCAL_FILES/web-ui/server.py"
+    mkdir -p "$LOCAL_FILES/web-ui/assets"
+    for UI_ASSET in ultimate-updater-icon.png favicon.png; do
+      if [[ -f "$TEMP_FILES/web-ui/assets/$UI_ASSET" ]]; then
+        install -m 0644 "$TEMP_FILES/web-ui/assets/$UI_ASSET" "$LOCAL_FILES/web-ui/assets/$UI_ASSET"
+      fi
+    done
     install -m 0644 "$TEMP_FILES/$WEB_SERVICE_NAME" "$WEB_SERVICE_PATH"
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
     if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
@@ -339,6 +345,14 @@ UPDATE () {
       mkdir -p "$LOCAL_FILES/web-ui"
       mv "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
       chmod 750 "$LOCAL_FILES/web-ui/server.py"
+    fi
+    if [[ -f "$TEMP_FILES/web-ui/assets/ultimate-updater-icon.png" || -f "$TEMP_FILES/web-ui/assets/favicon.png" ]]; then
+      mkdir -p "$LOCAL_FILES/web-ui/assets"
+      for UI_ASSET in ultimate-updater-icon.png favicon.png; do
+        if [[ -f "$TEMP_FILES/web-ui/assets/$UI_ASSET" ]]; then
+          install -m 0644 "$TEMP_FILES/web-ui/assets/$UI_ASSET" "$LOCAL_FILES/web-ui/assets/$UI_ASSET"
+        fi
+      done
     fi
     if [[ -f "$TEMP_FILES/$WEB_SERVICE_NAME" ]]; then
       install -m 0644 "$TEMP_FILES/$WEB_SERVICE_NAME" "$WEB_SERVICE_PATH"

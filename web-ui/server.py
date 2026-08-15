@@ -21,6 +21,7 @@ DEFAULT_CONFIG_FILE = Path("/etc/ultimate-updater/update.conf")
 DEFAULT_INVENTORY_FILE = Path("/etc/ultimate-updater/targets.conf")
 DEFAULT_INVENTORY_SCRIPT = Path("/etc/ultimate-updater/target-inventory.sh")
 DEFAULT_EXTERNAL_SCRIPT = Path("/etc/ultimate-updater/external-apt.sh")
+DEFAULT_ASSET_DIR = Path("/etc/ultimate-updater/web-ui/assets")
 DEFAULT_CLI = Path("/usr/local/sbin/ultimate-updater")
 DEFAULT_JOB_RUNNER = Path("/etc/ultimate-updater/job-runner.sh")
 DEFAULT_JOBS_DIR = Path("/var/lib/ultimate-updater/jobs")
@@ -44,14 +45,17 @@ CONFIG_STRING_KEYS = {
     "EMAIL_USER", "EMAIL_SENDER",
 }
 CONFIG_KEYS = CONFIG_BOOLEAN_KEYS | CONFIG_INTEGER_KEYS | CONFIG_STRING_KEYS
-FAVICON_SVG = """<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\"><rect width=\"64\" height=\"64\" rx=\"14\" fill=\"#73a7ff\"/><text x=\"32\" y=\"41\" text-anchor=\"middle\" font-family=\"Arial,sans-serif\" font-size=\"25\" font-weight=\"800\" letter-spacing=\"-2\" fill=\"#0b1020\">UU</text></svg>"""
+UI_ASSETS = {
+    "/assets/ultimate-updater-icon.png": ("ultimate-updater-icon.png", "image/png"),
+    "/assets/favicon.png": ("favicon.png", "image/png"),
+}
 
 
 PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><title>Ultimate Updater</title>
+  <meta name="color-scheme" content="dark"><link rel="icon" href="/assets/favicon.png" type="image/png"><title>Ultimate Updater</title>
   <style>
     :root { color-scheme:dark; --bg:#0b1020; --panel:#151d34e8; --strong:#19233f; --text:#edf3ff; --muted:#91a0bd; --line:#94a3b82e; --accent:#73a7ff; --good:#55d39a; --warn:#f7c66b; --bad:#ff7e8b; font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
     * { box-sizing:border-box } body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(circle at top right,#1e3567 0,var(--bg) 42rem) }
@@ -84,7 +88,7 @@ PAGE = r"""<!doctype html>
 </head>
 <body>
   <main class="app-main" id="dashboard">
-    <header class="app-header"><div class="brand-lockup"><img class="brand-logo" src="/favicon.svg" alt="Ultimate Updater logo"><div><h1>Ultimate Updater</h1><p class="subtitle">A compact dashboard for your Proxmox nodes, guests, and external systems.</p></div></div><div class="meta" id="generated">Loading status…</div></header>
+    <header class="app-header"><div class="brand-lockup"><img class="brand-logo" src="/assets/ultimate-updater-icon.png" alt="Ultimate Updater logo"><div><h1>Ultimate Updater</h1><p class="subtitle">A compact dashboard for your Proxmox nodes, guests, and external systems.</p></div></div><div class="meta" id="generated">Loading status…</div></header>
     <div id="notice" hidden></div>
     <section class="summary"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="updates">–</strong><span>available updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section>
     <section id="systems" class="systems-panel"><div class="section-title"><div><h2>Systems</h2><span class="hint">Organized by Proxmox node and external target</span></div><span class="view-note">Checks and updates use the existing CLI</span></div><div id="targets" class="targets"></div></section>
@@ -512,8 +516,12 @@ class StatusHandler(BaseHTTPRequestHandler):
         if path == "/":
             self.send_bytes(PAGE.encode(), "text/html; charset=utf-8")
             return
-        if path == "/favicon.svg":
-            self.send_bytes(FAVICON_SVG.encode(), "image/svg+xml")
+        if path in UI_ASSETS:
+            filename, content_type = UI_ASSETS[path]
+            try:
+                self.send_bytes((self.server.asset_dir / filename).read_bytes(), content_type)
+            except (OSError, UnicodeError):
+                self.send_json(error_payload("ASSET_NOT_FOUND", "The requested UI asset is unavailable."), HTTPStatus.NOT_FOUND)
             return
         if path == "/api/config":
             try:
@@ -671,6 +679,7 @@ def parse_args():
     parser.add_argument("--inventory-file", type=Path, default=DEFAULT_INVENTORY_FILE)
     parser.add_argument("--inventory-script", type=Path, default=DEFAULT_INVENTORY_SCRIPT)
     parser.add_argument("--external-script", type=Path, default=DEFAULT_EXTERNAL_SCRIPT)
+    parser.add_argument("--asset-dir", type=Path, default=DEFAULT_ASSET_DIR)
     parser.add_argument("--cli", type=Path, default=DEFAULT_CLI, help="ultimate-updater CLI path")
     parser.add_argument("--job-runner", type=Path, default=DEFAULT_JOB_RUNNER)
     parser.add_argument("--jobs-dir", type=Path, default=DEFAULT_JOBS_DIR)
@@ -687,6 +696,7 @@ def main():
     server.status_file, server.cli = args.status_file, args.cli
     server.config_file, server.inventory_file = args.config_file, args.inventory_file
     server.inventory_script, server.external_script = args.inventory_script, args.external_script
+    server.asset_dir = args.asset_dir
     server.job_runner, server.jobs_dir = args.job_runner, args.jobs_dir
     print(f"Ultimate Updater UI: http://{args.bind}:{args.port}/", flush=True)
     try:
