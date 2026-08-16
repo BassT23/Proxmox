@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- compact LXC and VM check/update settings into presentation matrices
 - simplify Systems node cards into isolated header, info, and action footer areas
 - separate Systems node-card metadata and actions into non-overlapping layout rows
 - prevent Systems node-card content overlap and constrain configuration checkbox hit areas

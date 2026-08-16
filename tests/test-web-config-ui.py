@@ -18,8 +18,12 @@ for title in (
 
 assert "ONLY has priority for each run type; EXCLUDE is ignored while that ONLY filter is set." in page
 assert "content:'↳'" not in page
-assert "columns:[['CHECK_WITH_LXC','CHECK_RUNNING_CONTAINER','CHECK_STOPPED_CONTAINER','WITH_LXC','RUNNING_CONTAINER','STOPPED_CONTAINER'],['LXC_START_DELAY','BACKUP_LXC_MP']]" in page
-assert "columns:[['CHECK_WITH_VM','CHECK_RUNNING_VM','CHECK_STOPPED_VM','CHECK_PAUSED_VM','WITH_VM','RUNNING_VM','STOPPED_VM'],['VM_START_DELAY']]" in page
+assert "matrix:[{label:'Containers',check:'CHECK_WITH_LXC',update:'WITH_LXC'},{label:'Running containers',check:'CHECK_RUNNING_CONTAINER',update:'RUNNING_CONTAINER'},{label:'Stopped containers',check:'CHECK_STOPPED_CONTAINER',update:'STOPPED_CONTAINER'}]" in page
+assert "matrix:[{label:'Virtual machines',check:'CHECK_WITH_VM',update:'WITH_VM'},{label:'Running VMs',check:'CHECK_RUNNING_VM',update:'RUNNING_VM'},{label:'Stopped VMs',check:'CHECK_STOPPED_VM',update:'STOPPED_VM'},{label:'Paused VMs',check:'CHECK_PAUSED_VM',update:null}]" in page
+assert "function configMatrix(groupData,values)" in page
+assert "matrix-control" in page
+assert "configField(row.check,values,true)" in page
+assert "check-update-matrix" in page
 assert "data-parent" not in page
 assert "updateConfigDependencies" not in page
 assert "is-dependent" not in page
