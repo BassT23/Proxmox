@@ -42,7 +42,7 @@ DEFAULT_AUTH_FILE = Path("/etc/ultimate-updater/web-auth.json")
 DEFAULT_BIND = "127.0.0.1"
 DEFAULT_PORT = 8765
 TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-JOB_RE = re.compile(r"^ultimate-updater-update-[A-Za-z0-9_.-]+$")
+JOB_RE = re.compile(r"^ultimate-updater-(?:update|check)-[A-Za-z0-9_.-]+$")
 HOST_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 USER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 
@@ -92,7 +92,7 @@ PAGE = r"""<!doctype html>
     .target-info,.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px } .target-info span,.detail-grid span { display:block; color:var(--muted); font-size:.72rem; margin-bottom:4px } strong { overflow-wrap:anywhere }
     .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px } button { border:1px solid var(--line); border-radius:9px; padding:9px 12px; color:var(--text); background:#ffffff0d; cursor:pointer; font:inherit; font-size:.82rem } button:hover:not(:disabled),button:focus-visible { border-color:var(--accent); outline:2px solid #73a7ff55 } button.primary { background:#73a7ff24; border-color:#73a7ff88 } button:disabled { cursor:not-allowed; opacity:.45 }
     .details,.jobs { border-radius:16px; padding:20px; margin-top:18px } .details h3 { margin:0 0 15px } .details-heading { display:flex; align-items:center; gap:12px; justify-content:space-between } .details-heading h3 { margin:0 } .details-close { padding:7px 10px; font-size:.72rem; color:var(--muted) } .detail-sections { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px } .detail-sections section { min-width:0; padding-top:12px; border-top:1px solid #94a3b815 } .detail-sections h4 { margin:0; font-size:.78rem; color:var(--accent) } .detail-sections .detail-grid { grid-template-columns:1fr; gap:10px; margin-top:10px } .error-text { color:var(--bad); white-space:pre-wrap; overflow-wrap:anywhere }
-    .job { display:grid; grid-template-columns:1.6fr 1fr .9fr auto; gap:10px; align-items:center; padding:11px 0; border-bottom:1px solid var(--line); font-size:.82rem } .job:last-child { border-bottom:0 } .job code { overflow-wrap:anywhere } .job small { color:var(--muted) } .log { max-height:220px; overflow:auto; white-space:pre-wrap; background:#00000045; border-radius:8px; padding:12px; margin-top:12px; color:#cbd5e1; font: .75rem ui-monospace,monospace }
+    .job { display:grid; grid-template-columns:1.6fr 1fr .9fr auto; gap:10px; align-items:center; padding:11px 0; border-bottom:1px solid var(--line); font-size:.82rem } .job:last-child { border-bottom:0 } .job code { overflow-wrap:anywhere } .job small,.job-meta { color:var(--muted) } .job-meta { grid-column:1 / -1; font-size:.7rem } .log { max-height:220px; overflow:auto; white-space:pre-wrap; background:#00000045; border-radius:8px; padding:12px; margin-top:12px; color:#cbd5e1; font: .75rem ui-monospace,monospace }
     .empty { border:1px dashed var(--line); border-radius:16px; padding:30px; text-align:center; color:var(--muted) } footer { font-size:.75rem; margin-top:28px }
     @media (max-width:720px) { main { width:calc(100% - 22px); padding-top:25px } header { display:block } .meta { text-align:left; margin-top:15px } .summary { grid-template-columns:repeat(2,1fr) } .job { grid-template-columns:1fr 1fr } .job button { grid-column:span 2; width:100% } }
     .app-main { width:min(1600px,100%); margin:0 auto; padding:34px clamp(18px,4vw,52px) 54px } .app-header { display:flex; justify-content:space-between; gap:20px; align-items:end; margin-bottom:26px } .systems-panel { padding:22px; border:1px solid var(--line); border-radius:18px; background:#151d34aa; box-shadow:0 18px 50px #00000029 } .view-note { color:var(--muted); font-size:.75rem } .node-group,.external-group { margin-top:18px; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#0e162b99 } .node-group:not(.open) { min-height:98px } .group-header { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:96px; padding:15px 16px; cursor:pointer } .group-header:hover { background:#73a7ff0d } .group-toggle { display:grid; place-items:center; flex:0 0 auto; width:38px; height:38px; padding:0; border:1px solid var(--line); border-radius:10px; color:var(--accent); background:#73a7ff0d } .group-toggle:hover { background:#73a7ff22 } .group-title { display:flex; align-items:center; gap:10px; flex:1; min-width:0 } .group-title strong { display:block; font-size:1rem; overflow-wrap:anywhere } .group-title small { display:block; color:var(--muted); font-size:.72rem; margin-top:4px } .group-summary { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:.75rem; white-space:nowrap } .chevron { display:block; color:var(--accent); font-size:1.35rem; line-height:1; transition:transform .16s ease } .node-group.open .chevron,.external-group.open .chevron { transform:rotate(90deg) } .group-body { display:none; padding:0 12px 12px } .node-group.open .group-body,.external-group.open .group-body { display:block } .guest-list { display:grid; gap:6px } .target-row { display:grid; grid-template-columns:minmax(150px,1.5fr) .7fr .8fr .8fr .9fr auto; align-items:center; gap:10px; padding:10px 12px; border-top:1px solid #94a3b815; font-size:.78rem } .target-row:hover { background:#73a7ff0b } .target-row .target-name { font-size:.82rem } .target-row .target-id { margin-top:2px } .row-muted { color:var(--muted); font-size:.72rem } .row-actions { display:flex; justify-content:flex-end; gap:6px } .row-actions button { padding:7px 9px; font-size:.72rem } .target-card { min-height:205px; display:flex; flex-direction:column } .target-card .actions { margin-top:auto } .target-card .target-info { margin-top:15px } .external-group { grid-column:1 / -1; margin-top:20px } .external-group .group-body { padding-top:2px } .job-toggle { display:flex; align-items:center; gap:10px; border:0; padding:0; background:transparent; color:var(--text); font-weight:700; font-size:1rem } .job-count { color:var(--muted); font-size:.74rem; font-weight:500 } .jobs.collapsed .job-list { display:none } .job-list { margin-top:12px } .job-summary { color:var(--muted); font-size:.75rem } .detail-grid { grid-template-columns:repeat(3,1fr) }
@@ -129,6 +129,7 @@ PAGE = r"""<!doctype html>
     @media (max-width:760px) { .app-header { display:block; margin-bottom:10px } .app-header .meta { max-width:none; padding-top:0 } }
     @media (max-width:620px) { .brand-header-art { width:min(250px,82vw) } .subtitle { margin-top:5px } .app-header .meta { margin-top:8px } }
     .dashboard-header { display:block; margin-bottom:18px; padding:20px 22px 18px; border:1px solid var(--line); border-radius:18px; background:#151d34aa; box-shadow:0 18px 50px #00000029 } .dashboard-header-top { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:20px } .dashboard-brand { min-width:0 } .dashboard-brand .brand-lockup { gap:16px } .dashboard-brand .brand-header-art { width:min(370px,70vw) } .dashboard-brand .subtitle { margin:5px 0 0; max-width:650px } .dashboard-meta { align-self:start; max-width:360px; padding-top:10px; color:var(--muted); font-size:.82rem; text-align:right } .dashboard-meta button { margin-left:10px; padding:5px 8px; font-size:.7rem } .dashboard-kpis { margin:16px 0 0; }
+    .job-running-indicator { display:inline-flex; align-items:center; gap:7px; margin:0 0 8px 10px; padding:6px 9px; border-color:#55d39a55; color:var(--good); background:#55d39a12; font-size:.72rem; font-weight:750; vertical-align:middle } .job-running-indicator[hidden] { display:none } .job-running-dot { width:7px; height:7px; border-radius:50%; background:var(--good); box-shadow:0 0 0 3px #55d39a18; animation:job-pulse 1.8s ease-in-out infinite } @keyframes job-pulse { 0%,100% { opacity:.55; transform:scale(.92) } 50% { opacity:1; transform:scale(1.05) } } @media (prefers-reduced-motion:reduce) { .job-running-dot { animation:none } }
     .global-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; margin:0 0 18px; padding:16px 18px; border:1px solid #73a7ff55; border-radius:16px; background:#19233f99; box-shadow:0 18px 50px #00000029 } .global-actions-copy { min-width:0 } .global-actions-copy strong { display:block; font-size:.92rem } .global-actions-copy span { display:block; margin-top:4px; color:var(--muted); font-size:.74rem } .global-actions-buttons { display:flex; flex-wrap:wrap; gap:9px } .global-action { min-height:42px; padding:10px 16px; font-weight:750; font-size:.84rem } .global-action.update-all { background:#73a7ff36; border-color:#73a7ffb8 } .global-action.check-all { background:#55d39a18; border-color:#55d39a77 }
     @media (max-width:760px) { .dashboard-header { padding:16px 14px 15px; margin-bottom:14px } .dashboard-header-top { display:block } .dashboard-brand .brand-header-art { width:min(270px,82vw) } .dashboard-meta { max-width:none; padding-top:0; margin-top:8px; text-align:left; font-size:.76rem } .dashboard-kpis { margin-top:14px } }
     @media (max-width:620px) { .global-actions { display:block; padding:14px } .global-actions-buttons { display:grid; grid-template-columns:1fr; margin-top:12px } .global-action { width:100% } }
@@ -138,7 +139,7 @@ PAGE = r"""<!doctype html>
   <section id="auth-loading" class="modal-backdrop open" aria-live="polite"><div class="modal auth-loading"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><p>Loading…</p></div></section>
   <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p class="login-account-hint">Please use your current root account to sign in.</p><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
   <main class="app-main" id="dashboard" hidden>
-    <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta"><span id="generated">Loading status…</span><button id="logout" type="button">Log out</button></div></div><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="updates">–</strong><span>available updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
+    <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta"><span id="generated">Loading status…</span><button id="job-running-indicator" class="job-running-indicator" type="button" hidden aria-controls="jobs"><span class="job-running-dot" aria-hidden="true"></span><span id="job-running-label">Job running</span></button><button id="logout" type="button">Log out</button></div></div><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="updates">–</strong><span>available updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
     <div id="notice" hidden></div>
     <section class="global-actions" aria-labelledby="global-actions-title"><div class="global-actions-copy"><strong id="global-actions-title">Run the configured updater</strong><span>Configured include/exclude and safety rules are respected.</span></div><div class="global-actions-buttons"><button id="check-all" class="global-action check-all" type="button">Check all systems</button><button id="update-all" class="global-action update-all" type="button">Update all systems</button></div></section>
     <section id="systems" class="systems-panel"><div class="section-title"><div class="heading-with-help"><div><h2>Systems</h2><span class="hint">Organized by Proxmox node and external target</span></div><span class="help-control"><button class="help-trigger" type="button" aria-label="About Systems" aria-expanded="false" aria-controls="systems-help-popover">?</button><span id="systems-help-popover" class="help-popover" role="tooltip"><p>Systems shows the complete active inventory grouped by Proxmox node and external target. Status and update information comes from the latest available check data.</p><p>Guests without current update information remain part of the inventory; status data is only an enrichment of the inventory.</p></span></span></div><span class="view-note">Checks and updates use the existing CLI</span></div><div id="targets" class="targets"></div><section id="details" class="details" hidden></section></section>
@@ -205,8 +206,12 @@ PAGE = r"""<!doctype html>
     function render(data){currentStatus=data;const ts=Array.isArray(data.targets)?data.targets:[],nodes=sortNodes(ts.filter(isProxmoxNode)),guests=ts.filter(t=>t.type==='lxc'||t.type==='vm'),external=ts.filter(t=>!isProxmoxNode(t)&&t.type!=='lxc'&&t.type!=='vm');set('total',ts.length);set('online',ts.filter(t=>t.reachable===true).length);set('updates',ts.map(knownUpdates).filter(Number.isInteger).reduce((a,v)=>a+v,0));set('attention',ts.filter(t=>t.check_status!=='ok').length);set('generated',`Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}`);const list=document.getElementById('targets');list.replaceChildren();if(!ts.length){list.innerHTML='<div class="empty">No target status is available yet. Run a check to populate the view.</div>';return}if(nodes.length){const grid=document.createElement('div');grid.className='node-grid';let openPanel=null,assigned=new Set();nodes.forEach(host=>{const node=nodeLabel(host),members=guests.filter(t=>targetNode(t,nodes)===node);members.forEach(t=>assigned.add(t.id));const parts=nodeGroup(node,members,host);grid.appendChild(parts.card);if(parts.panel)openPanel=parts.panel});const unassigned=guests.filter(t=>!assigned.has(t.id));if(unassigned.length){const parts=nodeGroup('Guests without node assignment',unassigned,null);grid.appendChild(parts.card);if(parts.panel)openPanel=parts.panel}list.appendChild(grid);if(openPanel)list.appendChild(openPanel)}else if(guests.length){const grid=document.createElement('div');grid.className='node-grid';const parts=nodeGroup('Guests without node assignment',guests,null);grid.appendChild(parts.card);list.appendChild(grid);if(parts.panel)list.appendChild(parts.panel)}if(external.length)list.appendChild(externalGroup(external))}
     function renderJobs(){const n=document.getElementById('jobs');if(!jobs.length){n.hidden=true;openJobLogId=null;return}if(openJobLogId&&!jobs.some(j=>j.unit===openJobLogId))openJobLogId=null;const runningCount=jobs.filter(j=>j.state==='running').length,finished=jobs.length-runningCount;n.hidden=false;suppressLogScroll=true;n.innerHTML=`<div class="section-title"><button class="job-toggle"><span class="chevron" aria-hidden="true"></span><span>Update jobs <span class="job-count">(${runningCount} running, ${finished} finished)</span></span></button><span class="job-summary">Server-side state · safe across browser/device changes</span></div><div class="job-list"></div>`;suppressLogScroll=false;n.classList.toggle('collapsed',!jobsExpanded);n.querySelector('.job-toggle').addEventListener('click',()=>{jobsExpanded=!jobsExpanded;n.classList.toggle('collapsed',!jobsExpanded)});const list=n.querySelector('.job-list');jobs.forEach(j=>{const item=document.createElement('div');item.className='job';const open=j.unit===openJobLogId;item.innerHTML=`<code>${esc(j.unit)}</code><span>${esc(j.target)}</span><span class="pill ${j.state==='completed'?'good':j.state==='failed'||j.state==='interrupted'?'bad':'warn'}">${esc(j.state)}</span><button data-job="${esc(j.unit)}">${open?'Hide log':'Show log'}</button><div class="log" id="log-${esc(j.unit)}"${open?'':' hidden'}></div>`;list.appendChild(item)});n.querySelectorAll('button[data-job]').forEach(b=>b.addEventListener('click',async()=>{const unit=b.dataset.job,node=document.getElementById(`log-${unit}`);jobsExpanded=true;n.classList.remove('collapsed');if(openJobLogId===unit){openJobLogId=null;node.hidden=true;b.textContent='Show log';return}openJobLogId=unit;logAutoFollow=true;logScrollTop=0;node.hidden=false;b.textContent='Hide log';await loadJobLog(unit,node);attachLogScroll(node)}));if(openJobLogId){const node=document.getElementById(`log-${openJobLogId}`);if(node){node.scrollTop=logAutoFollow?node.scrollHeight:logScrollTop;loadJobLog(openJobLogId,node).then(()=>{if(openJobLogId===node.id.slice(4))attachLogScroll(node)})}}}
     document.getElementById('jobs').addEventListener('click',e=>{const button=e.target.closest('button[data-job]');if(button&&button.textContent==='Show log')finalLogLoaded.delete(button.dataset.job)},true);
+    function renderRunningIndicator(){const indicator=document.getElementById('job-running-indicator'),label=document.getElementById('job-running-label'),runningJobs=jobs.filter(j=>j.state==='running');if(!indicator||!label)return;indicator.hidden=runningJobs.length===0;if(runningJobs.length)label.textContent=runningJobs.length===1?'Job running':`${runningJobs.length} jobs running`}
+    document.getElementById('job-running-indicator').addEventListener('click',()=>{const section=document.getElementById('jobs');if(!section)return;jobsExpanded=true;section.classList.remove('collapsed');section.scrollIntoView({behavior:'smooth',block:'start'});const first=section.querySelector('.job[data-running="true"]');first?.scrollIntoView({behavior:'smooth',block:'nearest'})});
     function renderJobsStable(){const n=document.getElementById('jobs');if(!jobs.length){n.hidden=true;openJobLogId=null;return}if(openJobLogId&&!jobs.some(j=>j.unit===openJobLogId))openJobLogId=null;n.hidden=false;let list=n.querySelector('.job-list');if(!list||!n.querySelector('.job-toggle')){n.innerHTML='<div class="section-title"><button class="job-toggle"><span class="chevron" aria-hidden="true"></span><span>Update jobs <span class="job-count"></span></span></button><span class="job-summary">Server-side state · safe across browser/device changes</span></div><div class="job-list"></div>';n.querySelector('.job-toggle').addEventListener('click',()=>{jobsExpanded=!jobsExpanded;n.classList.toggle('collapsed',!jobsExpanded)});list=n.querySelector('.job-list')}n.classList.toggle('collapsed',!jobsExpanded);n.querySelector('.job-count').textContent=`(${jobs.filter(j=>j.state==='running').length} running, ${jobs.filter(j=>j.state!=='running').length} finished)`;const existing=new Map([...list.querySelectorAll('.job')].map(item=>[item.dataset.unit,item]));const seen=new Set();for(const j of jobs){let item=existing.get(j.unit);if(!item){item=document.createElement('div');item.className='job';item.dataset.unit=j.unit;item.innerHTML=`<code></code><span></span><span class="pill"></span><button data-job="${esc(j.unit)}">Show log</button><div class="log" id="log-${esc(j.unit)}" hidden></div>`;const button=item.querySelector('button[data-job]');button.addEventListener('click',async()=>{const unit=button.dataset.job,node=document.getElementById(`log-${unit}`);if(openJobLogId===unit){openJobLogId=null;finalLogLoaded.delete(unit);node.hidden=true;button.textContent='Show log';return}openJobLogId=unit;finalLogLoaded.delete(unit);logAutoFollow=true;logScrollTop=0;node.hidden=false;button.textContent='Hide log';await loadJobLog(unit,node);attachLogScroll(node)});list.appendChild(item)}seen.add(j.unit);item.querySelector('code').textContent=j.unit;item.querySelector('code').title=j.unit;item.querySelector('span').textContent=j.owner_node?`${friendlyJobTarget(j.target)} · ${j.owner_node}`:friendlyJobTarget(j.target);const state=item.querySelector('.pill');state.textContent=j.state;state.className=`pill ${j.state==='completed'?'good':j.state==='failed'||j.state==='interrupted'?'bad':'warn'}`;const button=item.querySelector('button[data-job]'),node=item.querySelector('.log'),open=j.unit===openJobLogId;button.textContent=open?'Hide log':'Show log';node.hidden=!open}for(const [unit,item] of existing){if(!seen.has(unit))item.remove()}if(openJobLogId){const job=jobs.find(j=>j.unit===openJobLogId),node=document.getElementById(`log-${openJobLogId}`);if(job&&node){node.hidden=false;loadJobLog(openJobLogId,node).then(()=>{if(openJobLogId===node.id.slice(4))attachLogScroll(node)})}}}
     renderJobs=renderJobsStable;window.renderJobs=renderJobsStable;
+    function decorateJobRows(){const list=document.querySelector('#jobs .job-list');if(!list)return;for(const item of list.querySelectorAll('.job')){const job=jobs.find(candidate=>candidate.unit===item.dataset.unit);if(!job)continue;item.dataset.running=String(job.state==='running');const target=item.querySelector('span');if(target)target.textContent=`${String(job.type||'update').toUpperCase()} · ${job.owner_node?`${friendlyJobTarget(job.target)} · ${job.owner_node}`:friendlyJobTarget(job.target)}`;let meta=item.querySelector('.job-meta');if(!meta){meta=document.createElement('small');meta.className='job-meta';item.appendChild(meta)}const started=job.started_at?date(job.started_at):'Unknown';let duration='';if(job.started_at){const end=job.finished_at?Date.parse(job.finished_at):Date.now(),start=Date.parse(job.started_at);if(Number.isFinite(start)&&Number.isFinite(end))duration=` · ${Math.max(0,Math.round((end-start)/1000))}s`};meta.textContent=`Started ${started}${duration} · Exit ${job.exit_code===null||job.exit_code===undefined?'—':job.exit_code}`}}
+    const renderJobsBase=renderJobs;renderJobs=function(){renderJobsBase();renderRunningIndicator();decorateJobRows()};window.renderJobs=renderJobs;
     document.getElementById('check-all').onclick=()=>globalAction(false);
     document.getElementById('update-all').onclick=()=>globalAction(true);
     clearTimeout(pollTimer);
@@ -271,10 +276,23 @@ def parse_state_line(line):
     if len(fields) < 6:
         return None
     unit, target, state, started, finished, exit_code = fields[:6]
-    owner_node = fields[6] if len(fields) > 6 and fields[6] else None
+    if len(fields) > 7:
+        job_type = fields[6] or "update"
+        owner_node = fields[7] or None
+    elif len(fields) > 6:
+        if fields[6] in {"check", "update", ""}:
+            job_type = fields[6] or "update"
+            owner_node = None
+        else:
+            job_type = "update"
+            owner_node = fields[6]
+    else:
+        job_type = "update"
+        owner_node = None
     return {"unit": unit, "target": target, "state": state,
             "started_at": started or None, "finished_at": finished or None,
             "exit_code": int(exit_code) if exit_code.lstrip("-").isdigit() else None,
+            "type": job_type if job_type in {"check", "update"} else "update",
             "owner_node": owner_node, "remote": owner_node is not None}
 
 
@@ -1174,18 +1192,21 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("INVALID_TARGET", "The target name is invalid."), HTTPStatus.BAD_REQUEST)
             return
         try:
-            result = self.run_command([str(self.server.cli), "check", target],
-                                      extra_env={"STATUS_MODEL_PARTIAL": "true"})
+            result = self.run_command([str(self.server.job_runner), "start-check", target,
+                                       str(self.server.cli), "target"], timeout=15)
         except (OSError, subprocess.TimeoutExpired):
-            self.send_json(error_payload("CHECK_FAILED", "The check could not be started or completed."), HTTPStatus.BAD_GATEWAY)
+            self.send_json(error_payload("CHECK_START_FAILED", "The check job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
+        output = f"{result.stdout}\n{result.stderr}"
+        job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
         if result.returncode == 3:
-            self.send_json(error_payload("TARGET_NOT_FOUND", "The target is not known to the updater."), HTTPStatus.NOT_FOUND)
+            self.send_json(error_payload("JOB_ALREADY_RUNNING", "A job is already running for this target."), HTTPStatus.CONFLICT)
             return
-        self.send_json({"target": target, "state": "completed" if result.returncode == 0 else "failed",
-                        "exit_code": result.returncode,
-                        "message": "Check completed." if result.returncode == 0 else "Check failed."},
-                       HTTPStatus.OK if result.returncode == 0 else HTTPStatus.UNPROCESSABLE_ENTITY)
+        if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
+            self.send_json(error_payload("CHECK_START_FAILED", "The check job could not be started."), HTTPStatus.CONFLICT if result.returncode == 3 else HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json({"target": target, "job": job_match.group(1), "type": "check",
+                        "state": "running", "message": "Check job started."}, HTTPStatus.ACCEPTED)
 
     def action_update(self, target, payload=None):
         if not self.valid_target(target):
@@ -1236,21 +1257,22 @@ class StatusHandler(BaseHTTPRequestHandler):
                    for item in status.get("targets", []))
 
     def action_check_all(self):
-        unit = "ultimate-updater-check-all"
         try:
-            result = subprocess.run(
-                ["systemd-run", "--quiet", "--no-block", "--collect", f"--unit={unit}",
-                 "--property=Type=oneshot", str(self.server.cli), "check"],
-                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15,
-                check=False, env={**os.environ, "UU_JOB_STATE_DIR": str(self.server.jobs_dir)},
-            )
+            result = self.run_command([str(self.server.job_runner), "start-check", "all-systems",
+                                       str(self.server.cli), "all"], timeout=15)
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("CHECK_START_FAILED", "The full check could not be started."), HTTPStatus.BAD_GATEWAY)
             return
-        if result.returncode:
-            self.send_json(error_payload("CHECK_ALREADY_RUNNING", "A full check is already running or unavailable."), HTTPStatus.CONFLICT)
+        output = f"{result.stdout}\n{result.stderr}"
+        job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
+        if result.returncode == 3:
+            self.send_json(error_payload("CHECK_ALREADY_RUNNING", "A full check is already running."), HTTPStatus.CONFLICT)
             return
-        self.send_json({"state": "running", "unit": unit, "message": "Full check started."}, HTTPStatus.ACCEPTED)
+        if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
+            self.send_json(error_payload("CHECK_START_FAILED", "The full check could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json({"state": "running", "job": job_match.group(1), "type": "check", "target": "all-systems",
+                        "message": "Full check job started."}, HTTPStatus.ACCEPTED)
 
     def action_update_all(self):
         try:
@@ -1273,14 +1295,21 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("INVALID_NODE", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
             return
         try:
-            result = self.run_command([str(self.server.cli), "check-node", node], timeout=300)
+            result = self.run_command([str(self.server.job_runner), "start-check", node,
+                                       str(self.server.cli), "node"], timeout=15)
         except (OSError, subprocess.TimeoutExpired):
-            self.send_json(error_payload("CHECK_FAILED", "The node check could not be started or completed."), HTTPStatus.BAD_GATEWAY)
+            self.send_json(error_payload("CHECK_START_FAILED", "The node check job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
-        self.send_json({"node": node, "state": "completed" if result.returncode == 0 else "failed",
-                        "exit_code": result.returncode,
-                        "message": "Node check completed." if result.returncode == 0 else "Node check failed."},
-                       HTTPStatus.OK if result.returncode == 0 else HTTPStatus.UNPROCESSABLE_ENTITY)
+        output = f"{result.stdout}\n{result.stderr}"
+        job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
+        if result.returncode == 3:
+            self.send_json(error_payload("JOB_ALREADY_RUNNING", "A job is already running for this node."), HTTPStatus.CONFLICT)
+            return
+        if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
+            self.send_json(error_payload("CHECK_START_FAILED", "The node check job could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json({"node": node, "job": job_match.group(1), "type": "check",
+                        "state": "running", "message": "Node check job started."}, HTTPStatus.ACCEPTED)
 
     def action_update_node(self, node):
         if not self.known_node(node):

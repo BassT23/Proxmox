@@ -9,10 +9,11 @@ set -o pipefail
 JOB_STATE_DIR="${UU_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
 REMOTE_REF_DIR="$JOB_STATE_DIR/remote"
 JOB_PREFIX="ultimate-updater-update-"
+CHECK_PREFIX="ultimate-updater-check-"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | list\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | list\n' "$0"
 }
 
 valid_target() {
@@ -53,7 +54,7 @@ state_value() {
 
 write_state() {
   local unit="$1" target="$2" state="$3" started="$4" finished="$5"
-  local exit_code="$6" message="${7:-}" file temp
+  local exit_code="$6" message="${7:-}" type="${8:-${UU_JOB_TYPE:-update}}" file temp
   file=$(state_file "$unit")
   temp="$file.tmp.$$"
   {
@@ -64,6 +65,7 @@ write_state() {
     printf 'started_at=%s\n' "$started"
     printf 'finished_at=%s\n' "$finished"
     printf 'exit_code=%s\n' "$exit_code"
+    printf 'type=%s\n' "$type"
     printf 'message=%s\n' "$message"
   } > "$temp" || return 1
   chmod 0644 "$temp" || return 1
@@ -76,7 +78,7 @@ ensure_state_dir() {
 }
 
 valid_unit() {
-  [[ "$1" =~ ^ultimate-updater-update-[A-Za-z0-9_.-]+$ ]]
+  [[ "$1" =~ ^ultimate-updater-(update|check)-[A-Za-z0-9_.-]+$ ]]
 }
 
 valid_remote_value() {
@@ -317,8 +319,61 @@ run_global_job() {
   return "$exit_code"
 }
 
+start_check_job() {
+  local target="$1" cli="$2" mode="$3" unit timestamp
+  local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR" "--setenv=UU_JOB_TYPE=check")
+  [[ -x "$cli" ]] || { printf 'CLI is not executable: %s\n' "$cli" >&2; return 1; }
+  valid_target "$target" || { printf 'Unsupported check target: %s\n' "$target" >&2; return 2; }
+  [[ "$mode" == target || "$mode" == node || "$mode" == all ]] || return 2
+  command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start check jobs.\n' >&2; return 5; }
+  [[ "$EUID" -eq 0 ]] || { printf 'Starting check jobs requires root.\n' >&2; return 2; }
+  ensure_state_dir || return 1
+  if target_running "$target"; then
+    printf 'A job is already running for target %s.\n' "$target" >&2
+    return 3
+  fi
+  timestamp=$(date -u '+%Y%m%d-%H%M%S')
+  unit="${CHECK_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
+  UU_JOB_TYPE=check write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater check for $target" \
+    "${systemd_env[@]}" --property=Type=oneshot --property=StandardOutput=journal \
+    --property=StandardError=journal "$RUNNER_PATH" run-check "$unit" "$target" "$cli" "$mode"; then
+    UU_JOB_TYPE=check write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
+    return 1
+  fi
+  printf 'Check job started\nTarget: %s\nJob: %s\nStatus: ultimate-updater status\nLogs: journalctl -u %s\n' \
+    "$target" "$unit" "$unit"
+}
+
+run_check_job() {
+  local unit="$1" target="$2" cli="$3" mode="$4" file started exit_code lock_file
+  valid_unit "$unit" || return 2
+  valid_target "$target" || return 2
+  [[ -x "$cli" ]] || return 1
+  file=$(state_file "$unit")
+  started=$(state_value "$file" started_at)
+  lock_file="$JOB_STATE_DIR/$target.lock"
+  exec 9>"$lock_file" || { UU_JOB_TYPE=check write_state "$unit" "$target" failed "$started" "$(now)" 1 "could not open target lock"; return 1; }
+  if ! flock -n 9; then
+    UU_JOB_TYPE=check write_state "$unit" "$target" failed "$started" "$(now)" 75 "target already locked"
+    return 75
+  fi
+  case "$mode" in
+    target) "$cli" check "$target" </dev/null ;;
+    node) "$cli" check-node "$target" </dev/null ;;
+    all) "$cli" check </dev/null ;;
+  esac
+  exit_code=$?
+  if [[ "$exit_code" -eq 0 ]]; then
+    UU_JOB_TYPE=check write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" || return 1
+  else
+    UU_JOB_TYPE=check write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
+  fi
+  return "$exit_code"
+}
+
 refresh_running_jobs() {
-  local file unit target state active_state load_state started age_seconds
+  local file unit target state active_state load_state started age_seconds type
   command -v systemctl >/dev/null 2>&1 || return 0
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
@@ -344,7 +399,8 @@ refresh_running_jobs() {
             started=$(state_value "$file" started_at)
             age_seconds=$(( $(date -u +%s) - $(date -u -d "$started" +%s 2>/dev/null || date -u +%s) ))
             if (( age_seconds >= 30 )); then
-              write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit no longer active" || true
+              type=$(state_value "$file" type)
+              write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit no longer active" "${type:-update}" || true
             fi
           fi
           ;;
@@ -365,7 +421,7 @@ list_jobs() {
     started=$(state_value "$file" started_at)
     finished=$(state_value "$file" finished_at)
     exit_code=$(state_value "$file" exit_code)
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t\n' "$unit" "$target" "$state" "$started" "$finished" "$exit_code"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$unit" "$target" "$state" "$started" "$finished" "$exit_code" "$(state_value "$file" type)"
   done
   shopt -s nullglob
   for file in "$REMOTE_REF_DIR"/*.ref; do
@@ -399,6 +455,10 @@ case "${1:-}" in
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     start_global_job "$2"
     ;;
+  start-check)
+    [[ $# -eq 4 ]] || { usage >&2; exit 2; }
+    start_check_job "$2" "$3" "$4"
+    ;;
   run)
     [[ $# -eq 4 ]] || { usage >&2; exit 2; }
     run_job "$2" "$3" "$4"
@@ -406,6 +466,10 @@ case "${1:-}" in
   run-global)
     [[ $# -eq 3 ]] || { usage >&2; exit 2; }
     run_global_job "$2" "$3"
+    ;;
+  run-check)
+    [[ $# -eq 5 ]] || { usage >&2; exit 2; }
+    run_check_job "$2" "$3" "$4" "$5"
     ;;
   list)
     [[ $# -eq 1 ]] || { usage >&2; exit 2; }
