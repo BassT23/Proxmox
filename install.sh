@@ -477,6 +477,9 @@ UPDATE () {
       fi
     fi
     rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
+    # targets.conf is runtime inventory and must not be replaced by the
+    # repository template after legacy migration or user edits.
+    rm -f "$TEMP_FILES"/targets.conf
     rm -rf "$TEMP_FILES"/web-ui || true
     rm -f "$TEMP_FILES/$WEB_SERVICE_NAME"
     # Check if files are different
