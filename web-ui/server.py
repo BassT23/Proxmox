@@ -2,14 +2,19 @@
 """Small standard-library web UI for status and session-independent actions."""
 
 import argparse
+import base64
 import fcntl
+import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import shlex
 import stat
 import subprocess
 import tempfile
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,6 +30,7 @@ DEFAULT_ASSET_DIR = Path("/etc/ultimate-updater/web-ui/assets")
 DEFAULT_CLI = Path("/usr/local/sbin/ultimate-updater")
 DEFAULT_JOB_RUNNER = Path("/etc/ultimate-updater/job-runner.sh")
 DEFAULT_JOBS_DIR = Path("/var/lib/ultimate-updater/jobs")
+DEFAULT_AUTH_FILE = Path("/etc/ultimate-updater/web-auth.json")
 DEFAULT_BIND = "127.0.0.1"
 DEFAULT_PORT = 8765
 TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
@@ -95,13 +101,14 @@ PAGE = r"""<!doctype html>
     .app-header { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:24px; align-items:start; margin-bottom:10px } .brand-header-art { width:min(260px,70vw) } .brand-copy { padding-top:0 } .subtitle { margin-top:5px } .app-header .meta { max-width:360px; padding-top:10px; align-self:start }
     @media (max-width:760px) { .app-header { display:block; margin-bottom:10px } .app-header .meta { max-width:none; padding-top:0 } }
     @media (max-width:620px) { .brand-header-art { width:min(250px,82vw) } .subtitle { margin-top:5px } .app-header .meta { margin-top:8px } }
-    .dashboard-header { display:block; margin-bottom:18px; padding:20px 22px 18px; border:1px solid var(--line); border-radius:18px; background:#151d34aa; box-shadow:0 18px 50px #00000029 } .dashboard-header-top { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:20px } .dashboard-brand { min-width:0 } .dashboard-brand .brand-lockup { gap:16px } .dashboard-brand .brand-header-art { width:min(370px,70vw) } .dashboard-brand .subtitle { margin:5px 0 0; max-width:650px } .dashboard-meta { align-self:start; max-width:360px; padding-top:10px; color:var(--muted); font-size:.82rem; text-align:right } .dashboard-kpis { margin:16px 0 0; }
+    .dashboard-header { display:block; margin-bottom:18px; padding:20px 22px 18px; border:1px solid var(--line); border-radius:18px; background:#151d34aa; box-shadow:0 18px 50px #00000029 } .dashboard-header-top { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:20px } .dashboard-brand { min-width:0 } .dashboard-brand .brand-lockup { gap:16px } .dashboard-brand .brand-header-art { width:min(370px,70vw) } .dashboard-brand .subtitle { margin:5px 0 0; max-width:650px } .dashboard-meta { align-self:start; max-width:360px; padding-top:10px; color:var(--muted); font-size:.82rem; text-align:right } .dashboard-meta button { margin-left:10px; padding:5px 8px; font-size:.7rem } .dashboard-kpis { margin:16px 0 0; }
     @media (max-width:760px) { .dashboard-header { padding:16px 14px 15px; margin-bottom:14px } .dashboard-header-top { display:block } .dashboard-brand .brand-header-art { width:min(270px,82vw) } .dashboard-meta { max-width:none; padding-top:0; margin-top:8px; text-align:left; font-size:.76rem } .dashboard-kpis { margin-top:14px } }
   </style>
 </head>
 <body>
+  <section id="login-screen" class="modal-backdrop open" aria-label="Sign in"><form id="login-form" class="modal"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-message" class="management-message" role="alert"></div></form></section>
   <main class="app-main" id="dashboard">
-    <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta" id="generated">Loading status…</div></div><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="updates">–</strong><span>available updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
+    <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta"><span id="generated">Loading status…</span><button id="logout" type="button">Log out</button></div></div><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="updates">–</strong><span>available updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
     <div id="notice" hidden></div>
     <section id="systems" class="systems-panel"><div class="section-title"><div><h2>Systems</h2><span class="hint">Organized by Proxmox node and external target</span></div><span class="view-note">Checks and updates use the existing CLI</span></div><div id="targets" class="targets"></div><section id="details" class="details" hidden></section></section>
     <section class="management-grid">
@@ -116,19 +123,25 @@ PAGE = r"""<!doctype html>
     const text=(v,f='Unknown')=>v===null||v===undefined||v===''?f:String(v); const esc=v=>text(v,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const date=v=>{if(!v)return'Unknown';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleString()}; const statusLabel=v=>labels[v]||['Unknown','neutral']; const set=(id,v)=>document.getElementById(id).textContent=v;
     const LOG_BOTTOM_TOLERANCE=10;
-    let currentStatus={targets:[]}, jobs=[], pollTimer, openJobLogId=null, logAutoFollow=true, logScrollTop=0, suppressLogScroll=false, finalLogLoaded=new Set(), logLoading=new Set();
+    let currentStatus={targets:[]}, jobs=[], pollTimer, openJobLogId=null, logAutoFollow=true, logScrollTop=0, suppressLogScroll=false, finalLogLoaded=new Set(), logLoading=new Set(), csrfToken=null;
+    function showLogin(message=''){document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');document.getElementById('login-message').textContent=message;csrfToken=null}
+    function showDashboard(){document.getElementById('login-screen').classList.remove('open');document.getElementById('dashboard').hidden=false}
+    async function ensureSession(){const r=await fetch('/api/session',{cache:'no-store'});const d=await r.json();if(!r.ok){showLogin(d.error?.message||'Please sign in.');throw new Error(d.error?.message||'Authentication required.')}csrfToken=d.csrf;showDashboard();return d}
+    async function api(path,options={}){if(!csrfToken)await ensureSession();const headers={'Content-Type':'application/json',...(options.headers||{})};if(csrfToken)headers['X-CSRF-Token']=csrfToken;const r=await fetch(path,{...options,headers});const d=await r.json();if(r.status===401){showLogin(d.error?.message||'Session expired.')}if(!r.ok)throw new Error(d.error?.message||'Request failed');return d}
     function notice(message,error=false){const n=document.getElementById('notice');n.hidden=false;n.textContent=message;n.className=error?'notice error':'notice'}
     function running(target){return jobs.some(j=>j.target===target&&j.state==='running')}
     function renderDetails(t){const n=document.getElementById('details'),[label,tone]=statusLabel(t.check_status),e=t.error?`${text(t.error.code,'')}${t.error.message?': '+t.error.message:''}`:'None';n.hidden=false;n.innerHTML=`<h3>${esc(t.id)}</h3><div class="detail-grid"><div><span>Type</span><strong>${esc(t.type)}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(t.os)}</strong></div><div><span>Updater</span><strong>${esc(t.updater)}</strong></div><div><span>Check status</span><strong class="pill ${tone}">${label}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div><div><span>Reboot required</span><strong>${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong></div><div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Error</span><strong class="error-text">${esc(e)}</strong></div></div>`;n.scrollIntoView({behavior:'smooth',block:'nearest'})}
-    async function action(path,update=false){if(update&&!confirm(`Start update for "${path.split('/').pop()}"?`))return;try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Action failed');notice(d.message||'Action accepted.');await loadStatus();await loadJobs()}catch(e){notice(e.message,true)}}
+    async function action(path,update=false){if(update&&!confirm(`Start update for "${path.split('/').pop()}"?`))return;try{const d=await api(path,{method:'POST',body:'{}'});notice(d.message||'Action accepted.');await loadStatus();await loadJobs()}catch(e){notice(e.message,true)}}
     function render(data){currentStatus=data;const ts=Array.isArray(data.targets)?data.targets:[];set('total',ts.length);set('online',ts.filter(t=>t.reachable===true).length);set('updates',ts.map(t=>t.updates&&t.updates.available).filter(Number.isInteger).reduce((a,v)=>a+v,0));set('attention',ts.filter(t=>t.check_status!=='ok').length);set('generated',`Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}`);const list=document.getElementById('targets');list.replaceChildren();if(!ts.length){list.innerHTML='<div class="empty">No target status is available yet. Run a check to populate the view.</div>';return}for(const t of ts){const [label,tone]=statusLabel(t.check_status),u=t.updates&&Number.isInteger(t.updates.available)?t.updates.available:'Unknown';const card=document.createElement('article');card.className='target-card';card.innerHTML=`<div class="target-top"><div><div class="target-name">${esc(t.id)}</div><div class="target-id">${esc(t.os)} · ${esc(t.transport)}</div></div><span class="pill ${tone}">${label}</span></div><div class="target-info"><div><span>Updates</span><strong>${u}</strong></div><div><span>Reachability</span><strong>${t.reachable===true?'Online':t.reachable===false?'Offline':'Unknown'}</strong></div><div><span>Type</span><strong>${esc(t.type)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div></div><div class="actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Update running':'Start update'}</button></div>`;card.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});card.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const b=card.querySelector('.update');b.disabled=running(t.id)||!TARGET_UPDATEABLE(t);b.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});list.appendChild(card)}}
     function TARGET_UPDATEABLE(t){return ['ok','updates_available'].includes(t.check_status)}
     function rememberLogScroll(node){if(suppressLogScroll||!node.isConnected||node.id!==`log-${openJobLogId}`)return;const distance=node.scrollHeight-node.scrollTop-node.clientHeight;logAutoFollow=distance<=LOG_BOTTOM_TOLERANCE;logScrollTop=node.scrollTop}
     function attachLogScroll(node){node.addEventListener('scroll',()=>rememberLogScroll(node));}
-    async function loadJobLog(unit,node){const job=jobs.find(j=>j.unit===unit),final=job&&job.state!=='running';if(final&&finalLogLoaded.has(unit)||logLoading.has(unit))return;if(!final)finalLogLoaded.delete(unit);logLoading.add(unit);try{const r=await fetch(`/api/jobs/${encodeURIComponent(unit)}/log`),d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Log unavailable');node.hidden=false;node.textContent=d.log||'(no journal output)';if(logAutoFollow){node.scrollTop=node.scrollHeight}else{node.scrollTop=logScrollTop}logScrollTop=node.scrollTop;if(final)finalLogLoaded.add(unit)}catch(e){notice(e.message,true)}finally{logLoading.delete(unit)}}
+    async function loadJobLog(unit,node){const job=jobs.find(j=>j.unit===unit),final=job&&job.state!=='running';if(final&&finalLogLoaded.has(unit)||logLoading.has(unit))return;if(!final)finalLogLoaded.delete(unit);logLoading.add(unit);try{const d=await api(`/api/jobs/${encodeURIComponent(unit)}/log`);node.hidden=false;node.textContent=d.log||'(no journal output)';if(logAutoFollow){node.scrollTop=node.scrollHeight}else{node.scrollTop=logScrollTop}logScrollTop=node.scrollTop;if(final)finalLogLoaded.add(unit)}catch(e){notice(e.message,true)}finally{logLoading.delete(unit)}}
     function renderJobs(){const n=document.getElementById('jobs');if(!jobs.length){n.hidden=true;openJobLogId=null;return}if(openJobLogId&&!jobs.some(j=>j.unit===openJobLogId))openJobLogId=null;n.hidden=false;suppressLogScroll=true;n.innerHTML='<div class="section-title"><h2>Update jobs</h2><span class="hint">Server-side state · safe across browser/device changes</span></div>'+jobs.map(j=>{const open=j.unit===openJobLogId;return `<div class="job"><code>${esc(j.unit)}</code><span>${esc(j.target)}</span><span class="pill ${j.state==='completed'?'good':j.state==='failed'||j.state==='interrupted'?'bad':'warn'}">${esc(j.state)}</span><button data-job="${esc(j.unit)}">${open?'Hide log':'Show log'}</button><div class="log" id="log-${esc(j.unit)}"${open?'':' hidden'}></div></div>`}).join('');suppressLogScroll=false;n.querySelectorAll('button[data-job]').forEach(b=>b.addEventListener('click',async()=>{const unit=b.dataset.job;const node=document.getElementById(`log-${unit}`);if(openJobLogId===unit){openJobLogId=null;node.hidden=true;b.textContent='Show log';return}openJobLogId=unit;logAutoFollow=true;logScrollTop=0;node.hidden=false;b.textContent='Hide log';await loadJobLog(unit,node);attachLogScroll(node)}));if(openJobLogId){const node=document.getElementById(`log-${openJobLogId}`);if(node){node.scrollTop=logAutoFollow?node.scrollHeight:logScrollTop;loadJobLog(openJobLogId,node).then(()=>{if(openJobLogId===node.id.slice(4))attachLogScroll(node)})}}}
-    async function loadStatus(){try{const r=await fetch('/api/status',{cache:'no-store'}),d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Status unavailable');render(d)}catch(e){notice(e.message,true);set('generated','Status unavailable');document.getElementById('targets').innerHTML='<div class="empty">The status file is missing or invalid.</div>'}}
-    async function loadJobs(){try{const r=await fetch('/api/jobs',{cache:'no-store'}),d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Jobs unavailable');jobs=Array.isArray(d.jobs)?d.jobs:[];renderJobs();clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,10000)}}
+    async function loadStatus(){try{const d=await api('/api/status',{cache:'no-store'});render(d)}catch(e){if(!csrfToken)return;notice(e.message,true);set('generated','Status unavailable');document.getElementById('targets').innerHTML='<div class="empty">The status file is missing or invalid.</div>'}}
+    async function loadJobs(){try{const d=await api('/api/jobs',{cache:'no-store'});jobs=Array.isArray(d.jobs)?d.jobs:[];renderJobs();clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,10000)}}
+    document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;const message=document.getElementById('login-message');message.textContent='';try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value})});const d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Sign-in failed');csrfToken=d.csrf;form.reset();showDashboard();await loadStatus();await loadJobs()}catch(error){message.textContent=error.message}};
+    document.getElementById('logout').onclick=async()=>{try{await api('/api/logout',{method:'POST',body:'{}'})}catch(_error){}showLogin('You have been signed out.')};
     loadStatus();loadJobs();
   </script>
   <div id="target-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="target-modal-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="target-modal-title">External system</h3><button type="button" class="modal-close" id="target-modal-cancel">Close</button></div><div class="management-form open"><label>Name<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"></label><label>Host / IP<input name="host" required pattern="[A-Za-z0-9_.:-]+"></label><label>SSH user<input name="user" required pattern="[A-Za-z_][A-Za-z0-9_.-]*"></label><label>SSH port<input name="port" type="number" min="1" max="65535" value="22" required></label><div class="form-actions"><button type="submit" class="primary">Save</button><button type="button" id="target-modal-test">Test connection</button></div><div id="target-modal-message" class="management-message form-wide"></div></div></form></div>
@@ -168,7 +181,6 @@ PAGE = r"""<!doctype html>
     let managedTargets=[], editingTarget=null;
     function setConfigOpen(open){const form=document.getElementById('config-form'),panel=document.getElementById('config-panel'),button=document.getElementById('config-open');form.classList.toggle('open',open);document.querySelector('.management-grid').classList.toggle('config-open',open);button.textContent=open?'Close settings':'Open settings';button.setAttribute('aria-expanded',String(open));if(open)loadConfig()}
     function managementMessage(id,message,error=false){const n=document.getElementById(id);n.textContent=message||'';n.className=`management-message${error?' error':''}`}
-    async function api(path,options={}){const r=await fetch(path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});const d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Request failed');return d}
     function buildConfigForm(values){const form=document.getElementById('config-form');form.innerHTML='';for(const groupData of configGroups){const group=document.createElement('section');group.className='settings-group';group.innerHTML=`<h3>${groupData.title}</h3><p>${groupData.hint}</p>`;const booleanFields=document.createElement('div'),valueFields=document.createElement('div');booleanFields.className='boolean-fields';valueFields.className='value-fields';for(const key of groupData.keys){const label=document.createElement('label');label.className=`config-field${configBooleanKeys.includes(key)?' boolean-field':''}`;const caption=document.createElement('span');caption.className='field-label';caption.textContent=configLabels[key]||key;const input=document.createElement('input');input.name=key;input.dataset.key=key;if(configBooleanKeys.includes(key)){input.type='checkbox';input.checked=values[key]===true;label.append(input,caption)}else{input.type=configNumberKeys.includes(key)?'number':'text';input.value=values[key]??'';if(input.type==='number'){input.min='0';input.max='86400'}label.append(caption,input);if(configNumberKeys.includes(key)){const unit=document.createElement('span');unit.className='field-unit';unit.textContent='seconds';label.append(unit)}else if(key==='BACKUP_STORAGE'){const unit=document.createElement('span');unit.className='field-unit';unit.textContent='Proxmox storage ID, e.g. pbs';label.append(unit)}}(configBooleanKeys.includes(key)?booleanFields:valueFields).appendChild(label)}if(booleanFields.childElementCount)group.appendChild(booleanFields);if(valueFields.childElementCount)group.appendChild(valueFields);form.appendChild(group)}const actions=document.createElement('div');actions.className='config-actions';actions.innerHTML='<button type="submit" class="primary">Save settings</button><button type="button" id="config-close">Cancel</button>';form.appendChild(actions);form.onsubmit=async e=>{e.preventDefault();const next={};for(const input of form.querySelectorAll('[data-key]'))next[input.dataset.key]=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value;try{const d=await api('/api/config',{method:'POST',body:JSON.stringify({values:next})});buildConfigForm(d.config);setConfigOpen(false);managementMessage('config-message','Configuration saved.')}catch(error){managementMessage('config-message',error.message,true)}};document.getElementById('config-close').onclick=()=>setConfigOpen(false)}
     async function loadConfig(){try{const d=await api('/api/config');buildConfigForm(d.config)}catch(error){managementMessage('config-message',error.message,true)}}
     function renderManagedTargets(){const box=document.getElementById('managed-targets');if(!managedTargets.length){box.innerHTML='<div class="empty">No external systems configured.</div>';return}box.innerHTML=managedTargets.map(t=>`<div class="managed-target"><div><strong>${esc(t.id)}</strong><small>${esc(t.user)}@${esc(t.host)}:${esc(t.port)} · SSH</small></div><div class="managed-actions"><button data-edit="${esc(t.id)}">Edit</button><button data-test="${esc(t.id)}">Test connection</button><button data-remove="${esc(t.id)}">Remove</button></div></div>`).join('');box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openTargetModal(managedTargets.find(t=>t.id===b.dataset.edit)));box.querySelectorAll('[data-test]').forEach(b=>b.onclick=()=>testTarget(b.dataset.test));box.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>removeTarget(b.dataset.remove))}
@@ -394,8 +406,101 @@ def locked_atomic_update(path, updater):
             os.close(directory_fd)
 
 
+class AuthStore:
+    SESSION_SECONDS = 8 * 60 * 60
+
+    def __init__(self, path):
+        self.path = path
+        self.sessions = {}
+        self.failed_logins = {}
+
+    @property
+    def configured(self):
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            return isinstance(data, dict) and bool(data.get("username")) and bool(data.get("password_hash"))
+        except (OSError, ValueError, TypeError):
+            return False
+
+    def verify(self, username, password):
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            if not hmac.compare_digest(str(data.get("username", "")), username):
+                return False
+            salt = base64.b64decode(data["salt"])
+            expected = base64.b64decode(data["password_hash"])
+            actual = hashlib.pbkdf2_hmac("sha256", password.encode(), salt,
+                                         int(data.get("iterations", 210000)))
+            return hmac.compare_digest(actual, expected)
+        except (OSError, ValueError, TypeError, KeyError):
+            return False
+
+    def login(self, username, password, client):
+        now = time.time()
+        attempts, window = self.failed_logins.get(client, (0, now))
+        if now - window >= 60:
+            attempts, window = 0, now
+        if attempts >= 5:
+            return None
+        if not self.verify(username, password):
+            self.failed_logins[client] = (attempts + 1, window)
+            return None
+        self.failed_logins.pop(client, None)
+        token = secrets.token_urlsafe(32)
+        csrf = secrets.token_urlsafe(32)
+        self.sessions[token] = {"user": username, "csrf": csrf, "expires": time.time() + self.SESSION_SECONDS}
+        return token, csrf
+
+    def session(self, token):
+        item = self.sessions.get(token)
+        if not item:
+            return None
+        if item["expires"] <= time.time():
+            self.sessions.pop(token, None)
+            return None
+        item["expires"] = time.time() + self.SESSION_SECONDS
+        return item
+
+    def logout(self, token):
+        self.sessions.pop(token, None)
+
+
 class StatusHandler(BaseHTTPRequestHandler):
     server_version = "UltimateUpdaterUI/1"
+
+    def current_session(self):
+        cookie = self.headers.get("Cookie", "")
+        token = next((part.strip().split("=", 1)[1] for part in cookie.split(";")
+                      if part.strip().startswith("UU_SESSION=")), "")
+        return self.server.auth.session(token) if token else None
+
+    def auth_error(self, message="Authentication required.", status=HTTPStatus.UNAUTHORIZED):
+        self.send_json(error_payload("AUTH_REQUIRED", message), status)
+        return False
+
+    def authenticated(self):
+        if not self.server.auth.configured:
+            return self.auth_error("Web authentication is not configured.", HTTPStatus.SERVICE_UNAVAILABLE)
+        return bool(self.current_session()) or self.auth_error()
+
+    def same_origin(self):
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        host = self.headers.get("Host", "")
+        return origin in {f"http://{host}", f"https://{host}"}
+
+    def write_allowed(self):
+        session = self.current_session()
+        if not session:
+            return self.auth_error()
+        if not self.same_origin():
+            self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+            return False
+        if not hmac.compare_digest(self.headers.get("X-CSRF-Token", ""), session["csrf"]):
+            self.send_json(error_payload("CSRF_REJECTED", "A valid CSRF token is required."), HTTPStatus.FORBIDDEN)
+            return False
+        return True
 
     def send_bytes(self, body, content_type, status=HTTPStatus.OK):
         self.send_response(status)
@@ -407,6 +512,16 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def send_json(self, payload, status=HTTPStatus.OK):
         self.send_bytes(json.dumps(payload, ensure_ascii=False).encode(), "application/json; charset=utf-8", status)
+
+    def send_json_with_cookie(self, payload, cookie, status=HTTPStatus.OK):
+        body = json.dumps(payload, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Set-Cookie", cookie)
+        self.end_headers()
+        self.wfile.write(body)
 
     def read_body(self):
         try:
@@ -549,6 +664,17 @@ class StatusHandler(BaseHTTPRequestHandler):
             except (OSError, UnicodeError):
                 self.send_json(error_payload("ASSET_NOT_FOUND", "The requested UI asset is unavailable."), HTTPStatus.NOT_FOUND)
             return
+        if path == "/api/session":
+            session = self.current_session()
+            if not self.server.auth.configured:
+                self.send_json(error_payload("AUTH_NOT_CONFIGURED", "Run the local web-auth setup before using the UI."), HTTPStatus.SERVICE_UNAVAILABLE)
+            elif not session:
+                self.send_json(error_payload("AUTH_REQUIRED", "Authentication required."), HTTPStatus.UNAUTHORIZED)
+            else:
+                self.send_json({"authenticated": True, "username": session["user"], "csrf": session["csrf"]})
+            return
+        if not self.authenticated():
+            return
         if path == "/api/config":
             try:
                 self.send_json({"config": config_value_map(self.config_content()), "editable": sorted(CONFIG_KEYS)})
@@ -609,6 +735,35 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("BAD_REQUEST", str(error)), HTTPStatus.BAD_REQUEST)
             return
         parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
+        if parts == ["api", "login"]:
+            if not self.server.auth.configured:
+                self.send_json(error_payload("AUTH_NOT_CONFIGURED", "Run the local web-auth setup before using the UI."), HTTPStatus.SERVICE_UNAVAILABLE)
+                return
+            username = payload.get("username") if isinstance(payload, dict) else None
+            password = payload.get("password") if isinstance(payload, dict) else None
+            if not isinstance(username, str) or not isinstance(password, str) or len(username) > 128 or len(password) > 1024:
+                self.send_json(error_payload("LOGIN_FAILED", "Invalid credentials."), HTTPStatus.UNAUTHORIZED)
+                return
+            login = self.server.auth.login(username, password, self.client_address[0])
+            if not login:
+                self.send_json(error_payload("LOGIN_FAILED", "Invalid credentials."), HTTPStatus.UNAUTHORIZED)
+                return
+            token, csrf = login
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+            cookie = f"UU_SESSION={token}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; HttpOnly; SameSite=Lax{secure}"
+            self.send_json_with_cookie({"authenticated": True, "username": username, "csrf": csrf}, cookie)
+            return
+        if parts == ["api", "logout"]:
+            if not self.write_allowed():
+                return
+            cookie = self.headers.get("Cookie", "")
+            token = next((part.strip().split("=", 1)[1] for part in cookie.split(";")
+                          if part.strip().startswith("UU_SESSION=")), "")
+            self.server.auth.logout(token)
+            self.send_json_with_cookie({"authenticated": False}, "UU_SESSION=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+            return
+        if not self.write_allowed():
+            return
         if urlsplit(self.path).path == "/api/config":
             try:
                 self.handle_config_update(payload)
@@ -672,6 +827,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_json({"target": target, "job": job_match.group(1), "state": "running", "message": "Update job started."}, HTTPStatus.ACCEPTED)
 
     def do_PUT(self):  # noqa: N802
+        if not self.write_allowed():
+            return
         try:
             payload = self.read_body()
         except (OverflowError, ValueError) as error:
@@ -687,6 +844,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_json(error_payload("METHOD_NOT_ALLOWED", "Only defined configuration actions are available."), HTTPStatus.METHOD_NOT_ALLOWED)
 
     def do_DELETE(self):  # noqa: N802
+        if not self.write_allowed():
+            return
         parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
         if len(parts) == 3 and parts[:2] == ["api", "targets"]:
             try:
@@ -713,6 +872,7 @@ def parse_args():
     parser.add_argument("--cli", type=Path, default=DEFAULT_CLI, help="ultimate-updater CLI path")
     parser.add_argument("--job-runner", type=Path, default=DEFAULT_JOB_RUNNER)
     parser.add_argument("--jobs-dir", type=Path, default=DEFAULT_JOBS_DIR)
+    parser.add_argument("--auth-file", type=Path, default=DEFAULT_AUTH_FILE)
     parser.add_argument("--bind", default=DEFAULT_BIND, help="bind address (default: localhost)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser.parse_args()
@@ -728,6 +888,7 @@ def main():
     server.inventory_script, server.external_script = args.inventory_script, args.external_script
     server.asset_dir = args.asset_dir
     server.job_runner, server.jobs_dir = args.job_runner, args.jobs_dir
+    server.auth = AuthStore(args.auth_file)
     print(f"Ultimate Updater UI: http://{args.bind}:{args.port}/", flush=True)
     try:
         server.serve_forever()

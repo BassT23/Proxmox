@@ -260,6 +260,10 @@ INSTALL () {
     cp "$TEMP_FILES"/ultimate-updater $LOCAL_FILES/ultimate-updater
     chmod 750 $LOCAL_FILES/ultimate-updater
     ln -sf $LOCAL_FILES/ultimate-updater /usr/local/sbin/ultimate-updater
+    if [[ -f "$TEMP_FILES"/web-auth.sh ]]; then
+      install -m 0750 "$TEMP_FILES"/web-auth.sh "$LOCAL_FILES/web-auth.sh"
+      ln -sf "$LOCAL_FILES/web-auth.sh" /usr/local/sbin/ultimate-updater-web-auth
+    fi
     cp "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
     chmod 750 $LOCAL_FILES/job-runner.sh
     mkdir -p "$LOCAL_FILES/web-ui"
@@ -359,6 +363,10 @@ UPDATE () {
       mkdir -p "$LOCAL_FILES/web-ui"
       mv "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
       chmod 750 "$LOCAL_FILES/web-ui/server.py"
+    fi
+    if [[ -f "$TEMP_FILES"/web-auth.sh ]]; then
+      install -m 0750 "$TEMP_FILES"/web-auth.sh "$LOCAL_FILES/web-auth.sh"
+      ln -sf "$LOCAL_FILES/web-auth.sh" /usr/local/sbin/ultimate-updater-web-auth
     fi
     if [[ -f "$TEMP_FILES/web-ui/assets/ultimate-updater-header.png" || -f "$TEMP_FILES/web-ui/assets/ultimate-updater-icon.png" || -f "$TEMP_FILES/web-ui/assets/favicon.png" ]]; then
       mkdir -p "$LOCAL_FILES/web-ui/assets"

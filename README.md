@@ -310,17 +310,23 @@ under `/etc/ultimate-updater/web-ui/assets/`; the large source graphic remains
 a repository asset and is not installed on nodes.
 
 The service listens on `0.0.0.0:8765` so it can be reached from a phone,
-desktop, or tablet in the trusted management/LAN network:
+desktop, or tablet in the trusted management/LAN network. The UI and API are
+behind a local administrator login; setup is intentionally explicit and there
+is no default password:
 
 ```text
 http://<updater-node>:8765/
+sudo /usr/local/sbin/ultimate-updater-web-auth admin
 ```
 
-Do not expose this action-enabled service to the Internet or an untrusted
-network. No firewall, TLS, reverse proxy, or authentication setup is added by
-the updater; provide those controls separately when needed. The service runs
-as root because the existing CLI and job runner require the updater's local
-permissions.
+The password is stored only as a salted PBKDF2-SHA256 hash in the root-owned
+`/etc/ultimate-updater/web-auth.json`. Sessions are server-side, expire after
+inactivity, use an HttpOnly/SameSite cookie, and can be ended with `Log out`.
+Browser write requests also require a session-bound CSRF token and a matching
+same-origin request. Do not expose this action-enabled service to the Internet
+or an untrusted network; use the management LAN or a properly configured
+reverse proxy/TLS boundary. The service runs as root because the existing CLI
+and job runner require the updater's local permissions.
 
 Service control and logs:
 
