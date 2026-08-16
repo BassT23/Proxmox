@@ -168,7 +168,14 @@ with open(record_file, encoding="utf-8") as records:
         elif name:
             record["name"] = name
         if isinstance(imported_last_update, dict):
-            record["last_update"] = imported_last_update
+            imported_status = imported_last_update.get("status")
+            existing_last_update = existing_targets.get(target_id, {}).get("last_update", {})
+            existing_status = existing_last_update.get("status") if isinstance(existing_last_update, dict) else None
+            # A remote partial check may legitimately have no local job
+            # history.  Do not let that observation erase a terminal result
+            # already known on the caller.
+            if not (imported_status == "unknown" and existing_status not in (None, "unknown")):
+                record["last_update"] = imported_last_update
         # A check refreshes observation fields, but must not erase the last
         # update result.  This applies to full checks as well as partial ones.
         if "last_update" not in record:
