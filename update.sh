@@ -1794,6 +1794,16 @@ ERROR_LOGGING () {
 
 # shellcheck disable=SC2329
 UPDATE_MAIL_BODY() {
+  if [[ "${SINGLE_UPDATE:-false}" != true && -f "$LOCAL_FILES/status.json" ]] &&
+    declare -f STATUS_MODEL_RENDER_NOTIFICATION >/dev/null 2>&1; then
+    local status_notification status_body
+    if status_notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$LOCAL_FILES/status.json" update 2>/dev/null) &&
+      [[ "$status_notification" == STATE=* ]]; then
+      status_body=${status_notification#*$'\n'}
+      printf '%s\n' "$status_body"
+      return 0
+    fi
+  fi
   local target="${ID:-${CONTAINER:-${VM:-$HOSTNAME}}}"
   local display_name="${NAME:-$target}" target_type="host" icon="🐧" package_count
   if [[ "${CVM:-}" == true || "${VM:-}" =~ ^[0-9]+$ ]]; then

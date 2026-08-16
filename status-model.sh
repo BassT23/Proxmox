@@ -421,11 +421,16 @@ STATUS_MODEL_EXPAND_SENDER() {
 
 STATUS_MODEL_RENDER_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
-  python3 - "$status_file" <<'PY'
+  local run_type="${2:-check}"
+  case "$run_type" in
+    check|update) ;;
+    *) return 2 ;;
+  esac
+  python3 - "$status_file" "$run_type" <<'PY'
 import json
 import sys
 
-status_file = sys.argv[1]
+status_file, run_type = sys.argv[1:]
 try:
     with open(status_file, encoding="utf-8") as source:
         payload = json.load(source)
@@ -473,6 +478,99 @@ def short_error(target):
         if message:
             return str(message).replace("\n", " ").strip()
     return "check failed"
+
+def update_result(target):
+    result = target.get("last_update")
+    return result if isinstance(result, dict) else {}
+
+def update_status(target):
+    result = update_result(target)
+    status = str(result.get("status") or "").lower()
+    if status in ("failed", "interrupted"):
+        return "failed"
+    if status in ("success", "completed"):
+        return "success"
+    return "unknown"
+
+def update_line(target):
+    result = update_result(target)
+    if target.get("check_status") == "offline" or target.get("reachable") is False:
+        return "⚠️", "Nicht erreichbar"
+    status = update_status(target)
+    if status == "failed":
+        return "❌", "Update fehlgeschlagen"
+    if status != "success":
+        return "⚠️", "Ergebnis nicht verfügbar"
+    if target.get("reboot_required") is True:
+        return "⚠️", "Aktualisiert – Neustart erforderlich"
+    values = target.get("updates")
+    available = values.get("available") if isinstance(values, dict) else None
+    if isinstance(available, int) and not isinstance(available, bool) and available == 0:
+        return "✅", "Alles aktuell"
+    updated = result.get("updated_packages")
+    if isinstance(updated, int) and not isinstance(updated, bool) and updated >= 0:
+        return "✅", f"{updated} Pakete aktualisiert"
+    return "✅", "Erfolgreich aktualisiert"
+
+if run_type == "update":
+    hosts = []
+    guest_current = 0
+    guest_success = []
+    guest_failed = []
+    guest_offline = []
+    guest_reboot = []
+    for target in targets:
+        if not isinstance(target, dict):
+            continue
+        is_host = target.get("type") == "host" or str(target.get("id") or "").startswith("host:")
+        status = target.get("check_status") or "not_checked"
+        reachable = target.get("reachable")
+        if is_host:
+            hosts.append(target)
+            continue
+        if status == "offline" or reachable is False:
+            guest_offline.append(target)
+            continue
+        result_status = update_status(target)
+        if result_status == "failed":
+            guest_failed.append(target)
+        elif result_status == "success":
+            values = target.get("updates")
+            available = values.get("available") if isinstance(values, dict) else None
+            if target.get("reboot_required") is True:
+                guest_reboot.append(target)
+            elif isinstance(available, int) and not isinstance(available, bool) and available == 0:
+                guest_current += 1
+            else:
+                guest_success.append(target)
+
+    lines = ["Ultimate Updater update summary", "", "Nodes:"]
+    for target in hosts:
+        icon, message = update_line(target)
+        lines.extend([f"{icon} {target_name(target)}", f"   {message}"])
+    if guest_success:
+        lines.extend(["", "Guests:"])
+        for target in guest_success:
+            icon, message = update_line(target)
+            lines.extend([f"{icon} {target_icon(target)} {target_name(target)}", f"   {message}"])
+    if guest_reboot:
+        lines.extend(["", "Guests requiring reboot:"])
+        for target in guest_reboot:
+            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", "   Aktualisiert – Neustart erforderlich"])
+    if guest_failed:
+        lines.extend(["", "Failed guests:"])
+        for target in guest_failed:
+            _, message = update_line(target)
+            lines.extend([f"❌ {target_icon(target)} {target_name(target)}", f"   {message}"])
+    if guest_offline:
+        lines.extend(["", "Unreachable guests:"])
+        for target in guest_offline:
+            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", "   Nicht erreichbar"])
+    if guest_current:
+        lines.extend(["", f"✅ {guest_current} weitere Systeme – alles aktuell"])
+    print("STATE=issues" if any(update_status(target) == "failed" for target in hosts + guest_failed) or guest_offline else "STATE=updates")
+    print("\n".join(lines))
+    raise SystemExit(0)
 
 for target in targets:
     if not isinstance(target, dict):
