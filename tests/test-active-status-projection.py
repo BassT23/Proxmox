@@ -24,5 +24,12 @@ assert ids == ["mediacenter", "host:Proxmox-Test-1", "912"], ids
 assert payload["targets"][1]["id"] == "ct927"
 assert module.project_active_status(payload, set())["targets"][0]["id"] == "host:Proxmox-Test-1"
 
-print("active status projection tests: PASS")
+canonical = module.active_inventory_projection(payload, [
+    {"id": "mediacenter", "transport": "ssh"},
+    {"id": "legacy-971", "transport": "ssh"},
+])
+canonical_ids = [item["id"] for item in canonical["targets"]]
+assert canonical_ids == ["mediacenter", "host:Proxmox-Test-1", "912", "legacy-971"], canonical_ids
+assert canonical["targets"][-1]["check_status"] == "unknown"
 
+print("active status projection tests: PASS")

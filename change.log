@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- unify active inventory projection for Systems and Target filters preview
 - show immediate loading, success, and error feedback during web login
 - add a read-only Target filters preview based on the current inventory and tag resolver
 - regroup web UI configuration by host, guest type, filters, safety, and notifications

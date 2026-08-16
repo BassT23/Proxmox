@@ -107,7 +107,7 @@ PAGE = r"""<!doctype html>
     @media (max-width:620px) { .brand-lockup { gap:11px } .brand-header-art { width:min(260px,82vw) } .brand-copy { padding-top:0 } .subtitle { margin-top:9px; font-size:.82rem } .node-grid { grid-template-columns:1fr } .node-group .group-header { display:grid; grid-template-columns:42px minmax(0,1fr); gap:8px 10px; min-height:98px } .node-group .group-toggle { grid-column:1; grid-row:1 / span 2 } .node-group .group-title { grid-column:2; grid-row:1 } .node-group .group-summary { grid-column:2; grid-row:2; width:100%; justify-content:space-between; white-space:normal } .node-group .group-summary .node-details { margin-left:auto } .guest-panel { margin-top:0 } .guest-panel .guest-list { padding:0 8px 8px } .target-row { min-width:0; grid-template-columns:1fr auto; } .target-row .target-status { grid-column:1/-1; display:block } .target-row .target-field { display:grid; grid-template-columns:minmax(80px,.65fr) minmax(0,1.35fr); align-items:baseline; gap:8px; } .target-row .target-field .target-label { margin:0 } .target-row .row-os,.target-row .row-last-check { grid-column:1/-1; display:grid; grid-template-columns:minmax(80px,.65fr) minmax(0,1.35fr); align-items:baseline; gap:8px; } .target-row .row-actions { grid-column:1/-1; justify-content:flex-start; } .detail-sections { grid-template-columns:1fr; gap:12px } .details { padding:14px } }
     .settings-group { padding-top:10px; margin-top:10px } .settings-group h3 { font-size:.82rem } .settings-group p { margin:3px 0 7px; font-size:.68rem } .config-fields { gap:4px 16px } .settings-columns { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; align-items:start } .settings-column { display:grid; gap:4px; align-content:start } .config-field.boolean-field { display:flex; align-items:center; gap:8px; min-height:28px; padding:2px 0; border:0; border-radius:0; background:transparent } .config-field.boolean-field input[type=checkbox] { flex:0 0 auto; width:16px; height:16px; margin:0; accent-color:var(--accent) } .config-field.boolean-field .field-label { padding:0; min-width:0; cursor:pointer } .config-field:not(.boolean-field) { display:grid; grid-template-columns:minmax(120px,.8fr) minmax(0,1.2fr); align-items:center; gap:5px 10px } .config-field:not(.boolean-field) .field-label { grid-column:1; grid-row:1; padding:0 } .config-field:not(.boolean-field) input[type=text],.config-field:not(.boolean-field) input[type=number] { grid-column:2; grid-row:1; min-width:0; width:100%; padding:6px 8px } .config-field:not(.boolean-field) .field-unit { grid-column:2; grid-row:2; margin:-3px 0 0; font-size:.66rem } .settings-group .settings-subtitle { display:none } .config-actions { position:sticky; bottom:0; z-index:1; margin-top:13px; padding:10px 0 2px; background:linear-gradient(var(--panel),var(--panel)); }
     @media (max-width:760px) { .config-fields,.settings-columns { grid-template-columns:1fr } .config-field:not(.boolean-field) { grid-template-columns:minmax(105px,.75fr) minmax(0,1.25fr) } .config-actions { position:static } }
-    .filter-preview { margin-top:9px; padding-top:8px; border-top:1px solid #94a3b815 } .filter-preview-toggle { display:flex; align-items:center; gap:7px; width:100%; padding:5px 0; border:0; background:transparent; color:var(--muted); font-size:.72rem; text-align:left } .filter-preview-toggle:hover { color:var(--text); outline:0 } .filter-preview-chevron { color:var(--accent); font-size:.85rem; transition:transform .15s ease } .filter-preview.open .filter-preview-chevron { transform:rotate(90deg) } .filter-preview-details { display:none; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px 18px; padding:6px 0 2px } .filter-preview.open .filter-preview-details { display:grid } .filter-preview-details h4 { margin:0 0 4px; color:var(--muted); font-size:.68rem; font-weight:650; text-transform:uppercase; letter-spacing:.04em } .filter-preview-list { display:grid; gap:3px; color:var(--text); font-size:.72rem } .filter-preview-list div { overflow-wrap:anywhere } .filter-preview-list .excluded { color:var(--muted) } .filter-preview-list .unknown { color:var(--warn) } .filter-preview-note { color:var(--muted); font-size:.66rem; margin-top:5px }
+    .filter-preview { margin-top:12px; padding:12px 14px; border:1px solid #73a7ff45; border-radius:12px; background:#73a7ff0b } .filter-preview-toggle { display:flex; align-items:center; gap:9px; width:100%; padding:0; border:0; background:transparent; color:var(--text); font-size:.84rem; font-weight:700; text-align:left } .filter-preview-toggle:hover { color:var(--accent); outline:0 } .filter-preview-chevron { color:var(--accent); font-size:1rem; transition:transform .15s ease } .filter-preview.open .filter-preview-chevron { transform:rotate(90deg) } .filter-preview-details { display:none; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 24px; padding:12px 0 2px; border-top:1px solid #94a3b815; margin-top:10px } .filter-preview.open .filter-preview-details { display:grid } .filter-preview-details h4 { margin:0 0 5px; color:var(--muted); font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em } .filter-preview-list { display:grid; gap:4px; color:var(--text); font-size:.75rem } .filter-preview-list div { overflow-wrap:anywhere } .filter-preview-list .excluded { color:var(--muted) } .filter-preview-list .unknown { color:var(--warn) } .filter-preview-note { color:var(--muted); font-size:.68rem; margin-top:6px }
     @media (max-width:760px) { .filter-preview-details { grid-template-columns:1fr } }
     .app-header { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:24px; align-items:start; margin-bottom:10px } .brand-header-art { width:min(260px,70vw) } .brand-copy { padding-top:0 } .subtitle { margin-top:5px } .app-header .meta { max-width:360px; padding-top:10px; align-self:start }
     @media (max-width:760px) { .app-header { display:block; margin-bottom:10px } .app-header .meta { max-width:none; padding-top:0 } }
@@ -212,7 +212,7 @@ PAGE = r"""<!doctype html>
     function managementMessage(id,message,error=false){const n=document.getElementById(id);n.textContent=message||'';n.className=`management-message${error?' error':''}`}
     function configField(key,values){const label=document.createElement('label');label.className=`config-field${configBooleanKeys.includes(key)?' boolean-field':''}`;const caption=document.createElement('span');caption.className='field-label';caption.textContent=configLabels[key]||key;const input=document.createElement('input');input.name=key;input.dataset.key=key;if(configBooleanKeys.includes(key)){input.type='checkbox';input.checked=values[key]===true;label.append(input,caption)}else{input.type=configNumberKeys.includes(key)?'number':'text';input.value=values[key]??'';if(input.type==='number'){input.min='0';input.max=key==='KEEP_SNAPSHOTS'?'99':'86400'}label.append(caption,input);if(configNumberKeys.includes(key)){const unit=document.createElement('span');unit.className='field-unit';unit.textContent=key==='KEEP_SNAPSHOTS'?'snapshots':'seconds';label.append(unit)}else if(key==='BACKUP_STORAGE'){const unit=document.createElement('span');unit.className='field-unit';unit.textContent='Proxmox storage ID, e.g. pbs';label.append(unit)}}return label}
     let filterPreviewTimer;
-    function renderFilterPreview(data){const box=document.getElementById('filter-preview');if(!box)return;if(!data?.available){box.innerHTML='<div class="filter-preview-note">Target preview unavailable until the first inventory scan.</div>';return}const p=data.preview||{},included=p.included||[],excluded=p.excluded||[],unknown=p.unknown||[],mode=p.mode;let summary=mode==='only'?`${included.length} systems selected by ONLY_UPDATE_CHECK`:mode==='exclude'?`${included.length} systems will be checked · ${excluded.length} excluded`:`${included.length} systems will be checked`;const detail=(title,items,klass)=>items.length?`<section><h4>${title}</h4><div class="filter-preview-list">${items.map(item=>`<div class="${klass||''}">${klass==='excluded'?'✕':'✓'} ${esc(item.label)}</div>`).join('')}</div></section>`:'';const unknownHtml=unknown.length?`<section><h4>Not currently found</h4><div class="filter-preview-list"><div class="unknown">⚠ ${unknown.map(esc).join(', ')}</div></div></section>`:'';box.innerHTML=`<button type="button" class="filter-preview-toggle" aria-expanded="false"><span class="filter-preview-chevron">›</span><span>${summary}</span></button><div class="filter-preview-details">${detail(mode==='only'?'Selected':'Included',included,'')}${detail('Excluded',excluded,'excluded')}${mode==='only'&&excluded.length?'<section><h4>Exclude</h4><div class="filter-preview-note">Ignored while ONLY_UPDATE_CHECK is active.</div></section>':''}${unknownHtml}</div>`;const toggle=box.querySelector('.filter-preview-toggle');toggle.onclick=()=>{const open=box.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open))}}
+    function renderFilterPreview(data){const box=document.getElementById('filter-preview');if(!box)return;if(!data?.available){box.innerHTML='<div class="filter-preview-note">Target preview unavailable until the first inventory scan.</div>';return}const p=data.preview||{},included=p.included||[],excluded=p.excluded||[],unknown=p.unknown||[],mode=p.mode;let summary=mode==='only'?`${included.length} targets selected by ONLY_UPDATE_CHECK`:mode==='exclude'?`${included.length} targets will be checked · ${excluded.length} excluded`:`${included.length} targets will be checked`;const detail=(title,items,klass)=>items.length?`<section><h4>${title}</h4><div class="filter-preview-list">${items.map(item=>`<div class="${klass||''}">${klass==='excluded'?'✕':'✓'} ${esc(item.label)}</div>`).join('')}</div></section>`:'';const unknownHtml=unknown.length?`<section><h4>Not currently found</h4><div class="filter-preview-list"><div class="unknown">⚠ ${unknown.map(esc).join(', ')}</div></div></section>`:'';box.innerHTML=`<button type="button" class="filter-preview-toggle" aria-expanded="false"><span class="filter-preview-chevron">›</span><span>✓ ${summary}</span></button><div class="filter-preview-details">${detail(mode==='only'?'Selected':'Included',included,'')}${detail('Excluded',excluded,'excluded')}${mode==='only'&&excluded.length?'<section><h4>Exclude</h4><div class="filter-preview-note">Ignored while ONLY_UPDATE_CHECK is active.</div></section>':''}${unknownHtml}</div>`;const toggle=box.querySelector('.filter-preview-toggle');toggle.onclick=()=>{const open=box.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open))}}
     async function loadFilterPreview(form){const only=form?.querySelector('[data-key="ONLY_UPDATE_CHECK"]')?.value||'',exclude=form?.querySelector('[data-key="EXCLUDE_UPDATE_CHECK"]')?.value||'';const box=document.getElementById('filter-preview');if(box)box.innerHTML='<div class="filter-preview-note">Loading target preview…</div>';try{const query=new URLSearchParams({only,exclude});const data=await api(`/api/config-preview?${query.toString()}`);renderFilterPreview(data)}catch(error){if(box)box.innerHTML='<div class="filter-preview-note">Target preview is currently unavailable.</div>'}}
     function scheduleFilterPreview(form){clearTimeout(filterPreviewTimer);filterPreviewTimer=setTimeout(()=>loadFilterPreview(form),250)}
     function buildConfigForm(values){const form=document.getElementById('config-form');form.innerHTML='';for(const groupData of configGroups){const group=document.createElement('section');group.className='settings-group';group.innerHTML=`<h3>${groupData.title}</h3><p>${groupData.hint}</p>`;if(groupData.columns){const columns=document.createElement('div');columns.className='settings-columns';groupData.columns.forEach(keys=>{const column=document.createElement('div');column.className='settings-column';keys.forEach(key=>column.appendChild(configField(key,values)));columns.appendChild(column)});group.appendChild(columns)}else{const fields=document.createElement('div');fields.className='config-fields';groupData.keys.forEach(key=>fields.appendChild(configField(key,values)));group.appendChild(fields)}if(groupData.title==='Target filters'){const preview=document.createElement('div');preview.id='filter-preview';preview.className='filter-preview';group.appendChild(preview)}form.appendChild(group)}const actions=document.createElement('div');actions.className='config-actions';actions.innerHTML='<button type="submit" class="primary">Save settings</button><button type="button" id="config-close">Cancel</button>';form.appendChild(actions);form.querySelectorAll('[data-key="ONLY_UPDATE_CHECK"],[data-key="EXCLUDE_UPDATE_CHECK"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form)));loadFilterPreview(form);form.onsubmit=async e=>{e.preventDefault();const next={};for(const input of form.querySelectorAll('[data-key]'))next[input.dataset.key]=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value;try{const d=await api('/api/config',{method:'POST',body:JSON.stringify({values:next})});buildConfigForm(d.config);setConfigOpen(false);managementMessage('config-message','Configuration saved.')}catch(error){managementMessage('config-message',error.message,true)}};document.getElementById('config-close').onclick=()=>setConfigOpen(false)}
@@ -366,6 +366,36 @@ def project_active_status(payload, active_external_ids):
     return projected
 
 
+def active_inventory_projection(payload, inventory):
+    """Return the canonical active target set for status and filter preview."""
+    active_external_ids = {
+        item["id"] for item in inventory if item.get("transport") == "ssh"
+    }
+    projected = project_active_status(payload, active_external_ids)
+    known_ids = {
+        str(item.get("id", "")) for item in projected["targets"]
+    }
+    for item in inventory:
+        if item.get("transport") != "ssh" or item["id"] in known_ids:
+            continue
+        projected["targets"].append({
+            "id": item["id"],
+            "type": "external",
+            "transport": item["transport"],
+            "name": item["id"],
+            "reachable": None,
+            "os": None,
+            "updater": None,
+            "updates": {"available": None},
+            "reboot_required": None,
+            "last_check": None,
+            "check_status": "unknown",
+            "error": None,
+            "node": None,
+        })
+    return projected
+
+
 def resolve_filter_ids(only, exclude, tag_filter):
     """Resolve the existing Proxmox tag filter without contacting targets."""
     if not tag_filter.is_file():
@@ -393,14 +423,9 @@ def filter_tokens(value):
 
 
 def target_preview(payload, config, tag_filter, inventory):
-    active_external_ids = {item["id"] for item in inventory if item.get("transport") == "ssh"}
-    projected = project_active_status(payload, active_external_ids)
+    projected = active_inventory_projection(payload, inventory)
     targets = [dict(item) for item in projected["targets"]]
     known_ids = {str(item.get("id", "")) for item in targets}
-    for item in inventory:
-        if item["id"] not in known_ids:
-            targets.append({"id": item["id"], "name": item["id"], "type": "external",
-                            "transport": item["transport"], "reachable": None})
 
     only = str(config.get("ONLY_UPDATE_CHECK") or "")
     exclude = str(config.get("EXCLUDE_UPDATE_CHECK") or "")
@@ -851,11 +876,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                     payload = json.load(source)
                 if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
                     raise ValueError
-                active_external_ids = {
-                    item["id"] for item in self.inventory_data()
-                    if item.get("transport") == "ssh"
-                }
-                payload = project_active_status(payload, active_external_ids)
+                payload = active_inventory_projection(payload, self.inventory_data())
             except FileNotFoundError:
                 self.send_json(error_payload("STATUS_NOT_FOUND", "No status file is available yet."), HTTPStatus.NOT_FOUND)
             except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
