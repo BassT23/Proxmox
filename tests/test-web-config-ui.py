@@ -68,7 +68,10 @@ assert ".config-field.boolean-field:hover" in page
 assert ".node-group .group-status" in page
 assert ".node-group .group-updates" in page
 assert ".node-group .group-actions" in page
+assert "<div class=\"group-header\"><button class=\"group-toggle\"" in page
+assert "</div><div class=\"group-info\"><span class=\"group-updates\"" in page
 assert "<div class=\"group-actions\"><button class=\"node-action node-check\"" in page
+assert "<div class=\"group-status\">" in page
 assert "sortNodes(ts.filter(isProxmoxNode))" in page
 assert "config-field.boolean-field { width:fit-content" in page
 assert 'class="filter-preview-chevron">›' not in page
