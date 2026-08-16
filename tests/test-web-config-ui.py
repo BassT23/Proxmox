@@ -9,6 +9,8 @@ import server  # noqa: E402
 
 
 page = server.PAGE
+source = Path(__file__).parents[1].joinpath("web-ui/server.py").read_text(encoding="utf-8")
+runner_source = Path(__file__).parents[1].joinpath("job-runner.sh").read_text(encoding="utf-8")
 
 for title in (
     "Host", "Containers / LXC", "Virtual Machines", "Target filters",
@@ -100,6 +102,14 @@ assert "<span class=\"chevron\" aria-hidden=\"true\"></span>" in page
 assert "EXTERNAL_BACKUP_REQUIRED" in page
 assert "allow_without_backup" in page
 assert "Proceed without verified backup" in page
+
+# Checks use the same persistent job history as updates and expose progress globally.
+assert '"start-check"' in source
+assert 'run-check' in runner_source
+assert '"type": "check"' in source
+assert "job-running-indicator" in page
+assert "renderRunningIndicator" in page
+assert "prefers-reduced-motion:reduce" in page
 
 # Presentation must not expose the internal host: prefix in detail/job labels.
 assert "friendlyTarget(t)" in page
