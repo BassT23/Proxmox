@@ -24,6 +24,10 @@ assert "function configMatrix(groupData,values)" in page
 assert "matrix-control" in page
 assert "configField(row.check,values,true)" in page
 assert "check-update-matrix" in page
+assert "grid-template-columns:minmax(0,1fr) 58px 58px" in page
+assert ".matrix-cell { display:grid; place-items:center }" in page
+assert "numeric-field" in page
+assert ".config-field:not(.boolean-field).numeric-field .field-unit { grid-column:3; grid-row:1" in page
 assert "data-parent" not in page
 assert "updateConfigDependencies" not in page
 assert "is-dependent" not in page
