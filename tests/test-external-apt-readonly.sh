@@ -124,4 +124,14 @@ FAKE_NONROOT_ID
 chmod 755 "$WORK_DIR/fake-bin/id"
 run_check nonroot updates 0 updates_available
 
+cat > "$WORK_DIR/external.conf" <<'CONFIG'
+schema_version="1"
+UNKNOWN_KEY="must be rejected"
+ONLY_UPDATE_CHECK=""
+EXCLUDE_UPDATE_CHECK=""
+ONLY=""
+EXCLUDE=""
+CONFIG
+run_check nonroot updates 1 error
+
 echo 'external apt read-only tests: PASS'

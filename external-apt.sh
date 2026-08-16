@@ -110,16 +110,16 @@ if ! awk -F= '
   /^[[:space:]]*($|#)/ { next }
   {
     key=$1
-    if (seen[key]++) exit 1
+    if (seen[key]++) { bad=1; next }
     value=substr($0,index($0,"=")+1)
-    if (length(value) > 513 || value ~ /[\r\n]/) exit 1
+    if (length(value) > 513 || value ~ /[\r\n]/) { bad=1; next }
     if (key == "schema_version") {
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-      if (value != "1" && value != "\"1\"") exit 1
+      if (value != "1" && value != "\"1\"") bad=1
     } else if (key != "ONLY_UPDATE_CHECK" && key != "EXCLUDE_UPDATE_CHECK" &&
-               key != "ONLY" && key != "EXCLUDE") exit 1
+               key != "ONLY" && key != "EXCLUDE") bad=1
   }
-  END { exit(seen["schema_version"] ? 0 : 1) }
+  END { exit((bad || !seen["schema_version"]) ? 1 : 0) }
 ' "$config"; then
   printf 'UU_RESULT|error|unknown|unknown|null|null||EXTERNAL_CONFIG_INVALID|local External config is invalid\n'
   exit 27
@@ -232,16 +232,16 @@ if [ ! -r "$config" ] || ! awk -F= '
   /^[[:space:]]*($|#)/ { next }
   {
     key=$1
-    if (seen[key]++) exit 1
+    if (seen[key]++) { bad=1; next }
     value=substr($0,index($0,"=")+1)
-    if (length(value) > 513 || value ~ /[\r\n]/) exit 1
+    if (length(value) > 513 || value ~ /[\r\n]/) { bad=1; next }
     if (key == "schema_version") {
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-      if (value != "1" && value != "\"1\"") exit 1
+      if (value != "1" && value != "\"1\"") bad=1
     } else if (key != "ONLY_UPDATE_CHECK" && key != "EXCLUDE_UPDATE_CHECK" &&
-               key != "ONLY" && key != "EXCLUDE") exit 1
+               key != "ONLY" && key != "EXCLUDE") bad=1
   }
-  END { exit(seen["schema_version"] ? 0 : 1) }
+  END { exit((bad || !seen["schema_version"]) ? 1 : 0) }
 ' "$config"; then
   printf 'EXTERNAL_CONFIG_INVALID\n' >&2
   exit 27
