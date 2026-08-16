@@ -33,6 +33,7 @@ DEFAULT_INVENTORY_FILE = Path("/etc/ultimate-updater/targets.conf")
 DEFAULT_INVENTORY_SCRIPT = Path("/etc/ultimate-updater/target-inventory.sh")
 DEFAULT_TAG_FILTER = Path("/etc/ultimate-updater/tag-filter.sh")
 DEFAULT_EXTERNAL_SCRIPT = Path("/etc/ultimate-updater/external-apt.sh")
+DEFAULT_EXTERNAL_SETTINGS_SCRIPT = Path("/etc/ultimate-updater/external-settings.sh")
 DEFAULT_ASSET_DIR = Path("/etc/ultimate-updater/web-ui/assets")
 DEFAULT_CLI = Path("/usr/local/sbin/ultimate-updater")
 DEFAULT_JOB_RUNNER = Path("/etc/ultimate-updater/job-runner.sh")
@@ -150,6 +151,7 @@ PAGE = r"""<!doctype html>
     <section id="jobs" class="jobs" hidden></section>
     <footer>Local action preview · status: <code>/etc/ultimate-updater/status.json</code> · jobs: <code>/var/lib/ultimate-updater/jobs</code></footer>
   </main>
+  <div id="external-settings-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="external-settings-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3>External settings</h3><button type="button" class="modal-close" id="external-settings-close">Close</button></div><p class="hint">These settings are stored on this external system.</p><input type="hidden" name="target"><label>Only check filter<input name="ONLY_UPDATE_CHECK"></label><label>Exclude check filter<input name="EXCLUDE_UPDATE_CHECK"></label><label>Only update filter<input name="ONLY"></label><label>Exclude update filter<input name="EXCLUDE"></label><div class="form-actions"><button type="submit" class="primary">Save external settings</button></div><div id="external-settings-message" class="management-message" role="status"></div></form></div>
   <script>
     const labels={ok:['Healthy','good'],updates_available:['Updates available','warn'],offline:['Offline','bad'],unsupported:['Unsupported','neutral'],not_checked:['Not checked','neutral'],error:['Error','bad']};
     const text=(v,f='Unknown')=>v===null||v===undefined||v===''?f:String(v); const esc=v=>text(v,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -253,6 +255,10 @@ PAGE = r"""<!doctype html>
     function buildConfigForm(values){const form=document.getElementById('config-form');form.innerHTML='';for(const groupData of configGroups){const group=document.createElement('section');group.className='settings-group';const heading=document.createElement('div');heading.className='settings-heading';const title=document.createElement('h3');title.textContent=groupData.title;heading.appendChild(title);if(helpContent[groupData.title])heading.appendChild(createHelpControl(groupData.title,helpContent[groupData.title]));group.appendChild(heading);const hint=document.createElement('p');hint.textContent=groupData.hint;group.appendChild(hint);if(groupData.filterGroups){const scopes=document.createElement('div');scopes.className='filter-scopes';groupData.filterGroups.forEach(scopeData=>{const scope=document.createElement('section');scope.className='filter-scope';const scopeTitle=document.createElement('h4');scopeTitle.textContent=scopeData.title;scope.appendChild(scopeTitle);const fields=document.createElement('div');fields.className='config-fields';scopeData.keys.forEach(key=>fields.appendChild(configField(key,values)));scope.appendChild(fields);const preview=document.createElement('div');preview.id=`${scopeData.preview}-filter-preview`;preview.className='filter-preview';scope.appendChild(preview);scopes.appendChild(scope)});group.appendChild(scopes)}else if(groupData.matrix){group.appendChild(configMatrix(groupData,values))}else if(groupData.columns){const columns=document.createElement('div');columns.className='settings-columns';groupData.columns.forEach(keys=>{const column=document.createElement('div');column.className='settings-column';keys.forEach(key=>column.appendChild(configField(key,values)));columns.appendChild(column)});group.appendChild(columns)}else{const fields=document.createElement('div');fields.className='config-fields';groupData.keys.forEach(key=>fields.appendChild(configField(key,values)));group.appendChild(fields)}form.appendChild(group)}const actions=document.createElement('div');actions.className='config-actions';actions.innerHTML='<button type="submit" class="primary">Save settings</button><button type="button" id="config-close">Cancel</button>';form.appendChild(actions);form.querySelectorAll('[data-key="ONLY_UPDATE_CHECK"],[data-key="EXCLUDE_UPDATE_CHECK"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'check')));form.querySelectorAll('[data-key="ONLY"],[data-key="EXCLUDE"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'update')));loadFilterPreview(form,'check');loadFilterPreview(form,'update');form.onsubmit=async e=>{e.preventDefault();const next={};for(const input of form.querySelectorAll('[data-key]'))next[input.dataset.key]=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value;try{const d=await api('/api/config',{method:'POST',body:JSON.stringify({values:next})});buildConfigForm(d.config);setConfigOpen(false);managementMessage('config-message','Configuration saved.')}catch(error){managementMessage('config-message',error.message,true)}};document.getElementById('config-close').onclick=()=>setConfigOpen(false)}
     async function loadConfig(){try{const d=await api('/api/config');buildConfigForm(d.config)}catch(error){managementMessage('config-message',error.message,true)}}
     function renderManagedTargets(){const box=document.getElementById('managed-targets');if(!managedTargets.length){box.innerHTML='<div class="empty">No external systems configured.</div>';return}box.innerHTML=managedTargets.map(t=>`<div class="managed-target"><div><strong>${esc(t.id)}</strong><small>${esc(t.user)}@${esc(t.host)}:${esc(t.port)} · SSH</small></div><div class="managed-actions"><button data-edit="${esc(t.id)}">Edit</button><button data-test="${esc(t.id)}">Test connection</button><button data-remove="${esc(t.id)}">Remove</button></div></div>`).join('');box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openTargetModal(managedTargets.find(t=>t.id===b.dataset.edit)));box.querySelectorAll('[data-test]').forEach(b=>b.onclick=()=>testTarget(b.dataset.test));box.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>removeTarget(b.dataset.remove))}
+    async function openExternalSettings(target){const form=document.getElementById('external-settings-form');form.elements.target.value=target;managementMessage('external-settings-message','Loading external settings…');document.getElementById('external-settings-modal').classList.add('open');try{const data=await api(`/api/external-settings/${encodeURIComponent(target)}`);const values=data.values||{};for(const key of ['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE'])form.elements[key].value=values[key]??'';managementMessage('external-settings-message','These settings are stored on this external system.')}catch(error){managementMessage('external-settings-message',error.message,true)}}
+    function closeExternalSettings(){document.getElementById('external-settings-modal').classList.remove('open')}
+    async function saveExternalSettings(event){event.preventDefault();const form=event.currentTarget,target=form.elements.target.value,values={};for(const key of ['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE'])values[key]=form.elements[key].value;try{await api(`/api/external-settings/${encodeURIComponent(target)}`,{method:'POST',body:JSON.stringify({values})});managementMessage('external-settings-message','External settings saved.')}catch(error){managementMessage('external-settings-message',error.message,true)}}
+    const renderManagedTargetsBase=renderManagedTargets;renderManagedTargets=function(){renderManagedTargetsBase();const box=document.getElementById('managed-targets');box.querySelectorAll('.managed-actions').forEach(actions=>{const edit=actions.querySelector('[data-edit]');if(!edit)return;const settings=document.createElement('button');settings.type='button';settings.textContent='Settings';settings.dataset.settings=edit.dataset.edit;actions.insertBefore(settings,edit);settings.onclick=()=>openExternalSettings(settings.dataset.settings)})}
     async function loadTargets(){try{managedTargets=(await api('/api/targets')).targets||[];renderManagedTargets()}catch(error){managementMessage('target-message',error.message,true)}}
     function openTargetModal(target=null){editingTarget=target;const form=document.getElementById('target-modal-form');form.reset();form.elements.id.value=target?.id||'';form.elements.host.value=target?.host||'';form.elements.user.value=target?.user||'root';form.elements.port.value=target?.port||22;form.elements.id.readOnly=Boolean(target);document.getElementById('target-modal-title').textContent=target?'Edit external system':'Add external system';managementMessage('target-modal-message','');document.getElementById('target-modal').classList.add('open')}
     function closeTargetModal(){document.getElementById('target-modal').classList.remove('open');editingTarget=null}
@@ -260,7 +266,7 @@ PAGE = r"""<!doctype html>
     async function removeTarget(id){if(!confirm(`Remove external system "${id}"?`))return;try{await api(`/api/targets/${encodeURIComponent(id)}`,{method:'DELETE'});await loadTargets();await loadStatus();managementMessage('target-message','External target removed.')}catch(error){managementMessage('target-message',error.message,true)}}
     async function testTarget(id){try{const d=await api(`/api/targets/${encodeURIComponent(id)}/test`,{method:'POST',body:'{}'});const t=d.target||{};managementMessage('target-message',`Connection successful · ${t.os||'OS unknown'} · ${t.updater||'updater unknown'}`)}catch(error){managementMessage('target-message',error.message,true)}}
     function targetRow(t){const row=document.createElement('div');row.className='target-row';const external=String(t.type||'').toLowerCase()==='external';row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div><div class="target-field"><span class="target-label">Updates</span><strong>${knownUpdates(t)===null?'Unknown':knownUpdates(t)}</strong></div><div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div><div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button>${external?'<button class="edit-target">Edit</button><button class="remove-target">Remove</button>':''}</div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const update=row.querySelector('.update');update.disabled=running(t.id)||!TARGET_UPDATEABLE(t);update.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});if(external){row.querySelector('.edit-target').onclick=e=>{e.stopPropagation();openTargetModal(managedTargets.find(x=>x.id===t.id))};row.querySelector('.remove-target').onclick=e=>{e.stopPropagation();removeTarget(t.id)}}return row}
-    document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').onclick=()=>{const id=document.querySelector('#target-modal-form [name=id]').value;if(id)testTarget(id)};document.getElementById('target-modal-form').onsubmit=saveTarget;
+    document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').onclick=()=>{const id=document.querySelector('#target-modal-form [name=id]').value;if(id)testTarget(id)};document.getElementById('target-modal-form').onsubmit=saveTarget;document.getElementById('external-settings-close').onclick=closeExternalSettings;document.getElementById('external-settings-form').onsubmit=saveExternalSettings;
     async function bootstrap(){try{await ensureSession();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard()}catch(error){if(csrfToken)notice(error.message,true)}}
     bootstrap();
   </script>
@@ -323,6 +329,40 @@ def config_value_map(content):
         else:
             result[key] = value
     return result
+
+
+EXTERNAL_SETTING_KEYS = ("ONLY_UPDATE_CHECK", "EXCLUDE_UPDATE_CHECK", "ONLY", "EXCLUDE")
+
+
+def parse_external_config_text(content):
+    values = {}
+    schema = None
+    for line in content.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if "=" not in line:
+            raise ValueError("invalid External config line")
+        key, raw = line.split("=", 1)
+        key = key.strip()
+        if key == "schema_version":
+            if schema is not None:
+                raise ValueError("duplicate External schema")
+            schema = raw.strip().strip("\"'")
+            if schema != "1":
+                raise ValueError("unsupported External config schema")
+            continue
+        if key not in EXTERNAL_SETTING_KEYS or key in values:
+            raise ValueError("unsupported or duplicate External setting")
+        if "\n" in raw or "\r" in raw or len(raw) > 513:
+            raise ValueError("invalid External setting value")
+        try:
+            parsed = shlex.split(raw, comments=False, posix=True)
+        except ValueError as error:
+            raise ValueError("invalid External setting value") from error
+        values[key] = parsed[0] if parsed else raw.strip("\"'")
+    if schema != "1":
+        raise ValueError("External config schema is missing")
+    return {key: values.get(key, "") for key in EXTERNAL_SETTING_KEYS}
 
 
 def validate_config_values(values):
@@ -908,6 +948,55 @@ class StatusHandler(BaseHTTPRequestHandler):
         validate_inventory_text(content, self.server.inventory_script)
         return [item for item in inventory_payload(content) if item["transport"] == "ssh"]
 
+    def external_target_known(self, target):
+        return any(item["id"] == target for item in self.inventory_data())
+
+    def handle_external_settings_get(self, target):
+        if not self.valid_target(target) or not self.external_target_known(target):
+            self.send_json(error_payload("TARGET_NOT_FOUND", "That external target does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        try:
+            result = self.run_command([str(self.server.cli), "external", "settings-get", target], timeout=135)
+        except (OSError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("EXTERNAL_SETTINGS_UNAVAILABLE", "External settings are unavailable."), HTTPStatus.BAD_GATEWAY)
+            return
+        if result.returncode:
+            code = "EXTERNAL_SETTINGS_INVALID" if result.returncode == 11 else "EXTERNAL_SETTINGS_UNAVAILABLE"
+            status = HTTPStatus.UNPROCESSABLE_ENTITY if result.returncode == 11 else HTTPStatus.BAD_GATEWAY
+            self.send_json(error_payload(code, "External settings are invalid." if result.returncode == 11 else "External settings unavailable; target may be offline."), status)
+            return
+        try:
+            values = parse_external_config_text(result.stdout)
+        except ValueError:
+            self.send_json(error_payload("EXTERNAL_SETTINGS_INVALID", "External settings are invalid."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json({"target": target, "source": "external-local", "values": values})
+
+    def handle_external_settings_update(self, target, payload):
+        if not self.valid_target(target) or not self.external_target_known(target):
+            self.send_json(error_payload("TARGET_NOT_FOUND", "That external target does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        values = payload.get("values") if isinstance(payload, dict) else None
+        if not isinstance(values, dict) or set(values) != set(EXTERNAL_SETTING_KEYS):
+            self.send_json(error_payload("INVALID_EXTERNAL_SETTINGS", "All External filter settings are required."), HTTPStatus.BAD_REQUEST)
+            return
+        for key in EXTERNAL_SETTING_KEYS:
+            value = values[key]
+            if not isinstance(value, str) or "\n" in value or "\r" in value or len(value) > 512:
+                self.send_json(error_payload("INVALID_EXTERNAL_SETTINGS", "External filter values must be short single-line text."), HTTPStatus.BAD_REQUEST)
+                return
+        args = [str(self.server.cli), "external", "settings-set", target]
+        args.extend(f"{key}={values[key]}" for key in EXTERNAL_SETTING_KEYS)
+        try:
+            result = self.run_command(args, timeout=135)
+        except (OSError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("EXTERNAL_SETTINGS_SAVE_FAILED", "External settings could not be saved."), HTTPStatus.BAD_GATEWAY)
+            return
+        if result.returncode:
+            self.send_json(error_payload("EXTERNAL_SETTINGS_SAVE_FAILED", "External settings could not be saved; target may be offline or the write was denied."), HTTPStatus.BAD_GATEWAY)
+            return
+        self.send_json({"target": target, "source": "external-local", "message": "External settings saved."})
+
     def handle_config_update(self, payload):
         normalized = validate_config_values(payload.get("values") if isinstance(payload, dict) else None)
         locked_atomic_update(self.server.config_file,
@@ -1044,6 +1133,13 @@ class StatusHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 self.send_json(error_payload("TARGETS_INVALID", "External target inventory is invalid or unavailable."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
+        if len([part for part in path.split("/") if part]) == 3 and path.startswith("/api/external-settings/"):
+            target_id = unquote(path.rsplit("/", 1)[-1])
+            try:
+                self.handle_external_settings_get(target_id)
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("EXTERNAL_SETTINGS_UNAVAILABLE", "External settings are unavailable."), HTTPStatus.BAD_GATEWAY)
+            return
         if len([part for part in path.split("/") if part]) == 3 and path.startswith("/api/external-backup/"):
             target_id = unquote(path.rsplit("/", 1)[-1])
             try:
@@ -1163,6 +1259,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.handle_config_update(payload)
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 self.send_json(error_payload("CONFIG_NOT_SAVED", "Configuration was rejected and not changed."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        if len(parts) == 3 and parts[:2] == ["api", "external-settings"]:
+            try:
+                self.handle_external_settings_update(parts[2], payload)
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("EXTERNAL_SETTINGS_SAVE_FAILED", "External settings could not be saved."), HTTPStatus.BAD_GATEWAY)
             return
         if parts == ["api", "targets"]:
             try:

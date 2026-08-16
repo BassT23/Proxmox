@@ -12,7 +12,11 @@ printf '%s\n' "$*" > "${SSH_ARGS_LOG:?}"
 case "$*" in
   *timeout-target*) sleep 3; exit 0 ;;
 esac
-exec bash -s
+script=$(cat)
+if [[ -n "${REMOTE_CONFIG:-}" ]]; then
+  script=${script//config=\/etc\/ultimate-updater\/external.conf/config=$REMOTE_CONFIG}
+fi
+bash -s <<< "$script"
 FAKE_SSH
 
 cat > "$WORK_DIR/fake-bin/apt" <<'FAKE_APT'
@@ -77,6 +81,7 @@ run_check() {
   local target=$1 mode=$2 expected_rc=$3 expected_state=$4
   local status_file="$WORK_DIR/$target-status.json"
   APT_MODE="$mode" MUTATION_MARKER="$WORK_DIR/mutation" \
+    REMOTE_CONFIG="$WORK_DIR/external.conf" \
     PATH="$WORK_DIR/fake-bin:$PATH" UU_LOCAL_FILES="$WORK_DIR" \
     TARGET_INVENTORY_FILE="$WORK_DIR/targets.conf" \
     TARGET_INVENTORY_SCRIPT="$ROOT_DIR/target-inventory.sh" \
@@ -91,6 +96,14 @@ run_check() {
   grep -Fq '"check_status": "'"$expected_state"'"' "$status_file"
   unset rc
 }
+
+cat > "$WORK_DIR/external.conf" <<'CONFIG'
+schema_version="1"
+ONLY_UPDATE_CHECK=""
+EXCLUDE_UPDATE_CHECK=""
+ONLY=""
+EXCLUDE=""
+CONFIG
 
 run_check updates updates 0 updates_available
 grep -Fq '"available": 1' "$WORK_DIR/updates-status.json"

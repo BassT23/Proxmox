@@ -16,6 +16,8 @@ STATUS_FILE="$LOCAL_FILES/status.json"
 EXTERNAL_APT_SCRIPT="$LOCAL_FILES/external-apt.sh"
 EXTERNAL_HELPER_FILE="$LOCAL_FILES/external-helper.sh"
 EXTERNAL_BOOTSTRAP_FILE="$LOCAL_FILES/external-bootstrap.sh"
+EXTERNAL_SETTINGS_FILE="$LOCAL_FILES/external-settings.sh"
+EXTERNAL_CONFIG_SCRIPT="$LOCAL_FILES/external-config.sh"
 EXTERNAL_SAFETY_FILE="$LOCAL_FILES/external-backup-safety.sh"
 STATUS_MODEL_SCRIPT="$LOCAL_FILES/status-model.sh"
 CLUSTER_TARGET_SCRIPT="$LOCAL_FILES/cluster-target.sh"
@@ -40,6 +42,12 @@ if [[ ! -f "$EXTERNAL_HELPER_FILE" && -f "$SCRIPT_DIR/external-helper.sh" ]]; th
 fi
 if [[ ! -f "$EXTERNAL_BOOTSTRAP_FILE" && -f "$SCRIPT_DIR/external-bootstrap.sh" ]]; then
   EXTERNAL_BOOTSTRAP_FILE="$SCRIPT_DIR/external-bootstrap.sh"
+fi
+if [[ ! -f "$EXTERNAL_SETTINGS_FILE" && -f "$SCRIPT_DIR/external-settings.sh" ]]; then
+  EXTERNAL_SETTINGS_FILE="$SCRIPT_DIR/external-settings.sh"
+fi
+if [[ ! -f "$EXTERNAL_CONFIG_SCRIPT" && -f "$SCRIPT_DIR/external-config.sh" ]]; then
+  EXTERNAL_CONFIG_SCRIPT="$SCRIPT_DIR/external-config.sh"
 fi
 if [[ ! -f "$EXTERNAL_SAFETY_FILE" && -f "$SCRIPT_DIR/external-backup-safety.sh" ]]; then
   EXTERNAL_SAFETY_FILE="$SCRIPT_DIR/external-backup-safety.sh"
@@ -67,6 +75,11 @@ Commands:
   update-all              Start the configured cluster-wide update job
   check-node NODE         Check one Proxmox node and its configured guests
   update-node NODE        Update one Proxmox node and its configured guests
+  external setup TARGET   Prepare an External SSH target and local settings
+  external settings-get TARGET
+                          Read target-local External settings
+  external settings-set TARGET KEY=VALUE...
+                          Explicitly update allowlisted target-local settings
   status                  Show the latest machine-readable status summary
   status --json           Print the existing status JSON unchanged
   help                    Show this help
@@ -127,7 +140,7 @@ external_setup() {
   local key_path=/root/.ssh/ultimate-updater-external pub_path host port user identity_file
   local ssh_rc fingerprint
   [[ -f "$INVENTORY_SCRIPT" ]] || { printf 'Target inventory parser is not available.\n' >&2; return 1; }
-  [[ -f "$EXTERNAL_HELPER_FILE" && -f "$EXTERNAL_BOOTSTRAP_FILE" ]] || {
+  [[ -f "$EXTERNAL_HELPER_FILE" && -f "$EXTERNAL_BOOTSTRAP_FILE" && -f "$EXTERNAL_CONFIG_SCRIPT" ]] || {
     printf 'External setup files are not installed.\n' >&2
     return 1
   }
@@ -177,9 +190,11 @@ external_setup() {
     printf 'State: SSH_READY\n'
   fi
   [[ -n "$identity_file" ]] || printf 'Runtime config must contain: identity_file=%s\n' "$key_path"
+  local defaults_file
+  defaults_file=$(external_defaults_file "$target") || return 1
   printf 'Bootstrap (administrator runs this on the External host):\n'
-  printf '  scp -i %q %q %q %s@%s:/tmp/\n' "$key_path" "$EXTERNAL_BOOTSTRAP_FILE" "$EXTERNAL_HELPER_FILE" "$user" "$host"
-  printf '  sudo /tmp/external-bootstrap.sh /tmp/external-helper.sh %s\n' "$user"
+  printf '  scp -i %q %q %q %q %s@%s:/tmp/\n' "$key_path" "$EXTERNAL_BOOTSTRAP_FILE" "$EXTERNAL_HELPER_FILE" "$defaults_file" "$user" "$host"
+  printf '  sudo /tmp/external-bootstrap.sh /tmp/external-helper.sh %s /tmp/%s.conf\n' "$user" "$target"
   printf 'The bootstrap installs the root-owned helper and /etc/sudoers.d/ultimate-updater after visudo validation.\n'
 }
 
@@ -208,6 +223,28 @@ external_backup_status() {
     return 3
   }
   "$EXTERNAL_SAFETY_FILE" status "$target"
+}
+
+external_settings() {
+  require_file "$EXTERNAL_SETTINGS_FILE" "External settings manager" || return 1
+  "$EXTERNAL_SETTINGS_FILE" "$@"
+}
+
+external_defaults_file() {
+  local target="$1" directory file key value
+  directory="${UU_EXTERNAL_DEFAULTS_DIR:-/var/lib/ultimate-updater/external-config-defaults}"
+  file="$directory/$target.conf"
+  mkdir -p "$directory" || return 1
+  {
+    printf 'schema_version="1"\n'
+    for key in ONLY_UPDATE_CHECK EXCLUDE_UPDATE_CHECK ONLY EXCLUDE; do
+      value=$(awk -F'"' -v wanted="$key" '$1 ~ "^" wanted "=" {print $2; exit}' "$LOCAL_FILES/update.conf" 2>/dev/null || true)
+      escaped=$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      printf '%s="%s"\n' "$key" "$escaped"
+    done
+  } > "$file" || return 1
+  chmod 0644 "$file"
+  printf '%s\n' "$file"
 }
 
 external_backup_gate() {
@@ -704,6 +741,8 @@ case "$command" in
       setup) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; external_setup "$3" ;;
       verify-backup) [[ $# -eq 3 || $# -eq 4 ]] || { usage >&2; exit 2; }; external_verify_backup "$3" "${4:-}" ;;
       backup-status) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; external_backup_status "$3" ;;
+      settings-get) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; external_settings get "$3" ;;
+      settings-set) [[ $# -ge 3 ]] || { usage >&2; exit 2; }; external_settings set "$3" "${@:4}" ;;
       *) usage >&2; exit 2 ;;
     esac
     ;;

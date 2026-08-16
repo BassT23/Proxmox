@@ -7,9 +7,58 @@
 set -eu
 
 HELPER_VERSION=1
+CONFIG_PATH=/etc/ultimate-updater/external.conf
 
 usage() {
-  printf 'Usage: %s version | status | update\n' "$0" >&2
+  printf 'Usage: %s version | status | config-read | config-write | update\n' "$0" >&2
+}
+
+validate_config() {
+  [ -f "$1" ] && [ -r "$1" ] || return 44
+  awk -F= '
+    /^[[:space:]]*($|#)/ { next }
+    {
+      key=$1
+      if (key !~ /^[A-Za-z_][A-Za-z0-9_]*$/ || seen[key]++) exit 1
+      value=substr($0,index($0,"=")+1)
+      if (length(value) > 513 || value ~ /[\r\n]/) exit 1
+      if (key == "schema_version") { gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); if (value != "1" && value != "\"1\"") exit 1 }
+      else if (key != "ONLY_UPDATE_CHECK" && key != "EXCLUDE_UPDATE_CHECK" && key != "ONLY" && key != "EXCLUDE") exit 1
+    }
+    END { exit(seen["schema_version"] ? 0 : 1) }
+  ' "$1"
+}
+
+config_read() {
+  validate_config "$CONFIG_PATH" || { printf 'external-helper: local config missing or invalid\n' >&2; return 44; }
+  cat "$CONFIG_PATH"
+}
+
+config_write() {
+  directory="" temporary="" backup="" stamp="" old=""
+  [ "$(id -u)" -eq 0 ] || { printf 'external-helper: config write requires root\n' >&2; return 70; }
+  directory=${CONFIG_PATH%/*}
+  install -d -o root -g root -m 0755 "$directory"
+  temporary=$(mktemp "$CONFIG_PATH.tmp.XXXXXX") || return 1
+  trap 'rm -f "$temporary"' INT TERM EXIT
+  cat > "$temporary" || return 1
+  validate_config "$temporary" || { printf 'external-helper: rejected local config\n' >&2; return 44; }
+  if [ -f "$CONFIG_PATH" ]; then
+    stamp=$(date -u '+%Y%m%d-%H%M%S')
+    backup="$CONFIG_PATH.bak.$stamp"
+    [ ! -e "$backup" ] || backup="$CONFIG_PATH.bak.$stamp.$$"
+    cp -p "$CONFIG_PATH" "$backup" || return 1
+  fi
+  chown root:root "$temporary"
+  chmod 0644 "$temporary"
+  mv -f "$temporary" "$CONFIG_PATH"
+  trap - INT TERM EXIT
+  find "$directory" -maxdepth 1 -type f -name 'external.conf.bak.*' -printf '%T@ %p\n' |
+    sort -nr | awk 'NR > 5 { sub(/^[^ ]+ /, ""); print }' |
+    while IFS= read -r old; do
+      [ -z "$old" ] || rm -f -- "$old"
+    done
+  printf 'External config updated\n'
 }
 
 detect_os() {
@@ -64,6 +113,14 @@ case "$action" in
       *) printf 'external-helper: unsupported operating system\n' >&2; exit 21 ;;
     esac
     exit 0
+    ;;
+  config-read)
+    config_read
+    exit $?
+    ;;
+  config-write)
+    config_write
+    exit $?
     ;;
   update)
     [ "$#" -eq 1 ] || { usage; exit 64; }

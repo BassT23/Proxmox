@@ -76,11 +76,57 @@ classify_ssh_error() {
 }
 
 remote_check() {
-  RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" 'bash -s' <<'REMOTE_CHECK'
+  RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" "UU_EXTERNAL_TARGET_NAME=$EXTERNAL_TARGET bash -s" <<'REMOTE_CHECK'
 set -u
+config=/etc/ultimate-updater/external.conf
+config_value() {
+  awk -F= -v wanted="$1" '$1 == wanted {v=substr($0,index($0,"=")+1); gsub(/^"|"$/,"",v); print v; exit}' "$config"
+}
+filter_match() {
+  local specification="$1" candidate="$2" token
+  specification=$(printf '%s' "$specification" | tr ',;|' '   ')
+  for token in $specification; do
+    [ "$(printf '%s' "$token" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$candidate" | tr '[:upper:]' '[:lower:]')" ] && return 0
+  done
+  return 1
+}
+filter_allows() {
+  local action="$1" candidate="$2" only_key exclude_key only exclude
+  if [ "$action" = check ]; then only_key=ONLY_UPDATE_CHECK; exclude_key=EXCLUDE_UPDATE_CHECK; else only_key=ONLY; exclude_key=EXCLUDE; fi
+  only=$(config_value "$only_key")
+  exclude=$(config_value "$exclude_key")
+  if [ -n "$only" ]; then filter_match "$only" "$candidate"; return $?; fi
+  [ -z "$exclude" ] || ! filter_match "$exclude" "$candidate"
+}
 if [ ! -r /etc/os-release ]; then
   printf 'UU_RESULT|error|unknown|unknown|null|null||OS_RELEASE_UNAVAILABLE|/etc/os-release is unavailable\n'
   exit 20
+fi
+if [ ! -r "$config" ]; then
+  printf 'UU_RESULT|error|unknown|unknown|null|null||EXTERNAL_CONFIG_MISSING|local External config is missing\n'
+  exit 26
+fi
+if ! awk -F= '
+  /^[[:space:]]*($|#)/ { next }
+  {
+    key=$1
+    if (seen[key]++) exit 1
+    value=substr($0,index($0,"=")+1)
+    if (length(value) > 513 || value ~ /[\r\n]/) exit 1
+    if (key == "schema_version") {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      if (value != "1" && value != "\"1\"") exit 1
+    } else if (key != "ONLY_UPDATE_CHECK" && key != "EXCLUDE_UPDATE_CHECK" &&
+               key != "ONLY" && key != "EXCLUDE") exit 1
+  }
+  END { exit(seen["schema_version"] ? 0 : 1) }
+' "$config"; then
+  printf 'UU_RESULT|error|unknown|unknown|null|null||EXTERNAL_CONFIG_INVALID|local External config is invalid\n'
+  exit 27
+fi
+if ! filter_allows check "${UU_EXTERNAL_TARGET_NAME:-$(hostname)}"; then
+  printf 'UU_RESULT|skipped|%s|%s|null|null||EXTERNAL_FILTERED|excluded by local check filter\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+  exit 0
 fi
 . /etc/os-release
 id_lower=$(printf '%s %s' "${ID:-}" "${ID_LIKE:-}" | tr '[:upper:]' '[:lower:]')
@@ -163,6 +209,10 @@ check_target() {
       printf 'external-linux: %s: %s\n' "$EXTERNAL_TARGET" "${message:-Remote check failed}" >&2
       return 1
       ;;
+    skipped)
+      STATUS_MODEL_UPSERT "$EXTERNAL_TARGET" external ssh true "$os_name" "$os_version" "$updater" null null not_checked "$code" "$message"
+      printf '%s: check skipped by local External filter\n' "$EXTERNAL_TARGET"
+      ;;
     *)
       record_check_error true error REMOTE_CHECK_FAILED "Unknown remote check status: $check_status"
       return 1
@@ -176,6 +226,45 @@ remote_update() {
 set -u
 helper="__EXTERNAL_HELPER_PATH__"
 expected_version="__EXTERNAL_HELPER_VERSION__"
+target_name="__EXTERNAL_TARGET_NAME__"
+config=/etc/ultimate-updater/external.conf
+if [ ! -r "$config" ] || ! awk -F= '
+  /^[[:space:]]*($|#)/ { next }
+  {
+    key=$1
+    if (seen[key]++) exit 1
+    value=substr($0,index($0,"=")+1)
+    if (length(value) > 513 || value ~ /[\r\n]/) exit 1
+    if (key == "schema_version") {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      if (value != "1" && value != "\"1\"") exit 1
+    } else if (key != "ONLY_UPDATE_CHECK" && key != "EXCLUDE_UPDATE_CHECK" &&
+               key != "ONLY" && key != "EXCLUDE") exit 1
+  }
+  END { exit(seen["schema_version"] ? 0 : 1) }
+' "$config"; then
+  printf 'EXTERNAL_CONFIG_INVALID\n' >&2
+  exit 27
+fi
+config_value() {
+  awk -F= -v wanted="$1" '$1 == wanted {v=substr($0,index($0,"=")+1); gsub(/^"|"$/,"",v); print v; exit}' "$config"
+}
+filter_match() {
+  local specification="$1" candidate="$2" token
+  specification=$(printf '%s' "$specification" | tr ',;|' '   ')
+  for token in $specification; do
+    [ "$(printf '%s' "$token" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$candidate" | tr '[:upper:]' '[:lower:]')" ] && return 0
+  done
+  return 1
+}
+only=$(config_value ONLY)
+exclude=$(config_value EXCLUDE)
+if [ -n "$only" ]; then
+  filter_match "$only" "$target_name" || { printf 'EXTERNAL_FILTERED: excluded by local update filter\n'; exit 0; }
+elif [ -n "$exclude" ] && filter_match "$exclude" "$target_name"; then
+  printf 'EXTERNAL_FILTERED: excluded by local update filter\n'
+  exit 0
+fi
 [ -x "$helper" ] || { printf 'EXTERNAL_HELPER_MISSING\n' >&2; exit 31; }
 version=$($helper version 2>/dev/null) || { printf 'EXTERNAL_HELPER_UNAVAILABLE\n' >&2; exit 32; }
 [ "$version" = "ultimate-updater-external $expected_version" ] || {
@@ -192,6 +281,7 @@ REMOTE_UPDATE
   )
   remote_script=${remote_script//__EXTERNAL_HELPER_PATH__/$EXTERNAL_HELPER_PATH}
   remote_script=${remote_script//__EXTERNAL_HELPER_VERSION__/$EXTERNAL_HELPER_VERSION}
+  remote_script=${remote_script//__EXTERNAL_TARGET_NAME__/$EXTERNAL_TARGET}
   RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" 'bash -s' <<< "$remote_script"
 }
 
@@ -209,6 +299,11 @@ update_target() {
   output=$(remote_update 2>&1)
   rc=$?
   if [[ $rc -eq 0 ]]; then
+    if [[ "$output" == *EXTERNAL_FILTERED* ]]; then
+      STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" skipped 0 || true
+      printf '%s: update skipped by local External filter\n' "$EXTERNAL_TARGET"
+      return 0
+    fi
     STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" success 0 || true
     printf '%s: update completed successfully\n' "$EXTERNAL_TARGET"
     return 0

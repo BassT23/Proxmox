@@ -227,6 +227,21 @@ may explicitly accept the risk with `ultimate-updater update <target>
 --without-verified-backup`; this override is not persisted. Automatic External
 backup hooks are not implemented yet.
 
+Each External Linux system also owns its local settings at
+`/etc/ultimate-updater/external.conf` (`root:root`, mode `0644`). The local
+file is the source of truth for that External system; the central instance
+only initializes it from defaults during `external setup` or changes it when
+an owner explicitly uses External Management. It is not overwritten during
+ordinary checks or updates. The allowlisted settings currently include the
+separate `ONLY_UPDATE_CHECK`, `EXCLUDE_UPDATE_CHECK`, `ONLY`, and `EXCLUDE`
+filters. `ONLY` takes precedence over its matching `EXCLUDE` for each run
+type. The central UI reads and writes these settings through the fixed,
+validated remote helper path; it does not transfer secrets or arbitrary file
+paths. A missing, invalid, or offline local configuration is reported rather
+than silently replaced with central values. On an individual External node,
+these filters match that target's configured External identity; central
+inventory filters still decide which External systems are contacted at all.
+
 ### Migrating legacy SSH targets
 
 During installation or self-update, existing files in

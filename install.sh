@@ -264,6 +264,14 @@ INSTALL () {
       cp "$TEMP_FILES"/external-bootstrap.sh $LOCAL_FILES/external-bootstrap.sh
       chmod 750 $LOCAL_FILES/external-bootstrap.sh
     fi
+    if [[ -f "$TEMP_FILES"/external-config.sh ]]; then
+      cp "$TEMP_FILES"/external-config.sh $LOCAL_FILES/external-config.sh
+      chmod 750 $LOCAL_FILES/external-config.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-settings.sh ]]; then
+      cp "$TEMP_FILES"/external-settings.sh $LOCAL_FILES/external-settings.sh
+      chmod 750 $LOCAL_FILES/external-settings.sh
+    fi
     if [[ -f "$TEMP_FILES"/external-backup-safety.sh ]]; then
       cp "$TEMP_FILES"/external-backup-safety.sh $LOCAL_FILES/external-backup-safety.sh
       chmod 750 $LOCAL_FILES/external-backup-safety.sh
@@ -375,6 +383,14 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/external-bootstrap.sh ]]; then
       mv "$TEMP_FILES"/external-bootstrap.sh $LOCAL_FILES/external-bootstrap.sh
       chmod 750 $LOCAL_FILES/external-bootstrap.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-config.sh ]]; then
+      mv "$TEMP_FILES"/external-config.sh $LOCAL_FILES/external-config.sh
+      chmod 750 $LOCAL_FILES/external-config.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-settings.sh ]]; then
+      mv "$TEMP_FILES"/external-settings.sh $LOCAL_FILES/external-settings.sh
+      chmod 750 $LOCAL_FILES/external-settings.sh
     fi
     if [[ -f "$TEMP_FILES"/external-backup-safety.sh ]]; then
       mv "$TEMP_FILES"/external-backup-safety.sh $LOCAL_FILES/external-backup-safety.sh
