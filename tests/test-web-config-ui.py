@@ -16,7 +16,8 @@ for title in (
 ):
     assert f"title:'{title}'" in page, title
 
-assert "Only has priority" in page
+assert "ONLY has priority; EXCLUDE is ignored while ONLY is set." in page
+assert "content:'↳'" not in page
 assert "dependencies:{CHECK_RUNNING_CONTAINER:'CHECK_WITH_LXC'" in page
 assert "dependencies:{KEEP_SNAPSHOTS:'SNAPSHOT'" in page
 assert "input.disabled=!enabled" in page
