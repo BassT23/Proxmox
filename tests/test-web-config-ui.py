@@ -82,6 +82,9 @@ assert 'class="filter-preview-chevron">›' not in page
 assert 'class="filter-preview-chevron" aria-hidden="true"' in page
 assert ".filter-preview-chevron::after" in page
 assert "<span class=\"chevron\" aria-hidden=\"true\"></span>" in page
+assert "EXTERNAL_BACKUP_REQUIRED" in page
+assert "allow_without_backup" in page
+assert "Proceed without verified backup" in page
 
 # Presentation must not expose the internal host: prefix in detail/job labels.
 assert "friendlyTarget(t)" in page

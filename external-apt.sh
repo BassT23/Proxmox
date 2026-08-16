@@ -13,6 +13,7 @@ INVENTORY_FILE="${TARGET_INVENTORY_FILE:-$LOCAL_FILES/targets.conf}"
 RUNTIME_SCRIPT="${TARGET_RUNTIME_SCRIPT:-$LOCAL_FILES/target-runtime.sh}"
 EXTERNAL_HELPER_PATH="${EXTERNAL_HELPER_PATH:-/usr/local/sbin/ultimate-updater-external}"
 EXTERNAL_HELPER_VERSION="1"
+EXTERNAL_SAFETY_SCRIPT="${EXTERNAL_SAFETY_SCRIPT:-$LOCAL_FILES/external-backup-safety.sh}"
 [[ -f "$INVENTORY_SCRIPT" ]] || INVENTORY_SCRIPT="$SCRIPT_DIR/target-inventory.sh"
 [[ -f "$STATUS_MODEL_SCRIPT" ]] || STATUS_MODEL_SCRIPT="$SCRIPT_DIR/status-model.sh"
 [[ -f "$RUNTIME_SCRIPT" ]] || RUNTIME_SCRIPT="$SCRIPT_DIR/target-runtime.sh"
@@ -196,6 +197,15 @@ REMOTE_UPDATE
 
 update_target() {
   local output rc code
+  local -a safety_args=("$EXTERNAL_SAFETY_SCRIPT" check "$EXTERNAL_TARGET")
+  if [[ "${UU_EXTERNAL_BACKUP_OVERRIDE:-false}" == true ]]; then
+    safety_args+=(--override)
+  fi
+  [[ -x "$EXTERNAL_SAFETY_SCRIPT" ]] || {
+    printf 'External update blocked: backup safety component is unavailable.\n' >&2
+    return 42
+  }
+  "${safety_args[@]}" || return $?
   output=$(remote_update 2>&1)
   rc=$?
   if [[ $rc -eq 0 ]]; then

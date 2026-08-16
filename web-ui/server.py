@@ -15,6 +15,7 @@ import stat
 import subprocess
 import tempfile
 import time
+from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -36,6 +37,7 @@ DEFAULT_ASSET_DIR = Path("/etc/ultimate-updater/web-ui/assets")
 DEFAULT_CLI = Path("/usr/local/sbin/ultimate-updater")
 DEFAULT_JOB_RUNNER = Path("/etc/ultimate-updater/job-runner.sh")
 DEFAULT_JOBS_DIR = Path("/var/lib/ultimate-updater/jobs")
+DEFAULT_BACKUP_STATE_FILE = Path("/var/lib/ultimate-updater/external-backup-verification.json")
 DEFAULT_AUTH_FILE = Path("/etc/ultimate-updater/web-auth.json")
 DEFAULT_BIND = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -156,11 +158,11 @@ PAGE = r"""<!doctype html>
     function showLogin(message=''){setLoginLoading(false);document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null}
     function showDashboard(){document.getElementById('auth-loading').classList.remove('open');document.getElementById('login-screen').classList.remove('open');document.getElementById('dashboard').hidden=false}
     async function ensureSession(){const r=await fetch('/api/session',{cache:'no-store'});const d=await r.json();if(!r.ok){showLogin(d.error?.message||'Please sign in.');throw new Error(d.error?.message||'Authentication required.')}csrfToken=d.csrf;return d}
-    async function api(path,options={}){if(!csrfToken)await ensureSession();const headers={'Content-Type':'application/json',...(options.headers||{})};if(csrfToken)headers['X-CSRF-Token']=csrfToken;const r=await fetch(path,{...options,headers});const d=await r.json();if(r.status===401){showLogin(d.error?.message||'Session expired.')}if(!r.ok)throw new Error(d.error?.message||'Request failed');return d}
+    async function api(path,options={}){if(!csrfToken)await ensureSession();const headers={'Content-Type':'application/json',...(options.headers||{})};if(csrfToken)headers['X-CSRF-Token']=csrfToken;const r=await fetch(path,{...options,headers});const d=await r.json();if(r.status===401){showLogin(d.error?.message||'Session expired.')}if(!r.ok){const error=new Error(d.error?.message||'Request failed');error.code=d.error?.code;throw error}return d}
     function notice(message,error=false){const n=document.getElementById('notice');n.hidden=false;n.textContent=message;n.className=error?'notice error':'notice'}
     function running(target){return jobs.some(j=>j.target===target&&j.state==='running')}
     function renderDetails(t){const n=document.getElementById('details'),[label,tone]=statusLabel(t.check_status),e=t.error?`${text(t.error.code,'')}${t.error.message?': '+t.error.message:''}`:'None';n.hidden=false;n.innerHTML=`<h3>${esc(t.id)}</h3><div class="detail-grid"><div><span>Type</span><strong>${esc(t.type)}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(t.os)}</strong></div><div><span>Updater</span><strong>${esc(t.updater)}</strong></div><div><span>Check status</span><strong class="pill ${tone}">${label}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div><div><span>Reboot required</span><strong>${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong></div><div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Error</span><strong class="error-text">${esc(e)}</strong></div></div>`;n.scrollIntoView({behavior:'smooth',block:'nearest'})}
-    async function action(path,update=false){if(update&&!confirm(`Start update for "${path.split('/').pop()}"?`))return;try{const d=await api(path,{method:'POST',body:'{}'});notice(d.message||'Action accepted.');await loadStatus();await loadJobs()}catch(e){notice(e.message,true)}}
+    async function action(path,update=false,options={}){if(update&&!options.confirmed&&!confirm(`Start update for "${path.split('/').pop()}"?`))return;try{const d=await api(path,{method:'POST',body:options.override?JSON.stringify({allow_without_backup:true}):'{}'});notice(d.message||'Action accepted.');await loadStatus();await loadJobs()}catch(e){if(update&&e.code==='EXTERNAL_BACKUP_REQUIRED'&&!options.override){if(confirm('No recent backup is verified for this external system.\n\nProceed without verified backup for this update only?'))return action(path,true,{confirmed:true,override:true})}else notice(e.message,true)}}
     function render(data){currentStatus=data;const ts=Array.isArray(data.targets)?data.targets:[];set('total',ts.length);set('online',ts.filter(t=>t.reachable===true).length);set('updates',ts.map(t=>t.updates&&t.updates.available).filter(Number.isInteger).reduce((a,v)=>a+v,0));set('attention',ts.filter(t=>t.check_status!=='ok').length);set('generated',`Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}`);const list=document.getElementById('targets');list.replaceChildren();if(!ts.length){list.innerHTML='<div class="empty">No target status is available yet. Run a check to populate the view.</div>';return}for(const t of ts){const [label,tone]=statusLabel(t.check_status),u=t.updates&&Number.isInteger(t.updates.available)?t.updates.available:'Unknown';const card=document.createElement('article');card.className='target-card';card.innerHTML=`<div class="target-top"><div><div class="target-name">${esc(t.id)}</div><div class="target-id">${esc(t.os)} · ${esc(t.transport)}</div></div><span class="pill ${tone}">${label}</span></div><div class="target-info"><div><span>Updates</span><strong>${u}</strong></div><div><span>Reachability</span><strong>${t.reachable===true?'Online':t.reachable===false?'Offline':'Unknown'}</strong></div><div><span>Type</span><strong>${esc(t.type)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div></div><div class="actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Update running':'Start update'}</button></div>`;card.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});card.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const b=card.querySelector('.update');b.disabled=running(t.id)||!TARGET_UPDATEABLE(t);b.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});list.appendChild(card)}}
     function TARGET_UPDATEABLE(t){return ['ok','updates_available'].includes(t.check_status)}
     function rememberLogScroll(node){if(suppressLogScroll||!node.isConnected||node.id!==`log-${openJobLogId}`)return;const distance=node.scrollHeight-node.scrollTop-node.clientHeight;logAutoFollow=distance<=LOG_BOTTOM_TOLERANCE;logScrollTop=node.scrollTop}
@@ -190,7 +192,7 @@ PAGE = r"""<!doctype html>
     const osName=t=>{const value=text(t.os,'Unknown');return value==='Unknown'?value:value.charAt(0).toUpperCase()+value.slice(1)+(t.os_version?` ${t.os_version}`:'')};
     const statusTone=t=>{const [label,tone]=statusLabel(t.check_status);return `<span class="pill ${tone}">${label}</span>`};
     function closeDetails(){const n=document.getElementById('details');openDetailId=null;n.hidden=true;n.replaceChildren()}
-    function renderDetails(t){const n=document.getElementById('details');if(openDetailId===t.id){closeDetails();return}const e=t.error?`${text(t.error.code,'')}${t.error.message?': '+t.error.message:''}`:'None';openDetailId=t.id;n.hidden=false;n.innerHTML=`<div class="details-heading"><h3>${esc(friendlyTarget(t))}</h3><button type="button" class="details-close">Close details</button></div><div class="detail-sections"><section><h4>System</h4><div class="detail-grid"><div><span>Type</span><strong>${esc(friendlyType(t))}</strong></div><div><span>Node</span><strong>${esc(t.node||'Not assigned')}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(osName(t))}</strong></div></div></section><section><h4>Updates</h4><div class="detail-grid"><div><span>Updater</span><strong>${esc(t.updater)}</strong></div><div><span>Available updates</span><strong>${knownUpdates(t)===null?'Unknown':knownUpdates(t)}</strong></div><div><span>Reboot required</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong></div></div></section><section><h4>Status</h4><div class="detail-grid"><div><span>Check status</span><strong>${statusTone(t)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div><div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Error</span><strong class="error-text">${esc(e)}</strong></div></div></section></div>`;n.querySelector('.details-close').onclick=closeDetails;n.scrollIntoView({behavior:'smooth',block:'nearest'})}
+    function renderDetails(t){const n=document.getElementById('details');if(openDetailId===t.id){closeDetails();return}const e=t.error?`${text(t.error.code,'')}${t.error.message?': '+t.error.message:''}`:'None',backup=t.type==='external'&&t.backup_status?text(t.backup_status.status,'Unknown'):'Not applicable';openDetailId=t.id;n.hidden=false;n.innerHTML=`<div class="details-heading"><h3>${esc(friendlyTarget(t))}</h3><button type="button" class="details-close">Close details</button></div><div class="detail-sections"><section><h4>System</h4><div class="detail-grid"><div><span>Type</span><strong>${esc(friendlyType(t))}</strong></div><div><span>Node</span><strong>${esc(t.node||'Not assigned')}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(osName(t))}</strong></div></div></section><section><h4>Updates</h4><div class="detail-grid"><div><span>Updater</span><strong>${esc(t.updater)}</strong></div><div><span>Available updates</span><strong>${knownUpdates(t)===null?'Unknown':knownUpdates(t)}</strong></div><div><span>Reboot required</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong></div></div></section><section><h4>Status</h4><div class="detail-grid"><div><span>Check status</span><strong>${statusTone(t)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div><div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Backup safety</span><strong>${esc(backup)}</strong></div><div><span>Error</span><strong class="error-text">${esc(e)}</strong></div></div></section></div>`;n.querySelector('.details-close').onclick=closeDetails;n.scrollIntoView({behavior:'smooth',block:'nearest'})}
     function guestIdentity(t){return esc(friendlyTarget(t))}
     function targetRow(t){const row=document.createElement('div');row.className='target-row';row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div><div class="target-field"><span class="target-label">Updates</span><strong>${knownUpdates(t)===null?'Unknown':knownUpdates(t)}</strong></div><div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div><div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button></div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const b=row.querySelector('.update');b.disabled=running(t.id)||!TARGET_UPDATEABLE(t);b.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});return row}
     function toggleGroup(key){if(openNodes.has(key))openNodes.clear();else{openNodes.clear();openNodes.add(key)}render(currentStatus)}
@@ -393,6 +395,32 @@ def project_active_status(payload, active_external_ids):
     return projected
 
 
+def external_backup_status(state_file, target, max_age=86400):
+    """Read local, time-bound manual backup verification without contacting targets."""
+    try:
+        with Path(state_file).open(encoding="utf-8") as source:
+            state = json.load(source)
+        record = state.get(target, {}) if isinstance(state, dict) else {}
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        record = {}
+    result = {
+        "status": "unknown",
+        "verified_at": record.get("verified_at") if isinstance(record, dict) else None,
+        "verified_by": record.get("verified_by") if isinstance(record, dict) else None,
+        "reference": record.get("reference", "") if isinstance(record, dict) else "",
+        "age_seconds": None,
+    }
+    if isinstance(result["verified_at"], str):
+        try:
+            verified = datetime.fromisoformat(result["verified_at"].replace("Z", "+00:00"))
+            seconds = int((datetime.now(timezone.utc) - verified).total_seconds())
+            result["age_seconds"] = max(0, seconds)
+            result["status"] = "verified" if 0 <= seconds <= max_age else "expired"
+        except ValueError:
+            pass
+    return result
+
+
 def active_inventory_projection(payload, inventory):
     """Return the canonical active target set for status and filter preview."""
     active_external_ids = {
@@ -445,7 +473,7 @@ def proxmox_inventory_snapshot(runner=subprocess.run):
     return node_resources + resources
 
 
-def canonical_inventory(payload, inventory, proxmox_resources=None):
+def canonical_inventory(payload, inventory, proxmox_resources=None, backup_state_file=None):
     """Build the active inventory shared by Systems and Target Preview."""
     if proxmox_resources is None:
         return active_inventory_projection(payload, inventory)
@@ -501,7 +529,9 @@ def canonical_inventory(payload, inventory, proxmox_resources=None):
         base = {"id": target_id, "type": "external", "transport": "ssh",
                 "name": target_id, "reachable": None, "check_status": "unknown",
                 "os": None, "updater": None, "updates": {"available": None},
-                "reboot_required": None, "last_check": None, "error": None, "node": None}
+                "reboot_required": None, "last_check": None, "error": None, "node": None,
+                "backup_status": external_backup_status(backup_state_file, target_id)
+                if backup_state_file else None}
         targets.append(merge(base, status))
 
     projected = dict(payload)
@@ -995,6 +1025,16 @@ class StatusHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 self.send_json(error_payload("TARGETS_INVALID", "External target inventory is invalid or unavailable."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
+        if len([part for part in path.split("/") if part]) == 3 and path.startswith("/api/external-backup/"):
+            target_id = unquote(path.rsplit("/", 1)[-1])
+            try:
+                if not any(item["id"] == target_id for item in self.inventory_data()):
+                    self.send_json(error_payload("TARGET_NOT_FOUND", "That external target does not exist."), HTTPStatus.NOT_FOUND)
+                    return
+                self.send_json(external_backup_status(self.server.backup_state_file, target_id))
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("BACKUP_STATUS_UNAVAILABLE", "Backup verification status is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return
         if path == "/api/status":
             try:
                 with self.server.status_file.open(encoding="utf-8") as source:
@@ -1003,7 +1043,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                     raise ValueError
                 inventory = self.inventory_data()
                 payload = canonical_inventory(
-                    payload, inventory, proxmox_inventory_snapshot(),
+                    payload, inventory, proxmox_inventory_snapshot(), self.server.backup_state_file,
                 )
             except FileNotFoundError:
                 self.send_json(error_payload("STATUS_NOT_FOUND", "No status file is available yet."), HTTPStatus.NOT_FOUND)
@@ -1082,6 +1122,23 @@ class StatusHandler(BaseHTTPRequestHandler):
         if parts == ["api", "update-all"]:
             self.action_update_all()
             return
+        if len(parts) == 3 and parts[:2] == ["api", "external-backup"]:
+            target_id = parts[2]
+            reference = payload.get("reference", "") if isinstance(payload, dict) else ""
+            if not isinstance(reference, str):
+                self.send_json(error_payload("INVALID_BACKUP_REFERENCE", "Backup reference must be text."), HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                result = self.run_command([str(self.server.cli), "external", "verify-backup", target_id, reference], timeout=15)
+            except (OSError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("BACKUP_VERIFY_FAILED", "Backup verification could not be recorded."), HTTPStatus.BAD_GATEWAY)
+                return
+            if result.returncode:
+                self.send_json(error_payload("BACKUP_VERIFY_FAILED", "Backup verification could not be recorded."), HTTPStatus.UNPROCESSABLE_ENTITY)
+                return
+            self.send_json({"message": "Backup verified for this external target.",
+                            "status": external_backup_status(self.server.backup_state_file, target_id)})
+            return
         if urlsplit(self.path).path == "/api/config":
             try:
                 self.handle_config_update(payload)
@@ -1101,7 +1158,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.action_check(parts[2])
             return
         if len(parts) == 3 and parts[:2] == ["api", "update"]:
-            self.action_update(parts[2])
+            self.action_update(parts[2], payload)
             return
         if len(parts) == 3 and parts[:2] == ["api", "check-node"]:
             self.action_check_node(parts[2])
@@ -1129,18 +1186,34 @@ class StatusHandler(BaseHTTPRequestHandler):
                         "message": "Check completed." if result.returncode == 0 else "Check failed."},
                        HTTPStatus.OK if result.returncode == 0 else HTTPStatus.UNPROCESSABLE_ENTITY)
 
-    def action_update(self, target):
+    def action_update(self, target, payload=None):
         if not self.valid_target(target):
             self.send_json(error_payload("INVALID_TARGET", "The target name is invalid."), HTTPStatus.BAD_REQUEST)
             return
+        allow_without_backup = isinstance(payload, dict) and payload.get("allow_without_backup") is True
         try:
-            result = self.run_command([str(self.server.cli), "update", target], timeout=30)
+            is_external = any(item["id"] == target and item["transport"] == "ssh"
+                              for item in self.inventory_data())
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("TARGETS_INVALID", "External target inventory is invalid or unavailable."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        command = [str(self.server.cli), "update", target]
+        if is_external and allow_without_backup:
+            command.append("--without-verified-backup")
+        try:
+            result = self.run_command(command, timeout=30)
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("UPDATE_START_FAILED", "The update job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
         output = f"{result.stdout}\n{result.stderr}"
         job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
         if result.returncode != 0:
+            if result.returncode == 41:
+                self.send_json(error_payload(
+                    "EXTERNAL_BACKUP_REQUIRED",
+                    "No recent backup is verified for this external target.",
+                ), HTTPStatus.CONFLICT)
+                return
             code = "JOB_ALREADY_RUNNING" if result.returncode == 3 else "UPDATE_START_FAILED"
             message = "An update job is already running for this target." if result.returncode == 3 else "The update job could not be started."
             self.send_json(error_payload(code, message), HTTPStatus.CONFLICT if result.returncode == 3 else HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -1286,6 +1359,7 @@ def main():
     server = ThreadingHTTPServer((args.bind, args.port), StatusHandler)
     server.status_file, server.cli = args.status_file, args.cli
     server.config_file, server.inventory_file = args.config_file, args.inventory_file
+    server.backup_state_file = DEFAULT_BACKUP_STATE_FILE
     server.inventory_script, server.external_script = args.inventory_script, args.external_script
     server.tag_filter_script = args.config_file.parent / "tag-filter.sh"
     server.asset_dir = args.asset_dir

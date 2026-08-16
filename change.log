@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- require recent local backup verification or one-time owner approval before External updates
 - compact LXC and VM check/update settings into presentation matrices
 - simplify Systems node cards into isolated header, info, and action footer areas
 - separate Systems node-card metadata and actions into non-overlapping layout rows

@@ -264,6 +264,10 @@ INSTALL () {
       cp "$TEMP_FILES"/external-bootstrap.sh $LOCAL_FILES/external-bootstrap.sh
       chmod 750 $LOCAL_FILES/external-bootstrap.sh
     fi
+    if [[ -f "$TEMP_FILES"/external-backup-safety.sh ]]; then
+      cp "$TEMP_FILES"/external-backup-safety.sh $LOCAL_FILES/external-backup-safety.sh
+      chmod 750 $LOCAL_FILES/external-backup-safety.sh
+    fi
     if [[ -f "$TEMP_FILES"/legacy-migrate.sh ]]; then
       cp "$TEMP_FILES"/legacy-migrate.sh $LOCAL_FILES/legacy-migrate.sh
       chmod 750 $LOCAL_FILES/legacy-migrate.sh
@@ -371,6 +375,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/external-bootstrap.sh ]]; then
       mv "$TEMP_FILES"/external-bootstrap.sh $LOCAL_FILES/external-bootstrap.sh
       chmod 750 $LOCAL_FILES/external-bootstrap.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-backup-safety.sh ]]; then
+      mv "$TEMP_FILES"/external-backup-safety.sh $LOCAL_FILES/external-backup-safety.sh
+      chmod 750 $LOCAL_FILES/external-backup-safety.sh
     fi
     if [[ -f "$TEMP_FILES"/legacy-migrate.sh ]]; then
       mv "$TEMP_FILES"/legacy-migrate.sh $LOCAL_FILES/legacy-migrate.sh

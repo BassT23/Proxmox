@@ -213,6 +213,9 @@ start_job() {
   if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
     systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
   fi
+  if [[ "${UU_EXTERNAL_BACKUP_OVERRIDE:-false}" == true ]]; then
+    systemd_env+=("--setenv=UU_EXTERNAL_BACKUP_OVERRIDE=true")
+  fi
 
   timestamp=$(date -u '+%Y%m%d-%H%M%S')
   unit="${JOB_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"

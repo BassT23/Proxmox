@@ -218,9 +218,14 @@ For APT targets, a check runs `apt-get -s upgrade` against the existing local
 package metadata and does not run `apt-get update`; update counts can
 therefore be stale. An update runs the helper's unattended APT sequence with
 `--force-confdef` and `--force-confold`, then reports any required reboot
-without rebooting automatically. Before an external update, keep a current
-verified backup or explicitly accept the risk because Proxmox snapshots are
-not available for external systems.
+without rebooting automatically. Before an External update, record a recent
+manual backup verification with `ultimate-updater external verify-backup
+<target> [reference]`. Verification is local, time-bound metadata and does
+not contact the External target; the default validity window is 24 hours.
+Without a recent verification, an External update is blocked. A single run
+may explicitly accept the risk with `ultimate-updater update <target>
+--without-verified-backup`; this override is not persisted. Automatic External
+backup hooks are not implemented yet.
 
 ### Migrating legacy SSH targets
 
@@ -321,6 +326,7 @@ For an external apt- or dnf-based target, use the same commands:
 ```text
 ultimate-updater check raspi
 ultimate-updater update raspi
+ultimate-updater external verify-backup raspi maintenance-window-2026-08-16
 ```
 
 The update is handed to the node-local session-independent job runner. The

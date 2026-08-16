@@ -16,6 +16,7 @@ STATUS_FILE="$LOCAL_FILES/status.json"
 EXTERNAL_APT_SCRIPT="$LOCAL_FILES/external-apt.sh"
 EXTERNAL_HELPER_FILE="$LOCAL_FILES/external-helper.sh"
 EXTERNAL_BOOTSTRAP_FILE="$LOCAL_FILES/external-bootstrap.sh"
+EXTERNAL_SAFETY_FILE="$LOCAL_FILES/external-backup-safety.sh"
 STATUS_MODEL_SCRIPT="$LOCAL_FILES/status-model.sh"
 CLUSTER_TARGET_SCRIPT="$LOCAL_FILES/cluster-target.sh"
 
@@ -40,6 +41,9 @@ fi
 if [[ ! -f "$EXTERNAL_BOOTSTRAP_FILE" && -f "$SCRIPT_DIR/external-bootstrap.sh" ]]; then
   EXTERNAL_BOOTSTRAP_FILE="$SCRIPT_DIR/external-bootstrap.sh"
 fi
+if [[ ! -f "$EXTERNAL_SAFETY_FILE" && -f "$SCRIPT_DIR/external-backup-safety.sh" ]]; then
+  EXTERNAL_SAFETY_FILE="$SCRIPT_DIR/external-backup-safety.sh"
+fi
 if [[ ! -f "$STATUS_MODEL_SCRIPT" && -f "$SCRIPT_DIR/status-model.sh" ]]; then
   STATUS_MODEL_SCRIPT="$SCRIPT_DIR/status-model.sh"
 fi
@@ -58,7 +62,8 @@ Usage: $(basename "$0") COMMAND [TARGET|OPTIONS]
 Commands:
   list                    List known local Proxmox and inventory targets
   check [TARGET]          Run the existing check, optionally for one target
-  update TARGET           Start a session-independent update job
+  update TARGET [--without-verified-backup]
+                          Start an update job; External targets require recent backup verification
   update-all              Start the configured cluster-wide update job
   check-node NODE         Check one Proxmox node and its configured guests
   update-node NODE        Update one Proxmox node and its configured guests
@@ -176,6 +181,62 @@ external_setup() {
   printf '  scp -i %q %q %q %s@%s:/tmp/\n' "$key_path" "$EXTERNAL_BOOTSTRAP_FILE" "$EXTERNAL_HELPER_FILE" "$user" "$host"
   printf '  sudo /tmp/external-bootstrap.sh /tmp/external-helper.sh %s\n' "$user"
   printf 'The bootstrap installs the root-owned helper and /etc/sudoers.d/ultimate-updater after visudo validation.\n'
+}
+
+external_target_is_configured() {
+  local target="$1"
+  [[ -f "$INVENTORY_SCRIPT" && -f "$EXTERNAL_SAFETY_FILE" ]] || return 1
+  # shellcheck disable=SC1090
+  source "$INVENTORY_SCRIPT"
+  TARGET_INVENTORY_VALIDATE "$LOCAL_FILES/targets.conf" >/dev/null 2>&1 || return 1
+  [[ "${TARGET_TRANSPORT[$target]:-}" == ssh ]]
+}
+
+external_verify_backup() {
+  local target="$1" reference="${2:-}"
+  external_target_is_configured "$target" || {
+    printf 'External SSH target not found: %s\n' "$target" >&2
+    return 3
+  }
+  "$EXTERNAL_SAFETY_FILE" verify "$target" "$reference"
+}
+
+external_backup_status() {
+  local target="$1"
+  external_target_is_configured "$target" || {
+    printf 'External SSH target not found: %s\n' "$target" >&2
+    return 3
+  }
+  "$EXTERNAL_SAFETY_FILE" status "$target"
+}
+
+external_backup_gate() {
+  local target="$1" override="${2:-false}"
+  external_target_is_configured "$target" || return 0
+  if [[ "$override" == true ]]; then
+    "$EXTERNAL_SAFETY_FILE" check "$target" --override
+  else
+    "$EXTERNAL_SAFETY_FILE" check "$target"
+  fi
+}
+
+external_backup_blockers() {
+  local target blockers=""
+  [[ -f "$EXTERNAL_SAFETY_FILE" && -f "$INVENTORY_SCRIPT" ]] || return 0
+  # shellcheck disable=SC1090
+  source "$INVENTORY_SCRIPT"
+  TARGET_INVENTORY_VALIDATE "$LOCAL_FILES/targets.conf" >/dev/null 2>&1 || return 1
+  for target in "${TARGET_NAMES[@]}"; do
+    [[ "${TARGET_TRANSPORT[$target]:-}" == ssh ]] || continue
+    if ! "$EXTERNAL_SAFETY_FILE" check "$target" >/dev/null 2>&1; then
+      blockers+="${blockers:+, }$target"
+    fi
+  done
+  [[ -z "$blockers" ]] || {
+    printf 'Blocked external targets: %s\n' "$blockers" >&2
+    printf 'Reason: no verified recent backup.\n' >&2
+    return 41
+  }
 }
 
 inventory_target_exists() {
@@ -571,7 +632,7 @@ run_check() {
 
 run_update() {
   require_file "$JOB_RUNNER" "job runner" || return 1
-  local target="${1:-}" kind
+  local target="${1:-}" kind override="${2:-false}"
   [[ -n "$target" ]] || { usage >&2; return 2; }
   [[ "$EUID" -eq 0 ]] || { printf 'ultimate-updater: update jobs require root\n' >&2; return 2; }
   resolve_target_kind "$target" >/dev/null
@@ -584,13 +645,16 @@ run_update() {
       *) return "$resolve_result" ;;
     esac
   fi
+  if [[ "$kind" == external ]]; then
+    external_backup_gate "$target" "$override" || return $?
+  fi
   if [[ "$RESOLVED_TARGET_LOCAL" == false ]]; then
     remote_target_update "$target" "$RESOLVED_TARGET_NODE" "$RESOLVED_TARGET_HOST"
     return $?
   fi
   case "$kind" in
     host|container|vm) require_file "$UPDATE_SCRIPT" "update script" || return 1; "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")" ;;
-    external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target" ;;
+    external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; if [[ "$override" == true ]]; then UU_EXTERNAL_BACKUP_OVERRIDE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; else "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; fi ;;
   esac
 }
 
@@ -616,11 +680,12 @@ case "$command" in
     run_check "${2:-}"
     ;;
   update)
-    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
-    run_update "$2"
+    [[ $# -eq 2 || ( $# -eq 3 && "$3" == "--without-verified-backup" ) ]] || { usage >&2; exit 2; }
+    if [[ $# -eq 3 ]]; then run_update "$2" true; else run_update "$2" false; fi
     ;;
   update-all)
     [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+    external_backup_blockers || exit $?
     require_file "$JOB_RUNNER" "job runner" || exit 1
     require_file "$UPDATE_SCRIPT" "update script" || exit 1
     "$JOB_RUNNER" start-global "$UPDATE_SCRIPT"
@@ -635,8 +700,12 @@ case "$command" in
     run_node_update "$2"
     ;;
   external)
-    [[ "${2:-}" == setup && $# -eq 3 ]] || { usage >&2; exit 2; }
-    external_setup "$3"
+    case "${2:-}" in
+      setup) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; external_setup "$3" ;;
+      verify-backup) [[ $# -eq 3 || $# -eq 4 ]] || { usage >&2; exit 2; }; external_verify_backup "$3" "${4:-}" ;;
+      backup-status) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; external_backup_status "$3" ;;
+      *) usage >&2; exit 2 ;;
+    esac
     ;;
   *)
     printf 'ultimate-updater: unknown command: %s\n' "$command" >&2
