@@ -29,7 +29,11 @@ assert ".matrix-cell { display:grid; place-items:center }" in page
 assert "numeric-field" in page
 assert ".config-field:not(.boolean-field).numeric-field .field-unit { grid-column:3; grid-row:1" in page
 assert ".matrix-extras { display:flex; flex-wrap:wrap; align-items:center" in page
-assert ".matrix-extras > .config-field { flex:0 0 auto; max-width:100% }" in page
+assert ".matrix-extra-row { display:flex; flex:0 0 auto; align-items:center" in page
+assert ".delay-control { display:inline-flex; flex:0 0 auto; align-items:center" in page
+assert "row.className='matrix-extra-row'" in page
+assert "control.className='delay-control'" in page
+assert ".matrix-extras > .boolean-field { width:fit-content; flex:0 0 auto" in page
 assert "data-parent" not in page
 assert "updateConfigDependencies" not in page
 assert "is-dependent" not in page
