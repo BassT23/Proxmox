@@ -269,6 +269,9 @@ INSTALL () {
     mkdir -p "$LOCAL_FILES/web-ui"
     cp "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
     chmod 750 "$LOCAL_FILES/web-ui/server.py"
+    if [[ -f "$TEMP_FILES/web-ui/pam_auth.py" ]]; then
+      install -m 0640 "$TEMP_FILES/web-ui/pam_auth.py" "$LOCAL_FILES/web-ui/pam_auth.py"
+    fi
     mkdir -p "$LOCAL_FILES/web-ui/assets"
     for UI_ASSET in ultimate-updater-header.png ultimate-updater-icon.png favicon.png; do
       if [[ -f "$TEMP_FILES/web-ui/assets/$UI_ASSET" ]]; then
@@ -363,6 +366,9 @@ UPDATE () {
       mkdir -p "$LOCAL_FILES/web-ui"
       mv "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
       chmod 750 "$LOCAL_FILES/web-ui/server.py"
+    fi
+    if [[ -f "$TEMP_FILES/web-ui/pam_auth.py" ]]; then
+      install -m 0640 "$TEMP_FILES/web-ui/pam_auth.py" "$LOCAL_FILES/web-ui/pam_auth.py"
     fi
     if [[ -f "$TEMP_FILES"/web-auth.sh ]]; then
       install -m 0750 "$TEMP_FILES"/web-auth.sh "$LOCAL_FILES/web-auth.sh"

@@ -434,8 +434,23 @@ reboots = []
 total = 0
 has_known_count = False
 
-def name(target):
-    return str(target.get("id") or "unknown")
+def target_name(target):
+    target_id = str(target.get("id") or "unknown")
+    value = str(target.get("name") or "").strip()
+    if target.get("type") == "host":
+        return str(target.get("node") or target_id.removeprefix("host:"))
+    if target_id.startswith("guest:"):
+        target_id = target_id[6:]
+    return f"{target_id} · {value}" if value else target_id
+
+def target_icon(target):
+    if target.get("type") == "host":
+        return "🖥️"
+    if target.get("type") == "vm" and "windows" in str(target.get("os") or "").lower():
+        return "🪟"
+    if target.get("type") in ("lxc", "vm"):
+        return "🐧"
+    return "🌐"
 
 def short_error(target):
     error = target.get("error")
@@ -448,7 +463,6 @@ def short_error(target):
 for target in targets:
     if not isinstance(target, dict):
         continue
-    target_name = name(target)
     status = target.get("check_status") or "not_checked"
     reachable = target.get("reachable")
     values = target.get("updates")
@@ -461,20 +475,20 @@ for target in targets:
         total += available
         has_known_count = True
         if available > 0:
-            updates.append((target_name, available))
+            updates.append((target, available))
         elif status == "ok":
-            current.append(target_name)
+            current.append(target)
     if target.get("reboot_required") is True:
-        reboots.append(target_name)
+        reboots.append(target)
 
     if status == "offline" or reachable is False:
-        offline.append(target_name)
+        offline.append(target)
     elif status == "unsupported":
-        unsupported.append(target_name)
+        unsupported.append(target)
     elif status == "error":
-        errors.append((target_name, short_error(target)))
+        errors.append((target, short_error(target)))
     elif status == "not_checked":
-        not_checked.append(target_name)
+        not_checked.append(target)
 
 has_issues = bool(offline or unsupported or errors or not_checked)
 if updates or reboots:
@@ -489,29 +503,47 @@ else:
 lines = ["Ultimate Updater status", "=======================", ""]
 if updates:
     lines.append("Available updates:")
-    lines.extend(f"- {target}: {count}" for target, count in updates)
+    node_order = []
+    grouped = {}
+    for target, count in updates:
+        node = str(target.get("node") or "Unassigned")
+        if node not in grouped:
+            grouped[node] = []
+            node_order.append(node)
+        grouped[node].append((target, count))
+    for node in node_order:
+        lines.extend(["", f"🖥️ {node}", f"⬆️ {sum(count for _, count in grouped[node])} Updates"])
+        for target, count in grouped[node]:
+            lines.append(f"{target_icon(target)} {target_name(target)}")
+            lines.append(f"⬆️ {count} Updates")
+            if target.get("reboot_required") is True:
+                lines.append("🔄 Neustart erforderlich")
 else:
     lines.append("Available updates: none")
 if has_known_count:
     lines.extend(["", f"Total available updates: {total}"])
 if current:
     lines.extend(["", "Current:"])
-    lines.extend(f"- {target}" for target in current)
+    current_by_node = {}
+    for target in current:
+        node = str(target.get("node") or "Unassigned")
+        current_by_node[node] = current_by_node.get(node, 0) + 1
+    lines.extend(f"✅ {count} weitere Systeme geprüft – keine Updates verfügbar" for count in current_by_node.values())
 if reboots:
     lines.extend(["", "Reboot required:"])
-    lines.extend(f"- {target}" for target in reboots)
+    lines.extend(f"🔄 {target_name(target)}" for target in reboots)
 if offline:
     lines.extend(["", "Not reachable:"])
-    lines.extend(f"- {target}" for target in offline)
+    lines.extend(f"⚠️ {target_icon(target)} {target_name(target)}" for target in offline)
 if errors:
     lines.extend(["", "Errors:"])
-    lines.extend(f"- {target}: {message}" for target, message in errors)
+    lines.extend(f"⚠️ {target_icon(target)} {target_name(target)}: {message}" for target, message in errors)
 if unsupported:
     lines.extend(["", "Unsupported:"])
-    lines.extend(f"- {target}" for target in unsupported)
+    lines.extend(f"⚠️ {target_name(target)}" for target in unsupported)
 if not_checked:
     lines.extend(["", "Not checked:"])
-    lines.extend(f"- {target}" for target in not_checked)
+    lines.extend(f"⚠️ {target_name(target)}" for target in not_checked)
 
 print(f"STATE={state}")
 print("\n".join(lines))

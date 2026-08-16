@@ -1785,6 +1785,27 @@ ERROR_LOGGING () {
   touch "$ERROR_LOG_FILE"
   true > "$ERROR_LOG_FILE"
 }
+
+UPDATE_MAIL_BODY() {
+  local target="${ID:-${CONTAINER:-${VM:-$HOSTNAME}}}"
+  local display_name="${NAME:-$target}" icon="🐧" package_count
+  package_count=$(grep -Eo '[0-9]+ (upgraded|updated|processed)' "$LOG_FILE" 2>/dev/null | tail -n 1 || true)
+  printf 'Ultimate Updater update summary\n\n'
+  printf '🖥️ %s\n\n' "$HOSTNAME"
+  printf '%s %s · %s\n' "$icon" "$target" "$display_name"
+  if [[ "${EXIT_CODE:-1}" -eq 0 && ! -s "$ERROR_LOG_FILE" ]]; then
+    printf '✅ Update erfolgreich\n'
+    [[ -n "$package_count" ]] && printf '⬆️ %s\n' "$package_count"
+  else
+    printf '⚠️ Update fehlgeschlagen\n'
+    printf 'Exitcode: %s\n' "${EXIT_CODE:-1}"
+    [[ -s "$ERROR_LOG_FILE" ]] && sed -n '1,4p' "$ERROR_LOG_FILE"
+  fi
+  if grep -Eqi 'reboot required|reboot needed' "$LOG_FILE" 2>/dev/null; then
+    printf '🔄 Neustart erforderlich\n'
+  fi
+}
+
 if [[ $EXIT_ON_ERROR == false ]]; then
   ERROR_LOGGING
 else
@@ -1812,7 +1833,7 @@ EXIT () {
         echo -e "Please checkout $ERROR_LOG_FILE"
         echo
         CLEAN_LOGFILE
-        mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$ERROR_LOG_FILE" 2>/dev/null ||true
+        UPDATE_MAIL_BODY | mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null ||true
       else
         if [[ "$SCRIPT_ONLY_RUN" == true ]]; then
           echo -e "${GN:-}✅ Finished, all configured script-only updates done.${CL:-}\n"
@@ -1822,7 +1843,7 @@ EXIT () {
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
         if [[ "$EMAIL_ONLY_ERROR" != true ]]; then
-          echo "Finished, all updates done. No errors" | mail -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
+          UPDATE_MAIL_BODY | mail -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
         fi
       fi
     fi
@@ -1832,7 +1853,7 @@ EXIT () {
       echo -e "${RD:-}⚠  Error during update --- Exit Code: $EXIT_CODE${CL:-}\n"
       "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
-      mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOG_FILE" 2>/dev/null
+      UPDATE_MAIL_BODY | mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
     fi
   fi
   sleep 3

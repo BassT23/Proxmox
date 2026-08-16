@@ -319,7 +319,11 @@ http://<updater-node>:8765/
 sudo /usr/local/sbin/ultimate-updater-web-auth admin
 ```
 
-The password is stored only as a salted PBKDF2-SHA256 hash in the root-owned
+On normal Proxmox installations the UI authenticates `root` through the
+existing local PAM `login` service; the password is used only for the PAM
+conversation and is never stored by the updater. For isolated development
+fixtures, the explicitly selected `UU_AUTH_BACKEND=internal` mode can use a
+salted PBKDF2-SHA256 hash in the root-owned
 `/etc/ultimate-updater/web-auth.json`. Sessions are server-side, expire after
 inactivity, use an HttpOnly/SameSite cookie, and can be ended with `Log out`.
 Browser write requests also require a session-bound CSRF token and a matching
