@@ -476,7 +476,10 @@ CONTAINER_CHECK_START () {
     elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
       continue
     else
-      STATUS=$(pct status "$CONTAINER")
+      if ! STATUS=$(timeout 10 pct status "$CONTAINER" 2>/dev/null); then
+        echo -e "${RD}Skipping LXC $CONTAINER because Proxmox did not return its state within 10 seconds${CL}"
+        continue
+      fi
       if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
         pct start "$CONTAINER"
@@ -954,12 +957,12 @@ EXIT () {
         if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
           # check variable !!!
           if [[ "$EMAIL_ONLY_SECURITY" == true && "$SECURITY_UPDATES_AVALABLE" == true ]]; then
-            mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+            mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
           else
-            mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+            mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
           fi
         elif [[ "$EMAIL_NO_UPDATES" == true ]]; then
-          echo "No updates found during search" | mail -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER"
+          echo "No updates found during search" | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER"
         fi
       fi
     fi

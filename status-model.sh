@@ -389,12 +389,12 @@ STATUS_MODEL_SEND_NOTIFICATION() {
 
   case "$state" in
     updates|issues)
-      printf '%s\n' "$body" | mail -r "$email_sender" \
+      printf '%s\n' "$body" | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$email_sender" \
         -s "Ultimate Updater summary - $HOSTNAME" "$email_user" || true
       ;;
     current)
       if [[ "$email_no_updates" == true ]]; then
-        echo "No updates found during search" | mail -r "$email_sender" \
+        echo "No updates found during search" | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$email_sender" \
           -s "Ultimate Updater" "$email_user" || true
       fi
       ;;

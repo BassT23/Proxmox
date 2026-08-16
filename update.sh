@@ -1833,7 +1833,7 @@ EXIT () {
         echo -e "Please checkout $ERROR_LOG_FILE"
         echo
         CLEAN_LOGFILE
-        UPDATE_MAIL_BODY | mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null ||true
+        UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null ||true
       else
         if [[ "$SCRIPT_ONLY_RUN" == true ]]; then
           echo -e "${GN:-}✅ Finished, all configured script-only updates done.${CL:-}\n"
@@ -1843,7 +1843,7 @@ EXIT () {
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
         if [[ "$EMAIL_ONLY_ERROR" != true ]]; then
-          UPDATE_MAIL_BODY | mail -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
+          UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
         fi
       fi
     fi
@@ -1853,7 +1853,7 @@ EXIT () {
       echo -e "${RD:-}⚠  Error during update --- Exit Code: $EXIT_CODE${CL:-}\n"
       "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
-      UPDATE_MAIL_BODY | mail -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
+      UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
     fi
   fi
   sleep 3
