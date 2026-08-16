@@ -129,7 +129,7 @@ run_status() {
   elapsed=$((now - started))
   pass=$(awk -F '\t' '$9 == "PASS" {n++} END {print n+0}' "$journal")
   fail=$(awk -F '\t' '$9 == "FAIL" {n++} END {print n+0}' "$journal")
-  bugs=$(awk -F '\t' '$10 != "" {n++} END {print n+0}' "$journal")
+  bugs=$(awk -F '\t' '$10 != "" && $10 != "-" {n++} END {print n+0}' "$journal")
   printf 'Run ID: %s\n' "$run_id"
   printf 'Status: %s\n' "$(field "$state" status)"
   printf 'Started: %s\n' "$(field "$state" started)"

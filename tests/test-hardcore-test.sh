@@ -13,9 +13,11 @@ run_id=$(printf '%s\n' "$start" | awk -F= '$1 == "RUN_ID" {print $2}')
 [[ -f "$UU_HARDCORE_TEST_ROOT/$run_id/state" ]]
 
 "$ROOT_DIR/hardcore-test.sh" log "$run_id" T-001 Config fixture initial none expected actual PASS '' '' PASS cleaned
+"$ROOT_DIR/hardcore-test.sh" log "$run_id" T-002 Config fixture initial none expected actual PASS - - PASS cleaned
 status=$("$ROOT_DIR/hardcore-test.sh" status "$run_id")
 grep -Fq 'Status: running' <<<"$status"
-grep -Fq 'PASS: 1' <<<"$status"
+grep -Fq 'PASS: 2' <<<"$status"
+grep -Fq 'Bugs: 0' <<<"$status"
 "$ROOT_DIR/hardcore-test.sh" progress "$run_id" phase1 "current test"
 grep -Fq 'phase=phase1' "$UU_HARDCORE_TEST_ROOT/$run_id/state"
 
