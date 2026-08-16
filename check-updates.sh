@@ -527,7 +527,6 @@ CHECK_CONTAINER () {
       echo -e "N: $NORMAL_APT_UPDATES"
     fi
   elif [[ "$OS" =~ fedora ]]; then
-    pct exec "$CONTAINER" -- bash -c "dnf update" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update | grep -Ec ' updates$'")
     CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
     CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
@@ -536,7 +535,6 @@ CHECK_CONTAINER () {
       echo -e "$UPDATES"
     fi
   elif [[ "$OS" =~ archlinux ]]; then
-    pct exec "$CONTAINER" -- bash -c "pacman -Syu" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "pacman -Qu | wc -l")
     CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
     CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
@@ -554,7 +552,6 @@ CHECK_CONTAINER () {
       echo -e "$UPDATES"
     fi
   else
-    pct exec "$CONTAINER" -- bash -c "yum update" >/dev/null 2>&1
     UPDATES=$(pct exec "$CONTAINER" -- bash -c "yum -q check-update | wc -l")
     CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
     CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
@@ -701,7 +698,6 @@ CHECK_VM () {
         RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "reboot" >/dev/null 2>&1
       fi
     elif [[ "$OS" =~ Fedora ]]; then
-      RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "dnf -y update" >/dev/null 2>&1
       UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "dnf check-update | grep -Ec ' updates$'")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
@@ -830,11 +826,6 @@ CHECK_VM_QEMU () {
       [[ "$QEMU_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && QEMU_APT_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "$QEMU_APT_UPDATES" "$REBOOT_REQUIRED" "$QEMU_APT_STATUS" "" ""
     elif [[ "$OS" =~ Fedora ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "dnf -y update"
-      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
-        echo -e "${RD}QEMU dnf update failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
-        return 1
-      fi
       QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "dnf check-update | grep -Ec ' updates$'"
       QEMU_COUNT_RESULT_OK "QEMU dnf check for VM $VM" || return 1
       UPDATES="$QEMU_EXEC_STDOUT"
