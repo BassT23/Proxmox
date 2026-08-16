@@ -27,6 +27,12 @@ assert "update.conf remains the source of truth" in page
 assert "/api/config-preview?" in page
 assert "filter-preview" in page
 assert "ONLY_UPDATE_CHECK is active" in page
+assert "setLoginLoading(true)" in page
+assert "button.disabled=loading" in page
+assert "Login successful" in page
+assert "Login failed" in page
+assert "form.dataset.submitting==='true'" in page
+assert "login-spinner" in page
 
 # Presentation must not expose the internal host: prefix in detail/job labels.
 assert "friendlyTarget(t)" in page
