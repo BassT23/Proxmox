@@ -8,6 +8,8 @@
 
 VERSION="2.1"
 
+CHECK_FAILURE=0
+
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
@@ -464,6 +466,7 @@ HOST_KERNEL_REBOOT_REQUIRED () {
 ## Container ##
 # Container Check Start
 CONTAINER_CHECK_START () {
+  local lifecycle_failure=0 lifecycle_message
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   # Loop through the containers
@@ -488,8 +491,25 @@ CONTAINER_CHECK_START () {
         else
           echo -e "${RD}Skipping LXC $CONTAINER because it did not become reachable${CL}"
         fi
-        # Stop the container
-        pct shutdown "$CONTAINER" --timeout 60 --forceStop 1
+        # Restore the original stopped state and propagate failures instead of
+        # presenting a successful check with a changed guest lifecycle.
+        if ! pct shutdown "$CONTAINER" --timeout 60 --forceStop 1; then
+          lifecycle_failure=1
+          lifecycle_message="Could not restore stopped state for LXC $CONTAINER"
+          echo -e "${RD}LXC $CONTAINER lifecycle restore failed; check is not successful${CL}"
+        elif [[ "$(timeout 10 pct status "$CONTAINER" 2>/dev/null)" != "status: stopped" ]]; then
+          lifecycle_failure=1
+          lifecycle_message="LXC $CONTAINER did not return to stopped state"
+          echo -e "${RD}$lifecycle_message${CL}"
+        fi
+        if [[ "$lifecycle_failure" -ne 0 ]]; then
+          STATUS_MODEL_GUEST_NAME=""
+          if declare -f cluster_target_guest_name >/dev/null 2>&1; then
+            STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$CONTAINER" 2>/dev/null || true)
+          fi
+          STATUS_MODEL_RECORD "$CONTAINER" lxc pct true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "$lifecycle_message" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+          CHECK_FAILURE=1
+        fi
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
         CHECK_CONTAINER "$CONTAINER"
       fi
@@ -1022,4 +1042,4 @@ if [[ "$STATUS_MODEL_ENABLED" == true ]]; then
   STATUS_MODEL_FINISH >/dev/null 2>&1 || true
 fi
 
-exit 0
+exit "$CHECK_FAILURE"

@@ -493,6 +493,22 @@ CHECK_DIFF () {
   fi
 
   if ! cmp -s "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"; then
+    install_changed_file() {
+      local backup="$LOCAL_FILES/$FILE"
+      if [[ -e "$backup.bak" ]]; then
+        backup="$backup.bak.$(date -u +%Y%m%d-%H%M%S)"
+      else
+        backup="$backup.bak"
+      fi
+      cp -p "$LOCAL_FILES/$FILE" "$backup"
+      mv "$TEMP_FILES/$FILE" "$LOCAL_FILES/$FILE"
+    }
+    if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
+      echo -e "\nℹ${GN:-} Installed updated file without prompting; old file saved as '$FILE.bak' (or timestamped backup)${CL:-}\n"
+      install_changed_file
+      unset -f install_changed_file
+      return 0
+    fi
     echo -e "The file ${OR:-}$FILE${CL:-}\n \
  was modified (by you or by a script) since installation.\n \
    What would you like to do about it ?  Your options are:\n \
@@ -500,15 +516,10 @@ CHECK_DIFF () {
     N or n  : keep your currently-installed version\n \
     S or s  : show the differences between the versions\n \
  The default action is to install new version and backup current file."
-    if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
-      echo -e "\nℹ${GN:-} Kept old file (non-interactive update)${CL:-}\n"
-      return 0
-    fi
     read -p "*** $FILE (Y/y/N/n/S/s) [default=Y] ?" -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         echo -e "\nℹ ${GN:-} Installed server version and backed up old file${CL:-}\n"
-        cp -f "$LOCAL_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE".bak
-        mv "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"
+        install_changed_file
       elif [[ $REPLY =~ ^[Nn]$ ]]; then
         echo -e "\nℹ${GN:-} Kept old file${CL:-}\n"
       elif [[ $REPLY =~ ^[Ss]$ ]]; then
@@ -523,14 +534,14 @@ CHECK_DIFF () {
         read -p "*** $FILE (Y/y/N/n) [default=Y] ?" -r
           if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
             echo -e "\nℹ ${GN:-} Installed server version and backed up old file${CL:-}\n"
-            cp -f "$LOCAL_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE".bak
-            mv "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"
+            install_changed_file
           elif [[ $REPLY =~ ^[Nn]$ ]]; then
             echo -e "\nℹ ${GN:-} Kept old file${CL:-}\n"
           fi
       else
         echo -e "\n⏩${OR:-} Skip this file${CL:-}\n"
       fi
+    unset -f install_changed_file
   fi
 }
 
