@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- add reusable contextual help popovers for Systems and Target filters
 - build Systems and Target Preview from the same read-only Proxmox inventory
 - unify active inventory projection for Systems and Target filters preview
 - show immediate loading, success, and error feedback during web login

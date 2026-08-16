@@ -34,6 +34,21 @@ assert "Login failed" in page
 assert "form.dataset.submitting==='true'" in page
 assert "login-spinner" in page
 
+# Contextual help uses one reusable, keyboard-accessible pattern for both views.
+assert page.count("class=\"help-control\"") >= 1
+assert "class=\"help-trigger\"" in page
+assert "aria-label=\"About Systems\"" in page
+assert "aria-controls=\"systems-help-popover\"" in page
+assert "Systems shows the complete active inventory grouped by Proxmox node and external target." in page
+assert "Guests without current update information remain part of the inventory" in page
+assert "The preview shows the targets that would be included in the next check" in page
+assert "Opening or changing the preview does not contact any target." in page
+assert "function createHelpControl(label,paragraphs)" in page
+assert "event.key!=='Escape'" in page
+assert "closeHelpControls()" in page
+assert "help-trigger:focus-visible" in page
+assert "caret-color:transparent" in page
+
 # Presentation must not expose the internal host: prefix in detail/job labels.
 assert "friendlyTarget(t)" in page
 assert "friendlyJobTarget(j.target)" in page
