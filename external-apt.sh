@@ -92,10 +92,9 @@ if ! command -v "$updater" >/dev/null 2>&1; then
   exit 24
 fi
 if [ "$updater" = apt ]; then
-  if ! $SUDO apt-get update >/dev/null 2>&1; then
-    printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|apt-get update failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
-    exit 25
-  fi
+  # The check is deliberately read-only.  It uses the package metadata
+  # already cached on the external system; refreshing package metadata belongs
+  # exclusively to the update path below.
   apt_output=$($SUDO apt-get -s upgrade 2>&1) || {
     printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|apt simulation failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
     exit 25
