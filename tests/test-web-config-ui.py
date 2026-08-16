@@ -28,6 +28,8 @@ assert "grid-template-columns:minmax(0,1fr) 58px 58px" in page
 assert ".matrix-cell { display:grid; place-items:center }" in page
 assert "numeric-field" in page
 assert ".config-field:not(.boolean-field).numeric-field .field-unit { grid-column:3; grid-row:1" in page
+assert ".matrix-extras { display:flex; flex-wrap:wrap; align-items:center" in page
+assert ".matrix-extras > .config-field { flex:0 0 auto; max-width:100% }" in page
 assert "data-parent" not in page
 assert "updateConfigDependencies" not in page
 assert "is-dependent" not in page
