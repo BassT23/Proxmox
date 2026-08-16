@@ -6,6 +6,7 @@ WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 CONFIG="$WORK_DIR/external.conf"
+# shellcheck disable=SC1090,SC1091
 EXTERNAL_CONFIG_FILE="$CONFIG" source "$ROOT_DIR/external-config.sh"
 
 external_config_defaults > "$CONFIG"
