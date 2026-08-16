@@ -283,18 +283,40 @@ PY
 }
 
 remote_node_check() {
-  local node="$1" host="$2" remote_file local_file rc
+  local node="$1" host="$2" remote_file local_file remote_config rc
   remote_file="/tmp/ultimate-updater-node-status-$$-$RANDOM.json"
+  remote_config="/tmp/ultimate-updater-central-config-$$-$RANDOM.conf"
   local_file=$(mktemp)
-  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(configured_ssh_port)" "$host" \
+  if ! STATUS_MODEL_INIT; then
+    rm -f -- "$local_file"
+    printf 'Could not initialize status model for node %s.\n' "$node" >&2
+    return 1
+  fi
+  if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q -o BatchMode=yes -o ConnectTimeout=5 \
+    -P "$(configured_ssh_port)" "$LOCAL_FILES/update.conf" "$host:$remote_config" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(configured_ssh_port)" "$host" \
+    "install -m 0640 '$remote_config' '$LOCAL_FILES/update.conf' && rm -f -- '$remote_config'" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(configured_ssh_port)" "$host" true ||
+    ! timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(configured_ssh_port)" "$host" \
     "UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE='$node' STATUS_MODEL_SCRIPT='/etc/ultimate-updater/status-model.sh' STATUS_MODEL_FILE='$remote_file' STATUS_MODEL_RECORD_FILE='$remote_file.records' bash '/etc/ultimate-updater/check-updates.sh' host >/dev/null 2>&1; cat '$remote_file'; rm -f -- '$remote_file' '$remote_file.records'" > "$local_file"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(configured_ssh_port)" "$host" \
+      "rm -f -- '$remote_config' '$remote_file' '$remote_file.records'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "host:$node" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Node $node is unreachable" "$node" "$node"
+    STATUS_MODEL_FINISH >/dev/null 2>&1 || true
     rm -f -- "$local_file"
     printf 'Node %s is unreachable.\n' "$node" >&2
     return 1
   fi
-  if ! STATUS_MODEL_INIT || ! STATUS_MODEL_IMPORT_FILE "$local_file"; then
+  if ! STATUS_MODEL_IMPORT_FILE "$local_file"; then
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not import remote check status" "$node" "$node"
+    STATUS_MODEL_FINISH >/dev/null 2>&1 || true
     rm -f -- "$local_file"
     printf 'Could not import status from node %s.\n' "$node" >&2
+    return 1
+  fi
+  if ! STATUS_MODEL_FINISH; then
+    rm -f -- "$local_file"
+    printf 'Could not finalize status for node %s.\n' "$node" >&2
     return 1
   fi
   rm -f -- "$local_file"
@@ -307,7 +329,7 @@ run_node_check() {
     require_file "$CHECK_SCRIPT" "check script" || return 1
     STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" host
   else
-    remote_node_check "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"
+    STATUS_MODEL_PARTIAL=true remote_node_check "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"
   fi
 }
 
