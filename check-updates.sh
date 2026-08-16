@@ -23,9 +23,9 @@ else
   # below when an older installation has no shared runtime helper yet.
   # shellcheck disable=SC2317,SC2329
   RUN_LOCAL_COMMAND() { "$@"; }
-  RUN_PCT_COMMAND() { local target_id="$1"; shift; pct exec "$target_id" -- "$@"; }
+  RUN_PCT_COMMAND() { local target_id="$1"; shift; timeout "${UU_CHECK_PCT_COMMAND_TIMEOUT:-120}" pct exec "$target_id" -- "$@"; }
   # Checks must fail fast for offline fixtures.  The update/dispatch runtime
-  # keeps its separate, longer SSH timeout in target-runtime.sh.
+  # keeps its separate, longer SSH and pct-exec timeouts in target-runtime.sh.
   # shellcheck disable=SC2317,SC2329
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
   READ_APT_UPDATE_COUNTS() {

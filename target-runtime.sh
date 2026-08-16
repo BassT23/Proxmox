@@ -11,7 +11,7 @@ RUN_LOCAL_COMMAND() {
 RUN_PCT_COMMAND() {
   local target_id="$1"
   shift
-  pct exec "$target_id" -- "$@"
+  timeout "${UU_CHECK_PCT_COMMAND_TIMEOUT:-120}" pct exec "$target_id" -- "$@"
 }
 
 RUN_SSH_COMMAND() {
