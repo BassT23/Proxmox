@@ -24,6 +24,7 @@ else
   RUN_PCT_COMMAND() { local target_id="$1"; shift; pct exec "$target_id" -- "$@"; }
   # Checks must fail fast for offline fixtures.  The update/dispatch runtime
   # keeps its separate, longer SSH timeout in target-runtime.sh.
+  # shellcheck disable=SC2317,SC2329
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
   READ_APT_UPDATE_COUNTS() {
     SECURITY_APT_UPDATES=$(printf '%s\n' "$1" | grep -ci '^inst.*security' || true)
@@ -33,6 +34,7 @@ fi
 
 # The shared runtime helper deliberately keeps a longer timeout for update
 # dispatches.  A check must use its own short timeout for offline fixtures.
+# shellcheck disable=SC2317,SC2329
 RUN_SSH_COMMAND() {
   local host="$1" port="$2" user="$3"
   shift 3
