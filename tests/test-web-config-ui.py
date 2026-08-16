@@ -65,6 +65,12 @@ assert "grid-template-rows:auto auto" in page
 assert ".node-group .group-summary { grid-column:2; grid-row:2; display:flex; flex-wrap:wrap" in page
 assert ".config-field.boolean-field { width:fit-content; max-width:100%; justify-self:start; cursor:pointer }" in page
 assert ".config-field.boolean-field:hover" in page
+assert ".node-group .group-status" in page
+assert ".node-group .group-updates" in page
+assert ".node-group .group-actions" in page
+assert "<div class=\"group-actions\"><button class=\"node-action node-check\"" in page
+assert "sortNodes(ts.filter(isProxmoxNode))" in page
+assert "config-field.boolean-field { width:fit-content" in page
 assert 'class="filter-preview-chevron">›' not in page
 assert 'class="filter-preview-chevron" aria-hidden="true"' in page
 assert ".filter-preview-chevron::after" in page
