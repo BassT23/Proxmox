@@ -470,12 +470,6 @@ UPDATE () {
     else
       cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf"
     fi
-    if [[ -x "$LOCAL_FILES/legacy-migrate.sh" ]]; then
-      echo -e "\nℹ ${OR:-}Checking for legacy SSH targets ...${CL:-}"
-      if ! "$LOCAL_FILES/legacy-migrate.sh"; then
-        echo -e "⚠️ ${OR:-}Legacy SSH migration needs attention; existing files were kept.${CL:-}" >&2
-      fi
-    fi
     rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
     # targets.conf is runtime inventory and must not be replaced by the
     # repository template after legacy migration or user edits.
@@ -501,6 +495,12 @@ UPDATE () {
      [[ "$FILE" == targets.conf ]] && continue
      CHECK_DIFF
     done
+    if [[ -x "$LOCAL_FILES/legacy-migrate.sh" ]]; then
+      echo -e "\nℹ ${OR:-}Checking for legacy SSH targets ...${CL:-}"
+      if ! "$LOCAL_FILES/legacy-migrate.sh"; then
+        echo -e "⚠️ ${OR:-}Legacy SSH migration needs attention; existing files were kept.${CL:-}" >&2
+      fi
+    fi
     SETUP_WEB_SERVICE restart
     rm -rf $TEMP_FOLDER || true
     echo -e "✅${GN:-} The Ultimate Updater updated successfully.${CL:-}"
