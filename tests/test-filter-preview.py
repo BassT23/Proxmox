@@ -44,6 +44,10 @@ apply_only_exclude_tags() {
     assert [item["label"] for item in only["included"]] == ["Proxmox-Test-1", "910 · debian", "Mediacenter"]
     assert [item["label"] for item in only["excluded"]] == ["917 · cent · offline"]
 
+    both = server.target_preview(payload, {"ONLY_UPDATE_CHECK": "selected", "EXCLUDE_UPDATE_CHECK": "910"}, resolver, inventory)
+    assert both["mode"] == "only"
+    assert [item["label"] for item in both["included"]] == ["Proxmox-Test-1", "910 · debian", "Mediacenter"]
+
     exclude = server.target_preview(payload, {**base, "EXCLUDE_UPDATE_CHECK": "917"}, resolver, inventory)
     assert exclude["mode"] == "exclude"
     assert [item["label"] for item in exclude["excluded"]] == ["917 · cent · offline"]
