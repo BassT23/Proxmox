@@ -21,7 +21,8 @@ read_port() {
     [[ "$key" == WEB_UI_PORT ]] || { printf 'Unsupported Web UI config key: %s\n' "$key" >&2; return 64; }
     [[ -z "$value" ]] || { printf 'Duplicate WEB_UI_PORT setting\n' >&2; return 64; }
     value=${line#*=}
-    value=${value//[[:space:]]/}
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
   done < "$WEB_UI_CONFIG_FILE"
   [[ -n "$value" ]] || { printf 'WEB_UI_PORT is missing\n' >&2; return 64; }
   valid_port "$value" || { printf 'Invalid WEB_UI_PORT: %s\n' "$value" >&2; return 64; }
@@ -39,7 +40,10 @@ own_pids() {
 
 port_listener_pids() {
   local port="$1"
-  command -v ss >/dev/null 2>&1 || return 0
+  command -v ss >/dev/null 2>&1 || {
+    printf 'Cannot validate Web UI port: ss is unavailable.\n' >&2
+    return 69
+  }
   ss -H -ltnp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true
 }
 
