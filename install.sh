@@ -498,6 +498,7 @@ UPDATE () {
     FILES="*.* **/*.*"
     for FILE in $FILES
     do
+     [[ "$FILE" == targets.conf ]] && continue
      CHECK_DIFF
     done
     SETUP_WEB_SERVICE restart
