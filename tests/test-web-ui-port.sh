@@ -22,13 +22,13 @@ python3 -c 'import socket,time; s=socket.socket(); s.setsockopt(socket.SOL_SOCKE
 LISTENER_PID=$!
 sleep 1
 printf 'WEB_UI_PORT=18765\n' > "$CONFIG"
-if WEB_UI_CONFIG_FILE="$CONFIG" WEB_UI_PORT_OWN_PIDS= "$ROOT_DIR/web-ui-port.sh" check >/dev/null 2>&1; then
+if WEB_UI_CONFIG_FILE="$CONFIG" WEB_UI_PORT_OWN_PIDS='' "$ROOT_DIR/web-ui-port.sh" check >/dev/null 2>&1; then
   echo 'foreign listener was not detected' >&2
   exit 1
 fi
 kill -0 "$LISTENER_PID"
 before=$(sha256sum "$CONFIG")
-if WEB_UI_CONFIG_FILE="$CONFIG" WEB_UI_PORT_OWN_PIDS= "$ROOT_DIR/web-ui-port.sh" set 18765 >/dev/null 2>&1; then
+if WEB_UI_CONFIG_FILE="$CONFIG" WEB_UI_PORT_OWN_PIDS='' "$ROOT_DIR/web-ui-port.sh" set 18765 >/dev/null 2>&1; then
   echo 'port setter accepted a foreign listener' >&2
   exit 1
 fi
