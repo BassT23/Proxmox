@@ -449,6 +449,8 @@ has_known_count = False
 def target_name(target):
     target_id = str(target.get("id") or "unknown")
     value = str(target.get("name") or "").strip()
+    if target_id.startswith("host:"):
+        return str(target.get("node") or target_id[5:])
     if target.get("type") == "host":
         return str(target.get("node") or target_id.removeprefix("host:"))
     if target_id.startswith("guest:"):
@@ -540,11 +542,9 @@ if has_known_count:
     lines.extend(["", f"Total available updates: {total}"])
 if current:
     lines.extend(["", "Current:"])
-    current_by_node = {}
-    for target in current:
-        node = str(target.get("node") or "Unassigned")
-        current_by_node[node] = current_by_node.get(node, 0) + 1
-    lines.extend(f"✅ {count} weitere Systeme geprüft – keine Updates verfügbar" for count in current_by_node.values())
+    count = len(current)
+    noun = "weiteres System" if count == 1 else "weitere Systeme"
+    lines.append(f"✅ {count} {noun} geprüft – keine Updates verfügbar")
 if reboots:
     lines.extend(["", "Reboot required:"])
     lines.extend(f"🔄 {target_name(target)}" for target in reboots)

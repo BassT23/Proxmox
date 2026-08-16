@@ -200,6 +200,7 @@ target_running() {
 
 start_job() {
   local update_script="$1" target="$2" unit timestamp
+  local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_target "$target" || { printf 'Unsupported target: %s\n' "$target" >&2; return 2; }
   command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start update jobs.\n' >&2; return 5; }
@@ -209,12 +210,15 @@ start_job() {
     printf 'An update job is already running for target %s.\n' "$target" >&2
     return 3
   fi
+  if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
+    systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
+  fi
 
   timestamp=$(date -u '+%Y%m%d-%H%M%S')
   unit="${JOB_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for $target" \
-    --setenv=UU_JOB_STATE_DIR="$JOB_STATE_DIR" \
+    "${systemd_env[@]}" \
     --property=Type=oneshot --property=StandardOutput=journal \
     --property=StandardError=journal "$RUNNER_PATH" run "$unit" "$target" "$update_script"; then
     write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
@@ -226,6 +230,7 @@ start_job() {
 
 start_global_job() {
   local update_script="$1" unit timestamp target=all-systems
+  local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_global_target "$target" || return 2
   command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start update jobs.\n' >&2; return 5; }
@@ -235,11 +240,14 @@ start_global_job() {
     printf 'An update job is already running for all systems.\n' >&2
     return 3
   fi
+  if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
+    systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
+  fi
   timestamp=$(date -u '+%Y%m%d-%H%M%S')
   unit="${JOB_PREFIX}all-systems-$timestamp-$BASHPID"
   write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for all systems" \
-    --setenv=UU_JOB_STATE_DIR="$JOB_STATE_DIR" \
+    "${systemd_env[@]}" \
     --property=Type=oneshot --property=StandardOutput=journal \
     --property=StandardError=journal "$RUNNER_PATH" run-global "$unit" "$update_script"; then
     write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true

@@ -287,7 +287,7 @@ remote_node_check() {
   remote_file="/tmp/ultimate-updater-node-status-$$-$RANDOM.json"
   local_file=$(mktemp)
   if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(configured_ssh_port)" "$host" \
-    "STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE='$node' STATUS_MODEL_SCRIPT='/etc/ultimate-updater/status-model.sh' STATUS_MODEL_FILE='$remote_file' STATUS_MODEL_RECORD_FILE='$remote_file.records' bash '/etc/ultimate-updater/check-updates.sh' host >/dev/null 2>&1; cat '$remote_file'; rm -f -- '$remote_file' '$remote_file.records'" > "$local_file"; then
+    "UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE='$node' STATUS_MODEL_SCRIPT='/etc/ultimate-updater/status-model.sh' STATUS_MODEL_FILE='$remote_file' STATUS_MODEL_RECORD_FILE='$remote_file.records' bash '/etc/ultimate-updater/check-updates.sh' host >/dev/null 2>&1; cat '$remote_file'; rm -f -- '$remote_file' '$remote_file.records'" > "$local_file"; then
     rm -f -- "$local_file"
     printf 'Node %s is unreachable.\n' "$node" >&2
     return 1
@@ -314,7 +314,7 @@ run_node_check() {
 remote_node_update() {
   local node="$1" host="$2" port output job_unit target="node-$1" command
   port=$(configured_ssh_port)
-  printf -v command 'exec %q start %q %q' "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" host
+  printf -v command 'exec /usr/bin/env UU_DEFER_NOTIFICATION=true %q start %q %q' "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" host
   if ! output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" "$command"); then
     printf 'Could not start update job on %s.\n' "$node" >&2
     return 6
@@ -373,7 +373,7 @@ remote_target_check() {
     return "$rc"
   fi
   ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" \
-    "STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE='$node' STATUS_MODEL_FILE='$remote_file' STATUS_MODEL_RECORD_FILE='$remote_file.records' bash '$remote_check_script' '$mode' '$target' >/dev/null 2>&1"
+    "UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE='$node' STATUS_MODEL_FILE='$remote_file' STATUS_MODEL_RECORD_FILE='$remote_file.records' bash '$remote_check_script' '$mode' '$target' >/dev/null 2>&1"
   rc=$?
   if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" \
     "cat '$remote_file'; rm -f -- '$remote_file' '$remote_file.records'" > "$local_file"; then
@@ -413,7 +413,7 @@ remote_target_update() {
   port=$(configured_ssh_port)
   printf 'Target %s resolved to %s.\n' "$target" "$node"
   printf 'Starting update job on %s ...\n' "$node"
-  printf -v command 'exec %q start %q %q' \
+  printf -v command 'exec /usr/bin/env UU_DEFER_NOTIFICATION=true %q start %q %q' \
     "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" "$target"
   if ! output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" "$command"); then
     printf 'ultimate-updater: could not start update job on %s.\n' "$node" >&2
