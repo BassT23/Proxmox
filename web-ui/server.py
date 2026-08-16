@@ -107,7 +107,7 @@ PAGE = r"""<!doctype html>
     @media (max-width:620px) { .brand-lockup { gap:11px } .brand-header-art { width:min(260px,82vw) } .brand-copy { padding-top:0 } .subtitle { margin-top:9px; font-size:.82rem } .node-grid { grid-template-columns:1fr } .node-group .group-header { display:grid; grid-template-columns:42px minmax(0,1fr); gap:8px 10px; min-height:98px } .node-group .group-toggle { grid-column:1; grid-row:1 / span 2 } .node-group .group-title { grid-column:2; grid-row:1 } .node-group .group-summary { grid-column:2; grid-row:2; width:100%; justify-content:space-between; white-space:normal } .node-group .group-summary .node-details { margin-left:auto } .guest-panel { margin-top:0 } .guest-panel .guest-list { padding:0 8px 8px } .target-row { min-width:0; grid-template-columns:1fr auto; } .target-row .target-status { grid-column:1/-1; display:block } .target-row .target-field { display:grid; grid-template-columns:minmax(80px,.65fr) minmax(0,1.35fr); align-items:baseline; gap:8px; } .target-row .target-field .target-label { margin:0 } .target-row .row-os,.target-row .row-last-check { grid-column:1/-1; display:grid; grid-template-columns:minmax(80px,.65fr) minmax(0,1.35fr); align-items:baseline; gap:8px; } .target-row .row-actions { grid-column:1/-1; justify-content:flex-start; } .detail-sections { grid-template-columns:1fr; gap:12px } .details { padding:14px } }
     .settings-group { padding-top:10px; margin-top:10px } .settings-group h3 { font-size:.82rem } .settings-group p { margin:3px 0 7px; font-size:.68rem } .config-fields { gap:4px 16px } .settings-columns { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; align-items:start } .settings-column { display:grid; gap:4px; align-content:start } .config-field.boolean-field { display:flex; align-items:center; gap:8px; min-height:28px; padding:2px 0; border:0; border-radius:0; background:transparent } .config-field.boolean-field input[type=checkbox] { flex:0 0 auto; width:16px; height:16px; margin:0; accent-color:var(--accent) } .config-field.boolean-field .field-label { padding:0; min-width:0; cursor:pointer } .config-field:not(.boolean-field) { display:grid; grid-template-columns:minmax(120px,.8fr) minmax(0,1.2fr); align-items:center; gap:5px 10px } .config-field:not(.boolean-field) .field-label { grid-column:1; grid-row:1; padding:0 } .config-field:not(.boolean-field) input[type=text],.config-field:not(.boolean-field) input[type=number] { grid-column:2; grid-row:1; min-width:0; width:100%; padding:6px 8px } .config-field:not(.boolean-field) .field-unit { grid-column:2; grid-row:2; margin:-3px 0 0; font-size:.66rem } .settings-group .settings-subtitle { display:none } .config-actions { position:sticky; bottom:0; z-index:1; margin-top:13px; padding:10px 0 2px; background:linear-gradient(var(--panel),var(--panel)); }
     @media (max-width:760px) { .config-fields,.settings-columns { grid-template-columns:1fr } .config-field:not(.boolean-field) { grid-template-columns:minmax(105px,.75fr) minmax(0,1.25fr) } .config-actions { position:static } }
-    .filter-preview { margin-top:12px; padding:12px 14px; border:1px solid #73a7ff45; border-radius:12px; background:#73a7ff0b } .filter-preview-toggle { display:flex; align-items:center; gap:9px; width:100%; padding:0; border:0; background:transparent; color:var(--text); font-size:.84rem; font-weight:700; text-align:left } .filter-preview-toggle:hover { color:var(--accent); outline:0 } .filter-preview-chevron { color:var(--accent); font-size:1rem; transition:transform .15s ease } .filter-preview.open .filter-preview-chevron { transform:rotate(90deg) } .filter-preview-details { display:none; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 24px; padding:12px 0 2px; border-top:1px solid #94a3b815; margin-top:10px } .filter-preview.open .filter-preview-details { display:grid } .filter-preview-details h4 { margin:0 0 5px; color:var(--muted); font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em } .filter-preview-list { display:grid; gap:4px; color:var(--text); font-size:.75rem } .filter-preview-list div { overflow-wrap:anywhere } .filter-preview-list .excluded { color:var(--muted) } .filter-preview-list .unknown { color:var(--warn) } .filter-preview-note { color:var(--muted); font-size:.68rem; margin-top:6px }
+    .filter-preview { margin-top:12px; padding:12px 14px; border:1px solid #73a7ff45; border-radius:12px; background:#73a7ff0b } .filter-preview-toggle { display:flex; align-items:center; gap:9px; width:100%; padding:0; border:0; background:transparent; color:var(--text); font-size:.84rem; font-weight:700; text-align:left; user-select:none; caret-color:transparent; outline:none } .filter-preview-toggle:hover { color:var(--accent) } .filter-preview-toggle:focus-visible { outline:2px solid #8bb9ff; outline-offset:3px } .filter-preview-chevron { display:grid; place-items:center; flex:0 0 28px; width:28px; height:28px; border-radius:8px; color:var(--muted); background:transparent; transform:scale(1); transition:transform .17s cubic-bezier(.2,.8,.2,1),background-color .17s ease,color .17s ease,box-shadow .17s ease } .filter-preview-chevron::after { content:""; width:8px; height:8px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); transition:transform .17s cubic-bezier(.2,.8,.2,1) } .filter-preview-toggle:hover .filter-preview-chevron { color:var(--text); background:#73a7ff18; transform:scale(1.04); box-shadow:0 0 0 4px #73a7ff0d } .filter-preview.open .filter-preview-chevron { color:var(--accent) } .filter-preview.open .filter-preview-chevron::after { transform:rotate(45deg) } .filter-preview-details { display:none; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 24px; padding:12px 0 2px; border-top:1px solid #94a3b815; margin-top:10px } .filter-preview.open .filter-preview-details { display:grid } .filter-preview-details h4 { margin:0 0 5px; color:var(--muted); font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em } .filter-preview-list { display:grid; gap:4px; color:var(--text); font-size:.75rem } .filter-preview-list div { overflow-wrap:anywhere } .filter-preview-list .excluded { color:var(--muted) } .filter-preview-list .unknown { color:var(--warn) } .filter-preview-note { color:var(--muted); font-size:.68rem; margin-top:6px }
     @media (max-width:760px) { .filter-preview-details { grid-template-columns:1fr } }
     .app-header { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:24px; align-items:start; margin-bottom:10px } .brand-header-art { width:min(260px,70vw) } .brand-copy { padding-top:0 } .subtitle { margin-top:5px } .app-header .meta { max-width:360px; padding-top:10px; align-self:start }
     @media (max-width:760px) { .app-header { display:block; margin-bottom:10px } .app-header .meta { max-width:none; padding-top:0 } }
@@ -396,6 +396,92 @@ def active_inventory_projection(payload, inventory):
     return projected
 
 
+def proxmox_inventory_snapshot(runner=subprocess.run):
+    """Read the local Proxmox inventory without contacting any guest target."""
+    try:
+        result = runner(
+            ["pvesh", "get", "/cluster/resources", "--type", "vm", "--output-format", "json"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        nodes = runner(
+            ["pvesh", "get", "/cluster/resources", "--type", "node", "--output-format", "json"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        if result.returncode or nodes.returncode:
+            return None
+        resources = json.loads(result.stdout)
+        node_resources = json.loads(nodes.stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+    if not isinstance(resources, list) or not isinstance(node_resources, list):
+        return None
+    return node_resources + resources
+
+
+def canonical_inventory(payload, inventory, proxmox_resources=None):
+    """Build the active inventory shared by Systems and Target Preview."""
+    if proxmox_resources is None:
+        return active_inventory_projection(payload, inventory)
+
+    status_by_id = {
+        str(item.get("id")): item for item in payload.get("targets", [])
+        if isinstance(item, dict)
+    }
+    targets = []
+
+    def merge(base, status):
+        merged = dict(base)
+        if isinstance(status, dict):
+            merged.update(status)
+        for key in ("id", "type", "transport", "name", "node"):
+            if base.get(key) is not None:
+                merged[key] = base[key]
+        return merged
+
+    nodes = {
+        str(item.get("node")): item for item in proxmox_resources
+        if isinstance(item, dict) and item.get("type") == "node" and item.get("node")
+    }
+    for node, resource in nodes.items():
+        status = status_by_id.get(f"host:{node}")
+        base = {"id": f"host:{node}", "type": "host", "transport": "local",
+                "name": node, "node": node,
+                "reachable": resource.get("status") == "online",
+                "check_status": "ok" if resource.get("status") == "online" else "offline"}
+        targets.append(merge(base, status))
+
+    for resource in proxmox_resources:
+        kind = resource.get("type")
+        if kind not in {"lxc", "qemu"} or resource.get("template"):
+            continue
+        target_id = str(resource.get("vmid", ""))
+        node = str(resource.get("node", ""))
+        if not target_id or not node:
+            continue
+        status = status_by_id.get(target_id)
+        node_status = nodes.get(node, {}).get("status")
+        base = {"id": target_id, "type": "lxc" if kind == "lxc" else "vm",
+                "transport": "pct" if kind == "lxc" else "qga",
+                "name": resource.get("name") or target_id, "node": node,
+                "reachable": False if node_status == "offline" else None,
+                "check_status": "offline" if node_status == "offline" else "unknown"}
+        targets.append(merge(base, status))
+
+    active_external_ids = {item["id"] for item in inventory if item.get("transport") == "ssh"}
+    for target_id in active_external_ids:
+        status = status_by_id.get(target_id)
+        inventory_item = next(item for item in inventory if item["id"] == target_id)
+        base = {"id": target_id, "type": "external", "transport": "ssh",
+                "name": target_id, "reachable": None, "check_status": "unknown",
+                "os": None, "updater": None, "updates": {"available": None},
+                "reboot_required": None, "last_check": None, "error": None, "node": None}
+        targets.append(merge(base, status))
+
+    projected = dict(payload)
+    projected["targets"] = targets
+    return projected
+
+
 def resolve_filter_ids(only, exclude, tag_filter):
     """Resolve the existing Proxmox tag filter without contacting targets."""
     if not tag_filter.is_file():
@@ -422,8 +508,8 @@ def filter_tokens(value):
     return [token for token in re.split(r"[\s,;|]+", value.strip()) if token]
 
 
-def target_preview(payload, config, tag_filter, inventory):
-    projected = active_inventory_projection(payload, inventory)
+def target_preview(payload, config, tag_filter, inventory, proxmox_resources=None):
+    projected = canonical_inventory(payload, inventory, proxmox_resources)
     targets = [dict(item) for item in projected["targets"]]
     known_ids = {str(item.get("id", "")) for item in targets}
 
@@ -763,7 +849,11 @@ class StatusHandler(BaseHTTPRequestHandler):
             config["ONLY_UPDATE_CHECK"] = only
         if exclude is not None:
             config["EXCLUDE_UPDATE_CHECK"] = exclude
-        preview = target_preview(payload, config, self.server.tag_filter_script, self.inventory_data())
+        inventory = self.inventory_data()
+        preview = target_preview(
+            payload, config, self.server.tag_filter_script, inventory,
+            proxmox_inventory_snapshot(),
+        )
         self.send_json({"available": True, "preview": preview})
 
     def handle_target_add(self, payload):
@@ -876,7 +966,10 @@ class StatusHandler(BaseHTTPRequestHandler):
                     payload = json.load(source)
                 if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
                     raise ValueError
-                payload = active_inventory_projection(payload, self.inventory_data())
+                inventory = self.inventory_data()
+                payload = canonical_inventory(
+                    payload, inventory, proxmox_inventory_snapshot(),
+                )
             except FileNotFoundError:
                 self.send_json(error_payload("STATUS_NOT_FOUND", "No status file is available yet."), HTTPStatus.NOT_FOUND)
             except (OSError, UnicodeError, json.JSONDecodeError, ValueError):

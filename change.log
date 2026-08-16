@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- build Systems and Target Preview from the same read-only Proxmox inventory
 - unify active inventory projection for Systems and Target filters preview
 - show immediate loading, success, and error feedback during web login
 - add a read-only Target filters preview based on the current inventory and tag resolver
