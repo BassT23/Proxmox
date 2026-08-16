@@ -2,6 +2,8 @@ Changelog:
 ==========
 
 **develop**
+- expose separate check and update target filters in web configuration
+- preserve existing check/update filter settings and update scope values
 - remove duplicate text marker from the Target Preview expand control
 - keep Systems node cards in stable natural name order across refreshes
 - add reusable contextual help popovers for Systems and Target filters

@@ -58,4 +58,16 @@ apply_only_exclude_tags() {
     unknown = server.target_preview(payload, {**base, "ONLY_UPDATE_CHECK": "999"}, resolver, inventory)
     assert "999" in unknown["unknown"]
 
+    update_base = {"ONLY": "", "EXCLUDE": ""}
+    update_only = server.target_preview(payload, {**update_base, "ONLY": "selected"}, resolver, inventory,
+                                         filter_keys=("ONLY", "EXCLUDE"))
+    assert update_only["mode"] == "only"
+    assert [item["label"] for item in update_only["included"]] == [
+        "Proxmox-Test-1", "910 · debian", "Mediacenter", "legacy-971"
+    ]
+    update_exclude = server.target_preview(payload, {**update_base, "EXCLUDE": "917"}, resolver, inventory,
+                                            filter_keys=("ONLY", "EXCLUDE"))
+    assert update_exclude["mode"] == "exclude"
+    assert [item["label"] for item in update_exclude["excluded"]] == ["917 · cent · offline"]
+
 print("filter preview tests: PASS")
