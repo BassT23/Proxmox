@@ -11,6 +11,8 @@ INVENTORY_SCRIPT="${TARGET_INVENTORY_SCRIPT:-$LOCAL_FILES/target-inventory.sh}"
 STATUS_MODEL_SCRIPT="${STATUS_MODEL_SCRIPT:-$LOCAL_FILES/status-model.sh}"
 INVENTORY_FILE="${TARGET_INVENTORY_FILE:-$LOCAL_FILES/targets.conf}"
 RUNTIME_SCRIPT="${TARGET_RUNTIME_SCRIPT:-$LOCAL_FILES/target-runtime.sh}"
+EXTERNAL_HELPER_PATH="${EXTERNAL_HELPER_PATH:-/usr/local/sbin/ultimate-updater-external}"
+EXTERNAL_HELPER_VERSION="1"
 [[ -f "$INVENTORY_SCRIPT" ]] || INVENTORY_SCRIPT="$SCRIPT_DIR/target-inventory.sh"
 [[ -f "$STATUS_MODEL_SCRIPT" ]] || STATUS_MODEL_SCRIPT="$SCRIPT_DIR/status-model.sh"
 [[ -f "$RUNTIME_SCRIPT" ]] || RUNTIME_SCRIPT="$SCRIPT_DIR/target-runtime.sh"
@@ -168,27 +170,28 @@ check_target() {
 }
 
 remote_update() {
-  RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" 'bash -s' <<'REMOTE_UPDATE'
+  local remote_script
+  remote_script=$(cat <<'REMOTE_UPDATE'
 set -u
-if [ ! -r /etc/os-release ]; then exit 20; fi
-. /etc/os-release
-id_lower=$(printf '%s %s' "${ID:-}" "${ID_LIKE:-}" | tr '[:upper:]' '[:lower:]')
-if [ "$(id -u)" -eq 0 ]; then SUDO=""; elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then SUDO="sudo -n"; else exit 23; fi
-case "$id_lower" in
-  *debian*|*ubuntu*|*raspbian*)
-    command -v apt-get >/dev/null 2>&1 || exit 24
-    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get update
-    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dist-upgrade -y
-    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get --purge autoremove -y
-    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get autoclean -y
-    ;;
-  *rocky*|*rhel*|*almalinux*|*fedora*)
-    command -v dnf >/dev/null 2>&1 || exit 24
-    $SUDO dnf -y upgrade
-    ;;
-  *) exit 21 ;;
-esac
+helper="__EXTERNAL_HELPER_PATH__"
+expected_version="__EXTERNAL_HELPER_VERSION__"
+[ -x "$helper" ] || { printf 'EXTERNAL_HELPER_MISSING\n' >&2; exit 31; }
+version=$($helper version 2>/dev/null) || { printf 'EXTERNAL_HELPER_UNAVAILABLE\n' >&2; exit 32; }
+[ "$version" = "ultimate-updater-external $expected_version" ] || {
+  printf 'EXTERNAL_HELPER_OUTDATED\n' >&2
+  exit 33
+}
+if [ "$(id -u)" -eq 0 ]; then
+  "$helper" update
+else
+  command -v sudo >/dev/null 2>&1 || { printf 'EXTERNAL_SUDO_UNAVAILABLE\n' >&2; exit 23; }
+  sudo -n "$helper" update
+fi
 REMOTE_UPDATE
+  )
+  remote_script=${remote_script//__EXTERNAL_HELPER_PATH__/$EXTERNAL_HELPER_PATH}
+  remote_script=${remote_script//__EXTERNAL_HELPER_VERSION__/$EXTERNAL_HELPER_VERSION}
+  RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" 'bash -s' <<< "$remote_script"
 }
 
 update_target() {

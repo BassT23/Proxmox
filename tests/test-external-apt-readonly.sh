@@ -41,8 +41,8 @@ touch "$WORK_DIR/identity"
 
 awk '/<<.*REMOTE_CHECK/{check=1; next} /<<.*REMOTE_UPDATE/{check=0} check && /apt-get update/{found=1} END{exit(found ? 1 : 0)}' \
   "$ROOT_DIR/external-apt.sh"
-awk '/<<.*REMOTE_UPDATE/{update=1; next} update && /apt-get update/{found=1} END{exit(found ? 0 : 1)}' \
-  "$ROOT_DIR/external-apt.sh"
+awk '/update_apt\(\)/{update=1} update && /apt-get update/{found=1} END{exit(found ? 0 : 1)}' \
+  "$ROOT_DIR/external-helper.sh"
 
 cat > "$WORK_DIR/targets.conf" <<CONFIG
 [updates]

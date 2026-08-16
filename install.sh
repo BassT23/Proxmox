@@ -256,6 +256,14 @@ INSTALL () {
       cp "$TEMP_FILES"/external-apt.sh $LOCAL_FILES/external-apt.sh
       chmod 750 $LOCAL_FILES/external-apt.sh
     fi
+    if [[ -f "$TEMP_FILES"/external-helper.sh ]]; then
+      cp "$TEMP_FILES"/external-helper.sh $LOCAL_FILES/external-helper.sh
+      chmod 750 $LOCAL_FILES/external-helper.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-bootstrap.sh ]]; then
+      cp "$TEMP_FILES"/external-bootstrap.sh $LOCAL_FILES/external-bootstrap.sh
+      chmod 750 $LOCAL_FILES/external-bootstrap.sh
+    fi
     chmod 750 $LOCAL_FILES/target-runtime.sh
     cp "$TEMP_FILES"/ultimate-updater $LOCAL_FILES/ultimate-updater
     chmod 750 $LOCAL_FILES/ultimate-updater
@@ -351,6 +359,14 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/external-apt.sh ]]; then
       mv "$TEMP_FILES"/external-apt.sh $LOCAL_FILES/external-apt.sh
       chmod 750 $LOCAL_FILES/external-apt.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-helper.sh ]]; then
+      mv "$TEMP_FILES"/external-helper.sh $LOCAL_FILES/external-helper.sh
+      chmod 750 $LOCAL_FILES/external-helper.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-bootstrap.sh ]]; then
+      mv "$TEMP_FILES"/external-bootstrap.sh $LOCAL_FILES/external-bootstrap.sh
+      chmod 750 $LOCAL_FILES/external-bootstrap.sh
     fi
     if [[ -f "$TEMP_FILES"/ultimate-updater ]]; then
       mv "$TEMP_FILES"/ultimate-updater $LOCAL_FILES/ultimate-updater
