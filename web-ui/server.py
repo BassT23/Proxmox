@@ -337,6 +337,21 @@ def inventory_payload(content):
     return result
 
 
+def project_active_status(payload, active_external_ids):
+    """Keep historical status data out of the active Systems projection."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
+        raise ValueError("Status payload has no target list.")
+    active_ids = set(active_external_ids)
+    projected = dict(payload)
+    projected["targets"] = [
+        target for target in payload["targets"]
+        if not isinstance(target, dict)
+        or target.get("type") != "external"
+        or target.get("id") in active_ids
+    ]
+    return projected
+
+
 def validate_inventory_text(content, script):
     if not script.is_file():
         raise ValueError("Target inventory validator is not installed.")
@@ -724,6 +739,11 @@ class StatusHandler(BaseHTTPRequestHandler):
                     payload = json.load(source)
                 if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
                     raise ValueError
+                active_external_ids = {
+                    item["id"] for item in self.inventory_data()
+                    if item.get("transport") == "ssh"
+                }
+                payload = project_active_status(payload, active_external_ids)
             except FileNotFoundError:
                 self.send_json(error_payload("STATUS_NOT_FOUND", "No status file is available yet."), HTTPStatus.NOT_FOUND)
             except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
