@@ -31,6 +31,14 @@ else
   }
 fi
 
+# The shared runtime helper deliberately keeps a longer timeout for update
+# dispatches.  A check must use its own short timeout for offline fixtures.
+RUN_SSH_COMMAND() {
+  local host="$1" port="$2" user="$3"
+  shift 3
+  timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"
+}
+
 CLUSTER_TARGET_FILE="${CLUSTER_TARGET_FILE:-$LOCAL_FILES/cluster-target.sh}"
 if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
   # shellcheck disable=SC1090
