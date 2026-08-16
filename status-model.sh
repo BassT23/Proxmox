@@ -161,10 +161,12 @@ with open(record_file, encoding="utf-8") as records:
             "error": error,
             "node": node or None,
         })
-        if name:
+        if target_type == "host":
+            # Host identity comes from the cluster resolver, never from a
+            # stale guest name carried by an older status record.
+            record["name"] = node or target_id.removeprefix("host:")
+        elif name:
             record["name"] = name
-        elif target_type == "host":
-            record.pop("name", None)
         if isinstance(imported_last_update, dict):
             record["last_update"] = imported_last_update
         # A check refreshes observation fields, but must not erase the last
