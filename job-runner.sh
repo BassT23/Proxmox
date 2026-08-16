@@ -12,7 +12,7 @@ JOB_PREFIX="ultimate-updater-update-"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | run UNIT TARGET UPDATE_SCRIPT | list\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | list\n' "$0"
 }
 
 valid_target() {
@@ -20,6 +20,10 @@ valid_target() {
     host|local-host|[A-Za-z0-9][A-Za-z0-9_.-]*) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+valid_global_target() {
+  [[ "$1" == all-systems ]]
 }
 
 safe_unit_target() {
@@ -220,6 +224,31 @@ start_job() {
     "$target" "$unit" "$unit"
 }
 
+start_global_job() {
+  local update_script="$1" unit timestamp target=all-systems
+  [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
+  valid_global_target "$target" || return 2
+  command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start update jobs.\n' >&2; return 5; }
+  [[ "$EUID" -eq 0 ]] || { printf 'Starting update jobs requires root.\n' >&2; return 2; }
+  ensure_state_dir || { printf 'Cannot prepare job state directory: %s\n' "$JOB_STATE_DIR" >&2; return 1; }
+  if target_running "$target"; then
+    printf 'An update job is already running for all systems.\n' >&2
+    return 3
+  fi
+  timestamp=$(date -u '+%Y%m%d-%H%M%S')
+  unit="${JOB_PREFIX}all-systems-$timestamp-$BASHPID"
+  write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for all systems" \
+    --setenv=UU_JOB_STATE_DIR="$JOB_STATE_DIR" \
+    --property=Type=oneshot --property=StandardOutput=journal \
+    --property=StandardError=journal "$RUNNER_PATH" run-global "$unit" "$update_script"; then
+    write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
+    return 1
+  fi
+  printf 'Update job started\nTarget: %s\nJob: %s\nStatus: ultimate-updater status\nLogs: journalctl -u %s\n' \
+    "$target" "$unit" "$unit"
+}
+
 run_job() {
   local unit="$1" target="$2" update_script="$3" file started exit_code lock_file
   valid_target "$target" || return 2
@@ -239,6 +268,35 @@ run_job() {
     return 75
   fi
   "$update_script" "$target" </dev/null
+  exit_code=$?
+  if [[ "$exit_code" -eq 0 ]]; then
+    write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" || return 1
+  else
+    write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
+  fi
+  return "$exit_code"
+}
+
+run_global_job() {
+  local unit="$1" update_script="$2" target=all-systems file started exit_code lock_file
+  valid_unit "$unit" || return 2
+  valid_global_target "$target" || return 2
+  file=$(state_file "$unit")
+  started=$(state_value "$file" started_at)
+  command -v flock >/dev/null 2>&1 || {
+    write_state "$unit" "$target" failed "$started" "$(now)" 5 "flock is unavailable"
+    return 5
+  }
+  lock_file="$JOB_STATE_DIR/$target.lock"
+  exec 9>"$lock_file" || {
+    write_state "$unit" "$target" failed "$started" "$(now)" 1 "could not open global target lock"
+    return 1
+  }
+  if ! flock -n 9; then
+    write_state "$unit" "$target" failed "$started" "$(now)" 75 "another global update is running"
+    return 75
+  fi
+  "$update_script"
   exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then
     write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" || return 1
@@ -326,9 +384,17 @@ case "${1:-}" in
     [[ $# -eq 3 ]] || { usage >&2; exit 2; }
     start_job "$2" "$3"
     ;;
+  start-global)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    start_global_job "$2"
+    ;;
   run)
     [[ $# -eq 4 ]] || { usage >&2; exit 2; }
     run_job "$2" "$3" "$4"
+    ;;
+  run-global)
+    [[ $# -eq 3 ]] || { usage >&2; exit 2; }
+    run_global_job "$2" "$3"
     ;;
   list)
     [[ $# -eq 1 ]] || { usage >&2; exit 2; }

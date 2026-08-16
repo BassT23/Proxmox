@@ -97,7 +97,7 @@ PAGE = r"""<!doctype html>
     .config-fields { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 18px } .config-field { grid-template-columns:minmax(0,1fr) auto; gap:7px 8px } .config-field input[type=checkbox] { grid-column:1; grid-row:1; justify-self:start } .config-field input[type=text],.config-field input[type=number] { grid-column:1 / -1; grid-row:2; width:100% } .config-field .field-label { grid-column:1 / -1; grid-row:1; min-width:0; padding-left:0 } .config-field input[type=checkbox] + .field-label { grid-column:2; justify-self:start } .config-field .field-unit { grid-column:1 / -1; grid-row:3; margin-top:-3px }
     .node-grid { display:grid; grid-column:1/-1; width:100%; min-width:0; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; justify-content:stretch } .node-grid > .node-group { width:100%; min-width:0 } .node-group { margin-top:0; min-height:0 !important } .node-group .group-header,.external-group .group-header { display:grid; grid-template-columns:42px minmax(0,1fr) auto; min-height:98px } .node-group .group-title small,.external-group .group-title small { white-space:nowrap } .node-group .group-summary { display:grid; grid-template-columns:auto auto; grid-template-rows:auto auto; gap:4px 8px; align-items:center } .node-group .group-summary .node-details { grid-column:1/-1; justify-self:end } .guest-panel { grid-column:1/-1; width:100%; min-width:0; margin-top:0; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#0e162b99 } .guest-panel-title { padding:13px 16px; color:var(--text); font-size:.78rem; font-weight:750; border-bottom:1px solid var(--line); background:#151d34aa } .guest-panel .guest-list { padding:0 12px 12px }
     @media (max-width:1180px) { .node-grid { grid-template-columns:repeat(2,minmax(280px,1fr)) } }
-    .node-group .group-toggle,.external-group .group-toggle { border-color:transparent; background:transparent; border-radius:50%; width:42px; height:42px } .node-group .group-toggle:hover,.external-group .group-toggle:hover { background:#73a7ff18 } .chevron { width:12px; height:12px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); transition:transform .16s ease } .node-group.open .chevron,.external-group.open .chevron { transform:rotate(45deg) } .node-group .group-summary .node-details { background:transparent; color:var(--muted); padding:7px 10px; font-size:.72rem }
+    .node-group .group-toggle,.external-group .group-toggle { border-color:transparent; background:transparent; border-radius:50%; width:42px; height:42px } .node-group .group-toggle:hover,.external-group .group-toggle:hover { background:#73a7ff18 } .chevron { width:12px; height:12px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); transition:transform .16s ease } .node-group.open .chevron,.external-group.open .chevron { transform:rotate(45deg) } .node-group .group-summary .node-details { background:transparent; color:var(--muted); padding:7px 10px; font-size:.72rem } .node-group .group-summary .node-action { padding:7px 9px; font-size:.7rem } .node-group .group-summary .node-update { background:#73a7ff1c; border-color:#73a7ff66 }
     .target-row { grid-template-columns:minmax(200px,1.4fr) .8fr .75fr .75fr minmax(180px,1.1fr) auto; min-width:720px } .guest-panel .guest-list { overflow-x:auto } .target-row > div { min-width:0 } .target-row .row-os strong,.target-row .row-muted { overflow-wrap:anywhere }
     .target-field { display:flex; flex-direction:column; gap:3px; min-width:0 } .target-label { color:var(--muted); font-size:.68rem; line-height:1.15; font-weight:650 } .target-field strong { font-size:.78rem; font-weight:400 } .target-status { justify-content:center } .target-status .pill { align-self:flex-start } .reboot-required { color:var(--warn) } .row-last-check strong { white-space:normal } .management-grid.config-open { grid-template-columns:1fr } #managed-targets > .empty { padding:18px; border-radius:10px; font-size:.78rem }
     .node-group .group-title strong { white-space:nowrap; overflow-wrap:normal }
@@ -108,7 +108,9 @@ PAGE = r"""<!doctype html>
     @media (max-width:760px) { .app-header { display:block; margin-bottom:10px } .app-header .meta { max-width:none; padding-top:0 } }
     @media (max-width:620px) { .brand-header-art { width:min(250px,82vw) } .subtitle { margin-top:5px } .app-header .meta { margin-top:8px } }
     .dashboard-header { display:block; margin-bottom:18px; padding:20px 22px 18px; border:1px solid var(--line); border-radius:18px; background:#151d34aa; box-shadow:0 18px 50px #00000029 } .dashboard-header-top { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:20px } .dashboard-brand { min-width:0 } .dashboard-brand .brand-lockup { gap:16px } .dashboard-brand .brand-header-art { width:min(370px,70vw) } .dashboard-brand .subtitle { margin:5px 0 0; max-width:650px } .dashboard-meta { align-self:start; max-width:360px; padding-top:10px; color:var(--muted); font-size:.82rem; text-align:right } .dashboard-meta button { margin-left:10px; padding:5px 8px; font-size:.7rem } .dashboard-kpis { margin:16px 0 0; }
+    .global-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; margin:0 0 18px; padding:16px 18px; border:1px solid #73a7ff55; border-radius:16px; background:#19233f99; box-shadow:0 18px 50px #00000029 } .global-actions-copy { min-width:0 } .global-actions-copy strong { display:block; font-size:.92rem } .global-actions-copy span { display:block; margin-top:4px; color:var(--muted); font-size:.74rem } .global-actions-buttons { display:flex; flex-wrap:wrap; gap:9px } .global-action { min-height:42px; padding:10px 16px; font-weight:750; font-size:.84rem } .global-action.update-all { background:#73a7ff36; border-color:#73a7ffb8 } .global-action.check-all { background:#55d39a18; border-color:#55d39a77 }
     @media (max-width:760px) { .dashboard-header { padding:16px 14px 15px; margin-bottom:14px } .dashboard-header-top { display:block } .dashboard-brand .brand-header-art { width:min(270px,82vw) } .dashboard-meta { max-width:none; padding-top:0; margin-top:8px; text-align:left; font-size:.76rem } .dashboard-kpis { margin-top:14px } }
+    @media (max-width:620px) { .global-actions { display:block; padding:14px } .global-actions-buttons { display:grid; grid-template-columns:1fr; margin-top:12px } .global-action { width:100% } }
   </style>
 </head>
 <body>
@@ -116,6 +118,7 @@ PAGE = r"""<!doctype html>
   <main class="app-main" id="dashboard">
     <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta"><span id="generated">Loading status…</span><button id="logout" type="button">Log out</button></div></div><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="updates">–</strong><span>available updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
     <div id="notice" hidden></div>
+    <section class="global-actions" aria-labelledby="global-actions-title"><div class="global-actions-copy"><strong id="global-actions-title">Run the configured updater</strong><span>Configured include/exclude and safety rules are respected.</span></div><div class="global-actions-buttons"><button id="check-all" class="global-action check-all" type="button">Check all systems</button><button id="update-all" class="global-action update-all" type="button">Update all systems</button></div></section>
     <section id="systems" class="systems-panel"><div class="section-title"><div><h2>Systems</h2><span class="hint">Organized by Proxmox node and external target</span></div><span class="view-note">Checks and updates use the existing CLI</span></div><div id="targets" class="targets"></div><section id="details" class="details" hidden></section></section>
     <section class="management-grid">
       <section class="management-panel" id="config-panel"><div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div><button id="config-open">Open settings</button></div><form id="config-form" class="management-form"></form><div id="config-message" class="management-message"></div></section>
@@ -167,13 +170,18 @@ PAGE = r"""<!doctype html>
     function guestIdentity(t){const id=text(t.id,'');const type=String(t.type||'').toLowerCase();const name=type==='lxc'||type==='vm'?String(t.name||'').trim():'';return name?`${id} · ${esc(name)}`:esc(id)}
     function targetRow(t){const row=document.createElement('div');row.className='target-row';row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div><div class="target-field"><span class="target-label">Updates</span><strong>${knownUpdates(t)===null?'Unknown':knownUpdates(t)}</strong></div><div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div><div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button></div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const b=row.querySelector('.update');b.disabled=running(t.id)||!TARGET_UPDATEABLE(t);b.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});return row}
     function toggleGroup(key){if(openNodes.has(key))openNodes.clear();else{openNodes.clear();openNodes.add(key)}render(currentStatus)}
-    function nodeGroup(node,guests,host){const open=openNodes.has(node),updateTotal=[host,...guests].filter(Boolean).map(knownUpdates).filter(Number.isInteger).reduce((a,v)=>a+v,0),card=document.createElement('article');card.className=`node-group${open?' open':''}`;card.innerHTML=`<div class="group-header"><button class="group-toggle" type="button" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} ${esc(node)}"><span class="chevron" aria-hidden="true"></span></button><div class="group-title"><div><strong>${esc(node)}</strong><small>Proxmox node · ${guests.length} guest${guests.length===1?'':'s'}</small></div></div><div class="group-summary"><span>${updateTotal} updates</span>${host?statusTone(host):''}<button class="node-details">Details</button></div></div>`;card.querySelector('.group-header').addEventListener('click',e=>{if(e.target.closest('.node-details'))return;toggleGroup(node)});card.querySelector('.group-toggle').addEventListener('click',e=>{e.stopPropagation();toggleGroup(node)});card.querySelector('.node-details').addEventListener('click',e=>{e.stopPropagation();if(host)renderDetails(host)});let panel=null;if(open){panel=document.createElement('section');panel.className='guest-panel';panel.innerHTML=`<div class="guest-panel-title">Guests on ${esc(node)}</div><div class="guest-list"></div>`;guests.forEach(t=>panel.querySelector('.guest-list').appendChild(targetRow(t)))}return{card,panel}}
+    async function nodeAction(node,update=false){const key=`${update?'update':'check'}:${node}`,button=document.querySelector(`[data-node-action="${CSS.escape(key)}"]`);if(button?.disabled)return;if(update&&!confirm(`Update ${node}?\n\nThe host and configured guests on this node will be processed. Configured safety and exclusion rules will be respected.`))return;document.querySelectorAll(`[data-node="${CSS.escape(node)}"]`).forEach(item=>{item.disabled=true});try{const d=await api(`/api/${update?'update-node':'check-node'}/${encodeURIComponent(node)}`,{method:'POST',body:'{}'});notice(d.message||'Action accepted.');await loadStatus();await loadJobs()}catch(error){notice(error.message,true)}finally{document.querySelectorAll(`[data-node="${CSS.escape(node)}"]`).forEach(item=>{item.disabled=false})}}
+    async function refreshStatusSoon(attempt=0){if(attempt>=12)return;await new Promise(resolve=>setTimeout(resolve,2500));try{await loadStatus()}finally{refreshStatusSoon(attempt+1)}}
+    function globalAction(update=false){const button=document.getElementById(update?'update-all':'check-all');if(button?.disabled)return;if(update){const ts=Array.isArray(currentStatus.targets)?currentStatus.targets:[],updates=ts.map(knownUpdates).filter(Number.isInteger).reduce((a,v)=>a+v,0),offline=ts.filter(t=>t.reachable===false).length;if(!confirm(`Update all systems?\n\n${updates} available updates are currently reported across the visible status. ${offline} system${offline===1?' is':'s are'} offline.\n\nConfigured update rules and safety checks will be respected.`))return}document.querySelectorAll('.global-action').forEach(item=>{item.disabled=true});button.textContent=update?'Starting updates…':'Starting check…';api(`/api/${update?'update-all':'check-all'}`,{method:'POST',body:'{}'}).then(async d=>{notice(d.message||'Action accepted.');await loadStatus();await loadJobs();refreshStatusSoon()}).catch(error=>notice(error.message,true)).finally(()=>{document.querySelectorAll('.global-action').forEach(item=>{item.disabled=false});button.textContent=update?'Update all systems':'Check all systems'})}
+    function nodeGroup(node,guests,host){const open=openNodes.has(node),updateTotal=[host,...guests].filter(Boolean).map(knownUpdates).filter(Number.isInteger).reduce((a,v)=>a+v,0),card=document.createElement('article');card.className=`node-group${open?' open':''}`;card.innerHTML=`<div class="group-header"><button class="group-toggle" type="button" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} ${esc(node)}"><span class="chevron" aria-hidden="true"></span></button><div class="group-title"><div><strong>${esc(node)}</strong><small>Proxmox node · ${guests.length} guest${guests.length===1?'':'s'}</small></div></div><div class="group-summary"><span>${updateTotal} updates</span>${host?statusTone(host):''}<button class="node-action node-check" data-node-action="check:${esc(node)}" data-node="${esc(node)}" type="button">Check node</button><button class="node-action node-update" data-node-action="update:${esc(node)}" data-node="${esc(node)}" type="button">Update node</button><button class="node-details">Details</button></div></div>`;card.querySelector('.group-header').addEventListener('click',e=>{if(e.target.closest('.node-details,.node-action'))return;toggleGroup(node)});card.querySelector('.group-toggle').addEventListener('click',e=>{e.stopPropagation();toggleGroup(node)});card.querySelector('.node-details').addEventListener('click',e=>{e.stopPropagation();if(host)renderDetails(host)});card.querySelector('.node-check').addEventListener('click',e=>{e.stopPropagation();nodeAction(node)});card.querySelector('.node-update').addEventListener('click',e=>{e.stopPropagation();nodeAction(node,true)});let panel=null;if(open){panel=document.createElement('section');panel.className='guest-panel';panel.innerHTML=`<div class="guest-panel-title">Guests on ${esc(node)}</div><div class="guest-list"></div>`;guests.forEach(t=>panel.querySelector('.guest-list').appendChild(targetRow(t)))}return{card,panel}}
     function externalGroup(targets){const group=document.createElement('section');const open=openNodes.has('__external__');group.className=`external-group${open?' open':''}`;const updates=targets.map(knownUpdates).filter(Number.isInteger).reduce((a,v)=>a+v,0);group.innerHTML=`<div class="group-header"><button class="group-toggle" type="button" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} external systems"><span class="chevron" aria-hidden="true"></span></button><div class="group-title"><div><strong>External systems</strong><small>${targets.length} target${targets.length===1?'':'s'}</small></div></div><div class="group-summary"><span>${updates} updates</span></div></div><div class="group-body"><div class="guest-list"></div></div>`;group.querySelector('.group-header').addEventListener('click',()=>toggleGroup('__external__'));group.querySelector('.group-toggle').addEventListener('click',e=>{e.stopPropagation();toggleGroup('__external__')});targets.forEach(t=>group.querySelector('.guest-list').appendChild(targetRow(t)));return group}
     function render(data){currentStatus=data;const ts=Array.isArray(data.targets)?data.targets:[],nodes=ts.filter(isProxmoxNode),guests=ts.filter(t=>t.type==='lxc'||t.type==='vm'),external=ts.filter(t=>!isProxmoxNode(t)&&t.type!=='lxc'&&t.type!=='vm');set('total',ts.length);set('online',ts.filter(t=>t.reachable===true).length);set('updates',ts.map(knownUpdates).filter(Number.isInteger).reduce((a,v)=>a+v,0));set('attention',ts.filter(t=>t.check_status!=='ok').length);set('generated',`Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}`);const list=document.getElementById('targets');list.replaceChildren();if(!ts.length){list.innerHTML='<div class="empty">No target status is available yet. Run a check to populate the view.</div>';return}if(nodes.length){const grid=document.createElement('div');grid.className='node-grid';let openPanel=null,assigned=new Set();nodes.forEach(host=>{const node=nodeLabel(host),members=guests.filter(t=>targetNode(t,nodes)===node);members.forEach(t=>assigned.add(t.id));const parts=nodeGroup(node,members,host);grid.appendChild(parts.card);if(parts.panel)openPanel=parts.panel});const unassigned=guests.filter(t=>!assigned.has(t.id));if(unassigned.length){const parts=nodeGroup('Guests without node assignment',unassigned,null);grid.appendChild(parts.card);if(parts.panel)openPanel=parts.panel}list.appendChild(grid);if(openPanel)list.appendChild(openPanel)}else if(guests.length){const grid=document.createElement('div');grid.className='node-grid';const parts=nodeGroup('Guests without node assignment',guests,null);grid.appendChild(parts.card);list.appendChild(grid);if(parts.panel)list.appendChild(parts.panel)}if(external.length)list.appendChild(externalGroup(external))}
     function renderJobs(){const n=document.getElementById('jobs');if(!jobs.length){n.hidden=true;openJobLogId=null;return}if(openJobLogId&&!jobs.some(j=>j.unit===openJobLogId))openJobLogId=null;const runningCount=jobs.filter(j=>j.state==='running').length,finished=jobs.length-runningCount;n.hidden=false;suppressLogScroll=true;n.innerHTML=`<div class="section-title"><button class="job-toggle"><span class="chevron" aria-hidden="true"></span><span>Update jobs <span class="job-count">(${runningCount} running, ${finished} finished)</span></span></button><span class="job-summary">Server-side state · safe across browser/device changes</span></div><div class="job-list"></div>`;suppressLogScroll=false;n.classList.toggle('collapsed',!jobsExpanded);n.querySelector('.job-toggle').addEventListener('click',()=>{jobsExpanded=!jobsExpanded;n.classList.toggle('collapsed',!jobsExpanded)});const list=n.querySelector('.job-list');jobs.forEach(j=>{const item=document.createElement('div');item.className='job';const open=j.unit===openJobLogId;item.innerHTML=`<code>${esc(j.unit)}</code><span>${esc(j.target)}</span><span class="pill ${j.state==='completed'?'good':j.state==='failed'||j.state==='interrupted'?'bad':'warn'}">${esc(j.state)}</span><button data-job="${esc(j.unit)}">${open?'Hide log':'Show log'}</button><div class="log" id="log-${esc(j.unit)}"${open?'':' hidden'}></div>`;list.appendChild(item)});n.querySelectorAll('button[data-job]').forEach(b=>b.addEventListener('click',async()=>{const unit=b.dataset.job,node=document.getElementById(`log-${unit}`);jobsExpanded=true;n.classList.remove('collapsed');if(openJobLogId===unit){openJobLogId=null;node.hidden=true;b.textContent='Show log';return}openJobLogId=unit;logAutoFollow=true;logScrollTop=0;node.hidden=false;b.textContent='Hide log';await loadJobLog(unit,node);attachLogScroll(node)}));if(openJobLogId){const node=document.getElementById(`log-${openJobLogId}`);if(node){node.scrollTop=logAutoFollow?node.scrollHeight:logScrollTop;loadJobLog(openJobLogId,node).then(()=>{if(openJobLogId===node.id.slice(4))attachLogScroll(node)})}}}
     document.getElementById('jobs').addEventListener('click',e=>{const button=e.target.closest('button[data-job]');if(button&&button.textContent==='Show log')finalLogLoaded.delete(button.dataset.job)},true);
     function renderJobsStable(){const n=document.getElementById('jobs');if(!jobs.length){n.hidden=true;openJobLogId=null;return}if(openJobLogId&&!jobs.some(j=>j.unit===openJobLogId))openJobLogId=null;n.hidden=false;let list=n.querySelector('.job-list');if(!list||!n.querySelector('.job-toggle')){n.innerHTML='<div class="section-title"><button class="job-toggle"><span class="chevron" aria-hidden="true"></span><span>Update jobs <span class="job-count"></span></span></button><span class="job-summary">Server-side state · safe across browser/device changes</span></div><div class="job-list"></div>';n.querySelector('.job-toggle').addEventListener('click',()=>{jobsExpanded=!jobsExpanded;n.classList.toggle('collapsed',!jobsExpanded)});list=n.querySelector('.job-list')}n.classList.toggle('collapsed',!jobsExpanded);n.querySelector('.job-count').textContent=`(${jobs.filter(j=>j.state==='running').length} running, ${jobs.filter(j=>j.state!=='running').length} finished)`;const existing=new Map([...list.querySelectorAll('.job')].map(item=>[item.dataset.unit,item]));const seen=new Set();for(const j of jobs){let item=existing.get(j.unit);if(!item){item=document.createElement('div');item.className='job';item.dataset.unit=j.unit;item.innerHTML=`<code></code><span></span><span class="pill"></span><button data-job="${esc(j.unit)}">Show log</button><div class="log" id="log-${esc(j.unit)}" hidden></div>`;const button=item.querySelector('button[data-job]');button.addEventListener('click',async()=>{const unit=button.dataset.job,node=document.getElementById(`log-${unit}`);if(openJobLogId===unit){openJobLogId=null;finalLogLoaded.delete(unit);node.hidden=true;button.textContent='Show log';return}openJobLogId=unit;finalLogLoaded.delete(unit);logAutoFollow=true;logScrollTop=0;node.hidden=false;button.textContent='Hide log';await loadJobLog(unit,node);attachLogScroll(node)});list.appendChild(item)}seen.add(j.unit);item.querySelector('code').textContent=j.unit;item.querySelector('code').title=j.unit;item.querySelector('span').textContent=j.owner_node?`${j.target} · ${j.owner_node}`:j.target;const state=item.querySelector('.pill');state.textContent=j.state;state.className=`pill ${j.state==='completed'?'good':j.state==='failed'||j.state==='interrupted'?'bad':'warn'}`;const button=item.querySelector('button[data-job]'),node=item.querySelector('.log'),open=j.unit===openJobLogId;button.textContent=open?'Hide log':'Show log';node.hidden=!open}for(const [unit,item] of existing){if(!seen.has(unit))item.remove()}if(openJobLogId){const job=jobs.find(j=>j.unit===openJobLogId),node=document.getElementById(`log-${openJobLogId}`);if(job&&node){node.hidden=false;loadJobLog(openJobLogId,node).then(()=>{if(openJobLogId===node.id.slice(4))attachLogScroll(node)})}}}
     renderJobs=renderJobsStable;window.renderJobs=renderJobsStable;
+    document.getElementById('check-all').onclick=()=>globalAction(false);
+    document.getElementById('update-all').onclick=()=>globalAction(true);
     clearTimeout(pollTimer);loadStatus();loadJobs();
   </script>
   <script>
@@ -782,6 +790,12 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         if not self.write_allowed():
             return
+        if parts == ["api", "check-all"]:
+            self.action_check_all()
+            return
+        if parts == ["api", "update-all"]:
+            self.action_update_all()
+            return
         if urlsplit(self.path).path == "/api/config":
             try:
                 self.handle_config_update(payload)
@@ -802,6 +816,12 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         if len(parts) == 3 and parts[:2] == ["api", "update"]:
             self.action_update(parts[2])
+            return
+        if len(parts) == 3 and parts[:2] == ["api", "check-node"]:
+            self.action_check_node(parts[2])
+            return
+        if len(parts) == 3 and parts[:2] == ["api", "update-node"]:
+            self.action_update_node(parts[2])
             return
         self.send_json(error_payload("METHOD_NOT_ALLOWED", "Only defined check and update actions are available."), HTTPStatus.METHOD_NOT_ALLOWED)
 
@@ -843,6 +863,83 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("INVALID_JOB_RESPONSE", "The updater returned no valid job ID."), HTTPStatus.BAD_GATEWAY)
             return
         self.send_json({"target": target, "job": job_match.group(1), "state": "running", "message": "Update job started."}, HTTPStatus.ACCEPTED)
+
+    def known_node(self, node):
+        if not isinstance(node, str) or not HOST_RE.fullmatch(node):
+            return False
+        try:
+            status = json.loads(self.server.status_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        return any(isinstance(item, dict) and item.get("type") == "host" and
+                   str(item.get("id", "")).removeprefix("host:") == node
+                   for item in status.get("targets", []))
+
+    def action_check_all(self):
+        unit = "ultimate-updater-check-all"
+        try:
+            result = subprocess.run(
+                ["systemd-run", "--quiet", "--no-block", "--collect", f"--unit={unit}",
+                 "--property=Type=oneshot", str(self.server.cli), "check"],
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15,
+                check=False, env={**os.environ, "UU_JOB_STATE_DIR": str(self.server.jobs_dir)},
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("CHECK_START_FAILED", "The full check could not be started."), HTTPStatus.BAD_GATEWAY)
+            return
+        if result.returncode:
+            self.send_json(error_payload("CHECK_ALREADY_RUNNING", "A full check is already running or unavailable."), HTTPStatus.CONFLICT)
+            return
+        self.send_json({"state": "running", "unit": unit, "message": "Full check started."}, HTTPStatus.ACCEPTED)
+
+    def action_update_all(self):
+        try:
+            result = self.run_command([str(self.server.cli), "update-all"], timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("UPDATE_START_FAILED", "The full update job could not be started."), HTTPStatus.BAD_GATEWAY)
+            return
+        output = f"{result.stdout}\n{result.stderr}"
+        job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
+        if result.returncode == 3:
+            self.send_json(error_payload("JOB_ALREADY_RUNNING", "A full update is already running."), HTTPStatus.CONFLICT)
+            return
+        if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
+            self.send_json(error_payload("UPDATE_START_FAILED", "The full update job could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json({"job": job_match.group(1), "target": "all-systems", "state": "running", "message": "Full update job started."}, HTTPStatus.ACCEPTED)
+
+    def action_check_node(self, node):
+        if not self.known_node(node):
+            self.send_json(error_payload("INVALID_NODE", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
+            return
+        try:
+            result = self.run_command([str(self.server.cli), "check-node", node], timeout=300)
+        except (OSError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("CHECK_FAILED", "The node check could not be started or completed."), HTTPStatus.BAD_GATEWAY)
+            return
+        self.send_json({"node": node, "state": "completed" if result.returncode == 0 else "failed",
+                        "exit_code": result.returncode,
+                        "message": "Node check completed." if result.returncode == 0 else "Node check failed."},
+                       HTTPStatus.OK if result.returncode == 0 else HTTPStatus.UNPROCESSABLE_ENTITY)
+
+    def action_update_node(self, node):
+        if not self.known_node(node):
+            self.send_json(error_payload("INVALID_NODE", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
+            return
+        try:
+            result = self.run_command([str(self.server.cli), "update-node", node], timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("UPDATE_START_FAILED", "The node update job could not be started."), HTTPStatus.BAD_GATEWAY)
+            return
+        output = f"{result.stdout}\n{result.stderr}"
+        job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
+        if result.returncode == 3:
+            self.send_json(error_payload("JOB_ALREADY_RUNNING", "An update job is already running for this node."), HTTPStatus.CONFLICT)
+            return
+        if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
+            self.send_json(error_payload("UPDATE_START_FAILED", "The node update job could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json({"node": node, "job": job_match.group(1), "state": "running", "message": "Node update job started."}, HTTPStatus.ACCEPTED)
 
     def do_PUT(self):  # noqa: N802
         if not self.write_allowed():

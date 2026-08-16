@@ -51,6 +51,9 @@ Commands:
   list                    List known local Proxmox and inventory targets
   check [TARGET]          Run the existing check, optionally for one target
   update TARGET           Start a session-independent update job
+  update-all              Start the configured cluster-wide update job
+  check-node NODE         Check one Proxmox node and its configured guests
+  update-node NODE        Update one Proxmox node and its configured guests
   status                  Show the latest machine-readable status summary
   status --json           Print the existing status JSON unchanged
   help                    Show this help
@@ -249,6 +252,94 @@ configured_ssh_port() {
   printf '%s\n' "${port:-22}"
 }
 
+cluster_node_resolve() {
+  local wanted="$1" config=/etc/pve/corosync.conf result local_node local_ips
+  [[ "$wanted" =~ ^[A-Za-z0-9_.-]+$ ]] || return 2
+  [[ -f "$config" ]] || return 1
+  result=$(python3 - "$config" "$wanted" <<'PY'
+import re
+import sys
+path, wanted = sys.argv[1:]
+try:
+    text = open(path, encoding="utf-8").read()
+except OSError:
+    raise SystemExit(1)
+for block in re.findall(r"node\s*\{(.*?)\}", text, re.S):
+    name = re.search(r"\bname\s*:\s*([^\s}]+)", block)
+    address = re.search(r"\bring0_addr\s*:\s*([^\s}]+)", block)
+    if name and address and name.group(1) == wanted:
+        print(f"{name.group(1)}\t{address.group(1)}")
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+  ) || return 1
+  IFS=$'\t' read -r RESOLVED_NODE RESOLVED_NODE_HOST <<< "$result"
+  local_node=$(cluster_target_local_node)
+  local_ips=$(hostname -I 2>/dev/null || true)
+  RESOLVED_NODE_LOCAL=false
+  if [[ "${RESOLVED_NODE,,}" == "${local_node,,}" || " $local_ips " == *" $RESOLVED_NODE_HOST "* ]]; then
+    RESOLVED_NODE_LOCAL=true
+  fi
+}
+
+remote_node_check() {
+  local node="$1" host="$2" remote_file local_file rc
+  remote_file="/tmp/ultimate-updater-node-status-$$-$RANDOM.json"
+  local_file=$(mktemp)
+  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(configured_ssh_port)" "$host" \
+    "STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE='$node' STATUS_MODEL_SCRIPT='/etc/ultimate-updater/status-model.sh' STATUS_MODEL_FILE='$remote_file' STATUS_MODEL_RECORD_FILE='$remote_file.records' bash '/etc/ultimate-updater/check-updates.sh' host >/dev/null 2>&1; cat '$remote_file'; rm -f -- '$remote_file' '$remote_file.records'" > "$local_file"; then
+    rm -f -- "$local_file"
+    printf 'Node %s is unreachable.\n' "$node" >&2
+    return 1
+  fi
+  if ! STATUS_MODEL_INIT || ! STATUS_MODEL_IMPORT_FILE "$local_file"; then
+    rm -f -- "$local_file"
+    printf 'Could not import status from node %s.\n' "$node" >&2
+    return 1
+  fi
+  rm -f -- "$local_file"
+}
+
+run_node_check() {
+  local node="$1"
+  cluster_node_resolve "$node" || { printf 'Unknown Proxmox node: %s\n' "$node" >&2; return 3; }
+  if [[ "$RESOLVED_NODE_LOCAL" == true ]]; then
+    require_file "$CHECK_SCRIPT" "check script" || return 1
+    STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" host
+  else
+    remote_node_check "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"
+  fi
+}
+
+remote_node_update() {
+  local node="$1" host="$2" port output job_unit target="node-$1" command
+  port=$(configured_ssh_port)
+  printf -v command 'exec %q start %q %q' "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" host
+  if ! output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" "$command"); then
+    printf 'Could not start update job on %s.\n' "$node" >&2
+    return 6
+  fi
+  printf '%s\n' "$output"
+  job_unit=$(printf '%s\n' "$output" | sed -n 's/^Job:[[:space:]]*//p' | head -n 1)
+  if [[ ! "$job_unit" =~ ^ultimate-updater-update-[A-Za-z0-9_.-]+$ ]] ||
+    ! "$JOB_RUNNER" record-remote "$job_unit" "$target" "$node" "$host" "$port"; then
+    printf 'Remote job started but could not be referenced locally.\n' >&2
+    return 7
+  fi
+}
+
+run_node_update() {
+  local node="$1"
+  cluster_node_resolve "$node" || { printf 'Unknown Proxmox node: %s\n' "$node" >&2; return 3; }
+  require_file "$JOB_RUNNER" "job runner" || return 1
+  if [[ "$RESOLVED_NODE_LOCAL" == true ]]; then
+    require_file "$UPDATE_SCRIPT" "update script" || return 1
+    "$JOB_RUNNER" start "$UPDATE_SCRIPT" host
+  else
+    remote_node_update "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"
+  fi
+}
+
 finish_partial_status() {
   local result=$1
   if declare -f STATUS_MODEL_FINISH >/dev/null 2>&1; then
@@ -436,6 +527,21 @@ case "$command" in
   update)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     run_update "$2"
+    ;;
+  update-all)
+    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+    require_file "$JOB_RUNNER" "job runner" || exit 1
+    require_file "$UPDATE_SCRIPT" "update script" || exit 1
+    "$JOB_RUNNER" start-global "$UPDATE_SCRIPT"
+    ;;
+  check-node)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    run_node_check "$2"
+    ;;
+  update-node)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    [[ "$EUID" -eq 0 ]] || { printf 'ultimate-updater: update jobs require root\n' >&2; exit 2; }
+    run_node_update "$2"
     ;;
   *)
     printf 'ultimate-updater: unknown command: %s\n' "$command" >&2
