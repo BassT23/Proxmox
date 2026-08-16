@@ -15,6 +15,7 @@ BRANCH="develop"
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 WEB_UI_PORT_SCRIPT="$LOCAL_FILES/web-ui-port.sh"
+HARDCORE_TEST_SCRIPT="$LOCAL_FILES/hardcore-test.sh"
 WEB_SERVICE_NAME="ultimate-updater-web.service"
 WEB_SERVICE_PATH="/etc/systemd/system/$WEB_SERVICE_NAME"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
@@ -278,6 +279,10 @@ INSTALL () {
     fi
     cp "$TEMP_FILES"/web-ui-port.sh $LOCAL_FILES/web-ui-port.sh
     chmod 750 $LOCAL_FILES/web-ui-port.sh
+    if [[ -f "$TEMP_FILES"/hardcore-test.sh ]]; then
+      cp "$TEMP_FILES"/hardcore-test.sh $LOCAL_FILES/hardcore-test.sh
+      chmod 750 $LOCAL_FILES/hardcore-test.sh
+    fi
     if [[ -f "$TEMP_FILES"/external-backup-safety.sh ]]; then
       cp "$TEMP_FILES"/external-backup-safety.sh $LOCAL_FILES/external-backup-safety.sh
       chmod 750 $LOCAL_FILES/external-backup-safety.sh
@@ -401,6 +406,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/web-ui-port.sh ]]; then
       mv "$TEMP_FILES"/web-ui-port.sh $LOCAL_FILES/web-ui-port.sh
       chmod 750 $LOCAL_FILES/web-ui-port.sh
+    fi
+    if [[ -f "$TEMP_FILES"/hardcore-test.sh ]]; then
+      mv "$TEMP_FILES"/hardcore-test.sh $LOCAL_FILES/hardcore-test.sh
+      chmod 750 $LOCAL_FILES/hardcore-test.sh
     fi
     if [[ -f "$TEMP_FILES"/external-backup-safety.sh ]]; then
       mv "$TEMP_FILES"/external-backup-safety.sh $LOCAL_FILES/external-backup-safety.sh

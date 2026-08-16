@@ -544,6 +544,10 @@ The Welcome Screen is an extra for you. It's optional!
 - You can choose, if screenfetch will be show also (if screenfetch is not installed, script will make it automatically)
 
 # Development Testing:
+
+The reusable 4–6 hour destructive-but-bounded developer test strategy is
+specified in [`tests/HARDCORE_TEST.md`](tests/HARDCORE_TEST.md). It is not run
+automatically; an owner must explicitly request `Hardcore-Test starten`.
 If anybody wants to help with failure search, please test our `develop` branch.
 
 Install the develop update with `update develop -up`

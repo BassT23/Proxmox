@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- add reusable persistent Hardcore-Test specification, journal and controlled stop helper
 - make the central Web UI port locally configurable, validated, conflict-safe, and update-persistent
 - add target-local External settings with separate check/update filters and explicit remote management
 - record Web UI check actions in the shared job history and show active job progress globally

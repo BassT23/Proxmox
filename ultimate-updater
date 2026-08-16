@@ -19,6 +19,7 @@ EXTERNAL_BOOTSTRAP_FILE="$LOCAL_FILES/external-bootstrap.sh"
 EXTERNAL_SETTINGS_FILE="$LOCAL_FILES/external-settings.sh"
 EXTERNAL_CONFIG_SCRIPT="$LOCAL_FILES/external-config.sh"
 WEB_UI_PORT_SCRIPT="$LOCAL_FILES/web-ui-port.sh"
+HARDCORE_TEST_SCRIPT="$LOCAL_FILES/hardcore-test.sh"
 EXTERNAL_SAFETY_FILE="$LOCAL_FILES/external-backup-safety.sh"
 STATUS_MODEL_SCRIPT="$LOCAL_FILES/status-model.sh"
 CLUSTER_TARGET_SCRIPT="$LOCAL_FILES/cluster-target.sh"
@@ -52,6 +53,9 @@ if [[ ! -f "$EXTERNAL_CONFIG_SCRIPT" && -f "$SCRIPT_DIR/external-config.sh" ]]; 
 fi
 if [[ ! -f "$WEB_UI_PORT_SCRIPT" && -f "$SCRIPT_DIR/web-ui-port.sh" ]]; then
   WEB_UI_PORT_SCRIPT="$SCRIPT_DIR/web-ui-port.sh"
+fi
+if [[ ! -f "$HARDCORE_TEST_SCRIPT" && -f "$SCRIPT_DIR/hardcore-test.sh" ]]; then
+  HARDCORE_TEST_SCRIPT="$SCRIPT_DIR/hardcore-test.sh"
 fi
 if [[ ! -f "$EXTERNAL_SAFETY_FILE" && -f "$SCRIPT_DIR/external-backup-safety.sh" ]]; then
   EXTERNAL_SAFETY_FILE="$SCRIPT_DIR/external-backup-safety.sh"
@@ -88,6 +92,9 @@ Commands:
   status --json           Print the existing status JSON unchanged
   config set web-port PORT
                           Set the local Web UI port without using the Web UI
+  hardcore-test start    Start a persistent Hardcore-Test run
+  hardcore-test status   Show the active or selected run status
+  hardcore-test stop     Request a controlled stop
   help                    Show this help
 
 Legacy ./update.sh and ./check-updates.sh invocations remain supported.
@@ -722,6 +729,12 @@ case "$command" in
     [[ "${2:-}" == set && "${3:-}" == web-port && $# -eq 4 ]] || { usage >&2; exit 2; }
     require_file "$WEB_UI_PORT_SCRIPT" "Web UI port helper" || exit 1
     "$WEB_UI_PORT_SCRIPT" set "$4"
+    ;;
+  hardcore-test)
+    [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+    require_file "$HARDCORE_TEST_SCRIPT" "Hardcore-Test helper" || exit 1
+    shift
+    "$HARDCORE_TEST_SCRIPT" "$@"
     ;;
   check)
     [[ $# -le 2 ]] || { usage >&2; exit 2; }
