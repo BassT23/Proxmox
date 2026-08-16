@@ -14,6 +14,7 @@ BRANCH="develop"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
+WEB_UI_PORT_SCRIPT="$LOCAL_FILES/web-ui-port.sh"
 WEB_SERVICE_NAME="ultimate-updater-web.service"
 WEB_SERVICE_PATH="/etc/systemd/system/$WEB_SERVICE_NAME"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
@@ -65,6 +66,9 @@ SETUP_WEB_SERVICE () {
     echo -e "⚠${OR:-} Web UI service files are incomplete${CL:-}" >&2
     return 1
   fi
+  [[ -x "$WEB_UI_PORT_SCRIPT" ]] || { echo "Web UI port helper is missing: $WEB_UI_PORT_SCRIPT" >&2; return 1; }
+  "$WEB_UI_PORT_SCRIPT" ensure || return 1
+  "$WEB_UI_PORT_SCRIPT" check || return 1
 
   systemctl daemon-reload
   systemctl enable "$WEB_SERVICE_NAME"
@@ -272,6 +276,8 @@ INSTALL () {
       cp "$TEMP_FILES"/external-settings.sh $LOCAL_FILES/external-settings.sh
       chmod 750 $LOCAL_FILES/external-settings.sh
     fi
+    cp "$TEMP_FILES"/web-ui-port.sh $LOCAL_FILES/web-ui-port.sh
+    chmod 750 $LOCAL_FILES/web-ui-port.sh
     if [[ -f "$TEMP_FILES"/external-backup-safety.sh ]]; then
       cp "$TEMP_FILES"/external-backup-safety.sh $LOCAL_FILES/external-backup-safety.sh
       chmod 750 $LOCAL_FILES/external-backup-safety.sh
@@ -391,6 +397,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/external-settings.sh ]]; then
       mv "$TEMP_FILES"/external-settings.sh $LOCAL_FILES/external-settings.sh
       chmod 750 $LOCAL_FILES/external-settings.sh
+    fi
+    if [[ -f "$TEMP_FILES"/web-ui-port.sh ]]; then
+      mv "$TEMP_FILES"/web-ui-port.sh $LOCAL_FILES/web-ui-port.sh
+      chmod 750 $LOCAL_FILES/web-ui-port.sh
     fi
     if [[ -f "$TEMP_FILES"/external-backup-safety.sh ]]; then
       mv "$TEMP_FILES"/external-backup-safety.sh $LOCAL_FILES/external-backup-safety.sh

@@ -18,6 +18,7 @@ EXTERNAL_HELPER_FILE="$LOCAL_FILES/external-helper.sh"
 EXTERNAL_BOOTSTRAP_FILE="$LOCAL_FILES/external-bootstrap.sh"
 EXTERNAL_SETTINGS_FILE="$LOCAL_FILES/external-settings.sh"
 EXTERNAL_CONFIG_SCRIPT="$LOCAL_FILES/external-config.sh"
+WEB_UI_PORT_SCRIPT="$LOCAL_FILES/web-ui-port.sh"
 EXTERNAL_SAFETY_FILE="$LOCAL_FILES/external-backup-safety.sh"
 STATUS_MODEL_SCRIPT="$LOCAL_FILES/status-model.sh"
 CLUSTER_TARGET_SCRIPT="$LOCAL_FILES/cluster-target.sh"
@@ -48,6 +49,9 @@ if [[ ! -f "$EXTERNAL_SETTINGS_FILE" && -f "$SCRIPT_DIR/external-settings.sh" ]]
 fi
 if [[ ! -f "$EXTERNAL_CONFIG_SCRIPT" && -f "$SCRIPT_DIR/external-config.sh" ]]; then
   EXTERNAL_CONFIG_SCRIPT="$SCRIPT_DIR/external-config.sh"
+fi
+if [[ ! -f "$WEB_UI_PORT_SCRIPT" && -f "$SCRIPT_DIR/web-ui-port.sh" ]]; then
+  WEB_UI_PORT_SCRIPT="$SCRIPT_DIR/web-ui-port.sh"
 fi
 if [[ ! -f "$EXTERNAL_SAFETY_FILE" && -f "$SCRIPT_DIR/external-backup-safety.sh" ]]; then
   EXTERNAL_SAFETY_FILE="$SCRIPT_DIR/external-backup-safety.sh"
@@ -82,6 +86,8 @@ Commands:
                           Explicitly update allowlisted target-local settings
   status                  Show the latest machine-readable status summary
   status --json           Print the existing status JSON unchanged
+  config set web-port PORT
+                          Set the local Web UI port without using the Web UI
   help                    Show this help
 
 Legacy ./update.sh and ./check-updates.sh invocations remain supported.
@@ -711,6 +717,11 @@ case "$command" in
       --json) [[ $# -eq 2 ]] || { usage >&2; exit 2; }; status_json ;;
       *) usage >&2; exit 2 ;;
     esac
+    ;;
+  config)
+    [[ "${2:-}" == set && "${3:-}" == web-port && $# -eq 4 ]] || { usage >&2; exit 2; }
+    require_file "$WEB_UI_PORT_SCRIPT" "Web UI port helper" || exit 1
+    "$WEB_UI_PORT_SCRIPT" set "$4"
     ;;
   check)
     [[ $# -le 2 ]] || { usage >&2; exit 2; }

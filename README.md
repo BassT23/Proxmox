@@ -362,7 +362,7 @@ header wordmark, runtime icon, and favicon are derived local assets installed
 under `/etc/ultimate-updater/web-ui/assets/`; the large source graphic remains
 a repository asset and is not installed on nodes.
 
-The service listens on `0.0.0.0:8765` so it can be reached from a phone,
+The service listens on `0.0.0.0:8765` by default so it can be reached from a phone,
 desktop, or tablet in the trusted management/LAN network. The UI and API are
 behind a local administrator login; setup is intentionally explicit and there
 is no default password:
@@ -371,6 +371,22 @@ is no default password:
 http://<updater-node>:8765/
 sudo /usr/local/sbin/ultimate-updater-web-auth admin
 ```
+
+The central Web UI port is stored outside the Web UI in the root-owned local
+file `/etc/ultimate-updater/web-ui.conf` as `WEB_UI_PORT=8765`. Existing
+installations retain the default unless this file is changed. Change it
+without the browser with:
+
+```bash
+sudo /usr/local/sbin/ultimate-updater config set web-port 8876
+sudo systemctl restart ultimate-updater-web.service
+```
+
+The setter accepts only ports 1–65535, writes atomically, and checks that the
+new port is available. If the default is occupied, installation/update does
+not stop or modify the other process; it reports the conflict and gives the
+same local command for selecting another port. Updates and self-updates keep
+an existing `WEB_UI_PORT` value.
 
 On normal Proxmox installations the UI authenticates `root` through the
 existing local PAM `login` service; the password is used only for the PAM

@@ -8,7 +8,8 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/etc/ultimate-updater
-ExecStart=/usr/bin/python3 /etc/ultimate-updater/web-ui/server.py --bind 0.0.0.0 --port 8765
+EnvironmentFile=-/etc/ultimate-updater/web-ui.conf
+ExecStart=/usr/bin/python3 /etc/ultimate-updater/web-ui/server.py --bind 0.0.0.0 --port ${WEB_UI_PORT}
 Restart=on-failure
 RestartSec=5s
 Environment=PYTHONUNBUFFERED=1
