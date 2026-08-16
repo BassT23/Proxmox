@@ -24,6 +24,9 @@ assert "data-parent" not in page
 assert "updateConfigDependencies" not in page
 assert "is-dependent" not in page
 assert "update.conf remains the source of truth" in page
+assert "/api/config-preview?" in page
+assert "filter-preview" in page
+assert "ONLY_UPDATE_CHECK is active" in page
 
 # Presentation must not expose the internal host: prefix in detail/job labels.
 assert "friendlyTarget(t)" in page

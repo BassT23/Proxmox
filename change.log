@@ -2,6 +2,7 @@ Changelog:
 ==========
 
 **develop**
+- add a read-only Target filters preview based on the current inventory and tag resolver
 - regroup web UI configuration by host, guest type, filters, safety, and notifications
 - hide internal host identifiers in user-facing details and job targets
 - migrate compatible legacy SSH target files into targets.conf without deleting user configuration

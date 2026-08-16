@@ -18,7 +18,7 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 try:
     from pam_auth import authenticate as pam_authenticate
@@ -30,6 +30,7 @@ DEFAULT_STATUS_FILE = Path("/etc/ultimate-updater/status.json")
 DEFAULT_CONFIG_FILE = Path("/etc/ultimate-updater/update.conf")
 DEFAULT_INVENTORY_FILE = Path("/etc/ultimate-updater/targets.conf")
 DEFAULT_INVENTORY_SCRIPT = Path("/etc/ultimate-updater/target-inventory.sh")
+DEFAULT_TAG_FILTER = Path("/etc/ultimate-updater/tag-filter.sh")
 DEFAULT_EXTERNAL_SCRIPT = Path("/etc/ultimate-updater/external-apt.sh")
 DEFAULT_ASSET_DIR = Path("/etc/ultimate-updater/web-ui/assets")
 DEFAULT_CLI = Path("/usr/local/sbin/ultimate-updater")
@@ -106,6 +107,8 @@ PAGE = r"""<!doctype html>
     @media (max-width:620px) { .brand-lockup { gap:11px } .brand-header-art { width:min(260px,82vw) } .brand-copy { padding-top:0 } .subtitle { margin-top:9px; font-size:.82rem } .node-grid { grid-template-columns:1fr } .node-group .group-header { display:grid; grid-template-columns:42px minmax(0,1fr); gap:8px 10px; min-height:98px } .node-group .group-toggle { grid-column:1; grid-row:1 / span 2 } .node-group .group-title { grid-column:2; grid-row:1 } .node-group .group-summary { grid-column:2; grid-row:2; width:100%; justify-content:space-between; white-space:normal } .node-group .group-summary .node-details { margin-left:auto } .guest-panel { margin-top:0 } .guest-panel .guest-list { padding:0 8px 8px } .target-row { min-width:0; grid-template-columns:1fr auto; } .target-row .target-status { grid-column:1/-1; display:block } .target-row .target-field { display:grid; grid-template-columns:minmax(80px,.65fr) minmax(0,1.35fr); align-items:baseline; gap:8px; } .target-row .target-field .target-label { margin:0 } .target-row .row-os,.target-row .row-last-check { grid-column:1/-1; display:grid; grid-template-columns:minmax(80px,.65fr) minmax(0,1.35fr); align-items:baseline; gap:8px; } .target-row .row-actions { grid-column:1/-1; justify-content:flex-start; } .detail-sections { grid-template-columns:1fr; gap:12px } .details { padding:14px } }
     .settings-group { padding-top:10px; margin-top:10px } .settings-group h3 { font-size:.82rem } .settings-group p { margin:3px 0 7px; font-size:.68rem } .config-fields { gap:4px 16px } .settings-columns { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; align-items:start } .settings-column { display:grid; gap:4px; align-content:start } .config-field.boolean-field { display:flex; align-items:center; gap:8px; min-height:28px; padding:2px 0; border:0; border-radius:0; background:transparent } .config-field.boolean-field input[type=checkbox] { flex:0 0 auto; width:16px; height:16px; margin:0; accent-color:var(--accent) } .config-field.boolean-field .field-label { padding:0; min-width:0; cursor:pointer } .config-field:not(.boolean-field) { display:grid; grid-template-columns:minmax(120px,.8fr) minmax(0,1.2fr); align-items:center; gap:5px 10px } .config-field:not(.boolean-field) .field-label { grid-column:1; grid-row:1; padding:0 } .config-field:not(.boolean-field) input[type=text],.config-field:not(.boolean-field) input[type=number] { grid-column:2; grid-row:1; min-width:0; width:100%; padding:6px 8px } .config-field:not(.boolean-field) .field-unit { grid-column:2; grid-row:2; margin:-3px 0 0; font-size:.66rem } .settings-group .settings-subtitle { display:none } .config-actions { position:sticky; bottom:0; z-index:1; margin-top:13px; padding:10px 0 2px; background:linear-gradient(var(--panel),var(--panel)); }
     @media (max-width:760px) { .config-fields,.settings-columns { grid-template-columns:1fr } .config-field:not(.boolean-field) { grid-template-columns:minmax(105px,.75fr) minmax(0,1.25fr) } .config-actions { position:static } }
+    .filter-preview { margin-top:9px; padding-top:8px; border-top:1px solid #94a3b815 } .filter-preview-toggle { display:flex; align-items:center; gap:7px; width:100%; padding:5px 0; border:0; background:transparent; color:var(--muted); font-size:.72rem; text-align:left } .filter-preview-toggle:hover { color:var(--text); outline:0 } .filter-preview-chevron { color:var(--accent); font-size:.85rem; transition:transform .15s ease } .filter-preview.open .filter-preview-chevron { transform:rotate(90deg) } .filter-preview-details { display:none; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px 18px; padding:6px 0 2px } .filter-preview.open .filter-preview-details { display:grid } .filter-preview-details h4 { margin:0 0 4px; color:var(--muted); font-size:.68rem; font-weight:650; text-transform:uppercase; letter-spacing:.04em } .filter-preview-list { display:grid; gap:3px; color:var(--text); font-size:.72rem } .filter-preview-list div { overflow-wrap:anywhere } .filter-preview-list .excluded { color:var(--muted) } .filter-preview-list .unknown { color:var(--warn) } .filter-preview-note { color:var(--muted); font-size:.66rem; margin-top:5px }
+    @media (max-width:760px) { .filter-preview-details { grid-template-columns:1fr } }
     .app-header { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:24px; align-items:start; margin-bottom:10px } .brand-header-art { width:min(260px,70vw) } .brand-copy { padding-top:0 } .subtitle { margin-top:5px } .app-header .meta { max-width:360px; padding-top:10px; align-self:start }
     @media (max-width:760px) { .app-header { display:block; margin-bottom:10px } .app-header .meta { max-width:none; padding-top:0 } }
     @media (max-width:620px) { .brand-header-art { width:min(250px,82vw) } .subtitle { margin-top:5px } .app-header .meta { margin-top:8px } }
@@ -207,7 +210,11 @@ PAGE = r"""<!doctype html>
     function setConfigOpen(open){const form=document.getElementById('config-form'),panel=document.getElementById('config-panel'),button=document.getElementById('config-open');form.classList.toggle('open',open);document.querySelector('.management-grid').classList.toggle('config-open',open);button.textContent=open?'Close settings':'Open settings';button.setAttribute('aria-expanded',String(open));if(open)loadConfig()}
     function managementMessage(id,message,error=false){const n=document.getElementById(id);n.textContent=message||'';n.className=`management-message${error?' error':''}`}
     function configField(key,values){const label=document.createElement('label');label.className=`config-field${configBooleanKeys.includes(key)?' boolean-field':''}`;const caption=document.createElement('span');caption.className='field-label';caption.textContent=configLabels[key]||key;const input=document.createElement('input');input.name=key;input.dataset.key=key;if(configBooleanKeys.includes(key)){input.type='checkbox';input.checked=values[key]===true;label.append(input,caption)}else{input.type=configNumberKeys.includes(key)?'number':'text';input.value=values[key]??'';if(input.type==='number'){input.min='0';input.max=key==='KEEP_SNAPSHOTS'?'99':'86400'}label.append(caption,input);if(configNumberKeys.includes(key)){const unit=document.createElement('span');unit.className='field-unit';unit.textContent=key==='KEEP_SNAPSHOTS'?'snapshots':'seconds';label.append(unit)}else if(key==='BACKUP_STORAGE'){const unit=document.createElement('span');unit.className='field-unit';unit.textContent='Proxmox storage ID, e.g. pbs';label.append(unit)}}return label}
-    function buildConfigForm(values){const form=document.getElementById('config-form');form.innerHTML='';for(const groupData of configGroups){const group=document.createElement('section');group.className='settings-group';group.innerHTML=`<h3>${groupData.title}</h3><p>${groupData.hint}</p>`;if(groupData.columns){const columns=document.createElement('div');columns.className='settings-columns';groupData.columns.forEach(keys=>{const column=document.createElement('div');column.className='settings-column';keys.forEach(key=>column.appendChild(configField(key,values)));columns.appendChild(column)});group.appendChild(columns)}else{const fields=document.createElement('div');fields.className='config-fields';groupData.keys.forEach(key=>fields.appendChild(configField(key,values)));group.appendChild(fields)}form.appendChild(group)}const actions=document.createElement('div');actions.className='config-actions';actions.innerHTML='<button type="submit" class="primary">Save settings</button><button type="button" id="config-close">Cancel</button>';form.appendChild(actions);form.onsubmit=async e=>{e.preventDefault();const next={};for(const input of form.querySelectorAll('[data-key]'))next[input.dataset.key]=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value;try{const d=await api('/api/config',{method:'POST',body:JSON.stringify({values:next})});buildConfigForm(d.config);setConfigOpen(false);managementMessage('config-message','Configuration saved.')}catch(error){managementMessage('config-message',error.message,true)}};document.getElementById('config-close').onclick=()=>setConfigOpen(false)}
+    let filterPreviewTimer;
+    function renderFilterPreview(data){const box=document.getElementById('filter-preview');if(!box)return;if(!data?.available){box.innerHTML='<div class="filter-preview-note">Target preview unavailable until the first inventory scan.</div>';return}const p=data.preview||{},included=p.included||[],excluded=p.excluded||[],unknown=p.unknown||[],mode=p.mode;let summary=mode==='only'?`${included.length} systems selected by ONLY_UPDATE_CHECK`:mode==='exclude'?`${included.length} systems will be checked · ${excluded.length} excluded`:`${included.length} systems will be checked`;const detail=(title,items,klass)=>items.length?`<section><h4>${title}</h4><div class="filter-preview-list">${items.map(item=>`<div class="${klass||''}">${klass==='excluded'?'✕':'✓'} ${esc(item.label)}</div>`).join('')}</div></section>`:'';const unknownHtml=unknown.length?`<section><h4>Not currently found</h4><div class="filter-preview-list"><div class="unknown">⚠ ${unknown.map(esc).join(', ')}</div></div></section>`:'';box.innerHTML=`<button type="button" class="filter-preview-toggle" aria-expanded="false"><span class="filter-preview-chevron">›</span><span>${summary}</span></button><div class="filter-preview-details">${detail(mode==='only'?'Selected':'Included',included,'')}${detail('Excluded',excluded,'excluded')}${mode==='only'&&excluded.length?'<section><h4>Exclude</h4><div class="filter-preview-note">Ignored while ONLY_UPDATE_CHECK is active.</div></section>':''}${unknownHtml}</div>`;const toggle=box.querySelector('.filter-preview-toggle');toggle.onclick=()=>{const open=box.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open))}}
+    async function loadFilterPreview(form){const only=form?.querySelector('[data-key="ONLY_UPDATE_CHECK"]')?.value||'',exclude=form?.querySelector('[data-key="EXCLUDE_UPDATE_CHECK"]')?.value||'';const box=document.getElementById('filter-preview');if(box)box.innerHTML='<div class="filter-preview-note">Loading target preview…</div>';try{const query=new URLSearchParams({only,exclude});const data=await api(`/api/config-preview?${query.toString()}`);renderFilterPreview(data)}catch(error){if(box)box.innerHTML='<div class="filter-preview-note">Target preview is currently unavailable.</div>'}}
+    function scheduleFilterPreview(form){clearTimeout(filterPreviewTimer);filterPreviewTimer=setTimeout(()=>loadFilterPreview(form),250)}
+    function buildConfigForm(values){const form=document.getElementById('config-form');form.innerHTML='';for(const groupData of configGroups){const group=document.createElement('section');group.className='settings-group';group.innerHTML=`<h3>${groupData.title}</h3><p>${groupData.hint}</p>`;if(groupData.columns){const columns=document.createElement('div');columns.className='settings-columns';groupData.columns.forEach(keys=>{const column=document.createElement('div');column.className='settings-column';keys.forEach(key=>column.appendChild(configField(key,values)));columns.appendChild(column)});group.appendChild(columns)}else{const fields=document.createElement('div');fields.className='config-fields';groupData.keys.forEach(key=>fields.appendChild(configField(key,values)));group.appendChild(fields)}if(groupData.title==='Target filters'){const preview=document.createElement('div');preview.id='filter-preview';preview.className='filter-preview';group.appendChild(preview)}form.appendChild(group)}const actions=document.createElement('div');actions.className='config-actions';actions.innerHTML='<button type="submit" class="primary">Save settings</button><button type="button" id="config-close">Cancel</button>';form.appendChild(actions);form.querySelectorAll('[data-key="ONLY_UPDATE_CHECK"],[data-key="EXCLUDE_UPDATE_CHECK"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form)));loadFilterPreview(form);form.onsubmit=async e=>{e.preventDefault();const next={};for(const input of form.querySelectorAll('[data-key]'))next[input.dataset.key]=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value;try{const d=await api('/api/config',{method:'POST',body:JSON.stringify({values:next})});buildConfigForm(d.config);setConfigOpen(false);managementMessage('config-message','Configuration saved.')}catch(error){managementMessage('config-message',error.message,true)}};document.getElementById('config-close').onclick=()=>setConfigOpen(false)}
     async function loadConfig(){try{const d=await api('/api/config');buildConfigForm(d.config)}catch(error){managementMessage('config-message',error.message,true)}}
     function renderManagedTargets(){const box=document.getElementById('managed-targets');if(!managedTargets.length){box.innerHTML='<div class="empty">No external systems configured.</div>';return}box.innerHTML=managedTargets.map(t=>`<div class="managed-target"><div><strong>${esc(t.id)}</strong><small>${esc(t.user)}@${esc(t.host)}:${esc(t.port)} · SSH</small></div><div class="managed-actions"><button data-edit="${esc(t.id)}">Edit</button><button data-test="${esc(t.id)}">Test connection</button><button data-remove="${esc(t.id)}">Remove</button></div></div>`).join('');box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openTargetModal(managedTargets.find(t=>t.id===b.dataset.edit)));box.querySelectorAll('[data-test]').forEach(b=>b.onclick=()=>testTarget(b.dataset.test));box.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>removeTarget(b.dataset.remove))}
     async function loadTargets(){try{managedTargets=(await api('/api/targets')).targets||[];renderManagedTargets()}catch(error){managementMessage('target-message',error.message,true)}}
@@ -356,6 +363,82 @@ def project_active_status(payload, active_external_ids):
         or target.get("id") in active_ids
     ]
     return projected
+
+
+def resolve_filter_ids(only, exclude, tag_filter):
+    """Resolve the existing Proxmox tag filter without contacting targets."""
+    if not tag_filter.is_file():
+        raise ValueError("The tag filter is unavailable.")
+    script = (
+        'source "$1"\n'
+        'apply_only_exclude_tags ONLY EXCLUDE\n'
+        'printf "%s\\n%s\\n" "$ONLY" "$EXCLUDE"\n'
+    )
+    environment = os.environ.copy()
+    environment["ONLY"] = only
+    environment["EXCLUDE"] = exclude
+    result = subprocess.run(
+        ["bash", "-c", script, "ultimate-updater-filter", str(tag_filter)],
+        capture_output=True, text=True, timeout=10, env=environment, check=False,
+    )
+    if result.returncode:
+        raise ValueError("The tag filter could not be evaluated.")
+    lines = result.stdout.splitlines()
+    return (lines[0].split() if lines else [], lines[1].split() if len(lines) > 1 else [])
+
+
+def filter_tokens(value):
+    return [token for token in re.split(r"[\s,;|]+", value.strip()) if token]
+
+
+def target_preview(payload, config, tag_filter, inventory):
+    active_external_ids = {item["id"] for item in inventory if item.get("transport") == "ssh"}
+    projected = project_active_status(payload, active_external_ids)
+    targets = [dict(item) for item in projected["targets"]]
+    known_ids = {str(item.get("id", "")) for item in targets}
+    for item in inventory:
+        if item["id"] not in known_ids:
+            targets.append({"id": item["id"], "name": item["id"], "type": "external",
+                            "transport": item["transport"], "reachable": None})
+
+    only = str(config.get("ONLY_UPDATE_CHECK") or "")
+    exclude = str(config.get("EXCLUDE_UPDATE_CHECK") or "")
+    resolved_only, resolved_exclude = resolve_filter_ids(only, exclude, tag_filter)
+    selected_ids = set(resolved_only if only else resolved_exclude)
+    filterable = lambda item: str(item.get("type", "")).lower() in {"lxc", "vm"} and str(item.get("id", "")).isdigit()
+    if only:
+        included = [item for item in targets if not filterable(item) or str(item.get("id")) in selected_ids]
+        excluded = [item for item in targets if filterable(item) and str(item.get("id")) not in selected_ids]
+        mode = "only"
+    elif exclude:
+        included = [item for item in targets if not filterable(item) or str(item.get("id")) not in selected_ids]
+        excluded = [item for item in targets if filterable(item) and str(item.get("id")) in selected_ids]
+        mode = "exclude"
+    else:
+        included, excluded, mode = targets, [], "none"
+
+    def public_item(item):
+        kind = str(item.get("type", "")).lower()
+        label = item.get("name") if kind not in {"host", "external"} else item.get("name") or str(item.get("id", "")).removeprefix("host:")
+        if kind in {"lxc", "vm"} and item.get("name"):
+            label = f"{item.get('id')} · {item.get('name')}"
+        if item.get("reachable") is False:
+            label = f"{label} · offline"
+        return {"label": label or str(item.get("id", "")), "type": kind}
+
+    known_tokens = set(resolved_only if only else resolved_exclude)
+    raw_tokens = filter_tokens(only or exclude)
+    unknown = [token for token in raw_tokens if token.isdigit() and token not in known_ids]
+    if any(not token.isdigit() and not known_tokens for token in raw_tokens):
+        unknown.extend(token for token in raw_tokens if not token.isdigit())
+    return {
+        "mode": mode,
+        "included": [public_item(item) for item in included],
+        "excluded": [public_item(item) for item in excluded],
+        "unknown": unknown,
+        "inventory_available": bool(targets),
+        "generated_at": projected.get("generated_at"),
+    }
 
 
 def validate_inventory_text(content, script):
@@ -641,6 +724,22 @@ class StatusHandler(BaseHTTPRequestHandler):
                              lambda content: update_config_text(content, normalized))
         self.send_json({"message": "Configuration saved.", "config": config_value_map(self.config_content())})
 
+    def handle_config_preview(self, query):
+        if not self.server.status_file.exists():
+            self.send_json({"available": False, "message": "Target preview unavailable until the first inventory scan."})
+            return
+        with self.server.status_file.open(encoding="utf-8") as source:
+            payload = json.load(source)
+        only = query.get("only", [None])[0]
+        exclude = query.get("exclude", [None])[0]
+        config = config_value_map(self.config_content())
+        if only is not None:
+            config["ONLY_UPDATE_CHECK"] = only
+        if exclude is not None:
+            config["EXCLUDE_UPDATE_CHECK"] = exclude
+        preview = target_preview(payload, config, self.server.tag_filter_script, self.inventory_data())
+        self.send_json({"available": True, "preview": preview})
+
     def handle_target_add(self, payload):
         target = validate_target_payload(payload)
         content = self.inventory_content()
@@ -732,6 +831,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.send_json({"config": config_value_map(self.config_content()), "editable": sorted(CONFIG_KEYS)})
             except (OSError, UnicodeError):
                 self.send_json(error_payload("CONFIG_UNAVAILABLE", "Configuration is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        if path == "/api/config-preview":
+            try:
+                self.handle_config_preview(parse_qs(urlsplit(self.path).query, keep_blank_values=True))
+            except (OSError, UnicodeError, json.JSONDecodeError, ValueError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("CONFIG_PREVIEW_UNAVAILABLE", "Target preview is currently unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
             return
         if path == "/api/targets":
             try:
@@ -1032,6 +1137,7 @@ def main():
     server.status_file, server.cli = args.status_file, args.cli
     server.config_file, server.inventory_file = args.config_file, args.inventory_file
     server.inventory_script, server.external_script = args.inventory_script, args.external_script
+    server.tag_filter_script = args.config_file.parent / "tag-filter.sh"
     server.asset_dir = args.asset_dir
     server.job_runner, server.jobs_dir = args.job_runner, args.jobs_dir
     server.auth = AuthStore(args.auth_file)
