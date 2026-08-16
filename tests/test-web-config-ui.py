@@ -18,9 +18,11 @@ for title in (
 
 assert "ONLY has priority; EXCLUDE is ignored while ONLY is set." in page
 assert "content:'↳'" not in page
-assert "dependencies:{CHECK_RUNNING_CONTAINER:'CHECK_WITH_LXC'" in page
-assert "dependencies:{KEEP_SNAPSHOTS:'SNAPSHOT'" in page
-assert "input.disabled=!enabled" in page
+assert "columns:[['CHECK_WITH_LXC','CHECK_RUNNING_CONTAINER','CHECK_STOPPED_CONTAINER'],['LXC_START_DELAY','BACKUP_LXC_MP']]" in page
+assert "columns:[['CHECK_WITH_VM','CHECK_RUNNING_VM','CHECK_STOPPED_VM','CHECK_PAUSED_VM'],['VM_START_DELAY']]" in page
+assert "data-parent" not in page
+assert "updateConfigDependencies" not in page
+assert "is-dependent" not in page
 assert "update.conf remains the source of truth" in page
 
 # Presentation must not expose the internal host: prefix in detail/job labels.
