@@ -48,6 +48,10 @@ assert "event.key!=='Escape'" in page
 assert "closeHelpControls()" in page
 assert "help-trigger:focus-visible" in page
 assert "caret-color:transparent" in page
+assert "new Intl.Collator(undefined,{numeric:true,sensitivity:'base'})" in page
+assert "const sortNodes=items=>[...items].sort" in page
+assert "nodes=sortNodes(ts.filter(isProxmoxNode))" in page
+assert "externalGroup(external)" in page
 
 # Presentation must not expose the internal host: prefix in detail/job labels.
 assert "friendlyTarget(t)" in page
