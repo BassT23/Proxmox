@@ -347,6 +347,7 @@ VERSION_CHECK () {
 
 # Update The Ultimate Updater
 UPDATE () {
+  SELF_UPDATE_RUN=true
   echo -e "Update to $BRANCH branch?"
   if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
     UU_NONINTERACTIVE=true bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
@@ -460,6 +461,9 @@ READ_CONFIG () {
   EMAIL_SENDER=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' $CONFIG_FILE)
   EMAIL_ONLY_ERROR="${EMAIL_ONLY_ERROR:-false}"
   EMAIL_SENDER="${EMAIL_SENDER:-$USER}"
+  if declare -f STATUS_MODEL_EXPAND_SENDER >/dev/null 2>&1; then
+    EMAIL_SENDER=$(STATUS_MODEL_EXPAND_SENDER "$EMAIL_SENDER")
+  fi
 }
 
 GET_BACKUP_STORAGE () {
@@ -1791,11 +1795,23 @@ ERROR_LOGGING () {
 # shellcheck disable=SC2329
 UPDATE_MAIL_BODY() {
   local target="${ID:-${CONTAINER:-${VM:-$HOSTNAME}}}"
-  local display_name="${NAME:-$target}" icon="🐧" package_count
+  local display_name="${NAME:-$target}" target_type="host" icon="🐧" package_count
+  if [[ "${CVM:-}" == true || "${VM:-}" =~ ^[0-9]+$ ]]; then
+    target_type="vm"
+  elif [[ "${CCONTAINER:-}" == true || "${CONTAINER:-}" =~ ^[0-9]+$ || "${ID:-}" =~ ^[0-9]+$ ]]; then
+    target_type="lxc"
+  fi
   package_count=$(grep -Eo '[0-9]+ (upgraded|updated|processed)' "$LOG_FILE" 2>/dev/null | tail -n 1 || true)
   printf 'Ultimate Updater update summary\n\n'
   printf '🖥️ %s\n\n' "$HOSTNAME"
-  printf '%s %s · %s\n' "$icon" "$target" "$display_name"
+  if [[ "$target_type" != host && ! ( "$target" == "$HOSTNAME" && "$display_name" == "$HOSTNAME" ) ]]; then
+    [[ "$display_name" == "$target" ]] && display_name=""
+    if [[ -n "$display_name" ]]; then
+      printf '%s %s · %s\n' "$icon" "$target" "$display_name"
+    else
+      printf '%s %s\n' "$icon" "$target"
+    fi
+  fi
   if [[ "${EXIT_CODE:-1}" -eq 0 && ! -s "$ERROR_LOG_FILE" ]]; then
     printf '✅ Update erfolgreich\n'
     [[ -n "$package_count" ]] && printf '⬆️ %s\n' "$package_count"
@@ -1836,7 +1852,9 @@ EXIT () {
         echo -e "Please checkout $ERROR_LOG_FILE"
         echo
         CLEAN_LOGFILE
-        UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null ||true
+        if [[ "${SELF_UPDATE_RUN:-false}" != true ]]; then
+          UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null || true
+        fi
       else
         if [[ "$SCRIPT_ONLY_RUN" == true ]]; then
           echo -e "${GN:-}✅ Finished, all configured script-only updates done.${CL:-}\n"
@@ -1846,7 +1864,9 @@ EXIT () {
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
         if [[ "$EMAIL_ONLY_ERROR" != true ]]; then
-          UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
+          if [[ "${SELF_UPDATE_RUN:-false}" != true ]]; then
+            UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
+          fi
         fi
       fi
     fi
@@ -1856,7 +1876,9 @@ EXIT () {
       echo -e "${RD:-}⚠  Error during update --- Exit Code: $EXIT_CODE${CL:-}\n"
       "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
-      UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
+      if [[ "${SELF_UPDATE_RUN:-false}" != true ]]; then
+        UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
+      fi
     fi
   fi
   sleep 3

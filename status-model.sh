@@ -369,6 +369,7 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   email_only_security=$(awk -F'"' '/^EMAIL_ONLY_SECURITY=/ {print $2}' "$config_file" 2>/dev/null)
   email_user="${email_user:-root}"
   email_sender="${email_sender:-$USER}"
+  email_sender=$(STATUS_MODEL_EXPAND_SENDER "$email_sender")
   email_no_updates="${email_no_updates:-false}"
   email_only_security="${email_only_security:-false}"
 
@@ -407,6 +408,17 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   esac
 }
 
+# Expand only the documented sender placeholder. Config is never evaluated as
+# shell code; the resulting value remains a normal argument to mail(1).
+STATUS_MODEL_EXPAND_SENDER() {
+  local sender="${1:-}" runtime_user="${USER:-}"
+  runtime_user="${runtime_user:-$(id -un 2>/dev/null || printf root)}"
+  case "$sender" in
+    \$USER) printf '%s' "$runtime_user" ;;
+    *) printf '%s' "$sender" ;;
+  esac
+}
+
 STATUS_MODEL_RENDER_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
   python3 - "$status_file" <<'PY'
@@ -441,7 +453,7 @@ def target_name(target):
         return str(target.get("node") or target_id.removeprefix("host:"))
     if target_id.startswith("guest:"):
         target_id = target_id[6:]
-    return f"{target_id} · {value}" if value else target_id
+    return f"{target_id} · {value}" if value and value != target_id else target_id
 
 def target_icon(target):
     if target.get("type") == "host":
@@ -514,6 +526,10 @@ if updates:
     for node in node_order:
         lines.extend(["", f"🖥️ {node}", f"⬆️ {sum(count for _, count in grouped[node])} Updates"])
         for target, count in grouped[node]:
+            # The node heading already represents a host target. Do not
+            # render the same host a second time as a guest-like row.
+            if target.get("type") == "host":
+                continue
             lines.append(f"{target_icon(target)} {target_name(target)}")
             lines.append(f"⬆️ {count} Updates")
             if target.get("reboot_required") is True:

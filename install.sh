@@ -299,6 +299,9 @@ INSTALL () {
 }
 
 UPDATE () {
+  # File replacement during a self-update must never ask on a terminal.
+  # update.conf is handled separately by MERGE_UPDATE_CONFIG below.
+  export UU_NONINTERACTIVE=true
   INFORMATION
   OLD_FILESYSTEM_CHECK
   if [ -f "/usr/local/sbin/update" ]; then
