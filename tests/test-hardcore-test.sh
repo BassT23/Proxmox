@@ -14,6 +14,7 @@ run_id=$(printf '%s\n' "$start" | awk -F= '$1 == "RUN_ID" {print $2}')
 
 "$ROOT_DIR/hardcore-test.sh" log "$run_id" T-001 Config fixture initial none expected actual PASS '' '' PASS cleaned
 "$ROOT_DIR/hardcore-test.sh" log "$run_id" T-002 Config fixture initial none expected actual PASS - - PASS cleaned
+[[ $(awk -F '\t' 'NF != 13 { bad=1 } END { print bad+0 }' "$UU_HARDCORE_TEST_ROOT/$run_id/journal.tsv") -eq 0 ]]
 status=$("$ROOT_DIR/hardcore-test.sh" status "$run_id")
 grep -Fq 'Status: running' <<<"$status"
 grep -Fq 'PASS: 2' <<<"$status"

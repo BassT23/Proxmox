@@ -113,7 +113,7 @@ run_log() {
   for value in "${@:2}"; do
     [[ "$value" != *$'\t'* && "$value" != *$'\n'* ]] || { printf 'Journal values may not contain tabs or newlines.\n' >&2; return 64; }
   done
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${@:2}" >> "$directory/journal.tsv"
 }
 
