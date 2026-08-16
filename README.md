@@ -182,8 +182,9 @@ changed options:
 Global updater settings remain in `update.conf`. The optional
 `/etc/ultimate-updater/targets.conf` is reserved for reachability information
 about additional systems, so `update.conf` does not have to grow with every
-future target. Existing Proxmox hosts, LXC containers, VMs, and `VMs/<VMID>`
-definitions continue to use their current mechanisms.
+target. Proxmox hosts, LXC containers, and VMs continue to use their existing
+core paths. Historical SSH files under `VMs/<VMID>` are migrated during
+install/self-update when they contain a compatible target.
 
 The inventory uses small INI-style sections. The current external-target
 implementation detects the operating system, distribution, package manager,
@@ -191,21 +192,52 @@ and update method automatically where possible:
 
 ```ini
 [raspi]
-host=192.168.10.50
+host=192.0.2.50
 transport=ssh
-user=basst
+user=operator
+port=22
+identity_file=/root/.ssh/ultimate-updater-external
 ```
 
 External Debian, Ubuntu, and Raspberry Pi OS style apt-based systems, as well
 as Rocky Linux, RHEL-compatible AlmaLinux, and Fedora dnf systems, can be
 checked and updated over SSH. The operating system and package manager are
 detected from `/etc/os-release`; do not add `os` or `updater` fields to the
-inventory. SSH key authentication is required, using either root or a user
-with passwordless `sudo`. No Ultimate Updater agent is installed on the
-remote system. An absent or empty `targets.conf` leaves the existing Proxmox
+inventory. Use `ultimate-updater external setup <target>` to create a
+dedicated Ed25519 key on demand and prepare the remote helper bootstrap.
+Checks use a normal SSH user and are read-only; updates use the root-owned
+`/usr/local/sbin/ultimate-updater-external` through a restricted sudoers
+entry. The setup never stores a password and never requires
+`NOPASSWD: ALL`. No Ultimate Updater agent is installed on the remote
+system. An absent or empty `targets.conf` leaves the existing Proxmox
 workflow unchanged. External targets do not receive Proxmox vzdump backups or
 snapshots. Unknown RPM-like systems remain unsupported rather than being
 treated as Rocky/RHEL automatically.
+
+For APT targets, a check runs `apt-get -s upgrade` against the existing local
+package metadata and does not run `apt-get update`; update counts can
+therefore be stale. An update runs the helper's unattended APT sequence with
+`--force-confdef` and `--force-confold`, then reports any required reboot
+without rebooting automatically. Before an external update, keep a current
+verified backup or explicitly accept the risk because Proxmox snapshots are
+not available for external systems.
+
+### Migrating legacy SSH targets
+
+During installation or self-update, existing files in
+`/etc/ultimate-updater/VMs/<ID>` are detected by structure, not by a version
+guess. The migration safely recognizes `IP`, `USER`, and `SSH_VM_PORT`.
+`SSH_START_DELAY_TIME` is reported as deprecated because the external target
+inventory has no equivalent. Unknown or malformed fields are not executed.
+
+Compatible entries are appended to `targets.conf` after validation and an
+atomic write. The old files, existing target entries, comments, and working
+SSH identities are preserved. Matching host/user/port entries are not
+duplicated. Conflicts and invalid files remain for manual review. Normal
+install/update does not generate a new SSH key; use the explicit external
+setup command when a new identity is required. If a migrated target has no
+remote helper, its read-only check can still work while an update stops with
+`EXTERNAL_HELPER_MISSING`.
 
 Internally, the current Proxmox paths use small shared transport wrappers for
 local, LXC (`pct`), and SSH execution. QEMU Guest Agent execution keeps its

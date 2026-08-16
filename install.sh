@@ -264,6 +264,10 @@ INSTALL () {
       cp "$TEMP_FILES"/external-bootstrap.sh $LOCAL_FILES/external-bootstrap.sh
       chmod 750 $LOCAL_FILES/external-bootstrap.sh
     fi
+    if [[ -f "$TEMP_FILES"/legacy-migrate.sh ]]; then
+      cp "$TEMP_FILES"/legacy-migrate.sh $LOCAL_FILES/legacy-migrate.sh
+      chmod 750 $LOCAL_FILES/legacy-migrate.sh
+    fi
     chmod 750 $LOCAL_FILES/target-runtime.sh
     cp "$TEMP_FILES"/ultimate-updater $LOCAL_FILES/ultimate-updater
     chmod 750 $LOCAL_FILES/ultimate-updater
@@ -368,6 +372,10 @@ UPDATE () {
       mv "$TEMP_FILES"/external-bootstrap.sh $LOCAL_FILES/external-bootstrap.sh
       chmod 750 $LOCAL_FILES/external-bootstrap.sh
     fi
+    if [[ -f "$TEMP_FILES"/legacy-migrate.sh ]]; then
+      mv "$TEMP_FILES"/legacy-migrate.sh $LOCAL_FILES/legacy-migrate.sh
+      chmod 750 $LOCAL_FILES/legacy-migrate.sh
+    fi
     if [[ -f "$TEMP_FILES"/ultimate-updater ]]; then
       mv "$TEMP_FILES"/ultimate-updater $LOCAL_FILES/ultimate-updater
       chmod 750 $LOCAL_FILES/ultimate-updater
@@ -461,6 +469,12 @@ UPDATE () {
       fi
     else
       cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf"
+    fi
+    if [[ -x "$LOCAL_FILES/legacy-migrate.sh" ]]; then
+      echo -e "\nℹ ${OR:-}Checking for legacy SSH targets ...${CL:-}"
+      if ! "$LOCAL_FILES/legacy-migrate.sh"; then
+        echo -e "⚠️ ${OR:-}Legacy SSH migration needs attention; existing files were kept.${CL:-}" >&2
+      fi
     fi
     rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
     rm -rf "$TEMP_FILES"/web-ui || true
