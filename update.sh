@@ -1788,6 +1788,7 @@ ERROR_LOGGING () {
   true > "$ERROR_LOG_FILE"
 }
 
+# shellcheck disable=SC2329
 UPDATE_MAIL_BODY() {
   local target="${ID:-${CONTAINER:-${VM:-$HOSTNAME}}}"
   local display_name="${NAME:-$target}" icon="🐧" package_count
