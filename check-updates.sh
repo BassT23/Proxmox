@@ -563,7 +563,7 @@ CHECK_CONTAINER () {
     return
   fi
   OS=$(awk '/^ostype/' $LOCAL_FILES/temp/temp | cut -d' ' -f2)
-  if ! NAME=$(pct exec "$CONTAINER" hostname); then
+  if ! NAME=$(RUN_PCT_COMMAND "$CONTAINER" hostname); then
     CHECK_CONTAINER_FAILURE "Could not read hostname for LXC $CONTAINER"
     return
   fi
@@ -590,7 +590,7 @@ CHECK_CONTAINER () {
       echo -e "N: $NORMAL_APT_UPDATES"
     fi
   elif [[ "$OS" =~ fedora ]]; then
-    if ! UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update | grep -Ec ' updates$'"); then
+    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "dnf check-update | grep -Ec ' updates$'"); then
       CHECK_CONTAINER_FAILURE "dnf check-update failed for LXC $CONTAINER"
       return
     fi
@@ -601,7 +601,7 @@ CHECK_CONTAINER () {
       echo -e "$UPDATES"
     fi
   elif [[ "$OS" =~ archlinux ]]; then
-    if ! UPDATES=$(pct exec "$CONTAINER" -- bash -c "pacman -Qu | wc -l"); then
+    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "pacman -Qu | wc -l"); then
       CHECK_CONTAINER_FAILURE "pacman query failed for LXC $CONTAINER"
       return
     fi
@@ -612,11 +612,11 @@ CHECK_CONTAINER () {
       echo -e "$UPDATES"
     fi
   elif [[ "$OS" =~ alpine ]]; then
-    if ! pct exec "$CONTAINER" -- ash -c "apk update" >/dev/null 2>&1; then
+    if ! RUN_PCT_COMMAND "$CONTAINER" ash -c "apk update" >/dev/null 2>&1; then
       CHECK_CONTAINER_FAILURE "apk update failed for LXC $CONTAINER"
       return
     fi
-    if ! UPDATES=$(pct exec "$CONTAINER" -- ash -c "apk list -u | wc -l"); then
+    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" ash -c "apk list -u | wc -l"); then
       CHECK_CONTAINER_FAILURE "apk query failed for LXC $CONTAINER"
       return
     fi
@@ -627,7 +627,7 @@ CHECK_CONTAINER () {
       echo -e "$UPDATES"
     fi
   else
-    if ! UPDATES=$(pct exec "$CONTAINER" -- bash -c "yum -q check-update | wc -l"); then
+    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "yum -q check-update | wc -l"); then
       CHECK_CONTAINER_FAILURE "yum check-update failed for LXC $CONTAINER"
       return
     fi
