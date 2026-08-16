@@ -52,6 +52,10 @@ assert "new Intl.Collator(undefined,{numeric:true,sensitivity:'base'})" in page
 assert "const sortNodes=items=>[...items].sort" in page
 assert "nodes=sortNodes(ts.filter(isProxmoxNode))" in page
 assert "externalGroup(external)" in page
+assert 'class="filter-preview-chevron">›' not in page
+assert 'class="filter-preview-chevron" aria-hidden="true"' in page
+assert ".filter-preview-chevron::after" in page
+assert "<span class=\"chevron\" aria-hidden=\"true\"></span>" in page
 
 # Presentation must not expose the internal host: prefix in detail/job labels.
 assert "friendlyTarget(t)" in page
