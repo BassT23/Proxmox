@@ -50,6 +50,13 @@ load_target() {
   EXTERNAL_HOST="${TARGET_HOST[$target]}"
   EXTERNAL_PORT="${TARGET_PORT[$target]:-22}"
   EXTERNAL_USER="${TARGET_USER[$target]:-root}"
+  EXTERNAL_IDENTITY_FILE="${TARGET_IDENTITY_FILE[$target]:-}"
+  if [[ -n "$EXTERNAL_IDENTITY_FILE" ]]; then
+    [[ -f "$EXTERNAL_IDENTITY_FILE" && -r "$EXTERNAL_IDENTITY_FILE" ]] || {
+      printf 'external-linux: identity file is not readable: %s\n' "$EXTERNAL_IDENTITY_FILE" >&2
+      return 4
+    }
+  fi
 }
 
 classify_ssh_error() {
@@ -66,7 +73,7 @@ classify_ssh_error() {
 }
 
 remote_check() {
-  RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" 'bash -s' <<'REMOTE_CHECK'
+  RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" 'bash -s' <<'REMOTE_CHECK'
 set -u
 if [ ! -r /etc/os-release ]; then
   printf 'UU_RESULT|error|unknown|unknown|null|null||OS_RELEASE_UNAVAILABLE|/etc/os-release is unavailable\n'
@@ -79,14 +86,6 @@ case "$id_lower" in
   *rocky*|*rhel*|*almalinux*|*fedora*) updater=dnf ;;
   *) printf 'UU_RESULT|unsupported|%s|%s|null|null||UNSUPPORTED_OS|%s\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}" "${ID:-unknown}"; exit 21 ;;
 esac
-if [ "$(id -u)" -eq 0 ]; then
-  SUDO=""
-elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-  SUDO="sudo -n"
-else
-  printf 'UU_RESULT|error|%s|%s|null|null||INSUFFICIENT_PRIVILEGES|root or passwordless sudo is required\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
-  exit 23
-fi
 if ! command -v "$updater" >/dev/null 2>&1; then
   printf 'UU_RESULT|error|%s|%s|null|null|%s|%s_UNAVAILABLE|%s is unavailable\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}" "$updater" "${updater^^}" "$updater"
   exit 24
@@ -95,7 +94,7 @@ if [ "$updater" = apt ]; then
   # The check is deliberately read-only.  It uses the package metadata
   # already cached on the external system; refreshing package metadata belongs
   # exclusively to the update path below.
-  apt_output=$($SUDO apt-get -s upgrade 2>&1) || {
+  apt_output=$(apt-get -s upgrade 2>&1) || {
     printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|apt simulation failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
     exit 25
   }
@@ -103,7 +102,7 @@ if [ "$updater" = apt ]; then
   reboot=false
   if [ -e /var/run/reboot-required ] || [ -e /var/run/reboot-required.pkgs ]; then reboot=true; fi
 else
-  dnf_output=$($SUDO dnf -q check-update 2>&1)
+  dnf_output=$(dnf -q check-update 2>&1)
   dnf_status=$?
   if [ "$dnf_status" -ne 0 ] && [ "$dnf_status" -ne 100 ]; then
     printf 'UU_RESULT|error|%s|%s|null|null|dnf|DNF_CHECK_FAILED|dnf check-update failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
@@ -116,7 +115,7 @@ else
   fi
   reboot=null
   if command -v needs-restarting >/dev/null 2>&1; then
-    $SUDO needs-restarting -r >/dev/null 2>&1
+    needs-restarting -r >/dev/null 2>&1
     needs_restarting_status=$?
     case "$needs_restarting_status" in
       0) reboot=false ;;
@@ -169,7 +168,7 @@ check_target() {
 }
 
 remote_update() {
-  RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" 'bash -s' <<'REMOTE_UPDATE'
+  RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" 'bash -s' <<'REMOTE_UPDATE'
 set -u
 if [ ! -r /etc/os-release ]; then exit 20; fi
 . /etc/os-release

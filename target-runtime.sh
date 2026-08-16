@@ -17,7 +17,12 @@ RUN_PCT_COMMAND() {
 RUN_SSH_COMMAND() {
   local host="$1" port="$2" user="$3"
   shift 3
-  timeout "${UU_SSH_COMMAND_TIMEOUT:-120}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"
+  local identity_file="${RUN_SSH_IDENTITY_FILE:-}"
+  local -a ssh_options=(-q -o BatchMode=yes -o ConnectTimeout=5)
+  if [[ -n "$identity_file" ]]; then
+    ssh_options+=(-o IdentitiesOnly=yes -i "$identity_file")
+  fi
+  timeout "${UU_SSH_COMMAND_TIMEOUT:-120}" ssh "${ssh_options[@]}" -p "$port" "$user@$host" "$@"
 }
 
 READ_APT_UPDATE_COUNTS() {

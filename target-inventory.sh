@@ -9,7 +9,7 @@ TARGET_INVENTORY_FILE="${TARGET_INVENTORY_FILE:-/etc/ultimate-updater/targets.co
 TARGET_INVENTORY_ERROR=""
 # These arrays are the small read interface for later target implementations.
 declare -a TARGET_NAMES=()
-declare -A TARGET_HOST TARGET_PORT TARGET_TRANSPORT TARGET_USER
+declare -A TARGET_HOST TARGET_PORT TARGET_TRANSPORT TARGET_USER TARGET_IDENTITY_FILE
 
 TARGET_INVENTORY_FAIL() {
   TARGET_INVENTORY_ERROR="$1"
@@ -34,6 +34,7 @@ TARGET_INVENTORY_LOAD() {
   TARGET_PORT=()
   TARGET_TRANSPORT=()
   TARGET_USER=()
+  TARGET_IDENTITY_FILE=()
 
   # An absent inventory is the compatibility default for existing installs.
   [[ -e "$file" ]] || return 0
@@ -61,7 +62,7 @@ TARGET_INVENTORY_LOAD() {
     value="${line#*=}"
     key="$(TARGET_INVENTORY_TRIM "$key")"
     value="$(TARGET_INVENTORY_TRIM "$value")"
-    [[ "$key" =~ ^(host|port|transport|user)$ ]] || { TARGET_INVENTORY_FAIL "unsupported key '$key' at line $number"; return 1; }
+    [[ "$key" =~ ^(host|port|transport|user|identity_file)$ ]] || { TARGET_INVENTORY_FAIL "unsupported key '$key' at line $number"; return 1; }
     [[ -n "$value" ]] || { TARGET_INVENTORY_FAIL "empty value for '$key' at line $number"; return 1; }
     [[ ! -v "seen_keys[$section|$key]" ]] || { TARGET_INVENTORY_FAIL "duplicate key '$key' in [$section]"; return 1; }
     seen_keys["$section|$key"]="$value"
@@ -82,6 +83,10 @@ TARGET_INVENTORY_LOAD() {
       user)
         [[ "$value" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]] || { TARGET_INVENTORY_FAIL "invalid user for [$section]"; return 1; }
         TARGET_USER["$section"]="$value"
+        ;;
+      identity_file)
+        [[ "$value" == /* && "$value" != *$'\n'* && "$value" != *$'\r'* ]] || { TARGET_INVENTORY_FAIL "identity_file for [$section] must be an absolute path"; return 1; }
+        TARGET_IDENTITY_FILE["$section"]="$value"
         ;;
     esac
   done < "$file" || { TARGET_INVENTORY_FAIL "cannot read $file"; return 1; }
