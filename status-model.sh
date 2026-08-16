@@ -127,6 +127,20 @@ except (FileNotFoundError, OSError, ValueError):
 def decode(value):
     return base64.b64decode(value.encode()).decode()
 
+def is_newer_or_equal(candidate, current):
+    if not isinstance(current, dict) or current.get("status") in (None, "unknown"):
+        return True
+    candidate_time = candidate.get("timestamp")
+    current_time = current.get("timestamp")
+    if not candidate_time or not current_time:
+        return True
+    try:
+        candidate_dt = datetime.fromisoformat(candidate_time.replace("Z", "+00:00"))
+        current_dt = datetime.fromisoformat(current_time.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return True
+    return candidate_dt >= current_dt
+
 with open(record_file, encoding="utf-8") as records:
     for line in records:
         fields = line.rstrip("\n").split("\t")
@@ -174,7 +188,8 @@ with open(record_file, encoding="utf-8") as records:
             # A remote partial check may legitimately have no local job
             # history.  Do not let that observation erase a terminal result
             # already known on the caller.
-            if not (imported_status == "unknown" and existing_status not in (None, "unknown")):
+            if (imported_status != "unknown" or existing_status in (None, "unknown")) and \
+               is_newer_or_equal(imported_last_update, existing_last_update):
                 record["last_update"] = imported_last_update
         # A check refreshes observation fields, but must not erase the last
         # update result.  This applies to full checks as well as partial ones.
