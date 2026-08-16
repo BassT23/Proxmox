@@ -332,7 +332,9 @@ HOST_CHECK_START () {
       if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
       if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
     else
-      CHECK_HOST "$HOST"
+      if ! CHECK_HOST "$HOST"; then
+        CHECK_FAILURE=1
+      fi
     fi
   done
 }
@@ -490,7 +492,9 @@ CONTAINER_CHECK_START () {
         # Start the container
         pct start "$CONTAINER"
         if WAIT_FOR_BOOTUP_LXC; then
-          CHECK_CONTAINER "$CONTAINER"
+          if ! CHECK_CONTAINER "$CONTAINER"; then
+            CHECK_FAILURE=1
+          fi
         else
           echo -e "${RD}Skipping LXC $CONTAINER because it did not become reachable${CL}"
         fi
@@ -514,7 +518,9 @@ CONTAINER_CHECK_START () {
           CHECK_FAILURE=1
         fi
       elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
-        CHECK_CONTAINER "$CONTAINER"
+        if ! CHECK_CONTAINER "$CONTAINER"; then
+          CHECK_FAILURE=1
+        fi
       fi
     fi
   done
@@ -522,6 +528,13 @@ CONTAINER_CHECK_START () {
 }
 
 # Container Check
+CHECK_CONTAINER_FAILURE() {
+  local message="${1:-LXC check command failed}"
+  STATUS_MODEL_RECORD "$CONTAINER" lxc pct true "${OS:-unknown}" "" "null" "null" error CHECK_COMMAND_FAILED "$message"
+  CHECK_FAILURE=1
+  return 1
+}
+
 CHECK_CONTAINER () {
   if [[ "$RDU" != true ]]; then
     CONTAINER=$1
@@ -533,12 +546,24 @@ CHECK_CONTAINER () {
   if declare -f cluster_target_guest_name >/dev/null 2>&1; then
     STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$CONTAINER" 2>/dev/null || true)
   fi
-  pct config "$CONTAINER" > $LOCAL_FILES/temp/temp
+  if ! pct config "$CONTAINER" > "$LOCAL_FILES/temp/temp"; then
+    CHECK_CONTAINER_FAILURE "Could not read configuration for LXC $CONTAINER"
+    return
+  fi
   OS=$(awk '/^ostype/' $LOCAL_FILES/temp/temp | cut -d' ' -f2)
-  NAME=$(pct exec "$CONTAINER" hostname)
+  if ! NAME=$(pct exec "$CONTAINER" hostname); then
+    CHECK_CONTAINER_FAILURE "Could not read hostname for LXC $CONTAINER"
+    return
+  fi
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
-    RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get update" >/dev/null 2>&1
-    APT_OUTPUT=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get -s upgrade")
+    if ! RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get update" >/dev/null 2>&1; then
+      CHECK_CONTAINER_FAILURE "apt-get update failed for LXC $CONTAINER"
+      return
+    fi
+    if ! APT_OUTPUT=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get -s upgrade"); then
+      CHECK_CONTAINER_FAILURE "apt-get -s upgrade failed for LXC $CONTAINER"
+      return
+    fi
     READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
     if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
     CONTAINER_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
@@ -553,7 +578,10 @@ CHECK_CONTAINER () {
       echo -e "N: $NORMAL_APT_UPDATES"
     fi
   elif [[ "$OS" =~ fedora ]]; then
-    UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update | grep -Ec ' updates$'")
+    if ! UPDATES=$(pct exec "$CONTAINER" -- bash -c "dnf check-update | grep -Ec ' updates$'"); then
+      CHECK_CONTAINER_FAILURE "dnf check-update failed for LXC $CONTAINER"
+      return
+    fi
     CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
     CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
     if [[ "$UPDATES" -gt 0 ]]; then
@@ -561,7 +589,10 @@ CHECK_CONTAINER () {
       echo -e "$UPDATES"
     fi
   elif [[ "$OS" =~ archlinux ]]; then
-    UPDATES=$(pct exec "$CONTAINER" -- bash -c "pacman -Qu | wc -l")
+    if ! UPDATES=$(pct exec "$CONTAINER" -- bash -c "pacman -Qu | wc -l"); then
+      CHECK_CONTAINER_FAILURE "pacman query failed for LXC $CONTAINER"
+      return
+    fi
     CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
     CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
     if [[ "$UPDATES" -gt 0 ]]; then
@@ -569,8 +600,14 @@ CHECK_CONTAINER () {
       echo -e "$UPDATES"
     fi
   elif [[ "$OS" =~ alpine ]]; then
-    pct exec "$CONTAINER" -- ash -c "apk update" >/dev/null 2>&1
-    UPDATES=$(pct exec "$CONTAINER" -- ash -c "apk list -u | wc -l")
+    if ! pct exec "$CONTAINER" -- ash -c "apk update" >/dev/null 2>&1; then
+      CHECK_CONTAINER_FAILURE "apk update failed for LXC $CONTAINER"
+      return
+    fi
+    if ! UPDATES=$(pct exec "$CONTAINER" -- ash -c "apk list -u | wc -l"); then
+      CHECK_CONTAINER_FAILURE "apk query failed for LXC $CONTAINER"
+      return
+    fi
     CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
     CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
     if [[ "$UPDATES" -gt 0 ]]; then
@@ -578,7 +615,10 @@ CHECK_CONTAINER () {
       echo -e "$UPDATES"
     fi
   else
-    UPDATES=$(pct exec "$CONTAINER" -- bash -c "yum -q check-update | wc -l")
+    if ! UPDATES=$(pct exec "$CONTAINER" -- bash -c "yum -q check-update | wc -l"); then
+      CHECK_CONTAINER_FAILURE "yum check-update failed for LXC $CONTAINER"
+      return
+    fi
     CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
     CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
     if [[ "$UPDATES" -gt 0 ]]; then
@@ -1042,6 +1082,9 @@ fi
 # Refresh the local MOTD version cache without making the login path depend on GitHub.
 UPDATE_VERSION_CACHE >/dev/null 2>&1 || true
 if [[ "$STATUS_MODEL_ENABLED" == true ]]; then
+  if declare -f STATUS_MODEL_HAS_FAILURES >/dev/null 2>&1 && STATUS_MODEL_HAS_FAILURES; then
+    CHECK_FAILURE=1
+  fi
   STATUS_MODEL_FINISH >/dev/null 2>&1 || true
 fi
 

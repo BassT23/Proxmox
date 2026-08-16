@@ -9,6 +9,9 @@ VERSION="5.0.1"
 # A protection failure must make the overall update job fail, even when the
 # configured continue-on-error mode allows other guests to be processed.
 SAFETY_FAILURE=false
+# Continue-on-error keeps processing later targets, but real target failures
+# must still produce a non-zero final update result.
+UPDATE_FAILURE=false
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -1096,8 +1099,11 @@ HOST_UPDATE_START () {
     # Check if Host/Node is available
     if ssh -q -p "$SSH_PORT" "$HOST" test >/dev/null 2>&1; [ $? -eq 255 ]; then
       echo -e "⏩ ${OR:-}Skip Host${CL:-} : ${GN:-}$HOST${CL:-} ${OR:-}- can't connect${CL:-}\n"
+      UPDATE_FAILURE=true
     else
-      UPDATE_HOST "$HOST"
+      if ! UPDATE_HOST "$HOST"; then
+        UPDATE_FAILURE=true
+      fi
     fi
   done
 }
@@ -1222,6 +1228,7 @@ CONTAINER_UPDATE_START () {
         echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
       else
         echo -e "⚠ Can't find status, please report this issue${CL:-}\n\n"
+        UPDATE_FAILURE=true
       fi
     fi
   done
@@ -1249,6 +1256,7 @@ UPDATE_CONTAINER () {
   if [[ "$OS" != alpine ]]; then
     if ! RUN_PCT_COMMAND "$CONTAINER" bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"; then
       echo -e "${OR:-} ❌ Internet check fail - skip this container${CL:-}\n"
+      UPDATE_FAILURE=true
       return
     fi
 #  elif [[ "$OS" == alpine ]]; then
@@ -1430,6 +1438,7 @@ VM_UPDATE_START () {
         echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
       else
         echo -e "⚠ Can't find status, please report this issue${CL:-}\n\n"
+        UPDATE_FAILURE=true
       fi
     fi
   done
@@ -1516,6 +1525,7 @@ UPDATE_VM () {
         # Check Internet connection
         if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
           echo -e "${OR:-} ❌ Internet check fail - skip this VM${CL:-}\n"
+          UPDATE_FAILURE=true
           return
         fi
         if [[ "$USER" != root ]]; then
@@ -1778,6 +1788,7 @@ CLEAN_LOGFILE () {
 
 # Error handling
 ERROR () {
+  UPDATE_FAILURE=true
   if [[ "${CCONTAINER:-}" == true && "${ID:-}" =~ ^[0-9]+$ ]] &&
     declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
     STATUS_MODEL_UPDATE_RESULT "$ID" failed "${ERROR_CODE:-1}" || true
@@ -1787,6 +1798,15 @@ ERROR () {
   echo -e "Error output: $ERROR_MSG\n" | tee -a "$ERROR_LOG_FILE" >/dev/null 2>&1
   echo
 }
+
+UPDATE_FINAL_RC() {
+  local command_rc="${1:-0}"
+  if [[ "$command_rc" -ne 0 || "$UPDATE_FAILURE" == true || "$SAFETY_FAILURE" == true ]]; then
+    return 1
+  fi
+  return 0
+}
+
 ERROR_LOGGING () {
   touch "$ERROR_LOG_FILE"
   true > "$ERROR_LOG_FILE"
@@ -1948,6 +1968,10 @@ if [[ "$COMMAND" != true ]]; then
 fi
 
 if [[ "$SAFETY_FAILURE" == true ]]; then
+  exit 1
+fi
+
+if ! UPDATE_FINAL_RC 0; then
   exit 1
 fi
 

@@ -2,7 +2,7 @@
 
 # Machine-readable status model for check-updates.sh.
 # Records are deliberately kept separate from terminal/mail output so the
-# existing user-facing behaviour and exit codes remain unchanged.
+# existing user-facing behaviour remains unchanged.
 
 STATUS_MODEL_FILE="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
 STATUS_MODEL_RECORD_FILE="${STATUS_MODEL_RECORD_FILE:-$LOCAL_FILES/.status-records.$$}"
@@ -14,6 +14,28 @@ STATUS_MODEL_B64() {
 
 STATUS_MODEL_INIT() {
   : > "$STATUS_MODEL_RECORD_FILE" || return 1
+}
+
+STATUS_MODEL_HAS_FAILURES() {
+  [[ -f "$STATUS_MODEL_RECORD_FILE" ]] || return 1
+  python3 - "$STATUS_MODEL_RECORD_FILE" <<'PY'
+import base64
+import sys
+
+record_file = sys.argv[1]
+with open(record_file, encoding="utf-8") as records:
+    for line in records:
+        fields = line.rstrip("\n").split("\t")
+        if len(fields) < 9:
+            continue
+        try:
+            status = base64.b64decode(fields[8]).decode()
+        except (ValueError, UnicodeError):
+            continue
+        if status in ("offline", "error"):
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
 }
 
 STATUS_MODEL_RECORD() {
