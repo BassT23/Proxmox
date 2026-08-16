@@ -141,6 +141,14 @@ legacy_fingerprint() {
     while IFS= read -r file; do sha256sum "$LEGACY_DIR/$file"; done |
     sha256sum | awk '{print $1}'
 }
+legacy_inventory_complete() {
+  local file
+  [[ -f "$TARGETS_FILE" ]] || return 1
+  while IFS= read -r file; do
+    [[ "$file" =~ ^[A-Za-z0-9_.-]+$ ]] || continue
+    grep -Eq "^\[legacy-${file//./\.}\][[:space:]]*$" "$TARGETS_FILE" || return 1
+  done < <(find "$LEGACY_DIR" -maxdepth 1 -type f ! -name example -printf '%f\n' | LC_ALL=C sort)
+}
 migrate() {
   local file base section addition
   [[ -d "$LEGACY_DIR" ]] || return 0
@@ -182,7 +190,8 @@ port=$LEGACY_PORT"
 if [[ -f "$STATE_FILE" && -d "$LEGACY_DIR" ]]; then
   previous_fingerprint="$(awk -F= '$1 == "fingerprint" {print $2}' "$STATE_FILE")"
   previous_review="$(awk -F= '$1 == "manual_review" {print $2}' "$STATE_FILE")"
-  if [[ "$previous_review" == 0 && "$previous_fingerprint" == "$(legacy_fingerprint)" ]]; then
+  if [[ "$previous_review" == 0 && "$previous_fingerprint" == "$(legacy_fingerprint)" ]] &&
+    legacy_inventory_complete; then
     exit 0
   fi
 fi
@@ -195,7 +204,6 @@ source "$INVENTORY_SCRIPT"
 migrate || exit 1
 printf 'Migrated: %d\nAlready present: %d\nSkipped invalid: %d\nManual review required: %d\n' "$MIGRATED" "$ALREADY_PRESENT" "$SKIPPED_INVALID" "$MANUAL_REVIEW"
 if ((CHANGED || MANUAL_REVIEW > 0)); then printf 'Legacy files preserved: %s\n' "$LEGACY_DIR"; fi
-
 
 
 

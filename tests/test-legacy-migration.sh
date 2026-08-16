@@ -87,6 +87,11 @@ second_hash=$(sha256sum "$WORK_DIR/targets.conf" | awk '{print $1}')
 [[ "$first_hash" == "$second_hash" ]]
 [[ $(grep -c '^\[legacy-927\]$' "$WORK_DIR/targets.conf") -eq 1 ]]
 
+printf '# runtime inventory was replaced\n' > "$WORK_DIR/targets.conf"
+UU_LOCAL_FILES="$WORK_DIR" "$ROOT_DIR/legacy-migrate.sh" > "$WORK_DIR/recovery.out"
+grep -Fq 'MIGRATED' "$WORK_DIR/recovery.out"
+grep -Fq '[legacy-927]' "$WORK_DIR/targets.conf"
+
 printf '[broken]\nnot-valid\n' > "$WORK_DIR/targets.conf"
 cp "$WORK_DIR/targets.conf" "$WORK_DIR/before-invalid.conf"
 if UU_LOCAL_FILES="$WORK_DIR" "$ROOT_DIR/legacy-migrate.sh" > "$WORK_DIR/invalid.out"; then
@@ -96,4 +101,3 @@ fi
 cmp -s "$WORK_DIR/targets.conf" "$WORK_DIR/before-invalid.conf"
 
 echo 'legacy migration tests: PASS'
-
