@@ -61,6 +61,10 @@ assert "new Intl.Collator(undefined,{numeric:true,sensitivity:'base'})" in page
 assert "const sortNodes=items=>[...items].sort" in page
 assert "nodes=sortNodes(ts.filter(isProxmoxNode))" in page
 assert "externalGroup(external)" in page
+assert "grid-template-rows:auto auto" in page
+assert ".node-group .group-summary { grid-column:2; grid-row:2; display:flex; flex-wrap:wrap" in page
+assert ".config-field.boolean-field { width:fit-content; max-width:100%; justify-self:start; cursor:pointer }" in page
+assert ".config-field.boolean-field:hover" in page
 assert 'class="filter-preview-chevron">›' not in page
 assert 'class="filter-preview-chevron" aria-hidden="true"' in page
 assert ".filter-preview-chevron::after" in page
