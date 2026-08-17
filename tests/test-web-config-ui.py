@@ -64,6 +64,22 @@ assert "Login failed" in page
 assert "form.dataset.submitting==='true'" in page
 assert "login-spinner" in page
 
+# Internal SSH settings stay compact: nodes are complete, while guest entries
+# are limited to configured profiles/overrides and offer an inventory-backed
+# add flow for the remaining known guests.
+assert "LXC Containers" in page
+assert "+ Add VM SSH" in page
+assert "+ Add LXC SSH" in page
+assert "internalSshAvailable" in page
+assert '"available":' in source
+assert "kind = \"lxc\"" in source
+assert "kind==='vm'?'VM':'CT'" in source
+assert "${t.id} · ${t.name||t.id}" in source
+assert "Legacy VM profile" in source
+assert "QGA/default" in source
+assert "internal_ssh_available_targets" in source
+assert "kind not in {\"node\", \"vm\", \"lxc\"}" in source
+
 # Contextual help uses one reusable, keyboard-accessible pattern for both views.
 assert page.count("class=\"help-control\"") >= 1
 assert "class=\"help-trigger\"" in page

@@ -21,6 +21,12 @@ host=192.0.2.155
 user=admin
 port=2200
 enabled=true
+
+[lxc:210]
+host=192.0.2.210
+user=root
+port=22
+enabled=true
 EOF
 
 # shellcheck disable=SC1091
@@ -31,6 +37,8 @@ INTERNAL_SSH_RESOLVE_NODE node3 cluster-name 22
 [[ "$INTERNAL_SSH_IDENTITY_FILE" == /root/.ssh/test-key && "$INTERNAL_SSH_SOURCE" == override ]]
 INTERNAL_SSH_RESOLVE_VM 155 192.0.2.155 root 22
 [[ "$INTERNAL_SSH_HOST" == 192.0.2.155 && "$INTERNAL_SSH_USER" == admin && "$INTERNAL_SSH_PORT" == 2200 ]]
+INTERNAL_SSH_RESOLVE_LXC 210 192.0.2.210 root 22
+[[ "$INTERNAL_SSH_HOST" == 192.0.2.210 && "$INTERNAL_SSH_USER" == root && "$INTERNAL_SSH_PORT" == 22 ]]
 
 printf '%s\n' 'schema_version=1' '[node:bad]' 'port=65536' > "$WORK_DIR/invalid.conf"
 if INTERNAL_SSH_LOAD "$WORK_DIR/invalid.conf"; then
