@@ -388,7 +388,7 @@ UPDATE () {
     if [[ -n "$installed_major" && -n "$target_major" ]] &&
       { (( installed_major < 5 )) || (( installed_major == 5 && installed_minor <= 0 )); } &&
       { (( target_major > 5 )) || (( target_major == 5 && target_minor > 0 )); }; then
-      if [[ "${UU_UPGRADE_INTERACTIVE:-false}" != true || ! -t 0 ]]; then
+      if [[ ("${UU_NONINTERACTIVE:-false}" == true && "${UU_UPGRADE_INTERACTIVE:-false}" != true) || ! -t 0 ]]; then
         echo -e "⚠${RD:-} Interactive confirmation required for upgrade from version 5.0 or earlier to $target_version. Run the upgrade manually.${CL:-}" >&2
         rm -rf "$TEMP_FOLDER" || true
         return 1
