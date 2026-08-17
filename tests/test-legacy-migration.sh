@@ -68,9 +68,9 @@ port=22
 identity_file=/root/.ssh/other-key
 EOF
 
-UU_LOCAL_FILES="$WORK_DIR" "$ROOT_DIR/legacy-migrate.sh" > "$WORK_DIR/first.out"
+UU_LOCAL_FILES="$WORK_DIR" UU_LEGACY_MIGRATION_LOG="$WORK_DIR/migration.log" "$ROOT_DIR/legacy-migrate.sh" > "$WORK_DIR/first.out"
 
-grep -Fq 'Migrated: 1' "$WORK_DIR/first.out"
+grep -Fq 'MIGRATED' "$WORK_DIR/migration.log"
 grep -Fq 'SKIPPED_DUPLICATE' "$WORK_DIR/first.out"
 grep -Fq 'SKIPPED_INVALID' "$WORK_DIR/first.out"
 grep -Fq 'MANUAL_REVIEW_REQUIRED' "$WORK_DIR/first.out"
@@ -80,6 +80,20 @@ grep -Fqx 'port=2222' <(sed -n '/\[legacy-927\]/,/^$/p' "$WORK_DIR/targets.conf"
 grep -Fq 'identity_file=/root/.ssh/legacy-key' "$WORK_DIR/targets.conf"
 [[ ! -e /tmp/legacy-migration-must-not-run ]]
 [[ -f "$WORK_DIR/VMs/927" && -f "$WORK_DIR/VMs/928" ]]
+
+clean_dir="$WORK_DIR/clean"
+mkdir -p "$clean_dir/VMs"
+cp "$ROOT_DIR/target-inventory.sh" "$clean_dir/target-inventory.sh"
+chmod 750 "$clean_dir/target-inventory.sh"
+cp "$WORK_DIR/VMs/927" "$clean_dir/VMs/927"
+printf '[existing]\nhost=10.0.0.10\ntransport=ssh\nuser=admin\nport=22\n' > "$clean_dir/targets.conf"
+UU_LOCAL_FILES="$clean_dir" UU_LEGACY_MIGRATION_LOG="$clean_dir/migration.log" "$ROOT_DIR/legacy-migrate.sh" > "$clean_dir/output"
+grep -Fq '1 existing SSH systems successfully migrated' "$clean_dir/output"
+if grep -Eq 'MIGRATED|UNMAPPED|Backup:' "$clean_dir/output"; then
+  echo 'successful migration leaked technical details' >&2
+  exit 1
+fi
+grep -Fq 'MIGRATED' "$clean_dir/migration.log"
 
 first_hash=$(sha256sum "$WORK_DIR/targets.conf" | awk '{print $1}')
 UU_LOCAL_FILES="$WORK_DIR" "$ROOT_DIR/legacy-migrate.sh" > "$WORK_DIR/second.out"
