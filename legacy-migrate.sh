@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Migrate historical /etc/ultimate-updater/VMs/<ID> SSH files into targets.conf.
+# Clean up legacy migration artifacts without treating VM SSH profiles as
+# External targets. /etc/ultimate-updater/VMs/<ID> remains an internal VM path.
 # Legacy files are data, not shell programs: never source or eval them.
 # shellcheck disable=SC2094
 
@@ -13,6 +14,7 @@ INVENTORY_SCRIPT="${UU_TARGET_INVENTORY_SCRIPT:-$LOCAL_FILES/target-inventory.sh
 [[ -x "$INVENTORY_SCRIPT" ]] || INVENTORY_SCRIPT="${BASH_SOURCE[0]%/*}/target-inventory.sh"
 
 MIGRATED=0
+REMOVED=0
 ALREADY_PRESENT=0
 SKIPPED_INVALID=0
 MANUAL_REVIEW=0
@@ -155,43 +157,56 @@ legacy_inventory_complete() {
     grep -Eq "^\[legacy-${file//./\.}\][[:space:]]*$" "$TARGETS_FILE" || return 1
   done < <(find "$LEGACY_DIR" -maxdepth 1 -type f ! -name example -printf '%f\n' | LC_ALL=C sort)
 }
-migrate() {
-  local file base section addition
-  [[ -d "$LEGACY_DIR" ]] || return 0
-  mapfile -t LEGACY_FILES < <(find "$LEGACY_DIR" -maxdepth 1 -type f ! -name example -printf '%f\n' | LC_ALL=C sort)
-  (( ${#LEGACY_FILES[@]} > 0 )) || return 0
+legacy_migration_evidence() {
+  [[ -f "$STATE_FILE" ]] || return 1
+  grep -Eq '^manual_review=' "$STATE_FILE"
+}
+remove_legacy_sections() {
+  local tmp remove_list section
+  (( ${#ADDITIONS[@]} > 0 )) || return 0
+  tmp="$(mktemp "${TARGETS_FILE}.cleanup.XXXXXX")" || return 1
+  remove_list="$(IFS=,; printf '%s' "${ADDITIONS[*]}")"
+  awk -v remove_list="$remove_list" '
+    BEGIN {
+      count = split(remove_list, values, ",")
+      for (i = 1; i <= count; i++) remove[values[i]] = 1
+      drop = 0
+    }
+    /^\[[^]]+\][[:space:]]*$/ {
+      name = $0
+      sub(/^\[/, "", name); sub(/\][[:space:]]*$/, "", name)
+      drop = (name in remove)
+    }
+    !drop { print }
+  ' "$TARGETS_FILE" >"$tmp" || { rm -f "$tmp"; return 1; }
+  if ! validate_inventory "$tmp"; then
+    rm -f "$tmp"
+    printf 'Cleanup validation failed; original targets.conf was kept.\n' >&2
+    return 1
+  fi
+  backup_targets || { rm -f "$tmp"; return 1; }
+  chmod --reference="$TARGETS_FILE" "$tmp" 2>/dev/null || chmod 640 "$tmp"
+  mv -f -- "$tmp" "$TARGETS_FILE"
+  REMOVED=${#ADDITIONS[@]}
+  for section in "${ADDITIONS[@]}"; do report "REMOVED_BUG_GENERATED [$section]"; done
+}
+cleanup_legacy_external_entries() {
+  local file section base
+  [[ -d "$LEGACY_DIR" && -f "$TARGETS_FILE" ]] || return 0
+  legacy_migration_evidence || return 0
   [[ -x "$INVENTORY_SCRIPT" ]] || { printf 'Cannot validate targets.conf: inventory parser missing.\n' >&2; return 1; }
-  [[ -e "$TARGETS_FILE" ]] || : >"$TARGETS_FILE"
-  validate_inventory "$TARGETS_FILE" || { printf 'Existing targets.conf is invalid; migration stopped safely.\n' >&2; return 1; }
+  validate_inventory "$TARGETS_FILE" || { printf 'Existing targets.conf is invalid; cleanup stopped safely.\n' >&2; return 1; }
+  mapfile -t LEGACY_FILES < <(find "$LEGACY_DIR" -maxdepth 1 -type f ! -name example -printf '%f\n' | LC_ALL=C sort)
   for file in "${LEGACY_FILES[@]}"; do
-    if [[ ! "$file" =~ ^[A-Za-z0-9_.-]+$ ]]; then fail_invalid "$LEGACY_DIR/$file" "unsafe legacy filename"; continue; fi
+    [[ "$file" =~ ^[0-9]+$ ]] || continue
     parse_legacy "$LEGACY_DIR/$file" || continue
     base="legacy-$file"
-    if target_tuple_exists "$LEGACY_IP" "$LEGACY_PORT" "$LEGACY_USER"; then
-      section="$EXISTING_SECTION"
-      if [[ -n "${TARGET_IDENTITY_FILE[$section]:-}" ]]; then
-        report "MANUAL_REVIEW_REQUIRED $LEGACY_DIR/$file: existing [$section] has differing target details"; ((MANUAL_REVIEW++))
-      else
-        ((ALREADY_PRESENT++)); report "SKIPPED_DUPLICATE $LEGACY_DIR/$file: existing [$section] matches host/user/port"
-      fi
-      continue
-    fi
-    for section in "${TARGET_NAMES[@]}"; do
-      if [[ "$section" == "$base" ]]; then
-        report "MANUAL_REVIEW_REQUIRED $LEGACY_DIR/$file: section [$base] already exists with different details"
-        ((MANUAL_REVIEW++))
-        continue 2
-      fi
-    done
-    addition="[$base]
-host=$LEGACY_IP
-transport=ssh
-user=$LEGACY_USER
-port=$LEGACY_PORT"
-    ADDITIONS+=("$addition"); report "MIGRATED $LEGACY_DIR/$file -> [$base]"; ((MIGRATED++))
+    [[ "${TARGET_HOST[$base]:-}" == "$LEGACY_IP" &&
+      "${TARGET_USER[$base]:-}" == "$LEGACY_USER" &&
+      "${TARGET_PORT[$base]:-22}" == "$LEGACY_PORT" ]] || continue
+    ADDITIONS+=("$base")
   done
-  if (( ${#ADDITIONS[@]} > 0 )); then write_additions || return 1; CHANGED=1; fi
-  if ((CHANGED || MANUAL_REVIEW > 0)); then write_state || return 1; fi
+  remove_legacy_sections
 }
 write_report_log() {
   local temporary
@@ -222,8 +237,11 @@ fi
 # detection.
 # shellcheck disable=SC1090
 source "$INVENTORY_SCRIPT"
-migrate || exit 1
+cleanup_legacy_external_entries || exit 1
 write_report_log || { printf 'Could not write legacy migration details to %s\n' "$MIGRATION_LOG" >&2; exit 1; }
+if (( REMOVED > 0 )); then
+  printf '✅ Removed %d obsolete internal VM SSH entries from external target management.\n' "$REMOVED"
+fi
 if (( SKIPPED_INVALID > 0 )); then
   printf '⚠ %d legacy SSH configurations were skipped because they are invalid.\n' "$SKIPPED_INVALID"
 fi

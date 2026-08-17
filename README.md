@@ -204,8 +204,8 @@ Global updater settings remain in `update.conf`. The optional
 `/etc/ultimate-updater/targets.conf` is reserved for reachability information
 about additional systems, so `update.conf` does not have to grow with every
 target. Proxmox hosts, LXC containers, and VMs continue to use their existing
-core paths. Historical SSH files under `VMs/<VMID>` are migrated during
-install/self-update when they contain a compatible target.
+core paths. Historical SSH files under `VMs/<VMID>` remain internal VM SSH
+profiles and are never converted into External targets.
 
 The inventory uses small INI-style sections. The current external-target
 implementation detects the operating system, distribution, package manager,
@@ -263,22 +263,19 @@ than silently replaced with central values. On an individual External node,
 these filters match that target's configured External identity; central
 inventory filters still decide which External systems are contacted at all.
 
-### Migrating legacy SSH targets
+### Historical internal VM SSH profiles
 
 During installation or self-update, existing files in
-`/etc/ultimate-updater/VMs/<ID>` are detected by structure, not by a version
-guess. The migration safely recognizes `IP`, `USER`, and `SSH_VM_PORT`.
-`SSH_START_DELAY_TIME` is reported as deprecated because the external target
-inventory has no equivalent. Unknown or malformed fields are not executed.
+`/etc/ultimate-updater/VMs/<ID>` remain internal Proxmox VM SSH profiles.
+The VM SSH fallback reads `IP`, `USER`, and `SSH_VM_PORT`; these files are
+never appended to `targets.conf` or displayed as External systems.
 
-Compatible entries are appended to `targets.conf` after validation and an
-atomic write. The old files, existing target entries, comments, and working
-SSH identities are preserved. Matching host/user/port entries are not
-duplicated. Conflicts and invalid files remain for manual review. Normal
-install/update does not generate a new SSH key; use the explicit external
-setup command when a new identity is required. If a migrated target has no
-remote helper, its read-only check can still work while an update stops with
-`EXTERNAL_HELPER_MISSING`.
+Early 5.1 Beta builds could incorrectly create `[legacy-<ID>]` External
+sections from these files. The self-update cleanup removes only such sections
+when migration evidence exists and host/user/port exactly match the
+corresponding VM profile. The cleanup is atomic and idempotent; real External
+targets and the original VM files are preserved. Unknown or malformed fields
+are not executed.
 
 Internally, the current Proxmox paths use small shared transport wrappers for
 local, LXC (`pct`), and SSH execution. QEMU Guest Agent execution keeps its
@@ -395,9 +392,9 @@ automatically rebooted when `/var/run/reboot-required` is present.
 
 The normal update/self-update path preserves the existing
 `/etc/ultimate-updater/update.conf`, unknown keys, comments, configured Web UI
-port, and compatible legacy External target configuration. Missing supported
-defaults are added without replacing existing values. Legacy SSH target
-entries are migrated safely when they match the documented structure.
+port, and real External target configuration. Missing supported defaults are
+added without replacing existing values. Historical `VMs/<VMID>` SSH profiles
+remain internal VM data and are not migrated to External inventory.
 
 No general reinstallation is required for a supported 5.0 installation. After
 an upgrade, verify that `ultimate-updater-web.service` is enabled and active
