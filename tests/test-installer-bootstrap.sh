@@ -14,7 +14,7 @@ source_line=$(awk '/^UPDATE \(\)/ { in_update=1 } in_update && /source "\$CONFIG
 if grep -Fq "source \"\$LOCAL_FILES/config-merge.sh\"" "$INSTALLER"; then
   exit 1
 fi
-grep -Fq 'Interactive confirmation required for upgrade from 5.0' "$INSTALLER"
+grep -Fq 'Interactive confirmation required for upgrade from version 5.0 or earlier' "$INSTALLER"
 grep -Fq 'UPGRADE_RESTART_REQUIRED=true' "$INSTALLER"
 grep -Fq 'A restart of this Proxmox host is required' "$INSTALLER"
 grep -Fq 'UU_UPGRADE_INTERACTIVE=true' "$ROOT_DIR/update.sh"

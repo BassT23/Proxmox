@@ -618,8 +618,13 @@ pre-release), and `develop` (development). To switch an existing installation
 to the published Beta, use `update beta -up`; the selected branch is preserved
 in `USED_BRANCH` for later checks and self-updates.
 
-Upgrading from 5.0 to 5.1 requires a restart of the Proxmox host after the
-upgrade. The updater does not reboot automatically.
+Upgrading from version 5.0 or earlier to 5.1 requires a restart of the Proxmox
+host to fully complete the Ultimate Updater migration. The host itself remains
+usable before the restart, but some Ultimate Updater components may not work
+reliably until the restart has been performed. The updater does not reboot the
+host automatically. Updates within the 5.1 line do not require this migration
+restart; individual system updates may still report `REBOOT REQUIRED` for
+unrelated package or kernel changes.
 
 # Q&A:
 [Discussion](https://github.com/BassT23/Proxmox/discussions/60)
