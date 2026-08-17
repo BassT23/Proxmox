@@ -14,8 +14,13 @@ The supported branch selectors are `master`, `beta`, and `develop`.
 
 The migration preserves existing `update.conf` values, comments, unknown
 settings, External target registrations, and any configured `WEB_UI_PORT`.
-Upgrading from 5.0 to 5.1 requires a restart of the Proxmox host after the
-upgrade; the updater does not reboot automatically.
+Upgrading from version 5.0 or earlier to 5.1 requires a restart of the Proxmox
+host to fully complete the Ultimate Updater migration. The host itself remains
+usable before the restart, but some Ultimate Updater components may not work
+reliably until the restart has been performed. The updater does not reboot the
+host automatically. Updates within the 5.1 line do not require this migration
+restart; individual system updates may still report `REBOOT REQUIRED` for
+unrelated package or kernel changes.
 Missing supported defaults are added without overwriting user values. Legacy
 compatible SSH target files are migrated safely and are not deleted.
 
