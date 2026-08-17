@@ -15,6 +15,7 @@ UPDATE_FAILURE=false
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
+TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 USER_SCRIPTS="/etc/ultimate-updater/scripts.d"
 TARGET_RUNTIME_FILE="${TARGET_RUNTIME_FILE:-$LOCAL_FILES/target-runtime.sh}"
@@ -77,6 +78,52 @@ OR="\e[1;33m"
 RD="\e[1;91m"
 GN="\e[1;92m"
 CL="\e[0m"
+
+DOWNLOAD_SHELL_FILE() {
+  local url="$1" temporary headers http_code retry_after
+  mkdir -p "$TEMP_FOLDER" || return 1
+  temporary=$(mktemp "$TEMP_FOLDER/download.sh.XXXXXX") || return 1
+  headers=$(mktemp "$TEMP_FOLDER/download.headers.XXXXXX") || { rm -f -- "$temporary"; return 1; }
+  http_code=$(curl -4 -sS -fSL --retry 0 --connect-timeout 5 --max-time 120 \
+    -D "$headers" -o "$temporary" -w '%{http_code}' "$url" 2>/dev/null) || {
+    if [[ "$http_code" == 429 ]]; then
+      retry_after=$(awk 'BEGIN{IGNORECASE=1} /^Retry-After:/ {sub(/^[^:]*:[[:space:]]*/, ""); print; exit}' "$headers")
+      if [[ -n "$retry_after" ]]; then
+        echo "GitHub temporarily rate-limited the download (Retry-After: $retry_after). Please retry later." >&2
+      else
+        echo "GitHub temporarily rate-limited the download. Please retry later." >&2
+      fi
+    else
+      echo "Download failed (HTTP ${http_code:-unavailable})." >&2
+    fi
+    rm -f -- "$temporary" "$headers"
+    return 1
+  }
+  if [[ ! -s "$temporary" ]] || ! [[ "$(head -n 1 "$temporary")" =~ ^#!.*(bash|sh) ]] || ! bash -n "$temporary"; then
+    echo "Downloaded installer failed shell validation." >&2
+    rm -f -- "$temporary" "$headers"
+    return 1
+  fi
+  rm -f -- "$headers"
+  printf '%s\n' "$temporary"
+}
+
+RUN_DOWNLOADED_INSTALLER() {
+  local installer_path rc command
+  local -a environment=()
+  installer_path=$(DOWNLOAD_SHELL_FILE "$1") || return 1
+  shift
+  while [[ $# -gt 0 && "$1" == *=* ]]; do
+    environment+=("$1")
+    shift
+  done
+  command=${1:-}
+  shift || true
+  env "${environment[@]}" bash "$installer_path" "$command" "$@"
+  rc=$?
+  rm -f -- "$installer_path"
+  return "$rc"
+}
 
 
 
@@ -302,12 +349,14 @@ USAGE () {
 RUN_BRANCH_UPDATE () {
   local target_branch=$1 installer
 
-  if ! installer=$(curl -fsSL --connect-timeout 3 --max-time 10 \
-    "https://raw.githubusercontent.com/BassT23/Proxmox/$target_branch/install.sh"); then
+  if ! installer=$(DOWNLOAD_SHELL_FILE "https://raw.githubusercontent.com/BassT23/Proxmox/$target_branch/install.sh"); then
     echo -e "${RD:-}Unable to download the $target_branch installer.${CL:-}"
     return 1
   fi
-  printf '%s\n' "$installer" | bash -s update
+  env UU_TARGET_BRANCH="$target_branch" bash "$installer" update
+  local rc=$?
+  rm -f -- "$installer"
+  return "$rc"
 }
 
 SHOW_UPDATE_NOTICE () {
@@ -404,11 +453,12 @@ UPDATE () {
     fi
   fi
   if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
-    UU_TARGET_BRANCH="$BRANCH" UU_NONINTERACTIVE=true bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+    RUN_DOWNLOADED_INSTALLER "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/install.sh" \
+      UU_TARGET_BRANCH="$BRANCH" UU_NONINTERACTIVE=true update
     return $?
   fi
-  UU_TARGET_BRANCH="$BRANCH" UU_UPGRADE_INTERACTIVE=true UU_NONINTERACTIVE=true \
-    bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+  RUN_DOWNLOADED_INSTALLER "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/install.sh" \
+    UU_TARGET_BRANCH="$BRANCH" UU_UPGRADE_INTERACTIVE=true UU_NONINTERACTIVE=true update
   return $?
 }
 
@@ -431,7 +481,7 @@ UNINSTALL () {
   echo -e "${RD:-}Really want to remove The Ultimate Updater?${CL:-}"
   read -p "Type [Y/y] for yes - anything else will exit: " -r
   if [[ "$REPLY" =~ ^[Yy]$ ]]; then
-    bash <(curl -s "$SERVER_URL"/install.sh) uninstall
+    RUN_DOWNLOADED_INSTALLER "$SERVER_URL/install.sh" uninstall
     exit 2
   else
     exit 2

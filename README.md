@@ -68,13 +68,19 @@ Changelog: [here](https://github.com/BassT23/Proxmox/blob/master/change.log)
 # Installation:
 In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
-bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
+installer=$(mktemp)
+curl -4 -fSL --retry 0 https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh -o "$installer" && \
+  bash -n "$installer" && bash "$installer"
+rm -f "$installer"
 ```
 
 For the published 5.1 Beta, use the `beta` branch explicitly:
 
 ```bash
-UU_TARGET_BRANCH=beta bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh)
+installer=$(mktemp)
+curl -4 -fSL --retry 0 https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh -o "$installer" && \
+  bash -n "$installer" && UU_TARGET_BRANCH=beta bash "$installer"
+rm -f "$installer"
 ```
 
 # Usage:
@@ -173,7 +179,10 @@ force Windows feature upgrades.
 
 If update run into issue, please remove first with:
 ```
-bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) uninstall
+installer=$(mktemp)
+curl -4 -fSL --retry 0 https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh -o "$installer" && \
+  bash -n "$installer" && bash "$installer" uninstall
+rm -f "$installer"
 ```
 and install new
 

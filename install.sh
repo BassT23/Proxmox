@@ -28,6 +28,62 @@ INITIAL_INVENTORY_LOCK_FILE="/var/lib/ultimate-updater/initial-inventory.lock"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
+DOWNLOAD_FILE() {
+  local url="$1" destination="$2" kind="${3:-text}" temporary headers http_code retry_after
+  mkdir -p "$(dirname "$destination")" || return 1
+  temporary=$(mktemp "${destination}.download.XXXXXX") || return 1
+  headers=$(mktemp "${destination}.headers.XXXXXX") || { rm -f -- "$temporary"; return 1; }
+  http_code=$(curl -4 -sS -fSL --retry 0 --connect-timeout 5 --max-time 120 \
+    -D "$headers" -o "$temporary" -w '%{http_code}' "$url" 2>/dev/null) || {
+    if [[ "$http_code" == 429 ]]; then
+      retry_after=$(awk 'BEGIN{IGNORECASE=1} /^Retry-After:/ {sub(/^[^:]*:[[:space:]]*/, ""); print; exit}' "$headers")
+      if [[ -n "$retry_after" ]]; then
+        echo "GitHub temporarily rate-limited the download (Retry-After: $retry_after). Please retry later." >&2
+      else
+        echo "GitHub temporarily rate-limited the download. Please retry later." >&2
+      fi
+    else
+      echo "Download failed (HTTP ${http_code:-unavailable})." >&2
+    fi
+    rm -f -- "$temporary" "$headers" "$destination"
+    return 1
+  }
+  [[ -s "$temporary" ]] || { rm -f -- "$temporary" "$headers" "$destination"; echo "Downloaded file is empty." >&2; return 1; }
+  case "$kind" in
+    shell)
+      [[ "$(head -n 1 "$temporary")" =~ ^#!.*(bash|sh) ]] || { rm -f -- "$temporary" "$headers" "$destination"; echo "Downloaded file is not a shell script." >&2; return 1; }
+      bash -n "$temporary" || { rm -f -- "$temporary" "$headers" "$destination"; echo "Downloaded shell file failed validation." >&2; return 1; }
+      ;;
+    archive)
+      tar -tzf "$temporary" >/dev/null 2>&1 || { rm -f -- "$temporary" "$headers" "$destination"; echo "Downloaded archive failed validation." >&2; return 1; }
+      tar -tzf "$temporary" | grep -Eq '(^|/)update\.sh$' || { rm -f -- "$temporary" "$headers" "$destination"; echo "Downloaded archive does not contain update.sh." >&2; return 1; }
+      ;;
+  esac
+  chmod 0600 "$temporary"
+  mv -f -- "$temporary" "$destination"
+  rm -f -- "$headers"
+}
+
+DOWNLOAD_INSTALLER() {
+  local destination="$TEMP_FOLDER/install.sh"
+  mkdir -p "$TEMP_FOLDER" || return 1
+  DOWNLOAD_FILE "$1" "$destination" shell || return 1
+  bash "$destination" "${2:-}"
+}
+
+DOWNLOAD_ARCHIVE() {
+  local archive="$TEMP_FOLDER/ultimate-updater.tar.gz" release_json asset_url
+  if [[ "$BRANCH" == master ]]; then
+    release_json="$TEMP_FOLDER/release.json"
+    DOWNLOAD_FILE "https://api.github.com/repos/BassT23/Proxmox/releases/latest" "$release_json" text || return 1
+    asset_url=$(grep -m1 'browser_download_url' "$release_json" | cut -d: -f2- | tr -d '" ,')
+    [[ "$asset_url" =~ ^https:// ]] || { echo "GitHub release archive URL is unavailable." >&2; return 1; }
+    DOWNLOAD_FILE "$asset_url" "$archive" archive || return 1
+  else
+    DOWNLOAD_FILE "https://github.com/BassT23/Proxmox/tarball/$BRANCH" "$archive" archive || return 1
+  fi
+}
+
 #Colors
 BL="\e[36m"
 OR="\e[1;33m"
@@ -261,7 +317,7 @@ ${OR:-}Is it OK for you, or want to backup your files first?${CL:-}\n"
     read -p "Type [Y/y] for DELETE - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm -rf /root/Update-Proxmox-Scripts || true
-      bash <(curl -s "$SERVER_URL/install.sh") update
+      DOWNLOAD_INSTALLER "$SERVER_URL/install.sh" update
     else
       exit 0
     fi
@@ -271,7 +327,10 @@ ${OR:-}Is it OK for you, or want to backup your files first?${CL:-}\n"
   rm -rf /etc/update-motd.d/01-updater.bak || true
   # Check and renew to new structure
   if [[ -f /usr/local/bin/update ]] && [[ ! -f /usr/local/sbin/update ]]; then
-    curl  -s -L "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/update.sh" > "$LOCAL_FILES/update.sh"
+    mkdir -p "$TEMP_FOLDER" || exit 1
+    legacy_update=$(mktemp "$TEMP_FOLDER/update.sh.XXXXXX") || exit 1
+    DOWNLOAD_FILE "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/update.sh" "$legacy_update" shell || exit 1
+    mv -f -- "$legacy_update" "$LOCAL_FILES/update.sh"
     chmod 750 "$LOCAL_FILES/update.sh"
     ln -sf "$LOCAL_FILES/update.sh" /usr/local/sbin/update
     rm /usr/local/bin/update
@@ -285,7 +344,7 @@ INSTALL () {
     echo -e "${OR:-}The Ultimate Updater is already installed.${CL:-}"
     read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-      bash <(curl -s "$SERVER_URL/install.sh") update
+      DOWNLOAD_INSTALLER "$SERVER_URL/install.sh" update
     else
       echo -e "${OR:-}\nBye\n${CL:-}"
       exit 0
@@ -296,13 +355,9 @@ INSTALL () {
     mkdir -p $LOCAL_FILES/scripts.d/000
     # Download latest release
     if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-      if [[ "$BRANCH" == master ]]; then
-        curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
-      else
-        curl -s -L "https://github.com/BassT23/Proxmox/tarball/$BRANCH" > "$TEMP_FOLDER/ultimate-updater.tar.gz"
-      fi
-      tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
-      rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
+      DOWNLOAD_ARCHIVE || exit 1
+      tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || exit 1
+      rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
       TEMP_FILES=$TEMP_FOLDER
     # Copy files
     cp "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
@@ -431,13 +486,9 @@ UPDATE () {
     rm -rf "$TEMP_FOLDER" || true
     # Download files
     if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
-    if [[ "$BRANCH" == master ]]; then
-      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
-    elif [[ "$BRANCH" == beta || "$BRANCH" == develop ]]; then
-      curl -s -L "https://github.com/BassT23/Proxmox/tarball/$BRANCH" > $TEMP_FOLDER/ultimate-updater.tar.gz
-    fi
-    tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
-    rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
+    DOWNLOAD_ARCHIVE || return 1
+    tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || return 1
+    rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
     if [[ "$BRANCH" == master ]]; then
       TEMP_FILES=$TEMP_FOLDER
     else
@@ -706,7 +757,7 @@ UPDATE () {
     echo -e "⚠${RD:-} The Ultimate Updater is not installed.\n\n${OR:-}Would you like to install it?${CL:-}"
     read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-      bash <(curl -s "$SERVER_URL/install.sh")
+      DOWNLOAD_INSTALLER "$SERVER_URL/install.sh"
     else
       echo -e "\n\nBye\n"
       exit 0
@@ -778,7 +829,7 @@ WELCOME_SCREEN () {
   if [[ $COMMAND != true ]]; then
     echo -e "\n${BL:-}[Info]${GN:-} Installing The Ultimate Updater Welcome-Screen${CL:-}\n"
     if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-    curl -s "$SERVER_URL/welcome-screen.sh" > "$TEMP_FOLDER/welcome-screen.sh"
+    DOWNLOAD_FILE "$SERVER_URL/welcome-screen.sh" "$TEMP_FOLDER/welcome-screen.sh" shell || return 1
     if ! [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
       echo -e "${OR:-} Welcome-Screen is not installed${CL:-}\n"
       read -p "Would you like to install it also? Type [Y/y] or Enter for yes - anything else will skip: " -r
