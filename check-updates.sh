@@ -9,6 +9,8 @@
 VERSION="2.1"
 
 CHECK_FAILURE=0
+INITIAL_INVENTORY=false
+[[ "${UU_JOB_SOURCE:-}" == initial-inventory ]] && INITIAL_INVENTORY=true
 
 #Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
@@ -500,7 +502,9 @@ CONTAINER_CHECK_START () {
         echo -e "${RD}Skipping LXC $CONTAINER because Proxmox did not return its state within 10 seconds${CL}"
         continue
       fi
-      if [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
+      if [[ "$STATUS" == "status: stopped" && "${INITIAL_INVENTORY:-false}" == true ]]; then
+        STATUS_MODEL_RECORD "$CONTAINER" lxc pct false "" "" "null" "null" not_checked STOPPED_READ_ONLY "LXC $CONTAINER is stopped; initial inventory did not start it" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      elif [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
         pct start "$CONTAINER"
         if WAIT_FOR_BOOTUP_LXC; then
@@ -678,7 +682,11 @@ VM_CHECK_START () {
           SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "$SSH_START_DELAY_TIME")
           SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-$VM_START_DELAY}"
         fi
-        if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
+        if [[ "$STATUS" == "status: stopped" && "${INITIAL_INVENTORY:-false}" == true ]]; then
+          STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" not_checked STOPPED_READ_ONLY "VM $VM is stopped; initial inventory did not start it" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        elif [[ "$STATUS" == "status: paused" && "${INITIAL_INVENTORY:-false}" == true ]]; then
+          STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" not_checked PAUSED_READ_ONLY "VM $VM is paused; initial inventory did not resume it" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        elif [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
           # Check suspend mode
           if [[ $(qm config "$VM" | grep 'lock:' | sed 's/lock:\s*//') == "suspend" ]]; then 
             SUSPEND=true
