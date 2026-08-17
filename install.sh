@@ -385,10 +385,11 @@ UPDATE () {
         return 1
       fi
       echo -e "\n⚠${OR:-} Important upgrade notice${CL:-}\n"
-      echo -e "You are upgrading Ultimate Updater from version 5.0 to $target_version."
-      echo -e "This upgrade changes internal runtime components and requires a restart of this Proxmox host after the upgrade has completed."
-      echo -e "You may abort now and perform the upgrade later.\n"
-      read -r -p "Continue with upgrade? [Y/n] " upgrade_reply
+      echo -e "You are upgrading Ultimate Updater from version 5.0 to $target_version.\n"
+      echo -e "A restart of this Proxmox host is required to fully complete the Ultimate Updater migration."
+      echo -e "The host will remain usable after the upgrade, but some Ultimate Updater components may not work reliably until the host has been restarted."
+      echo -e "The updater will NOT restart the host automatically.\n"
+      read -r -p "Continue with the upgrade? [Y/n] " upgrade_reply
       if [[ "$upgrade_reply" =~ ^[Nn] ]]; then
         echo "Upgrade cancelled by user."
         rm -rf "$TEMP_FOLDER" || true
