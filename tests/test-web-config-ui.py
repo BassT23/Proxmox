@@ -68,17 +68,26 @@ assert "login-spinner" in page
 # are limited to configured profiles/overrides and offer an inventory-backed
 # add flow for the remaining known guests.
 assert "LXC Containers" in page
-assert "+ Add VM SSH" in page
-assert "+ Add LXC SSH" in page
+assert "+ Add VM SSH connection" in page
+assert "+ Add LXC SSH connection" in page
 assert "internalSshAvailable" in page
 assert '"available":' in source
 assert "kind = \"lxc\"" in source
 assert "kind==='vm'?'VM':'CT'" in source
 assert "${t.id} · ${t.name||t.id}" in source
-assert "Legacy VM profile" in source
+assert "Existing SSH profile (legacy format)" in source
 assert "QGA/default" in source
 assert "internal_ssh_available_targets" in source
 assert "kind not in {\"node\", \"vm\", \"lxc\"}" in source
+assert "Nodes are detected automatically." in page
+assert "External systems are managed separately under External Targets." in page
+assert "No additional VM SSH connections configured." in source
+assert "No additional LXC SSH connections configured." in source
+assert "Host unreachable." in source
+assert "Connection timed out." in source
+assert "Authentication failed." in source
+assert "Host key verification failed." in source
+assert "Connection refused." in source
 
 # Contextual help uses one reusable, keyboard-accessible pattern for both views.
 assert page.count("class=\"help-control\"") >= 1
