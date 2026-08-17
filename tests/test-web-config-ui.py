@@ -67,9 +67,11 @@ assert "login-spinner" in page
 # Internal SSH settings stay compact: nodes are complete, while guest entries
 # are limited to configured profiles/overrides and offer an inventory-backed
 # add flow for the remaining known guests.
-assert "LXC Containers" in page
-assert "+ Add VM SSH connection" in page
-assert "+ Add LXC SSH connection" in page
+assert "Internal SSH Connections" in page
+assert "Open SSH settings" in page
+assert "internal-ssh-view" in page
+assert "+ Add VM SSH connection" in source
+assert "+ Add LXC SSH connection" in source
 assert "internalSshAvailable" in page
 assert '"available":' in source
 assert "kind = \"lxc\"" in source
@@ -79,7 +81,7 @@ assert "Existing SSH profile (legacy format)" in source
 assert "QGA/default" in source
 assert "internal_ssh_available_targets" in source
 assert "kind not in {\"node\", \"vm\", \"lxc\"}" in source
-assert "Nodes are detected automatically." in page
+assert "nodes are detected automatically" in page.lower()
 assert "External systems are managed separately under External Targets." in page
 assert "No additional VM SSH connections configured." in source
 assert "No additional LXC SSH connections configured." in source
@@ -88,6 +90,10 @@ assert "Connection timed out." in source
 assert "Authentication failed." in source
 assert "Host key verification failed." in source
 assert "Connection refused." in source
+assert "Could not load Internal SSH connections." in source
+assert "internal-ssh-retry" in source
+assert "setInternalSshView(true)" in source
+assert "loadInternalSsh()" in source
 
 # Contextual help uses one reusable, keyboard-accessible pattern for both views.
 assert page.count("class=\"help-control\"") >= 1
