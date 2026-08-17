@@ -134,7 +134,7 @@ configure key-based SSH access as described in [SSH Connection](https://github.c
 Kali is handled by the Ultimate Updater as a Debian-based system and uses
 `apt` for update checks and updates.
 
-### Windows VMs
+### Windows VMs (deferred / experimental)
 
 Windows VMs can use the QEMU Guest Agent and the built-in Windows PowerShell
 and Windows Update APIs. The VM must provide both a working QEMU Guest Agent
@@ -142,6 +142,9 @@ and the `guest-exec` capability; a successful agent ping alone is not enough.
 No SSH, WinRM, additional agent, or PowerShell module is required. Updates
 are started through the node-local session-independent job runner, so the
 client connection may be closed after the job has started.
+
+Windows is currently deferred from the supported Beta baseline pending a
+dedicated live validation. Do not include Windows in automatic Beta test runs.
 
 The updater reports whether Windows requires a reboot, but never reboots the
 VM automatically. This first Windows path does not use `winget` and does not
@@ -431,9 +434,9 @@ in a separate External systems section.
 
 Guest status records may include the Proxmox-provided guest name. The Web UI
 shows it next to the stable guest ID when available and keeps working with
-older status files that do not contain a name. The UI is still an engineering
-preview, not a beta release: owner-approved real live update runs are still
-required before beta or release approval.
+older status files that do not contain a name. The UI is covered by the
+automated and owner-acceptance checks described in the testing documentation;
+release preparation and publication remain separate steps.
 
 The process serving action endpoints must already have the local permissions
 needed by the existing CLI (normally a controlled root-owned test/service
