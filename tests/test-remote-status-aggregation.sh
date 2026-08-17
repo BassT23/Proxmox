@@ -40,6 +40,48 @@ grep -Fq 'STATUS_MODEL_DIAGNOSTICS_FILE' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'Remote status model: node=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'Remote status model diagnostics unavailable:' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'status-diagnostics' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'UU_REMOTE_DEFER_STATUS_FINISH=true' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'REMOTE_CHECK_RETURN node=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'STATUS_MODEL_FINISH_START node=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'STATUS_MODEL_FINISH_END node=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'COMPLETION_WRITE node=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'UU_REMOTE_DEFER_STATUS_FINISH:-false' "$ROOT_DIR/check-updates.sh"
+
+# The remote wrapper owns finalization.  An inner check that exits before its
+# own epilogue must still produce a final status and completion result.
+cat > "$WORK_DIR/status-model.sh" <<'EOF'
+STATUS_MODEL_INIT() { : > "$STATUS_MODEL_RECORD_FILE"; }
+STATUS_MODEL_FINISH() {
+  printf '{"targets":[]}' > "$STATUS_MODEL_FILE"
+}
+EOF
+cat > "$WORK_DIR/inner-check.sh" <<'EOF'
+#!/bin/bash
+source "$STATUS_MODEL_SCRIPT"
+STATUS_MODEL_INIT
+case "$1" in
+  exit-zero) exit 0 ;;
+  exit-failure) exit 17 ;;
+  return-zero) return 0 2>/dev/null || true ;;
+  return-failure) return 19 2>/dev/null || true ;;
+esac
+EOF
+chmod +x "$WORK_DIR/inner-check.sh"
+for mode in normal exit-zero exit-failure return-zero return-failure; do
+  rm -f "$WORK_DIR/status.json" "$WORK_DIR/status.records" "$WORK_DIR/completed"
+  STATUS_MODEL_SCRIPT="$WORK_DIR/status-model.sh" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
+    STATUS_MODEL_RECORD_FILE="$WORK_DIR/status.records" bash -c '
+      source "$STATUS_MODEL_SCRIPT"
+      STATUS_MODEL_INIT
+      bash "$1" "$2"
+      remote_rc=$?
+      STATUS_MODEL_FINISH
+      printf "%s\n" "$remote_rc" > "$3"
+      exit "$remote_rc"
+    ' _ "$WORK_DIR/inner-check.sh" "$mode" "$WORK_DIR/completed" || true
+  [[ -s "$WORK_DIR/status.json" ]]
+  [[ -s "$WORK_DIR/completed" ]]
+done
 
 # An absent completion marker must not be relabelled as a remote RC failure;
 # the marker is the only authoritative source for the remote RC.
