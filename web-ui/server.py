@@ -134,6 +134,7 @@ PAGE = r"""<!doctype html>
     .node-group { display:flex; flex-direction:column; min-height:0 } .node-group .group-header { display:grid; grid-template-columns:32px minmax(0,1fr) auto; align-items:start; gap:8px 10px; min-height:0; padding:13px 14px 8px } .node-group .group-toggle { grid-column:1; grid-row:1; } .node-group .group-title { grid-column:2; grid-row:1; min-width:0; align-self:start } .node-group .group-title strong { display:block; white-space:normal; overflow-wrap:anywhere; line-height:1.2 } .node-group .group-title small { display:block; margin-top:5px; white-space:normal; overflow-wrap:anywhere; line-height:1.25 } .node-group .group-status { grid-column:3; grid-row:1; justify-self:end; min-width:0 } .node-group .group-info { display:flex; align-items:center; min-width:0; padding:0 14px 10px 56px; color:var(--muted); font-size:.74rem; line-height:1.25 } .node-group .group-updates { white-space:normal; overflow-wrap:anywhere } .node-group .group-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:6px; min-width:0; padding:10px 14px 13px 56px; border-top:1px solid #94a3b815; margin-top:auto } .node-group .group-actions button { min-width:0; padding:6px 9px; font-size:.7rem; white-space:nowrap } .node-group .group-actions .node-update { background:#73a7ff1c; border-color:#73a7ff66 }
     @media (max-width:620px) { .node-group .group-header { grid-template-columns:32px minmax(0,1fr) auto; } .node-group .group-info { padding-left:56px; } .node-group .group-actions { padding-left:56px; } }
     @media (max-width:760px) { .filter-preview-details,.filter-scopes { grid-template-columns:1fr } }
+    .internal-ssh-add { margin-top:9px; padding:6px 9px; font-size:.72rem; color:var(--muted) } .internal-ssh-add:hover { color:var(--text) }
     .app-header { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:24px; align-items:start; margin-bottom:10px } .brand-header-art { width:min(260px,70vw) } .brand-copy { padding-top:0 } .subtitle { margin-top:5px } .app-header .meta { max-width:360px; padding-top:10px; align-self:start }
     @media (max-width:760px) { .app-header { display:block; margin-bottom:10px } .app-header .meta { max-width:none; padding-top:0 } }
     @media (max-width:620px) { .brand-header-art { width:min(250px,82vw) } .subtitle { margin-top:5px } .app-header .meta { margin-top:8px } }
@@ -154,14 +155,14 @@ PAGE = r"""<!doctype html>
     <section id="systems" class="systems-panel"><div class="section-title"><div class="heading-with-help"><div><h2>Systems</h2><span class="hint">Organized by Proxmox node and external target</span></div><span class="help-control"><button class="help-trigger" type="button" aria-label="About Systems" aria-expanded="false" aria-controls="systems-help-popover">?</button><span id="systems-help-popover" class="help-popover" role="tooltip"><p>Systems shows the complete active inventory grouped by Proxmox node and external target. Status and update information comes from the latest available check data.</p><p>Guests without current update information remain part of the inventory; status data is only an enrichment of the inventory.</p></span></span></div><span class="view-note">Checks and updates use the existing CLI</span></div><div id="targets" class="targets"></div><section id="details" class="details" hidden></section></section>
     <section class="management-grid">
       <section class="management-panel" id="config-panel"><div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div><button id="config-open">Open settings</button></div><form id="config-form" class="management-form"></form><div id="config-message" class="management-message"></div></section>
-      <section class="management-panel" id="internal-ssh-panel"><div class="section-title"><div><h2>Internal SSH Connections</h2><span class="hint">Proxmox nodes and internal VMs · separate from External Targets</span></div></div><div class="settings-group"><h3>Proxmox Nodes</h3><div id="internal-ssh-nodes"><div class="empty">Loading…</div></div></div><div class="settings-group"><h3>Virtual Machines</h3><div id="internal-ssh-vms"><div class="empty">Loading…</div></div></div><div id="internal-ssh-message" class="management-message"></div></section>
+      <section class="management-panel" id="internal-ssh-panel"><div class="section-title"><div><h2>Internal SSH Connections</h2><span class="hint">Configured connections for Proxmox nodes and guests · separate from External Targets</span></div></div><div class="settings-group"><h3>Proxmox Nodes</h3><div id="internal-ssh-nodes"><div class="empty">Loading…</div></div></div><div class="settings-group"><h3>Virtual Machines</h3><div id="internal-ssh-vms"><div class="empty">Loading…</div></div><button type="button" class="internal-ssh-add" data-ssh-add="vm">+ Add VM SSH</button></div><div class="settings-group"><h3>LXC Containers</h3><div id="internal-ssh-lxcs"><div class="empty">Loading…</div></div><button type="button" class="internal-ssh-add" data-ssh-add="lxc">+ Add LXC SSH</button></div><div id="internal-ssh-message" class="management-message"></div></section>
       <section class="management-panel" id="external-panel"><div class="section-title"><div><h2>External systems</h2><span class="hint">SSH targets from targets.conf</span></div><button id="target-add">+ Add system</button></div><div id="managed-targets"></div><form id="target-form" class="management-form"></form><div id="target-message" class="management-message"></div></section>
     </section>
     <section id="jobs" class="jobs" hidden></section>
     <footer>Local action preview · status: <code>/etc/ultimate-updater/status.json</code> · jobs: <code>/var/lib/ultimate-updater/jobs</code></footer>
   </main>
   <div id="external-settings-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="external-settings-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3>External settings</h3><button type="button" class="modal-close" id="external-settings-close">Close</button></div><p class="hint">These settings are stored on this external system.</p><input type="hidden" name="target"><label>Only check filter<input name="ONLY_UPDATE_CHECK"></label><label>Exclude check filter<input name="EXCLUDE_UPDATE_CHECK"></label><label>Only update filter<input name="ONLY"></label><label>Exclude update filter<input name="EXCLUDE"></label><div class="form-actions"><button type="submit" class="primary">Save external settings</button></div><div id="external-settings-message" class="management-message" role="status"></div></form></div>
-  <div id="internal-ssh-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="internal-ssh-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="internal-ssh-title">Internal SSH override</h3><button type="button" class="modal-close" id="internal-ssh-close">Close</button></div><p class="hint">Only the override is stored. Without an override, existing cluster/default or VM profile resolution remains active.</p><input type="hidden" name="kind"><input type="hidden" name="id"><label>Host / Address<input name="host" required></label><label>User<input name="user" value="root" required></label><label>Port<input name="port" type="number" min="1" max="65535" value="22" required></label><label>Identity file (optional)<input name="identity_file" placeholder="/root/.ssh/key"></label><label><input name="enabled" type="checkbox" checked> Override enabled</label><div class="form-actions"><button type="submit" class="primary">Save override</button><button type="button" id="internal-ssh-remove">Remove override</button></div><div id="internal-ssh-form-message" class="management-message" role="status"></div></form></div>
+  <div id="internal-ssh-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="internal-ssh-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="internal-ssh-title">Internal SSH override</h3><button type="button" class="modal-close" id="internal-ssh-close">Close</button></div><p class="hint">Only the override is stored. Without an override, existing cluster/default or VM profile resolution remains active.</p><input type="hidden" name="kind"><input type="hidden" name="id"><label id="internal-ssh-target-picker">Inventory target<select name="target_choice" required></select></label><label>Host / Address<input name="host" required></label><label>User<input name="user" value="root" required></label><label>Port<input name="port" type="number" min="1" max="65535" value="22" required></label><label>Identity file (optional)<input name="identity_file" placeholder="/root/.ssh/key"></label><label><input name="enabled" type="checkbox" checked> Override enabled</label><div class="form-actions"><button type="submit" class="primary">Save override</button><button type="button" id="internal-ssh-remove">Remove override</button></div><div id="internal-ssh-form-message" class="management-message" role="status"></div></form></div>
   <script>
     const labels={ok:['Healthy','good'],updates_available:['Updates available','warn'],offline:['Offline','bad'],unsupported:['Unsupported','neutral'],not_checked:['Not checked','neutral'],error:['Error','bad']};
     const text=(v,f='Unknown')=>v===null||v===undefined||v===''?f:String(v); const esc=v=>text(v,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -253,7 +254,7 @@ PAGE = r"""<!doctype html>
     function createHelpControl(label,paragraphs){const control=document.createElement('span');control.className='help-control';const id=`help-popover-${label.toLowerCase().replace(/[^a-z0-9]+/g,'-')}`;const button=document.createElement('button');button.className='help-trigger';button.type='button';button.textContent='?';button.setAttribute('aria-label',`About ${label}`);button.setAttribute('aria-expanded','false');button.setAttribute('aria-controls',id);const popover=document.createElement('span');popover.id=id;popover.className='help-popover';popover.setAttribute('role','tooltip');paragraphs.forEach(text=>{const paragraph=document.createElement('p');paragraph.textContent=text;popover.appendChild(paragraph)});control.append(button,popover);return control}
     document.addEventListener('click',event=>{const trigger=event.target.closest('.help-trigger');if(trigger){const control=trigger.closest('.help-control'),open=control.classList.contains('open');closeHelpControls(control);control.classList.toggle('open',!open);trigger.setAttribute('aria-expanded',String(!open));return}if(!event.target.closest('.help-control'))closeHelpControls()});
     document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;const open=document.querySelector('.help-control.open');closeHelpControls();if(open)open.querySelector('.help-trigger')?.focus()});
-    let managedTargets=[], editingTarget=null;
+    let managedTargets=[], editingTarget=null, internalSshTargets=[], internalSshAvailable=[];
     function setConfigOpen(open){const form=document.getElementById('config-form'),panel=document.getElementById('config-panel'),button=document.getElementById('config-open');form.classList.toggle('open',open);document.querySelector('.management-grid').classList.toggle('config-open',open);button.textContent=open?'Close settings':'Open settings';button.setAttribute('aria-expanded',String(open));if(open)loadConfig()}
     function managementMessage(id,message,error=false){const n=document.getElementById(id);n.textContent=message||'';n.className=`management-message${error?' error':''}`}
     function configField(key,values,compact=false){const label=document.createElement('label');label.className=`config-field${configBooleanKeys.includes(key)?' boolean-field':''}${configNumberKeys.includes(key)?' numeric-field':''}${compact?' matrix-control':''}`;if(compact)label.title=configLabels[key]||key;const caption=document.createElement('span');caption.className='field-label';caption.textContent=configLabels[key]||key;const input=document.createElement('input');input.name=key;input.dataset.key=key;if(configBooleanKeys.includes(key)){input.type='checkbox';input.checked=values[key]===true;label.append(input,caption)}else{input.type=configNumberKeys.includes(key)?'number':'text';input.value=values[key]??'';if(input.type==='number'){input.min='0';input.max=key==='KEEP_SNAPSHOTS'?'99':'86400'}label.append(caption,input);if(configNumberKeys.includes(key)){const unit=document.createElement('span');unit.className='field-unit';unit.textContent=key==='KEEP_SNAPSHOTS'?'snapshots':'seconds';label.append(unit)}else if(key==='BACKUP_STORAGE'){const unit=document.createElement('span');unit.className='field-unit';unit.textContent='Proxmox storage ID, e.g. pbs';label.append(unit)}}return label}
@@ -269,15 +270,15 @@ PAGE = r"""<!doctype html>
     function closeExternalSettings(){document.getElementById('external-settings-modal').classList.remove('open')}
     async function saveExternalSettings(event){event.preventDefault();const form=event.currentTarget,target=form.elements.target.value,values={};for(const key of ['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE'])values[key]=form.elements[key].value;try{await api(`/api/external-settings/${encodeURIComponent(target)}`,{method:'POST',body:JSON.stringify({values})});managementMessage('external-settings-message','External settings saved.')}catch(error){managementMessage('external-settings-message',error.message,true)}}
     const renderManagedTargetsBase=renderManagedTargets;renderManagedTargets=function(){renderManagedTargetsBase();const box=document.getElementById('managed-targets');box.querySelectorAll('.managed-actions').forEach(actions=>{const edit=actions.querySelector('[data-edit]');if(!edit)return;const settings=document.createElement('button');settings.type='button';settings.textContent='Settings';settings.dataset.settings=edit.dataset.edit;actions.insertBefore(settings,edit);settings.onclick=()=>openExternalSettings(settings.dataset.settings)})}
-    let internalSshTargets=[];
-    function renderInternalSsh(){for(const kind of ['node','vm']){const box=document.getElementById(kind==='node'?'internal-ssh-nodes':'internal-ssh-vms'),items=internalSshTargets.filter(t=>t.kind===kind);box.innerHTML=items.length?items.map(t=>`<div class="managed-target"><div><strong>${esc(t.name||t.id)}</strong><small>${t.local?'Local · no SSH required':`${esc(t.host||'Not configured')} · ${esc(t.user)}:${esc(t.port)} · ${esc(t.source)}`}</small></div><div class="managed-actions">${t.local?'':`<button data-ssh-edit="${esc(t.kind)}:${esc(t.id)}">Edit SSH</button><button data-ssh-test="${esc(t.kind)}:${esc(t.id)}">Test connection</button>`}${t.override?`<button data-ssh-remove="${esc(t.kind)}:${esc(t.id)}">Remove override</button>`:''}</div></div>`).join(''):'<div class="empty">No configured systems.</div>'}document.querySelectorAll('[data-ssh-edit]').forEach(b=>b.onclick=()=>openInternalSsh(b.dataset.sshEdit));document.querySelectorAll('[data-ssh-test]').forEach(b=>b.onclick=()=>testInternalSsh(b.dataset.sshTest));document.querySelectorAll('[data-ssh-remove]').forEach(b=>b.onclick=()=>removeInternalSsh(b.dataset.sshRemove))}
-    async function loadInternalSsh(){try{internalSshTargets=(await api('/api/internal-ssh')).targets||[];renderInternalSsh()}catch(error){managementMessage('internal-ssh-message',error.message,true)}}
-    function openInternalSsh(key){const [kind,id]=key.split(':');const t=internalSshTargets.find(item=>item.kind===kind&&item.id===id),form=document.getElementById('internal-ssh-form');form.elements.kind.value=kind;form.elements.id.value=id;form.elements.host.value=t?.host||'';form.elements.user.value=t?.user||'root';form.elements.port.value=t?.port||22;form.elements.identity_file.value=t?.identity_file||'';form.elements.enabled.checked=t?.enabled!==false;document.getElementById('internal-ssh-form-message').textContent='';document.getElementById('internal-ssh-modal').classList.add('open')}
+    function renderInternalSsh(){const render=(kind,boxId,empty)=>{const box=document.getElementById(boxId),items=internalSshTargets.filter(t=>t.kind===kind);box.innerHTML=items.length?items.map(t=>`<div class="managed-target"><div><strong>${esc(kind==='node'?t.name:`${kind==='vm'?'VM':'CT'} ${t.id} · ${t.name||t.id}`)}</strong><small>${t.local?'Local · no SSH required':`${esc(t.host||'Not configured')} · ${esc(t.user)}:${esc(t.port)} · ${esc(t.source)}`}</small></div><div class="managed-actions">${t.local?'':`<button data-ssh-edit="${esc(t.kind)}:${esc(t.id)}">Edit SSH</button><button data-ssh-test="${esc(t.kind)}:${esc(t.id)}">Test connection</button>`}${t.override?`<button data-ssh-remove="${esc(t.kind)}:${esc(t.id)}">Remove override</button>`:''}</div></div>`).join(''):`<div class="empty">${empty}</div>`};render('node','internal-ssh-nodes','No cluster nodes found.');render('vm','internal-ssh-vms','No configured VM SSH connections.');render('lxc','internal-ssh-lxcs','No configured LXC SSH connections.');document.querySelectorAll('[data-ssh-edit]').forEach(b=>b.onclick=()=>openInternalSsh(b.dataset.sshEdit));document.querySelectorAll('[data-ssh-test]').forEach(b=>b.onclick=()=>testInternalSsh(b.dataset.sshTest));document.querySelectorAll('[data-ssh-remove]').forEach(b=>b.onclick=()=>removeInternalSsh(b.dataset.sshRemove))}
+    async function loadInternalSsh(){try{const data=await api('/api/internal-ssh');internalSshTargets=data.targets||[];internalSshAvailable=data.available||[];renderInternalSsh()}catch(error){managementMessage('internal-ssh-message',error.message,true)}}
+    function openInternalSsh(key){const [kind,id]=key.split(':'),t=internalSshTargets.find(item=>item.kind===kind&&item.id===id)||internalSshAvailable.find(item=>item.kind===kind&&item.id===id),form=document.getElementById('internal-ssh-form');form.elements.kind.value=kind;form.elements.id.value=id;form.elements.host.value=t?.host||'';form.elements.user.value=t?.user||'root';form.elements.port.value=t?.port||22;form.elements.identity_file.value=t?.identity_file||'';form.elements.enabled.checked=t?.enabled!==false;document.getElementById('internal-ssh-target-picker').hidden=true;document.getElementById('internal-ssh-remove').hidden=!t?.override;document.getElementById('internal-ssh-form-message').textContent='';document.getElementById('internal-ssh-modal').classList.add('open')}
+    function openInternalSshAdd(kind){const form=document.getElementById('internal-ssh-form'),choices=internalSshAvailable.filter(item=>item.kind===kind),picker=form.elements.target_choice;picker.innerHTML=choices.map(t=>`<option value="${esc(t.kind)}:${esc(t.id)}">${esc(kind==='vm'?'VM':'CT')} ${esc(t.id)} · ${esc(t.name||t.id)}</option>`).join('');if(!choices.length){managementMessage('internal-ssh-message',`No unconfigured ${kind==='vm'?'VM':'LXC'} systems are available.`);return}form.elements.kind.value=kind;form.elements.id.value=choices[0].id;form.elements.target_choice.onchange=()=>{form.elements.id.value=form.elements.target_choice.value.split(':')[1]};form.elements.target_choice.dispatchEvent(new Event('change'));form.elements.host.value=choices[0].host||'';form.elements.user.value=choices[0].user||'root';form.elements.port.value=choices[0].port||22;form.elements.identity_file.value='';form.elements.enabled.checked=true;document.getElementById('internal-ssh-target-picker').hidden=false;document.getElementById('internal-ssh-remove').hidden=true;document.getElementById('internal-ssh-form-message').textContent='';document.getElementById('internal-ssh-modal').classList.add('open')}
     function closeInternalSsh(){document.getElementById('internal-ssh-modal').classList.remove('open')}
     async function testInternalSsh(key){const [kind,id]=key.split(':');try{const d=await api(`/api/internal-ssh/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/test`,{method:'POST',body:'{}'});managementMessage('internal-ssh-message',d.message||'Connected.')}catch(error){managementMessage('internal-ssh-message',error.message,true)}}
     async function removeInternalSsh(key){const [kind,id]=key.split(':');if(!confirm('Remove this override and restore automatic/default resolution?'))return;try{await api(`/api/internal-ssh/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,{method:'DELETE'});await loadInternalSsh();managementMessage('internal-ssh-message','Override removed; default resolution restored.')}catch(error){managementMessage('internal-ssh-message',error.message,true)}}
     document.getElementById('internal-ssh-form').onsubmit=async event=>{event.preventDefault();const f=event.currentTarget,values={host:f.elements.host.value,user:f.elements.user.value,port:Number(f.elements.port.value),enabled:f.elements.enabled.checked};if(f.elements.identity_file.value)values.identity_file=f.elements.identity_file.value;try{await api(`/api/internal-ssh/${encodeURIComponent(f.elements.kind.value)}/${encodeURIComponent(f.elements.id.value)}`,{method:'POST',body:JSON.stringify({values})});closeInternalSsh();await loadInternalSsh();managementMessage('internal-ssh-message','Internal SSH override saved.')}catch(error){managementMessage('internal-ssh-form-message',error.message,true)}};
-    document.getElementById('internal-ssh-close').onclick=closeInternalSsh;document.getElementById('internal-ssh-remove').onclick=()=>removeInternalSsh(`${document.querySelector('#internal-ssh-form [name=kind]').value}:${document.querySelector('#internal-ssh-form [name=id]').value}`);
+    document.getElementById('internal-ssh-close').onclick=closeInternalSsh;document.getElementById('internal-ssh-remove').onclick=()=>removeInternalSsh(`${document.querySelector('#internal-ssh-form [name=kind]').value}:${document.querySelector('#internal-ssh-form [name=id]').value}`);document.querySelectorAll('[data-ssh-add]').forEach(b=>b.onclick=()=>openInternalSshAdd(b.dataset.sshAdd));
     async function loadTargets(){try{managedTargets=(await api('/api/targets')).targets||[];renderManagedTargets()}catch(error){managementMessage('target-message',error.message,true)}}
     function openTargetModal(target=null){editingTarget=target;const form=document.getElementById('target-modal-form');form.reset();form.elements.id.value=target?.id||'';form.elements.host.value=target?.host||'';form.elements.user.value=target?.user||'root';form.elements.port.value=target?.port||22;form.elements.id.readOnly=Boolean(target);document.getElementById('target-modal-title').textContent=target?'Edit external system':'Add external system';managementMessage('target-modal-message','');document.getElementById('target-modal').classList.add('open')}
     function closeTargetModal(){document.getElementById('target-modal').classList.remove('open');editingTarget=null}
@@ -370,7 +371,7 @@ def parse_internal_ssh_text(content):
             continue
         if line == "schema_version=1" and section is None:
             continue
-        match = re.fullmatch(r"\[(node|vm):([A-Za-z0-9_.:-]+)\]", line)
+        match = re.fullmatch(r"\[(node|vm|lxc):([A-Za-z0-9_.:-]+)\]", line)
         if match:
             section = f"{match.group(1)}:{match.group(2)}"
             if section in values:
@@ -1041,7 +1042,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             return {}
         return parse_internal_ssh_text(self.server.internal_ssh_file.read_text(encoding="utf-8"))
 
-    def internal_ssh_targets(self):
+    def internal_ssh_catalog(self):
         overrides = self.internal_ssh_values()
         resources = proxmox_inventory_snapshot() or []
         nodes = [str(item.get("node")) for item in resources
@@ -1058,6 +1059,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 if name and addr:
                     node_hosts[name.group(1)] = addr.group(1)
         result = []
+        available = []
         for node in sorted(set(nodes)):
             section = f"node:{node}"
             override = overrides.get(section, {})
@@ -1068,13 +1070,14 @@ class StatusHandler(BaseHTTPRequestHandler):
                            "port": int(override.get("port", "22")),
                            "identity_file": override.get("identity_file", ""),
                            "enabled": override.get("enabled", "true") == "true",
-                           "source": "override" if override else "cluster/default",
+                           "source": "Internal SSH override" if override else "Cluster/default",
                            "override": bool(override)})
         vm_profiles = self.server.config_file.parent / "VMs"
         vm_ids = {str(item.get("vmid", item.get("id", ""))).split("/")[-1]: item
                   for item in resources if isinstance(item, dict) and item.get("type") in {"qemu", "lxc"}}
         for vmid in sorted(vm_ids, key=lambda value: (not value.isdigit(), value)):
-            section = f"vm:{vmid}"; override = overrides.get(section, {})
+            kind = "lxc" if vm_ids[vmid].get("type") == "lxc" else "vm"
+            section = f"{kind}:{vmid}"; override = overrides.get(section, {})
             defaults = {}
             profile = vm_profiles / vmid
             if profile.is_file():
@@ -1084,25 +1087,40 @@ class StatusHandler(BaseHTTPRequestHandler):
             host = override.get("host", defaults.get("IP", ""))
             user = override.get("user", defaults.get("USER", "root"))
             port = override.get("port", defaults.get("SSH_VM_PORT", "22"))
-            result.append({"kind": "vm", "id": vmid, "name": vm_ids[vmid].get("name", vmid),
-                           "node": vm_ids[vmid].get("node"), "host": host, "user": user,
-                           "port": int(port) if str(port).isdigit() else 22,
-                           "identity_file": override.get("identity_file", ""),
-                           "enabled": override.get("enabled", "true") == "true",
-                           "source": "override" if override else ("legacy VM profile" if defaults else "QGA/default"),
-                           "override": bool(override), "has_legacy_profile": profile.is_file()})
-        return result
+            target = {"kind": kind, "id": vmid, "name": vm_ids[vmid].get("name", vmid),
+                      "node": vm_ids[vmid].get("node"), "host": host, "user": user,
+                      "port": int(port) if str(port).isdigit() else 22,
+                      "identity_file": override.get("identity_file", ""),
+                      "enabled": override.get("enabled", "true") == "true",
+                      "source": "Internal SSH override" if override else ("Legacy VM profile" if defaults else "QGA/default"),
+                      "override": bool(override), "has_legacy_profile": profile.is_file()}
+            if override or defaults:
+                result.append(target)
+            else:
+                target["unconfigured"] = True
+                available.append(target)
+        return result, available
+
+    def internal_ssh_targets(self):
+        return self.internal_ssh_catalog()[0]
+
+    def internal_ssh_available_targets(self):
+        return self.internal_ssh_catalog()[1]
 
     def handle_internal_ssh_get(self):
         self.send_json({"path": str(self.server.internal_ssh_file),
                         "source_of_truth": "local internal SSH override; defaults remain automatic",
-                        "targets": self.internal_ssh_targets()})
+                        "targets": self.internal_ssh_targets(),
+                        "available": self.internal_ssh_available_targets()})
 
     def internal_ssh_section(self, kind, target_id):
-        if kind not in {"node", "vm"} or not INTERNAL_ID_RE.fullmatch(target_id):
+        if kind not in {"node", "vm", "lxc"} or not INTERNAL_ID_RE.fullmatch(target_id):
             raise ValueError("Invalid internal SSH target.")
         target = next((item for item in self.internal_ssh_targets()
                        if item["kind"] == kind and item["id"] == target_id), None)
+        if not target:
+            target = next((item for item in self.internal_ssh_available_targets()
+                           if item["kind"] == kind and item["id"] == target_id), None)
         if not target:
             raise KeyError("Internal SSH target not found.")
         return f"{kind}:{target_id}", target

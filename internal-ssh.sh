@@ -1,7 +1,7 @@
 #!/bin/bash
 # shellcheck disable=SC2034,SC2120
 
-# Internal SSH overrides for Proxmox nodes and Proxmox VMs.
+# Internal SSH overrides for Proxmox nodes and Proxmox guests.
 # This is deliberately separate from targets.conf: the latter is only the
 # inventory of External Targets.  Values are parsed as data, never sourced.
 
@@ -31,7 +31,7 @@ INTERNAL_SSH_LOAD() {
     line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
     [[ -z "$line" || "$line" == \#* ]] && continue
     [[ "$line" == schema_version=1 && -z "$section" ]] && continue
-    if [[ "$line" =~ ^\[(node|vm):([A-Za-z0-9_.:-]+)\]$ ]]; then
+    if [[ "$line" =~ ^\[(node|vm|lxc):([A-Za-z0-9_.:-]+)\]$ ]]; then
       section="${BASH_REMATCH[1]}:${BASH_REMATCH[2]}"
       INTERNAL_SSH_VALID_ID "${BASH_REMATCH[2]}" || { INTERNAL_SSH_FAIL "invalid section at line $number"; return 1; }
       continue
@@ -80,3 +80,4 @@ INTERNAL_SSH_USE_IDENTITY() {
 
 INTERNAL_SSH_RESOLVE_NODE() { INTERNAL_SSH_RESOLVE node "$1" "$2" root "${3:-22}"; }
 INTERNAL_SSH_RESOLVE_VM() { INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "${4:-22}"; }
+INTERNAL_SSH_RESOLVE_LXC() { INTERNAL_SSH_RESOLVE lxc "$1" "$2" "$3" "${4:-22}"; }
