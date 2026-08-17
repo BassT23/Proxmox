@@ -48,11 +48,8 @@ VERSION_CHECK () {
 
   case "$BRANCH" in
     master) candidates=(master) ;;
-    develop) candidates=(master develop) ;;
-    beta)
-      echo -e "${OR}  The beta branch is no longer active; use develop.${CL}"
-      candidates=(master develop)
-      ;;
+    beta) candidates=(master beta) ;;
+    develop) candidates=(master beta develop) ;;
     *)
       echo -e "${OR}  Unknown branch '$BRANCH'; showing local version only.${CL}"
       echo -e "              Version: $local_version"
@@ -63,11 +60,11 @@ VERSION_CHECK () {
 
   VERSION_NOT_SHOW=false
   for candidate in "${candidates[@]}"; do
-    if [[ "$candidate" == master ]]; then
-      remote_version=$CACHE_MASTER_VERSION
-    else
-      remote_version=$CACHE_DEVELOP_VERSION
-    fi
+    case "$candidate" in
+      master) remote_version=$CACHE_MASTER_VERSION ;;
+      beta) remote_version=$CACHE_BETA_VERSION ;;
+      develop) remote_version=$CACHE_DEVELOP_VERSION ;;
+    esac
     if version_is_less "$local_version" "$remote_version"; then
       echo -e "${OR}       *** A newer version is available ***${CL}\n\
         Installed: $local_version / $candidate: $remote_version\n\

@@ -45,11 +45,6 @@ if [[ -f "$LOCAL_FILES/status-model.sh" ]]; then
 fi
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
-if [[ "$BRANCH" == beta ]]; then
-  echo -e "${OR:-}The beta branch is no longer active; using develop instead.${CL:-}"
-  BRANCH=develop
-  SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
-fi
 DPKG_OPTIONS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 DPKG_OPTIONS_STRING="${DPKG_OPTIONS[*]}"
 
@@ -210,7 +205,7 @@ ARGUMENTS () {
         # shellcheck disable=SC2317
         exit 2
         ;;
-      master|develop)
+      master|beta|develop)
         if [[ "$2" != -up ]]; then
           echo -e "\n${OR:-}  Wrong usage! Use branch update like this:${CL:-}"
           echo -e "  update $ARGUMENT -up\n"
@@ -264,6 +259,7 @@ USAGE () {
     echo -e "[OPTIONS] Manages the Ultimate Updater:"
     echo -e "======================================"
     echo -e "  master               Use master branch"
+    echo -e "  beta                 Use beta branch (pre-release)"
     echo -e "  develop              Use develop branch\n"
     echo -e "{COMMAND}:"
     echo -e "========="
@@ -315,9 +311,10 @@ VERSION_CHECK () {
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh")
   case "$BRANCH" in
     master) candidates=(master) ;;
-    develop) candidates=(master develop) ;;
+    beta) candidates=(master beta) ;;
+    develop) candidates=(master beta develop) ;;
     *)
-      echo -e "${OR:-}The configured branch '$BRANCH' is not active; use master or develop.${CL:-}"
+      echo -e "${OR:-}The configured branch '$BRANCH' is not active; use master, beta, or develop.${CL:-}"
       echo -e "                 Version: $VERSION"
       return 0
       ;;
@@ -325,6 +322,8 @@ VERSION_CHECK () {
 
   if [[ "$BRANCH" == develop ]]; then
     echo -e "${OR:-}*** The Ultimate Updater is on develop branch ***${CL:-}"
+  elif [[ "$BRANCH" == beta ]]; then
+    echo -e "${OR:-}*** The Ultimate Updater is on beta branch (pre-release) ***${CL:-}"
   fi
   VERSION_NOT_SHOW=false
   for candidate in "${candidates[@]}"; do
@@ -353,12 +352,12 @@ UPDATE () {
   SELF_UPDATE_RUN=true
   echo -e "Update to $BRANCH branch?"
   if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
-    UU_NONINTERACTIVE=true bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+    UU_TARGET_BRANCH="$BRANCH" UU_NONINTERACTIVE=true bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
     return $?
   fi
   read -p "Type [Y/y] or [Enter] for yes - anything else will exit: " -r
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-    UU_NONINTERACTIVE=true bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+    UU_TARGET_BRANCH="$BRANCH" UU_NONINTERACTIVE=true bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
     return $?
   else
     return 2
@@ -391,11 +390,7 @@ STATUS () {
     components+=("Welcome|welcome-screen.sh|/etc/update-motd.d/01-welcome-screen")
     components+=("Check|check-updates.sh|$LOCAL_FILES/check-updates.sh")
   fi
-  if [[ "$branch_for_status" == beta ]]; then
-    branch_for_status=develop
-    echo -e "${OR:-}The beta branch is no longer active; showing develop instead.${CL:-}"
-  fi
-  if [[ "$branch_for_status" != master && "$branch_for_status" != develop ]]; then
+  if [[ "$branch_for_status" != master && "$branch_for_status" != beta && "$branch_for_status" != develop ]]; then
     echo -e "${RD:-}Unknown branch '$BRANCH'; status cannot be retrieved.${CL:-}"
     return 1
   fi

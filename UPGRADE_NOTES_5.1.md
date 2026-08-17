@@ -4,6 +4,14 @@ Use the normal installer/self-update path on the existing central Proxmox
 cluster installation. Ultimate Updater is installed once per cluster; do not
 install a second administrative instance on every node.
 
+To move an existing installation to the published 5.1 Beta, run:
+
+```bash
+update beta -up
+```
+
+The supported branch selectors are `master`, `beta`, and `develop`.
+
 The migration preserves existing `update.conf` values, comments, unknown
 settings, External target registrations, and any configured `WEB_UI_PORT`.
 Missing supported defaults are added without overwriting user values. Legacy

@@ -71,10 +71,10 @@ In Proxmox GUI Host Shell or as root on proxmox host terminal:
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
 ```
 
-For the 5.1 Beta candidate, use the `develop` branch explicitly:
+For the published 5.1 Beta, use the `beta` branch explicitly:
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/install.sh)
+UU_TARGET_BRANCH=beta bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh)
 ```
 
 # Usage:
@@ -613,9 +613,10 @@ If anybody wants to help with failure search, please test our `develop` branch.
 Install the develop update with `update develop -up`
 To go back to master, choose `update -up`
 
-The active update branches are `master` and `develop`. The former beta branch is
-no longer an active update channel; `beta-outdated` is retained only as a
-historical archive.
+The active update branches are `master` (stable), `beta` (published
+pre-release), and `develop` (development). To switch an existing installation
+to the published Beta, use `update beta -up`; the selected branch is preserved
+in `USED_BRANCH` for later checks and self-updates.
 
 # Q&A:
 [Discussion](https://github.com/BassT23/Proxmox/discussions/60)
