@@ -27,6 +27,15 @@ grep -Fq 'permission-denied' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'invalid-json' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'remote-rc-nonzero' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'timeout' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'remote_status_validation=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'remote_rc=86' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'remote_rc=87' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'status_finish_rc=0' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'CHECK_FAILURE=1' "$ROOT_DIR/check-updates.sh"
+
+# An absent completion marker must not be relabelled as a remote RC failure;
+# the marker is the only authoritative source for the remote RC.
+grep -Fq 'if [[ "$remote_done_found" == true && "$remote_status" -ne 0 ]]' "$ROOT_DIR/check-updates.sh"
 
 # A failed remote node must not discard successful records from other nodes.
 LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \

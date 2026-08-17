@@ -408,6 +408,7 @@ CHECK_HOST () {
   remote_done_file="$remote_check_dir/completed"
   remote_runtime_env=""
   remote_status_env=""
+  remote_status_validation=""
   remote_status_file="/tmp/ultimate-updater-remote-status-$$-$RANDOM.json"
   remote_done_error_file="${remote_status_file}.completion.err"
   remote_status_error_file="${remote_status_file}.status.err"
@@ -436,9 +437,10 @@ CHECK_HOST () {
       return 1
     fi
     remote_status_env=" STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'"
+    remote_status_validation=" if [[ \"\$remote_rc\" -eq 0 && ! -s '$remote_check_dir/status.json' ]]; then remote_rc=86; elif [[ \"\$remote_rc\" -eq 0 ]] && ! python3 -c 'import json,sys; payload=json.load(open(sys.argv[1], encoding=\"utf-8\")); assert isinstance(payload, dict) and isinstance(payload.get(\"targets\"), list)' '$remote_check_dir/status.json'; then remote_rc=87; fi;"
   fi
   if CHECK_REMOTE_JOB_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" \
-    "UU_DEFER_NOTIFICATION=true TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env bash -s -- -c host; remote_rc=\$?; printf '%s\\n' \"\$remote_rc\" > '$remote_done_file'; exit \"\$remote_rc\"" < "$0"; then
+    "UU_DEFER_NOTIFICATION=true TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env bash -s -- -c host; remote_rc=\$?;$remote_status_validation printf '%s\\n' \"\$remote_rc\" > '$remote_done_file'; exit \"\$remote_rc\"" < "$0"; then
     remote_status=0
   else
     remote_status=$?
@@ -507,7 +509,19 @@ CHECK_HOST () {
     remote_json_result=not-retrieved
     remote_failure_class=remote-rc-nonzero
   fi
-  if [[ "$remote_status" -ne 0 ]]; then
+  if [[ "$remote_done_found" != true ]]; then
+    remote_diag_level=failure
+    if [[ "$remote_done_transport_rc" -eq 124 ]]; then
+      remote_failure_class=timeout
+    elif grep -qiE 'permission denied|access denied' "$remote_done_error_file" 2>/dev/null; then
+      remote_failure_class=permission-denied
+    elif [[ "$remote_done_transport_rc" -ne 0 ]]; then
+      remote_failure_class=ssh-retrieval-failed
+    else
+      remote_failure_class=completion-marker-missing
+    fi
+  fi
+  if [[ "$remote_done_found" == true && "$remote_status" -ne 0 ]]; then
     remote_diag_level=failure
     remote_failure_class=remote-rc-nonzero
   fi
@@ -1228,7 +1242,11 @@ if [[ "$STATUS_MODEL_ENABLED" == true ]]; then
   if declare -f STATUS_MODEL_HAS_FAILURES >/dev/null 2>&1 && STATUS_MODEL_HAS_FAILURES; then
     CHECK_FAILURE=1
   fi
-  STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+  status_finish_rc=0
+  STATUS_MODEL_FINISH >/dev/null 2>&1 || status_finish_rc=$?
+  if [[ "$status_finish_rc" -ne 0 ]]; then
+    CHECK_FAILURE=1
+  fi
 fi
 
 exit "$CHECK_FAILURE"
