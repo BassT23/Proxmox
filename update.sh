@@ -219,7 +219,6 @@ ARGUMENTS () {
           exit 2
         fi
         BRANCH=$ARGUMENT
-        BRANCH_SET=true
         ;;
       -up)
         COMMAND=true
