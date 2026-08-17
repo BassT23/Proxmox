@@ -80,7 +80,7 @@ grep -Fqx '[legacy-155]' "$WORK_DIR/no-evidence/targets.conf"
 
 # The production VM path still reads VMs/<VMID>; no external migration call is
 # needed for internal VM SSH fallback.
-grep -Fq 'LOCAL_FILES/VMs/$VM' "$ROOT_DIR/update.sh"
-grep -Fq 'LOCAL_FILES/VMs/"$VM"' "$ROOT_DIR/check-updates.sh"
+grep -Fq "LOCAL_FILES/VMs/\$VM" "$ROOT_DIR/update.sh"
+grep -Fq "LOCAL_FILES/VMs/\"\$VM\"" "$ROOT_DIR/check-updates.sh"
 
 echo 'legacy internal VM SSH migration tests: PASS'
