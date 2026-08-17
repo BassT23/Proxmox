@@ -360,6 +360,20 @@ CHECK_REMOTE_JOB_SSH () {
   timeout "${UU_CHECK_REMOTE_JOB_TIMEOUT:-120}" ssh "${INTERNAL_SSH_ARGS[@]}" "$@"
 }
 
+# Keep remote artifact diagnostics in the job log without exposing command
+# output, credentials, or SSH material.  Normal successful runs stay quiet;
+# DEBUG or a retrieval failure includes the complete correlation data.
+REMOTE_STATUS_DIAGNOSTICS () {
+  local level="$1" node="$2" host="$3" run_dir="$4" done_file="$5" status_path="$6"
+  local done_found="$7" done_value="$8" status_found="$9" status_size="${10}"
+  local completion_transport_rc="${11}" status_transport_rc="${12}" json_result="${13}" cleanup_state="${14}" classification="${15}"
+  [[ "$level" == failure || "${DEBUG:-false}" == true ]] || return 0
+  printf 'Remote status diagnostics: node=%s host=%s run=%s remote_dir=%s completion=%s completion_found=%s remote_rc=%s status_file=%s status_found=%s status_size=%s completion_transport_rc=%s status_transport_rc=%s json=%s classification=%s cleanup=%s\n' \
+    "$node" "$host" "$(basename -- "$run_dir")" "$run_dir" "$done_file" \
+    "$done_found" "${done_value:-unknown}" "$status_path" "$status_found" \
+    "$status_size" "$completion_transport_rc" "$status_transport_rc" "$json_result" "$classification" "$cleanup_state"
+}
+
 HOST_CHECK_START () {
   for HOST in $HOSTS; do
     if HOST_IS_LOCAL "$HOST"; then
@@ -377,7 +391,10 @@ HOST_CHECK_START () {
 # Host Check
 CHECK_HOST () {
   local HOST=$1 remote_check_dir remote_status remote_status_file remote_done_file
-  local remote_done_value remote_status_attempt HOST_NODE HOST_ID
+  local remote_done_value remote_status_attempt HOST_NODE HOST_ID remote_done_error_file remote_status_error_file
+  local remote_done_found=false remote_done_transport_rc=0 remote_status_transport_rc=0
+  local remote_status_found=false remote_status_size=0 remote_json_result=not-checked
+  local remote_cleanup_state=pending remote_diag_level=success remote_failure_class=none
   HOST_NODE=$(CLUSTER_HOST_NODE "$HOST")
   INTERNAL_SSH_RESOLVE_NODE "$HOST_NODE" "$HOST" "$SSH_PORT" || return 1
   [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
@@ -392,6 +409,8 @@ CHECK_HOST () {
   remote_runtime_env=""
   remote_status_env=""
   remote_status_file="/tmp/ultimate-updater-remote-status-$$-$RANDOM.json"
+  remote_done_error_file="${remote_status_file}.completion.err"
+  remote_status_error_file="${remote_status_file}.status.err"
   if ! CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "mkdir -p '$LOCAL_FILES' '$remote_check_dir'" ||
     ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$LOCAL_FILES/update.conf" "$HOST:$LOCAL_FILES/update.conf" >/dev/null 2>&1 ||
     ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$TAG_FILTER_FILE" "$HOST:$remote_check_dir/tag-filter.sh" >/dev/null 2>&1; then
@@ -426,8 +445,10 @@ CHECK_HOST () {
   fi
   remote_done_value=""
   for remote_status_attempt in 1 2 3; do
-    remote_done_value=$(CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "cat -- '$remote_done_file'" 2>/dev/null || true)
+    remote_done_transport_rc=0
+    remote_done_value=$(CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "cat -- '$remote_done_file'" 2>"$remote_done_error_file") || remote_done_transport_rc=$?
     if [[ "$remote_done_value" =~ ^[0-9]+$ ]]; then
+      remote_done_found=true
       break
     fi
     sleep 0.2
@@ -436,23 +457,73 @@ CHECK_HOST () {
     remote_status="$remote_done_value"
   fi
   for remote_status_attempt in 1 2 3; do
-    if CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_check_dir/status.json" "$remote_status_file" >/dev/null 2>&1; then
+    remote_status_transport_rc=0
+    if CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_check_dir/status.json" "$remote_status_file" > /dev/null 2>"$remote_status_error_file"; then
+      remote_status_transport_rc=0
       break
     fi
+    remote_status_transport_rc=$?
     [[ "$remote_status_attempt" -lt 3 ]] && sleep 0.2
   done
+  if [[ -e "$remote_status_file" ]]; then
+    remote_status_found=true
+    remote_status_size=$(stat -c '%s' "$remote_status_file" 2>/dev/null || printf '0')
+  fi
   if [[ -s "$remote_status_file" ]]; then
     if ! STATUS_MODEL_IMPORT_FILE "$remote_status_file"; then
+      remote_json_result=invalid
+      remote_diag_level=failure
+      remote_failure_class=invalid-json
       echo -e "${RD}$HOST_NODE ($HOST): remote check status was invalid and could not be imported.${CL}"
       STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "$HOST_NODE ($HOST): remote check status was invalid and could not be imported" "$HOST_NODE"
+    else
+      remote_json_result=valid
     fi
     rm -f -- "$remote_status_file"
   elif [[ "$remote_status" -eq 0 ]]; then
+    remote_diag_level=failure
+    if [[ "$remote_done_found" != true ]]; then
+      if [[ "$remote_done_transport_rc" -eq 124 ]]; then
+        remote_failure_class=timeout
+      elif grep -qiE 'permission denied|access denied' "$remote_done_error_file" 2>/dev/null; then
+        remote_failure_class=permission-denied
+      elif [[ "$remote_done_transport_rc" -ne 0 ]]; then
+        remote_failure_class=ssh-retrieval-failed
+      else
+        remote_failure_class=completion-marker-missing
+      fi
+    elif [[ "$remote_status_transport_rc" -eq 124 ]]; then
+      remote_failure_class=timeout
+    elif grep -qiE 'permission denied|access denied' "$remote_status_error_file" 2>/dev/null; then
+      remote_failure_class=permission-denied
+    elif [[ "$remote_status_transport_rc" -ne 0 ]]; then
+      remote_failure_class=scp-retrieval-failed
+    else
+      remote_failure_class=status-file-missing
+    fi
     echo -e "${RD}$HOST_NODE ($HOST): remote check completed but status result could not be retrieved.${CL}"
     STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "$HOST_NODE ($HOST): remote check completed but status result could not be retrieved" "$HOST_NODE"
+  else
+    remote_json_result=not-retrieved
+    remote_failure_class=remote-rc-nonzero
   fi
+  if [[ "$remote_status" -ne 0 ]]; then
+    remote_diag_level=failure
+    remote_failure_class=remote-rc-nonzero
+  fi
+  REMOTE_STATUS_DIAGNOSTICS "$remote_diag_level" "$HOST_NODE" "$HOST" "$remote_check_dir" \
+    "$remote_done_file" "$remote_check_dir/status.json" "$remote_done_found" \
+    "$remote_done_value" "$remote_status_found" "$remote_status_size" \
+    "$remote_done_transport_rc" "$remote_status_transport_rc" "$remote_json_result" "$remote_cleanup_state" "$remote_failure_class"
   rm -f -- "$remote_status_file"
+  rm -f -- "$remote_done_error_file" "$remote_status_error_file"
+  remote_cleanup_state=started
   CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+  remote_cleanup_state=completed
+  REMOTE_STATUS_DIAGNOSTICS "$remote_diag_level" "$HOST_NODE" "$HOST" "$remote_check_dir" \
+    "$remote_done_file" "$remote_check_dir/status.json" "$remote_done_found" \
+    "$remote_done_value" "$remote_status_found" "$remote_status_size" \
+    "$remote_done_transport_rc" "$remote_status_transport_rc" "$remote_json_result" "$remote_cleanup_state" "$remote_failure_class"
   if [[ "$remote_status" -ne 0 ]]; then
     STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "$HOST_NODE ($HOST): remote check exited with $remote_status" "$HOST_NODE"
   fi
