@@ -1,6 +1,39 @@
 Changelog:
 ==========
 
+**v5.1 Beta** (unreleased)
+New:
+- central Web UI with PAM login, responsive configuration, filter previews, External management, Jobs, Logs, and running-job visibility
+- session-independent systemd-run jobs for checks and updates, including shared history, locking, reload persistence, and remote-node dispatch
+- External Linux APT and DNF support with dedicated SSH identity, non-root checks, restricted helper/sudo, local settings, and global Check/Update integration
+- target-local External settings with independent `ONLY_UPDATE_CHECK`, `EXCLUDE_UPDATE_CHECK`, `ONLY`, and `EXCLUDE` filters
+- deterministic golden-output regression tests and a reusable multi-hour Hardcore-Test specification, journal, and controlled stop workflow
+
+Improved:
+- cluster-wide installation and remote execution across Proxmox nodes, including offline/recovery handling and friendly target names
+- separate Check/Update filters and read-only previews with `ONLY` precedence over `EXCLUDE`
+- Global Update selection now includes managed External targets while applying central filters before any remote contact
+- configurable Web UI port with local CLI administration, conflict detection, atomic writes, and update/self-update preservation
+- Systems inventory, node-card layout, configuration matrices, job output, zero-update summaries, and mobile presentation
+- configuration migration and preservation of comments, unknown keys, user values, External legacy entries, and custom ports
+
+Fixed:
+- final non-zero status aggregation after continuing past target failures
+- bounded remote cluster checks, SSH/SCP, QGA readiness, package-manager paths, and lifecycle restoration
+- interrupted/transient job state handling and duplicate notification paths
+- QEMU guest-exec exit/output handling and remote guest-ID resolution across the cluster
+- stale/duplicate inventory projections, node ordering, target-preview markers, and node-card/checkbox hit-area overlap
+
+Security/Safety:
+- recent manual External backup verification or explicit one-time owner approval is required before External updates
+- Proxmox snapshot/backup safety, configurable backup storage validation, and no automatic reboot for External systems
+- authenticated, CSRF- and same-origin-protected Web UI writes with no arbitrary command/file endpoint
+- External helper access remains restricted; no `NOPASSWD: ALL`, unrestricted sudo, or secret transfer
+
+Known limitations:
+- Windows support remains prepared/experimental and deferred from the supported Beta baseline pending dedicated live validation
+- automatic External backup integrations are not implemented; manual time-bound verification remains the safety mechanism
+
 **v5.0** (11.08.2026)
 - change Logo
 - respect start delay from config also in check-updates

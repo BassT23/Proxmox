@@ -6,14 +6,18 @@
 
 # shellcheck disable=SC2034
 
-VERSION="2.0"
+VERSION="2.1"
 
 # Branch
 
-BRANCH="beta"
+BRANCH="develop"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
+WEB_UI_PORT_SCRIPT="$LOCAL_FILES/web-ui-port.sh"
+HARDCORE_TEST_SCRIPT="$LOCAL_FILES/hardcore-test.sh"
+WEB_SERVICE_NAME="ultimate-updater-web.service"
+WEB_SERVICE_PATH="/etc/systemd/system/$WEB_SERVICE_NAME"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
@@ -53,6 +57,26 @@ CHECK_ROOT () {
   if [[ "$EUID" -ne 0 ]]; then
       echo -e >&2 "⚠${RD:-} --- Please run this as root --- ⚠${CL:-}";
       exit 1
+  fi
+}
+
+SETUP_WEB_SERVICE () {
+  local action="${1:-start}"
+
+  if [[ ! -f "$WEB_SERVICE_PATH" || ! -f "$LOCAL_FILES/web-ui/server.py" ]]; then
+    echo -e "⚠${OR:-} Web UI service files are incomplete${CL:-}" >&2
+    return 1
+  fi
+  [[ -x "$WEB_UI_PORT_SCRIPT" ]] || { echo "Web UI port helper is missing: $WEB_UI_PORT_SCRIPT" >&2; return 1; }
+  "$WEB_UI_PORT_SCRIPT" ensure || return 1
+  "$WEB_UI_PORT_SCRIPT" check || return 1
+
+  systemctl daemon-reload
+  systemctl enable "$WEB_SERVICE_NAME"
+  if [[ "$action" == restart ]]; then
+    systemctl restart "$WEB_SERVICE_NAME"
+  else
+    systemctl start "$WEB_SERVICE_NAME"
   fi
 }
 
@@ -199,7 +223,11 @@ INSTALL () {
     mkdir -p $LOCAL_FILES/scripts.d/000
     # Download latest release
     if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
+      if [[ "$BRANCH" == master ]]; then
+        curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
+      else
+        curl -s -L https://github.com/BassT23/Proxmox/tarball/$BRANCH > $TEMP_FOLDER/ultimate-updater.tar.gz
+      fi
       tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
       rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
       TEMP_FILES=$TEMP_FOLDER
@@ -215,8 +243,93 @@ INSTALL () {
     cp "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod -R +x "$LOCAL_FILES"/check-updates.sh
     cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
+    cp "$TEMP_FILES"/target-inventory.sh $LOCAL_FILES/target-inventory.sh
+    chmod 750 $LOCAL_FILES/target-inventory.sh
+    cp "$TEMP_FILES"/targets.conf $LOCAL_FILES/targets.conf
+    cp "$TEMP_FILES"/status-model.sh $LOCAL_FILES/status-model.sh
+    chmod 750 $LOCAL_FILES/status-model.sh
+    cp "$TEMP_FILES"/windows-update.sh $LOCAL_FILES/windows-update.sh
+    chmod 750 $LOCAL_FILES/windows-update.sh
+    cp "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
+    cp "$TEMP_FILES"/config-merge.sh $LOCAL_FILES/config-merge.sh
+    chmod 750 $LOCAL_FILES/config-merge.sh
+    if [[ -f "$TEMP_FILES"/cluster-target.sh ]]; then
+      cp "$TEMP_FILES"/cluster-target.sh $LOCAL_FILES/cluster-target.sh
+      chmod 750 $LOCAL_FILES/cluster-target.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-apt.sh ]]; then
+      cp "$TEMP_FILES"/external-apt.sh $LOCAL_FILES/external-apt.sh
+      chmod 750 $LOCAL_FILES/external-apt.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-helper.sh ]]; then
+      cp "$TEMP_FILES"/external-helper.sh $LOCAL_FILES/external-helper.sh
+      chmod 750 $LOCAL_FILES/external-helper.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-bootstrap.sh ]]; then
+      cp "$TEMP_FILES"/external-bootstrap.sh $LOCAL_FILES/external-bootstrap.sh
+      chmod 750 $LOCAL_FILES/external-bootstrap.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-config.sh ]]; then
+      cp "$TEMP_FILES"/external-config.sh $LOCAL_FILES/external-config.sh
+      chmod 750 $LOCAL_FILES/external-config.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-settings.sh ]]; then
+      cp "$TEMP_FILES"/external-settings.sh $LOCAL_FILES/external-settings.sh
+      chmod 750 $LOCAL_FILES/external-settings.sh
+    fi
+    cp "$TEMP_FILES"/web-ui-port.sh $LOCAL_FILES/web-ui-port.sh
+    chmod 750 $LOCAL_FILES/web-ui-port.sh
+    if [[ -f "$TEMP_FILES"/hardcore-test.sh ]]; then
+      cp "$TEMP_FILES"/hardcore-test.sh $LOCAL_FILES/hardcore-test.sh
+      chmod 750 $LOCAL_FILES/hardcore-test.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-backup-safety.sh ]]; then
+      cp "$TEMP_FILES"/external-backup-safety.sh $LOCAL_FILES/external-backup-safety.sh
+      chmod 750 $LOCAL_FILES/external-backup-safety.sh
+    fi
+    if [[ -f "$TEMP_FILES"/legacy-migrate.sh ]]; then
+      cp "$TEMP_FILES"/legacy-migrate.sh $LOCAL_FILES/legacy-migrate.sh
+      chmod 750 $LOCAL_FILES/legacy-migrate.sh
+    fi
+    chmod 750 $LOCAL_FILES/target-runtime.sh
+    cp "$TEMP_FILES"/ultimate-updater $LOCAL_FILES/ultimate-updater
+    chmod 750 $LOCAL_FILES/ultimate-updater
+    ln -sf $LOCAL_FILES/ultimate-updater /usr/local/sbin/ultimate-updater
+    if [[ -f "$TEMP_FILES"/web-auth.sh ]]; then
+      install -m 0750 "$TEMP_FILES"/web-auth.sh "$LOCAL_FILES/web-auth.sh"
+      ln -sf "$LOCAL_FILES/web-auth.sh" /usr/local/sbin/ultimate-updater-web-auth
+    fi
+    cp "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
+    chmod 750 $LOCAL_FILES/job-runner.sh
+    if [[ -f "$TEMP_FILES"/global-update.sh ]]; then
+      cp "$TEMP_FILES"/global-update.sh $LOCAL_FILES/global-update.sh
+      chmod 750 $LOCAL_FILES/global-update.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-selection.sh ]]; then
+      cp "$TEMP_FILES"/external-selection.sh $LOCAL_FILES/external-selection.sh
+      chmod 750 $LOCAL_FILES/external-selection.sh
+    fi
+    mkdir -p "$LOCAL_FILES/web-ui"
+    cp "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
+    chmod 750 "$LOCAL_FILES/web-ui/server.py"
+    if [[ -f "$TEMP_FILES/web-ui/pam_auth.py" ]]; then
+      install -m 0640 "$TEMP_FILES/web-ui/pam_auth.py" "$LOCAL_FILES/web-ui/pam_auth.py"
+    fi
+    mkdir -p "$LOCAL_FILES/web-ui/assets"
+    for UI_ASSET in ultimate-updater-header.png ultimate-updater-icon.png favicon.png; do
+      if [[ -f "$TEMP_FILES/web-ui/assets/$UI_ASSET" ]]; then
+        install -m 0644 "$TEMP_FILES/web-ui/assets/$UI_ASSET" "$LOCAL_FILES/web-ui/assets/$UI_ASSET"
+      fi
+    done
+    install -m 0644 "$TEMP_FILES/$WEB_SERVICE_NAME" "$WEB_SERVICE_PATH"
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
+    if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
+      cp "$TEMP_FILES"/update.conf.dist $LOCAL_FILES/update.conf.dist
+    else
+      cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf.dist
+    fi
     cp "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
+    SETUP_WEB_SERVICE start
     echo -e "${OR:-}Finished. Run The Ultimate Updater with 'update'.${CL:-}"
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
     echo -e "${OR:-}Also want to install the Welcome-Screen?${CL:-}"
@@ -229,6 +342,9 @@ INSTALL () {
 }
 
 UPDATE () {
+  # File replacement during a self-update must never ask on a terminal.
+  # update.conf is handled separately by MERGE_UPDATE_CONFIG below.
+  export UU_NONINTERACTIVE=true
   INFORMATION
   OLD_FILESYSTEM_CHECK
   if [ -f "/usr/local/sbin/update" ]; then
@@ -240,8 +356,6 @@ UPDATE () {
     if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
     if [[ "$BRANCH" == master ]]; then
       curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
-    elif [[ "$BRANCH" == beta ]]; then
-      curl -s -L https://github.com/BassT23/Proxmox/tarball/beta > $TEMP_FOLDER/ultimate-updater.tar.gz
     elif [[ "$BRANCH" == develop ]]; then
       curl -s -L https://github.com/BassT23/Proxmox/tarball/develop > $TEMP_FOLDER/ultimate-updater.tar.gz
     fi
@@ -257,6 +371,106 @@ UPDATE () {
     chmod 750 $LOCAL_FILES/update.sh
     mv "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     mv "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
+    if [[ -f "$TEMP_FILES"/target-inventory.sh ]]; then
+      mv "$TEMP_FILES"/target-inventory.sh $LOCAL_FILES/target-inventory.sh
+      chmod 750 $LOCAL_FILES/target-inventory.sh
+    fi
+    if [[ -f "$TEMP_FILES"/status-model.sh ]]; then
+      mv "$TEMP_FILES"/status-model.sh $LOCAL_FILES/status-model.sh
+      chmod 750 $LOCAL_FILES/status-model.sh
+    fi
+    if [[ -f "$TEMP_FILES"/windows-update.sh ]]; then
+      mv "$TEMP_FILES"/windows-update.sh $LOCAL_FILES/windows-update.sh
+      chmod 750 $LOCAL_FILES/windows-update.sh
+    fi
+    if [[ -f "$TEMP_FILES"/target-runtime.sh ]]; then
+      mv "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
+      chmod 750 $LOCAL_FILES/target-runtime.sh
+    fi
+    if [[ -f "$TEMP_FILES"/cluster-target.sh ]]; then
+      mv "$TEMP_FILES"/cluster-target.sh $LOCAL_FILES/cluster-target.sh
+      chmod 750 $LOCAL_FILES/cluster-target.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-apt.sh ]]; then
+      mv "$TEMP_FILES"/external-apt.sh $LOCAL_FILES/external-apt.sh
+      chmod 750 $LOCAL_FILES/external-apt.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-helper.sh ]]; then
+      mv "$TEMP_FILES"/external-helper.sh $LOCAL_FILES/external-helper.sh
+      chmod 750 $LOCAL_FILES/external-helper.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-bootstrap.sh ]]; then
+      mv "$TEMP_FILES"/external-bootstrap.sh $LOCAL_FILES/external-bootstrap.sh
+      chmod 750 $LOCAL_FILES/external-bootstrap.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-config.sh ]]; then
+      mv "$TEMP_FILES"/external-config.sh $LOCAL_FILES/external-config.sh
+      chmod 750 $LOCAL_FILES/external-config.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-settings.sh ]]; then
+      mv "$TEMP_FILES"/external-settings.sh $LOCAL_FILES/external-settings.sh
+      chmod 750 $LOCAL_FILES/external-settings.sh
+    fi
+    if [[ -f "$TEMP_FILES"/web-ui-port.sh ]]; then
+      mv "$TEMP_FILES"/web-ui-port.sh $LOCAL_FILES/web-ui-port.sh
+      chmod 750 $LOCAL_FILES/web-ui-port.sh
+    fi
+    if [[ -f "$TEMP_FILES"/hardcore-test.sh ]]; then
+      mv "$TEMP_FILES"/hardcore-test.sh $LOCAL_FILES/hardcore-test.sh
+      chmod 750 $LOCAL_FILES/hardcore-test.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-backup-safety.sh ]]; then
+      mv "$TEMP_FILES"/external-backup-safety.sh $LOCAL_FILES/external-backup-safety.sh
+      chmod 750 $LOCAL_FILES/external-backup-safety.sh
+    fi
+    if [[ -f "$TEMP_FILES"/legacy-migrate.sh ]]; then
+      mv "$TEMP_FILES"/legacy-migrate.sh $LOCAL_FILES/legacy-migrate.sh
+      chmod 750 $LOCAL_FILES/legacy-migrate.sh
+    fi
+    if [[ -f "$TEMP_FILES"/ultimate-updater ]]; then
+      mv "$TEMP_FILES"/ultimate-updater $LOCAL_FILES/ultimate-updater
+      chmod 750 $LOCAL_FILES/ultimate-updater
+      ln -sf $LOCAL_FILES/ultimate-updater /usr/local/sbin/ultimate-updater
+    fi
+    if [[ -f "$TEMP_FILES"/job-runner.sh ]]; then
+      mv "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
+      chmod 750 $LOCAL_FILES/job-runner.sh
+    fi
+    if [[ -f "$TEMP_FILES"/global-update.sh ]]; then
+      mv "$TEMP_FILES"/global-update.sh $LOCAL_FILES/global-update.sh
+      chmod 750 $LOCAL_FILES/global-update.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-selection.sh ]]; then
+      mv "$TEMP_FILES"/external-selection.sh $LOCAL_FILES/external-selection.sh
+      chmod 750 $LOCAL_FILES/external-selection.sh
+    fi
+    if [[ -f "$TEMP_FILES"/config-merge.sh ]]; then
+      mv "$TEMP_FILES"/config-merge.sh $LOCAL_FILES/config-merge.sh
+      chmod 750 $LOCAL_FILES/config-merge.sh
+    fi
+    if [[ -f "$TEMP_FILES"/web-ui/server.py ]]; then
+      mkdir -p "$LOCAL_FILES/web-ui"
+      mv "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
+      chmod 750 "$LOCAL_FILES/web-ui/server.py"
+    fi
+    if [[ -f "$TEMP_FILES/web-ui/pam_auth.py" ]]; then
+      install -m 0640 "$TEMP_FILES/web-ui/pam_auth.py" "$LOCAL_FILES/web-ui/pam_auth.py"
+    fi
+    if [[ -f "$TEMP_FILES"/web-auth.sh ]]; then
+      install -m 0750 "$TEMP_FILES"/web-auth.sh "$LOCAL_FILES/web-auth.sh"
+      ln -sf "$LOCAL_FILES/web-auth.sh" /usr/local/sbin/ultimate-updater-web-auth
+    fi
+    if [[ -f "$TEMP_FILES/web-ui/assets/ultimate-updater-header.png" || -f "$TEMP_FILES/web-ui/assets/ultimate-updater-icon.png" || -f "$TEMP_FILES/web-ui/assets/favicon.png" ]]; then
+      mkdir -p "$LOCAL_FILES/web-ui/assets"
+      for UI_ASSET in ultimate-updater-header.png ultimate-updater-icon.png favicon.png; do
+        if [[ -f "$TEMP_FILES/web-ui/assets/$UI_ASSET" ]]; then
+          install -m 0644 "$TEMP_FILES/web-ui/assets/$UI_ASSET" "$LOCAL_FILES/web-ui/assets/$UI_ASSET"
+        fi
+      done
+    fi
+    if [[ -f "$TEMP_FILES/$WEB_SERVICE_NAME" ]]; then
+      install -m 0644 "$TEMP_FILES/$WEB_SERVICE_NAME" "$WEB_SERVICE_PATH"
+    fi
     mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod +x $LOCAL_FILES/check-updates.sh
     mv "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
@@ -291,6 +505,36 @@ UPDATE () {
       rm -rf "$TEMP_FILES"/welcome-screen.sh || true
       rm -rf "$TEMP_FILES"/check-updates.sh || true
     fi
+    # Keep the active user values while adding assignments introduced by the
+    # current distribution template. Older archives may not contain the
+    # distribution file yet, so fall back to their update.conf template.
+    if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
+      CONFIG_DIST_SOURCE="$TEMP_FILES/update.conf.dist"
+    else
+      CONFIG_DIST_SOURCE="$TEMP_FILES/update.conf"
+    fi
+    cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
+    if [[ -f "$LOCAL_FILES/update.conf" ]]; then
+      # shellcheck disable=SC1091
+      source "$LOCAL_FILES/config-merge.sh" || {
+        echo -e "❌${RD:-} Configuration migration helper could not be loaded.${CL:-}" >&2
+        rm -rf "$TEMP_FOLDER" || true
+        return 1
+      }
+      if ! MERGE_UPDATE_CONFIG "$LOCAL_FILES/update.conf" "$CONFIG_DIST_SOURCE" "$BRANCH"; then
+        echo -e "❌${RD:-} Configuration migration failed; the existing update.conf was kept.${CL:-}" >&2
+        rm -rf "$TEMP_FOLDER" || true
+        return 1
+      fi
+    else
+      cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf"
+    fi
+    rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
+    # targets.conf is runtime inventory and must not be replaced by the
+    # repository template after legacy migration or user edits.
+    rm -f "$TEMP_FILES"/targets.conf
+    rm -rf "$TEMP_FILES"/web-ui || true
+    rm -f "$TEMP_FILES/$WEB_SERVICE_NAME"
     # Check if files are different
     rm -rf "$TEMP_FILES"/.github || true
     rm -rf "$TEMP_FILES"/VMs || true
@@ -301,13 +545,22 @@ UPDATE () {
     rm -rf "$TEMP_FILES"/ssh.md || true
     rm -rf "$TEMP_FILES"/CODE_OF_CONDUCT.md || true
     rm -rf "$TEMP_FILES"/SECURITY.md || true
+    rm -rf "$TEMP_FILES"/TESTING.md || true
     chmod -R +x "$TEMP_FILES"/exit/*.sh
     cd "$TEMP_FILES"
     FILES="*.* **/*.*"
     for FILE in $FILES
     do
+     [[ "$FILE" == targets.conf ]] && continue
      CHECK_DIFF
     done
+    if [[ -x "$LOCAL_FILES/legacy-migrate.sh" ]]; then
+      echo -e "\nℹ ${OR:-}Checking for legacy SSH targets ...${CL:-}"
+      if ! "$LOCAL_FILES/legacy-migrate.sh"; then
+        echo -e "⚠️ ${OR:-}Legacy SSH migration needs attention; existing files were kept.${CL:-}" >&2
+      fi
+    fi
+    SETUP_WEB_SERVICE restart
     rm -rf $TEMP_FOLDER || true
     echo -e "✅${GN:-} The Ultimate Updater updated successfully.${CL:-}"
     if [[ "$BRANCH" != master ]]; then echo -e "${OR:-}   Installed: $BRANCH version${CL:-}"; fi
@@ -329,7 +582,29 @@ UPDATE () {
 }
 
 CHECK_DIFF () {
+  if [[ ! -f "$LOCAL_FILES/$FILE" ]]; then
+    mkdir -p "$(dirname "$LOCAL_FILES/$FILE")"
+    mv "$TEMP_FILES/$FILE" "$LOCAL_FILES/$FILE"
+    return
+  fi
+
   if ! cmp -s "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"; then
+    install_changed_file() {
+      local backup="$LOCAL_FILES/$FILE"
+      if [[ -e "$backup.bak" ]]; then
+        backup="$backup.bak.$(date -u +%Y%m%d-%H%M%S)"
+      else
+        backup="$backup.bak"
+      fi
+      cp -p "$LOCAL_FILES/$FILE" "$backup"
+      mv "$TEMP_FILES/$FILE" "$LOCAL_FILES/$FILE"
+    }
+    if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
+      echo -e "\nℹ${GN:-} Installed updated file without prompting; old file saved as '$FILE.bak' (or timestamped backup)${CL:-}\n"
+      install_changed_file
+      unset -f install_changed_file
+      return 0
+    fi
     echo -e "The file ${OR:-}$FILE${CL:-}\n \
  was modified (by you or by a script) since installation.\n \
    What would you like to do about it ?  Your options are:\n \
@@ -340,8 +615,7 @@ CHECK_DIFF () {
     read -p "*** $FILE (Y/y/N/n/S/s) [default=Y] ?" -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
         echo -e "\nℹ ${GN:-} Installed server version and backed up old file${CL:-}\n"
-        cp -f "$LOCAL_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE".bak
-        mv "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"
+        install_changed_file
       elif [[ $REPLY =~ ^[Nn]$ ]]; then
         echo -e "\nℹ${GN:-} Kept old file${CL:-}\n"
       elif [[ $REPLY =~ ^[Ss]$ ]]; then
@@ -356,14 +630,14 @@ CHECK_DIFF () {
         read -p "*** $FILE (Y/y/N/n) [default=Y] ?" -r
           if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
             echo -e "\nℹ ${GN:-} Installed server version and backed up old file${CL:-}\n"
-            cp -f "$LOCAL_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE".bak
-            mv "$TEMP_FILES"/"$FILE" "$LOCAL_FILES"/"$FILE"
+            install_changed_file
           elif [[ $REPLY =~ ^[Nn]$ ]]; then
             echo -e "\nℹ ${GN:-} Kept old file${CL:-}\n"
           fi
       else
         echo -e "\n⏩${OR:-} Skip this file${CL:-}\n"
       fi
+    unset -f install_changed_file
   fi
 }
 
@@ -430,6 +704,9 @@ UNINSTALL () {
     read -p "Type [Y/y] for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm /usr/local/sbin/update
+      systemctl disable --now "$WEB_SERVICE_NAME" || true
+      rm -f "$WEB_SERVICE_PATH"
+      systemctl daemon-reload
       rm -r $LOCAL_FILES
       if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
         rm -rf /etc/update-motd.d/01-welcome-screen
