@@ -23,6 +23,8 @@ WEB_UI_PORT_SCRIPT="$LOCAL_FILES/web-ui-port.sh"
 HARDCORE_TEST_SCRIPT="$LOCAL_FILES/hardcore-test.sh"
 WEB_SERVICE_NAME="ultimate-updater-web.service"
 WEB_SERVICE_PATH="/etc/systemd/system/$WEB_SERVICE_NAME"
+INITIAL_INVENTORY_STATE_FILE="/var/lib/ultimate-updater/initial-inventory.state"
+INITIAL_INVENTORY_LOCK_FILE="/var/lib/ultimate-updater/initial-inventory.lock"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 
@@ -85,6 +87,70 @@ SETUP_WEB_SERVICE () {
   fi
   port=$("$WEB_UI_PORT_SCRIPT" get) || return 1
   printf '✅ Web UI ready on port %s.\n' "$port"
+}
+
+START_INITIAL_INVENTORY () {
+  local job_runner="$LOCAL_FILES/job-runner.sh" cli="$LOCAL_FILES/ultimate-updater"
+  local output job marker_tmp lock_fd
+
+  # One marker is shared by fresh install and the 5.0 migration path. Any
+  # prior start attempt (including a failed start) suppresses retry loops.
+  [[ -e "$INITIAL_INVENTORY_STATE_FILE" ]] && return 0
+  mkdir -p "$(dirname "$INITIAL_INVENTORY_STATE_FILE")" || {
+    echo -e "${OR:-}⚠ Initial system inventory could not be started.\n  You can start \"Check all systems\" from the Web UI.${CL:-}" >&2
+    return 0
+  }
+  exec {lock_fd}>"$INITIAL_INVENTORY_LOCK_FILE" || return 0
+  if command -v flock >/dev/null 2>&1 && ! flock -n "$lock_fd"; then
+    exec {lock_fd}>&-
+    return 0
+  fi
+  if [[ -e "$INITIAL_INVENTORY_STATE_FILE" ]]; then
+    exec {lock_fd}>&-
+    return 0
+  fi
+  if ! systemctl is-active --quiet "$WEB_SERVICE_NAME" ||
+     [[ ! -x "$job_runner" || ! -x "$cli" ]]; then
+    marker_tmp=$(mktemp "${INITIAL_INVENTORY_STATE_FILE}.XXXXXX" 2>/dev/null || true)
+    if [[ -n "$marker_tmp" ]]; then
+      printf 'state=start_failed\nreason=web-or-job-infrastructure-unavailable\n' > "$marker_tmp"
+      mv -f "$marker_tmp" "$INITIAL_INVENTORY_STATE_FILE"
+    fi
+    exec {lock_fd}>&-
+    echo -e "${OR:-}⚠ Initial system inventory could not be started.\n  You can start \"Check all systems\" from the Web UI.${CL:-}" >&2
+    return 0
+  fi
+
+  # This is intentionally the exact command used by the Web UI's
+  # action_check_all(): job-runner start-check all-systems CLI all.
+  if output=$(timeout 15 "$job_runner" start-check all-systems "$cli" all 2>&1); then
+    job=$(printf '%s\n' "$output" | sed -n 's/^Job:[[:space:]]*//p' | head -n 1)
+    if [[ "$job" =~ ^ultimate-updater-check-[A-Za-z0-9_.-]+$ ]]; then
+      marker_tmp=$(mktemp "${INITIAL_INVENTORY_STATE_FILE}.XXXXXX") || true
+      if [[ -n "$marker_tmp" ]]; then
+        {
+          printf 'state=started\n'
+          printf 'job=%s\n' "$job"
+          printf 'started_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          printf 'trigger=post-install-or-upgrade\n'
+        } > "$marker_tmp"
+        chmod 0640 "$marker_tmp"
+        mv -f "$marker_tmp" "$INITIAL_INVENTORY_STATE_FILE"
+        exec {lock_fd}>&-
+        echo '✅ Initial system inventory started.'
+        return 0
+      fi
+    fi
+  fi
+
+  marker_tmp=$(mktemp "${INITIAL_INVENTORY_STATE_FILE}.XXXXXX" 2>/dev/null || true)
+  if [[ -n "$marker_tmp" ]]; then
+    printf 'state=start_failed\nreason=job-start-failed\n' > "$marker_tmp"
+    mv -f "$marker_tmp" "$INITIAL_INVENTORY_STATE_FILE"
+  fi
+  exec {lock_fd}>&-
+  echo -e "${OR:-}⚠ Initial system inventory could not be started.\n  You can start \"Check all systems\" from the Web UI.${CL:-}" >&2
+  return 0
 }
 
 ARGUMENTS () {
@@ -337,6 +403,7 @@ INSTALL () {
     fi
     cp "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     SETUP_WEB_SERVICE start
+    START_INITIAL_INVENTORY
     echo -e "${OR:-}Finished. Run The Ultimate Updater with 'update'.${CL:-}"
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
     echo -e "${OR:-}Also want to install the Welcome-Screen?${CL:-}"
@@ -615,6 +682,9 @@ UPDATE () {
       fi
     fi
     SETUP_WEB_SERVICE restart
+    if [[ "$UPGRADE_RESTART_REQUIRED" == true ]]; then
+      START_INITIAL_INVENTORY
+    fi
     rm -rf $TEMP_FOLDER || true
     echo -e "✅${GN:-} The Ultimate Updater updated successfully.${CL:-}"
     if [[ "$BRANCH" != master ]]; then echo -e "${OR:-}   Installed: $BRANCH version${CL:-}"; fi
