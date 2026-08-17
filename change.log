@@ -1,75 +1,38 @@
 Changelog:
 ==========
 
-**develop**
-- include managed External SSH targets in global update jobs with central pre-contact filtering and existing local backup safety
-- clarify mixed CHECK/UPDATE job output, show friendly target names, and make zero-update checks explicit
-- add deterministic golden coverage for user-facing check and job output
-- add reusable persistent Hardcore-Test specification, journal and controlled stop helper
-- make the central Web UI port locally configurable, validated, conflict-safe, and update-persistent
-- add target-local External settings with separate check/update filters and explicit remote management
-- record Web UI check actions in the shared job history and show active job progress globally
-- require recent local backup verification or one-time owner approval before External updates
-- compact LXC and VM check/update settings into presentation matrices
-- simplify Systems node cards into isolated header, info, and action footer areas
-- separate Systems node-card metadata and actions into non-overlapping layout rows
-- prevent Systems node-card content overlap and constrain configuration checkbox hit areas
-- expose separate check and update target filters in web configuration
-- preserve existing check/update filter settings and update scope values
-- remove duplicate text marker from the Target Preview expand control
-- keep Systems node cards in stable natural name order across refreshes
-- add reusable contextual help popovers for Systems and Target filters
-- build Systems and Target Preview from the same read-only Proxmox inventory
-- unify active inventory projection for Systems and Target filters preview
-- show immediate loading, success, and error feedback during web login
-- add a read-only Target filters preview based on the current inventory and tag resolver
-- regroup web UI configuration by host, guest type, filters, safety, and notifications
-- hide internal host identifiers in user-facing details and job targets
-- migrate compatible legacy SSH target files into targets.conf without deleting user configuration
-- document the central External SSH setup, read-only checks, and restricted update helper
-- bound remote cluster-check setup transfers so offline nodes cannot stall full checks
-- preserve a non-zero final exit status after continuing past target failures
-- show explicit per-node results in update summaries while keeping check summaries compact
-- IMPORTANT: reboot the node after updating to this version before using the new session-independent update jobs
-- detect pending Proxmox kernel reboots from selected bootable kernels
-- avoid false interrupted states while transient systemd jobs are starting
-- migrate and enable the web service during updater self-updates
-- resolve Proxmox guest IDs cluster-wide for check/update commands
-- preserve legacy update <ID> workflow across cluster nodes
-- show Proxmox guest names in the Web UI
-- expose cluster-remote update jobs through the calling node's CLI and Web UI
-- refine the official Web UI header branding and node guest accordion layout
-- use the official Ultimate Updater gear/update artwork in the web UI
-- add web UI configuration for supported updater settings
-- add web UI management for external SSH targets
-- add Ultimate Updater branding and favicon
-- run the web UI automatically as a systemd service
-- organize the web UI by Proxmox node and external target
-- add web UI check/update actions with persistent job status #314
-- support Rocky/RHEL-family systems with dnf #313
-- support Windows Update through QGA and PowerShell #312
-- extend update-check notifications across all system targets #311
-- support external apt-based systems over SSH #310
-- run CLI updates through session-independent transient systemd jobs #316
-- add a unified target/status CLI frontend #309
-- separate shared target transport wrappers from existing updater paths #308
-- add schema-versioned machine-readable check status output #306
-- define optional target inventory and validate target-specific reachability data #305
-- use a matching tag-filter helper for remote cluster checks #304
-- synchronize USED_BRANCH with explicit branch updates #303
-- simplify branch/version handling and cache remote versions for the welcome screen
-- remove obsolete beta runtime handling and avoid network calls during SSH/MOTD login
-- use exact guest ID matching and restore released #229 behavior #302
-- fail LXC/SSH boot readiness after timeout #300
-- compare version components numerically #301
-- avoid empty VM startup delay in VM check path #299
-- merge new config defaults without overwriting user values #298
-- fix QEMU guest-exec exit-code and output handling #297
-- fix duplicate command execution in error handlers #293
-- add configurable backup storage in update.conf #269
-- wait for QEMU Guest Agent readiness after starting stopped VMs #296
-- harden Community-Scripts updates with timeout and error reporting #294
-- add per-guest script-only update mode #243
+**v5.1 Beta** (unreleased)
+New:
+- central Web UI with PAM login, responsive configuration, filter previews, External management, Jobs, Logs, and running-job visibility
+- session-independent systemd-run jobs for checks and updates, including shared history, locking, reload persistence, and remote-node dispatch
+- External Linux APT and DNF support with dedicated SSH identity, non-root checks, restricted helper/sudo, local settings, and global Check/Update integration
+- target-local External settings with independent `ONLY_UPDATE_CHECK`, `EXCLUDE_UPDATE_CHECK`, `ONLY`, and `EXCLUDE` filters
+- deterministic golden-output regression tests and a reusable multi-hour Hardcore-Test specification, journal, and controlled stop workflow
+
+Improved:
+- cluster-wide installation and remote execution across Proxmox nodes, including offline/recovery handling and friendly target names
+- separate Check/Update filters and read-only previews with `ONLY` precedence over `EXCLUDE`
+- Global Update selection now includes managed External targets while applying central filters before any remote contact
+- configurable Web UI port with local CLI administration, conflict detection, atomic writes, and update/self-update preservation
+- Systems inventory, node-card layout, configuration matrices, job output, zero-update summaries, and mobile presentation
+- configuration migration and preservation of comments, unknown keys, user values, External legacy entries, and custom ports
+
+Fixed:
+- final non-zero status aggregation after continuing past target failures
+- bounded remote cluster checks, SSH/SCP, QGA readiness, package-manager paths, and lifecycle restoration
+- interrupted/transient job state handling and duplicate notification paths
+- QEMU guest-exec exit/output handling and remote guest-ID resolution across the cluster
+- stale/duplicate inventory projections, node ordering, target-preview markers, and node-card/checkbox hit-area overlap
+
+Security/Safety:
+- recent manual External backup verification or explicit one-time owner approval is required before External updates
+- Proxmox snapshot/backup safety, configurable backup storage validation, and no automatic reboot for External systems
+- authenticated, CSRF- and same-origin-protected Web UI writes with no arbitrary command/file endpoint
+- External helper access remains restricted; no `NOPASSWD: ALL`, unrestricted sudo, or secret transfer
+
+Known limitations:
+- Windows support remains prepared/experimental and deferred from the supported Beta baseline pending dedicated live validation
+- automatic External backup integrations are not implemented; manual time-bound verification remains the safety mechanism
 
 **v5.0** (11.08.2026)
 - change Logo

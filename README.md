@@ -1,5 +1,12 @@
 <div align="center">
 
+# Ultimate Updater 5.1 Beta
+
+This `develop` branch is the **5.1 Beta** candidate. It has been validated
+against dedicated Proxmox test environments, but it remains a Beta: keep
+current backups and report unexpected behavior before using it on important
+systems.
+
 <img src="https://github.com/user-attachments/assets/df181f9c-683b-4e9b-9234-80c158c7da98"
        style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
 
@@ -48,6 +55,11 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 - send email after update/check
 - Trim filesystem on ext4 nodes
 
+The updater is installed once per Proxmox cluster. A standalone single-node
+installation remains supported; additional cluster nodes are reached through
+the existing Proxmox/SSH cluster paths and do not need a second administrative
+Ultimate Updater installation.
+
 Info can be found with `update -h`
 
 Changelog: [here](https://github.com/BassT23/Proxmox/blob/master/change.log)
@@ -57,6 +69,12 @@ Changelog: [here](https://github.com/BassT23/Proxmox/blob/master/change.log)
 In Proxmox GUI Host Shell or as root on proxmox host terminal:
 ```
 bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
+```
+
+For the 5.1 Beta candidate, use the `develop` branch explicitly:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/install.sh)
 ```
 
 # Usage:
@@ -355,12 +373,43 @@ not contacted. After central selection, the target-local
 `/etc/ultimate-updater/external.conf` filters and the recent-backup safety gate
 still apply. `ONLY` takes priority over `EXCLUDE` at each level.
 
+The central filter variables are intentionally separate by run type:
+
+```text
+CHECK ONLY:     ONLY_UPDATE_CHECK
+CHECK EXCLUDE:  EXCLUDE_UPDATE_CHECK
+UPDATE ONLY:    ONLY
+UPDATE EXCLUDE: EXCLUDE
+```
+
+For each run type, `ONLY` takes precedence over its matching `EXCLUDE`.
+Check and Update selections are independent, and the read-only previews use
+the same selection semantics as their corresponding runtime paths.
+
 The update is handed to the node-local session-independent job runner. The
 remote system only needs SSH and apt; it does not need an updater agent. A
 remote update does not create a Proxmox backup or snapshot, and it is not
 automatically rebooted when `/var/run/reboot-required` is present.
 
-## Web UI preview
+### Upgrade from 5.0 to 5.1 Beta
+
+The normal update/self-update path preserves the existing
+`/etc/ultimate-updater/update.conf`, unknown keys, comments, configured Web UI
+port, and compatible legacy External target configuration. Missing supported
+defaults are added without replacing existing values. Legacy SSH target
+entries are migrated safely when they match the documented structure.
+
+No general reinstallation is required for a supported 5.0 installation. After
+an upgrade, verify that `ultimate-updater-web.service` is enabled and active
+and open the configured Web UI port. A host reboot is not generally required
+by the 5.1 Beta updater itself; individual Proxmox kernel/update results may
+still report a reboot requirement. External systems are never rebooted
+automatically.
+
+There are no intentional breaking changes to the existing `update.conf`,
+External SSH inventory, Web UI service, or ONLY/EXCLUDE filter semantics.
+
+### Web UI preview
 
 A small browser UI is included at `web-ui/server.py`. It uses only the
 Python 3 standard library. Installed systems run it automatically as the
