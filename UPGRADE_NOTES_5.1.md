@@ -14,6 +14,8 @@ The supported branch selectors are `master`, `beta`, and `develop`.
 
 The migration preserves existing `update.conf` values, comments, unknown
 settings, External target registrations, and any configured `WEB_UI_PORT`.
+Upgrading from 5.0 to 5.1 requires a restart of the Proxmox host after the
+upgrade; the updater does not reboot automatically.
 Missing supported defaults are added without overwriting user values. Legacy
 compatible SSH target files are migrated safely and are not deleted.
 
