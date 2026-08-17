@@ -1,6 +1,6 @@
 # Ultimate Updater 5.1 Beta
 
-Status: Beta candidate, not yet published.
+Status: Published 5.1 Beta release.
 
 ## Highlights
 
@@ -57,11 +57,3 @@ Status: Beta candidate, not yet published.
 
 Beta software should be used with current backups. Feedback and reproducible
 test information are welcome.
-
-## Planned publication
-
-- Planned tag: `v5.1-beta`
-- Planned GitHub release title: `Ultimate Updater 5.1 Beta`
-
-Publication requires explicit owner approval and is not performed by this
-preparation change.
