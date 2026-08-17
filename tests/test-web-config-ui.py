@@ -116,4 +116,14 @@ assert "friendlyTarget(t)" in page
 assert "friendlyJobTarget(j.target)" in page
 assert "replace(/^host:/,'')" in page
 
+# External runtime rows expose status/actions only; configuration management
+# remains in the separate management list below.
+runtime_row = page.split("function targetRow(t)", 1)[1].split("document.getElementById('config-open')", 1)[0]
+assert "class=\"edit-target\"" not in runtime_row
+assert "class=\"remove-target\"" not in runtime_row
+assert "data-edit=\"${esc(t.id)}\"" in page
+assert "data-test=\"${esc(t.id)}\"" in page
+assert "data-remove=\"${esc(t.id)}\"" in page
+assert "textContent='Settings'" in page
+
 print("web config UI grouping tests: PASS")
