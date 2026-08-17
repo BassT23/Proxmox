@@ -384,7 +384,7 @@ PY
     jobs=$("$JOB_RUNNER" list 2>/dev/null || true)
     if [[ -n "$jobs" ]]; then
       printf '\nJobs\n'
-      printf '%-8s %-30s %-14s %-8s\n' "Type" "Target / friendly name" "State" "Exit"
+      printf '%-8s %-30s %-14s %s\n' "Type" "Target / friendly name" "State" "Exit"
       while IFS=$'\t' read -r _unit target state _ _ exit_code job_type; do
         case "${job_type:-}" in
           check) job_type=CHECK ;;
@@ -415,7 +415,7 @@ for item in payload.get("targets", []):
 print(wanted.removeprefix("host:"))
 PY
         )
-        printf '%-8s %-30s %-14s %-8s\n' "$job_type" "$friendly_target" "$state" "${exit_code:-pending}"
+        printf '%-8s %-30s %-14s %s\n' "$job_type" "$friendly_target" "$state" "${exit_code:-pending}"
       done <<< "$jobs"
     fi
   fi

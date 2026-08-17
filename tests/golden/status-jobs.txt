@@ -6,6 +6,6 @@ Proxmox-Test-1           yes       0       ok             2026-01-01T00:00:00Z
 910 · debian12           yes       0       ok             2026-01-01T00:00:00Z
 
 Jobs
-Type     Target / friendly name         State          Exit    
-CHECK    910 · debian12                completed      0       
-UPDATE   910 · debian12                failed         17      
+Type     Target / friendly name         State          Exit
+CHECK    910 · debian12                completed      0
+UPDATE   910 · debian12                failed         17
