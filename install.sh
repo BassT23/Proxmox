@@ -65,10 +65,14 @@ DOWNLOAD_FILE() {
 }
 
 DOWNLOAD_INSTALLER() {
-  local destination="$TEMP_FOLDER/install.sh"
+  local destination="$TEMP_FOLDER/install.sh" command="${2:-}"
   mkdir -p "$TEMP_FOLDER" || return 1
   DOWNLOAD_FILE "$1" "$destination" shell || return 1
-  bash "$destination" "${2:-}"
+  if [[ -n "$command" ]]; then
+    bash "$destination" "$command"
+  else
+    bash "$destination"
+  fi
 }
 
 DOWNLOAD_ARCHIVE() {
