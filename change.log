@@ -2,6 +2,8 @@ Changelog:
 ==========
 
 **develop**
+- clarify mixed CHECK/UPDATE job output, show friendly target names, and make zero-update checks explicit
+- add deterministic golden coverage for user-facing check and job output
 - add reusable persistent Hardcore-Test specification, journal and controlled stop helper
 - make the central Web UI port locally configurable, validated, conflict-safe, and update-persistent
 - add target-local External settings with separate check/update filters and explicit remote management
