@@ -42,6 +42,7 @@ DEFAULT_EXTERNAL_SCRIPT = Path("/etc/ultimate-updater/external-apt.sh")
 DEFAULT_EXTERNAL_SETTINGS_SCRIPT = Path("/etc/ultimate-updater/external-settings.sh")
 DEFAULT_ASSET_DIR = Path("/etc/ultimate-updater/web-ui/assets")
 DEFAULT_CLI = Path("/usr/local/sbin/ultimate-updater")
+DEFAULT_UPDATE_SCRIPT = Path("/etc/ultimate-updater/update.sh")
 DEFAULT_JOB_RUNNER = Path("/etc/ultimate-updater/job-runner.sh")
 DEFAULT_JOBS_DIR = Path("/var/lib/ultimate-updater/jobs")
 DEFAULT_BACKUP_STATE_FILE = Path("/var/lib/ultimate-updater/external-backup-verification.json")
@@ -139,7 +140,7 @@ PAGE = r"""<!doctype html>
     @media (max-width:760px) { .app-header { display:block; margin-bottom:10px } .app-header .meta { max-width:none; padding-top:0 } }
     @media (max-width:620px) { .brand-header-art { width:min(250px,82vw) } .subtitle { margin-top:5px } .app-header .meta { margin-top:8px } }
     .dashboard-header { display:block; margin-bottom:18px; padding:20px 22px 18px; border:1px solid var(--line); border-radius:18px; background:#151d34aa; box-shadow:0 18px 50px #00000029 } .dashboard-header-top { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:20px } .dashboard-brand { min-width:0 } .dashboard-brand .brand-lockup { gap:16px } .dashboard-brand .brand-header-art { width:min(370px,70vw) } .dashboard-brand .subtitle { margin:5px 0 0; max-width:650px } .dashboard-meta { align-self:start; max-width:360px; padding-top:10px; color:var(--muted); font-size:.82rem; text-align:right } .dashboard-meta button { margin-left:10px; padding:5px 8px; font-size:.7rem } .dashboard-kpis { margin:16px 0 0; }
-    .job-running-indicator { display:inline-flex; align-items:center; gap:7px; margin:0 0 8px 10px; padding:6px 9px; border-color:#55d39a55; color:var(--good); background:#55d39a12; font-size:.72rem; font-weight:750; vertical-align:middle } .job-running-indicator[hidden] { display:none } .job-running-dot { width:7px; height:7px; border-radius:50%; background:var(--good); box-shadow:0 0 0 3px #55d39a18; animation:job-pulse 1.8s ease-in-out infinite } @keyframes job-pulse { 0%,100% { opacity:.55; transform:scale(.92) } 50% { opacity:1; transform:scale(1.05) } } @media (prefers-reduced-motion:reduce) { .job-running-dot { animation:none } }
+    .job-running-indicator { display:inline-flex; align-items:center; gap:7px; margin:0 0 8px 10px; padding:6px 9px; border-color:#55d39a55; color:var(--good); background:#55d39a12; font-size:.72rem; font-weight:750; vertical-align:middle } .job-running-indicator[hidden] { display:none } .job-running-dot { width:7px; height:7px; border-radius:50%; background:var(--good); box-shadow:0 0 0 3px #55d39a18; animation:job-pulse 1.8s ease-in-out infinite } @keyframes job-pulse { 0%,100% { opacity:.55; transform:scale(.92) } 50% { opacity:1; transform:scale(1.05) } } .updater-update-indicator { color:var(--warn); border-color:#f7c66b66; background:#f7c66b12; font-size:.72rem; font-weight:750; vertical-align:middle; animation:updater-blink 2.2s ease-in-out infinite } .updater-update-indicator[hidden] { display:none } @keyframes updater-blink { 0%,100% { opacity:.62 } 50% { opacity:1 } } .version-footer { padding:0; border:0; background:transparent; color:inherit; font-size:inherit } .version-footer:hover { color:var(--text) } .version-components { width:100%; border-collapse:collapse; margin-top:12px; font-size:.78rem } .version-components th,.version-components td { padding:7px 5px; border-bottom:1px solid var(--line); text-align:left } .version-components th { color:var(--muted); font-weight:500 } @media (prefers-reduced-motion:reduce) { .job-running-dot,.updater-update-indicator { animation:none } }
     .global-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; margin:0 0 18px; padding:16px 18px; border:1px solid #73a7ff55; border-radius:16px; background:#19233f99; box-shadow:0 18px 50px #00000029 } .global-actions-copy { min-width:0 } .global-actions-copy strong { display:block; font-size:.92rem } .global-actions-copy span { display:block; margin-top:4px; color:var(--muted); font-size:.74rem } .global-actions-buttons { display:flex; flex-wrap:wrap; gap:9px } .global-action { min-height:42px; padding:10px 16px; font-weight:750; font-size:.84rem } .global-action.update-all { background:#73a7ff36; border-color:#73a7ffb8 } .global-action.check-all { background:#55d39a18; border-color:#55d39a77 }
     @media (max-width:760px) { .dashboard-header { padding:16px 14px 15px; margin-bottom:14px } .dashboard-header-top { display:block } .dashboard-brand .brand-header-art { width:min(270px,82vw) } .dashboard-meta { max-width:none; padding-top:0; margin-top:8px; text-align:left; font-size:.76rem } .dashboard-kpis { margin-top:14px } }
     @media (max-width:620px) { .global-actions { display:block; padding:14px } .global-actions-buttons { display:grid; grid-template-columns:1fr; margin-top:12px } .global-action { width:100% } }
@@ -149,7 +150,7 @@ PAGE = r"""<!doctype html>
   <section id="auth-loading" class="modal-backdrop open" aria-live="polite"><div class="modal auth-loading"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><p>Loading…</p></div></section>
   <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p class="login-account-hint">Please use your current root account to sign in.</p><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
   <main class="app-main" id="dashboard" hidden>
-    <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta"><span id="generated">Loading status…</span><button id="job-running-indicator" class="job-running-indicator" type="button" hidden aria-controls="jobs"><span class="job-running-dot" aria-hidden="true"></span><span id="job-running-label">Job running</span></button><button id="logout" type="button">Log out</button></div></div><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="updates">–</strong><span>available updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
+    <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta"><span id="generated">Loading status…</span><button id="job-running-indicator" class="job-running-indicator" type="button" hidden aria-controls="jobs"><span class="job-running-dot" aria-hidden="true"></span><span id="job-running-label">Job running</span></button><button id="updater-version-indicator" class="updater-update-indicator" type="button" hidden>Updater update available</button><button id="logout" type="button">Log out</button></div></div><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="updates">–</strong><span>available updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
     <div id="notice" hidden></div>
     <section class="global-actions" aria-labelledby="global-actions-title"><div class="global-actions-copy"><strong id="global-actions-title">Run the configured updater</strong><span>Configured include/exclude and safety rules are respected.</span></div><div class="global-actions-buttons"><button id="check-all" class="global-action check-all" type="button">Check all systems</button><button id="update-all" class="global-action update-all" type="button">Update all systems</button></div></section>
     <section id="systems" class="systems-panel"><div class="section-title"><div class="heading-with-help"><div><h2>Systems</h2><span class="hint">Organized by Proxmox node and external target</span></div><span class="help-control"><button class="help-trigger" type="button" aria-label="About Systems" aria-expanded="false" aria-controls="systems-help-popover">?</button><span id="systems-help-popover" class="help-popover" role="tooltip"><p>Systems shows the complete active inventory grouped by Proxmox node and external target. Status and update information comes from the latest available check data.</p><p>Guests without current update information remain part of the inventory; status data is only an enrichment of the inventory.</p></span></span></div><span class="view-note">Checks and updates use the existing CLI</span></div><div id="targets" class="targets"></div><section id="details" class="details" hidden></section></section>
@@ -160,10 +161,11 @@ PAGE = r"""<!doctype html>
     </section>
     <section class="management-panel internal-ssh-view" id="internal-ssh-view" hidden><div class="section-title"><div><h2>Internal SSH Connections</h2><span class="hint">Nodes are detected automatically; add guest SSH access only when needed.</span></div><button id="internal-ssh-back" type="button">Back to overview</button></div><div class="settings-group"><h3>Proxmox Nodes</h3><div id="internal-ssh-nodes"><div class="empty">Loading…</div></div></div><div class="settings-group"><h3>Virtual Machines</h3><div id="internal-ssh-vms"><div class="empty">Loading…</div></div><button type="button" class="internal-ssh-add" data-ssh-add="vm">+ Add VM SSH connection</button></div><div class="settings-group"><h3>LXC Containers</h3><div id="internal-ssh-lxcs"><div class="empty">Loading…</div></div><button type="button" class="internal-ssh-add" data-ssh-add="lxc">+ Add LXC SSH connection</button></div><div id="internal-ssh-message" class="management-message"></div></section>
     <section id="jobs" class="jobs" hidden></section>
-    <footer>Local action preview · status: <code>/etc/ultimate-updater/status.json</code> · jobs: <code>/var/lib/ultimate-updater/jobs</code></footer>
+    <footer><button id="updater-version-footer" class="version-footer" type="button">Ultimate Updater <span id="updater-version-label">version unavailable</span></button> · status: <code>/etc/ultimate-updater/status.json</code> · jobs: <code>/var/lib/ultimate-updater/jobs</code></footer>
   </main>
   <div id="external-settings-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="external-settings-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3>External settings</h3><button type="button" class="modal-close" id="external-settings-close">Close</button></div><p class="hint">These settings are stored on this external system.</p><input type="hidden" name="target"><label>Only check filter<input name="ONLY_UPDATE_CHECK"></label><label>Exclude check filter<input name="EXCLUDE_UPDATE_CHECK"></label><label>Only update filter<input name="ONLY"></label><label>Exclude update filter<input name="EXCLUDE"></label><div class="form-actions"><button type="submit" class="primary">Save external settings</button></div><div id="external-settings-message" class="management-message" role="status"></div></form></div>
   <div id="internal-ssh-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="internal-ssh-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="internal-ssh-title">Internal SSH settings</h3><button type="button" class="modal-close" id="internal-ssh-close">Close</button></div><p class="hint">Use custom SSH settings for this system. Without an override, Ultimate Updater uses the existing connection settings.</p><input type="hidden" name="kind"><input type="hidden" name="id"><label id="internal-ssh-target-picker">Inventory target<select name="target_choice"></select></label><div id="internal-ssh-target-summary" class="internal-ssh-target-summary" hidden><strong>Target</strong><span></span></div><label>Host / Address<input name="host" required></label><label>User<input name="user" value="root" required></label><label>Port<input name="port" type="number" min="1" max="65535" value="22" required></label><label>Identity file (optional)<input name="identity_file" placeholder="/root/.ssh/key"></label><label><input name="enabled" type="checkbox" checked> Use custom SSH settings</label><p class="hint">Use custom SSH settings for this system. Without an override, existing defaults or profiles remain active.</p><div class="form-actions"><button type="submit" class="primary" id="internal-ssh-save">Save SSH settings</button><button type="button" id="internal-ssh-remove">Remove override</button></div><div id="internal-ssh-form-message" class="management-message" role="status"></div></form></div>
+  <div id="updater-version-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="updater-version-title"><section class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="updater-version-title">Ultimate Updater version</h3><button type="button" class="modal-close" id="updater-version-close">Close</button></div><div id="updater-version-content"><p class="hint">Loading version information…</p></div><div class="form-actions"><button type="button" id="updater-version-check">Check again</button><button type="button" class="primary" id="updater-version-update">Update now</button></div><div id="updater-version-message" class="management-message" role="status"></div></section></div>
   <script>
     const labels={ok:['Healthy','good'],updates_available:['Updates available','warn'],offline:['Offline','bad'],unsupported:['Unsupported','neutral'],not_checked:['Not checked','neutral'],error:['Error','bad']};
     const text=(v,f='Unknown')=>v===null||v===undefined||v===''?f:String(v); const esc=v=>text(v,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -187,7 +189,13 @@ PAGE = r"""<!doctype html>
     function renderJobs(){const n=document.getElementById('jobs');if(!jobs.length){n.hidden=true;openJobLogId=null;return}if(openJobLogId&&!jobs.some(j=>j.unit===openJobLogId))openJobLogId=null;n.hidden=false;suppressLogScroll=true;n.innerHTML='<div class="section-title"><h2>Jobs</h2><span class="hint">Server-side state · safe across browser/device changes</span></div>'+jobs.map(j=>{const open=j.unit===openJobLogId;return `<div class="job"><code>${esc(j.unit)}</code><span>${esc(friendlyJobTarget(j.target))}</span><span class="pill ${j.state==='completed'?'good':j.state==='failed'||j.state==='interrupted'?'bad':'warn'}">${esc(j.state)}</span><button data-job="${esc(j.unit)}">${open?'Hide log':'Show log'}</button><div class="log" id="log-${esc(j.unit)}"${open?'':' hidden'}></div></div>`}).join('');suppressLogScroll=false;n.querySelectorAll('button[data-job]').forEach(b=>b.addEventListener('click',async()=>{const unit=b.dataset.job;const node=document.getElementById(`log-${unit}`);if(openJobLogId===unit){openJobLogId=null;node.hidden=true;b.textContent='Show log';return}openJobLogId=unit;logAutoFollow=true;logScrollTop=0;node.hidden=false;b.textContent='Hide log';await loadJobLog(unit,node);attachLogScroll(node)}));if(openJobLogId){const node=document.getElementById(`log-${openJobLogId}`);if(node){node.scrollTop=logAutoFollow?node.scrollHeight:logScrollTop;loadJobLog(openJobLogId,node).then(()=>{if(openJobLogId===node.id.slice(4))attachLogScroll(node)})}}}
     async function loadStatus(){try{const d=await api('/api/status',{cache:'no-store'});render(d)}catch(e){if(!csrfToken)return;notice(e.message,true);set('generated','Status unavailable');document.getElementById('targets').innerHTML='<div class="empty">The status file is missing or invalid.</div>'}}
     async function loadJobs(){try{const d=await api('/api/jobs',{cache:'no-store'});jobs=sortJobs(Array.isArray(d.jobs)?d.jobs:[]);renderJobs();reorderJobDom();clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,10000)}}
-    document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true')return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value})});const d=await r.json();if(!r.ok)throw new Error('Login failed');csrfToken=d.csrf;form.reset();message.className='management-message success';message.textContent='Login successful';await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent='Login failed'}};
+    let updaterVersion=null;
+    function versionDisplay(data, value){return value&&data?.branch?`${value} · ${data.branch}`:(value||'Unavailable')}
+    function renderUpdaterVersion(data){updaterVersion=data;const label=document.getElementById('updater-version-label'),indicator=document.getElementById('updater-version-indicator'),updateButton=document.getElementById('updater-version-update');label.textContent=data.state==='ok'?versionDisplay(data,data.installed):'version unavailable';indicator.hidden=!(data.state==='ok'&&data.update_available===true);updateButton.disabled=!(data.state==='ok'&&data.branch);const content=document.getElementById('updater-version-content');if(data.state!=='ok'){content.innerHTML='<p class="hint">Version check unavailable. Try again later.</p>';return}let rows=(data.components||[]).map(c=>`<tr><th>${esc(c.name)}</th><td>Local ${esc(c.local)}</td><td>Server ${esc(c.server)}</td></tr>`).join('');content.innerHTML=`<div class="detail-grid"><div><span>Installed</span><strong>${esc(versionDisplay(data,data.installed))}</strong></div><div><span>Available</span><strong>${esc(versionDisplay(data,data.available))}</strong></div></div><table class="version-components"><thead><tr><th>Component</th><th>Local</th><th>Server</th></tr></thead><tbody>${rows||'<tr><td colspan="3">No component details available.</td></tr>'}</tbody></table>`}
+    async function loadUpdaterVersion(force=false){try{const data=await api(`/api/updater-version${force?'?force=1':''}`,{cache:'no-store'});renderUpdaterVersion(data)}catch(_error){renderUpdaterVersion({state:'unavailable',update_available:false,components:[]})}}
+    function openUpdaterVersion(){document.getElementById('updater-version-modal').classList.add('open')}
+    document.getElementById('updater-version-indicator').onclick=openUpdaterVersion;document.getElementById('updater-version-footer').onclick=openUpdaterVersion;document.getElementById('updater-version-close').onclick=()=>document.getElementById('updater-version-modal').classList.remove('open');document.getElementById('updater-version-check').onclick=()=>loadUpdaterVersion(true);document.getElementById('updater-version-update').onclick=async()=>{if(!updaterVersion?.branch)return;const button=document.getElementById('updater-version-update');button.disabled=true;try{const data=await api('/api/updater-update',{method:'POST',body:JSON.stringify({branch:updaterVersion.branch})});document.getElementById('updater-version-message').textContent=data.message||'Updater self-update job started.';await loadJobs()}catch(error){document.getElementById('updater-version-message').textContent=error.message;document.getElementById('updater-version-message').className='management-message error';button.disabled=false}};
+    document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true')return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value})});const d=await r.json();if(!r.ok)throw new Error('Login failed');csrfToken=d.csrf;form.reset();message.className='management-message success';message.textContent='Login successful';await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard();loadUpdaterVersion()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent='Login failed'}};
     document.getElementById('logout').onclick=async()=>{try{await api('/api/logout',{method:'POST',body:'{}'})}catch(_error){}showLogin('You have been signed out.')};
   </script>
   <div id="target-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="target-modal-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="target-modal-title">External system</h3><button type="button" class="modal-close" id="target-modal-cancel">Close</button></div><div class="management-form open"><label>Name<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"></label><label>Host / IP<input name="host" required pattern="[A-Za-z0-9_.:-]+"></label><label>SSH user<input name="user" required pattern="[A-Za-z_][A-Za-z0-9_.-]*"></label><label>SSH port<input name="port" type="number" min="1" max="65535" value="22" required></label><div class="form-actions"><button type="submit" class="primary">Save</button><button type="button" id="target-modal-test">Test connection</button></div><div id="target-modal-message" class="management-message form-wide"></div></div></form></div>
@@ -292,7 +300,7 @@ PAGE = r"""<!doctype html>
     async function testTarget(id){try{const d=await api(`/api/targets/${encodeURIComponent(id)}/test`,{method:'POST',body:'{}'});const t=d.target||{};managementMessage('target-message',`Connection successful · ${t.os||'OS unknown'} · ${t.updater||'updater unknown'}`)}catch(error){managementMessage('target-message',error.message,true)}}
     function targetRow(t){const row=document.createElement('div');row.className='target-row';row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div><div class="target-field"><span class="target-label">Updates</span><strong>${knownUpdates(t)===null?'Unknown':knownUpdates(t)}</strong></div><div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div><div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button></div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const update=row.querySelector('.update');update.disabled=running(t.id)||!TARGET_UPDATEABLE(t);update.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});return row}
     document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));document.getElementById('internal-ssh-open').onclick=()=>setInternalSshView(true);document.getElementById('internal-ssh-back').onclick=()=>setInternalSshView(false);document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').onclick=()=>{const id=document.querySelector('#target-modal-form [name=id]').value;if(id)testTarget(id)};document.getElementById('target-modal-form').onsubmit=saveTarget;document.getElementById('external-settings-close').onclick=closeExternalSettings;document.getElementById('external-settings-form').onsubmit=saveExternalSettings;
-    async function bootstrap(){try{await ensureSession();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard()}catch(error){if(csrfToken)notice(error.message,true)}}
+    async function bootstrap(){try{await ensureSession();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard();loadUpdaterVersion()}catch(error){if(csrfToken)notice(error.message,true)}}
     bootstrap();
   </script>
 </main></body></html>"""
@@ -331,8 +339,33 @@ def parse_state_line(line):
     return {"unit": unit, "target": target, "state": state,
             "started_at": started or None, "finished_at": finished or None,
             "exit_code": int(exit_code) if exit_code.lstrip("-").isdigit() else None,
-            "type": job_type if job_type in {"check", "update"} else "update",
+            "type": job_type if job_type in {"check", "update", "selfupdate"} else "update",
             "source": source, "owner_node": owner_node, "remote": owner_node is not None}
+
+
+def parse_updater_version_output(output):
+    """Parse the existing update.sh status table without duplicating its sources."""
+    clean = strip_ansi(output)
+    branch_match = re.search(r"Version overview \((master|beta|develop)\)", clean, re.IGNORECASE)
+    branch = branch_match.group(1).lower() if branch_match else None
+    components = []
+    for line in clean.splitlines():
+        match = re.match(r"^\s*(Updater|Extras|Config|Welcome|Check)\s+(\S+)\s+(\S+)\s*$", line)
+        if match:
+            components.append({"name": match.group(1), "local": match.group(2), "server": match.group(3)})
+    updater = next((item for item in components if item["name"] == "Updater"), None)
+    installed = updater["local"] if updater else None
+    available = updater["server"] if updater else None
+    numeric = lambda value: tuple(int(part) for part in value.split(".") if part.isdigit()) if value and re.fullmatch(r"\d+(?:\.\d+)*", value) else None
+    local_numbers, remote_numbers = numeric(installed), numeric(available)
+    return {
+        "state": "ok" if branch and updater and updater["server"] != "unavailable" else "unavailable",
+        "branch": branch,
+        "installed": installed,
+        "available": available,
+        "update_available": bool(local_numbers is not None and remote_numbers is not None and remote_numbers > local_numbers),
+        "components": components,
+    }
 
 
 def parse_config_text(content):
@@ -1018,6 +1051,26 @@ class StatusHandler(BaseHTTPRequestHandler):
         rows = [parse_state_line(line) for line in result.stdout.splitlines()]
         return [row for row in rows if row and JOB_RE.fullmatch(row["unit"])]
 
+    def updater_version(self, force=False):
+        now = time.monotonic()
+        cached = getattr(self.server, "version_cache", None)
+        if not force and cached and now - cached["at"] < 300:
+            return cached["data"]
+        try:
+            if not self.server.update_script.is_file() or not self.server.update_script.stat().st_mode & 0o111:
+                raise OSError("update script is unavailable")
+            result = self.run_command(
+                [str(self.server.update_script), "status"], timeout=45,
+                extra_env={"TERM": "dumb", "UU_NONINTERACTIVE": "true"},
+            )
+            data = parse_updater_version_output(f"{result.stdout}\n{result.stderr}")
+        except (OSError, subprocess.TimeoutExpired):
+            data = {"state": "unavailable", "branch": None, "installed": None,
+                    "available": None, "update_available": False, "components": []}
+        data["checked_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        self.server.version_cache = {"at": now, "data": data}
+        return data
+
     def valid_target(self, target):
         return bool(TARGET_RE.fullmatch(target))
 
@@ -1444,6 +1497,14 @@ class StatusHandler(BaseHTTPRequestHandler):
             except (OSError, RuntimeError, subprocess.TimeoutExpired):
                 self.send_json(error_payload("JOBS_UNAVAILABLE", "Update job state is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
             return
+        if path == "/api/updater-version":
+            try:
+                force = parse_qs(urlsplit(self.path).query).get("force", ["0"])[0] == "1"
+                self.send_json(self.updater_version(force=force))
+            except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                self.send_json({"state": "unavailable", "branch": None, "installed": None,
+                                "available": None, "update_available": False, "components": []})
+            return
         parts = [unquote(part) for part in path.split("/") if part]
         if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "log":
             unit = parts[2]
@@ -1564,6 +1625,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         if len(parts) == 3 and parts[:2] == ["api", "update-node"]:
             self.action_update_node(parts[2])
             return
+        if parts == ["api", "updater-update"]:
+            self.action_updater_update(payload)
+            return
         self.send_json(error_payload("METHOD_NOT_ALLOWED", "Only defined check and update actions are available."), HTTPStatus.METHOD_NOT_ALLOWED)
 
     def action_check(self, target):
@@ -1668,6 +1732,28 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("UPDATE_START_FAILED", "The full update job could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         self.send_json({"job": job_match.group(1), "target": "all-systems", "state": "running", "message": "Full update job started."}, HTTPStatus.ACCEPTED)
+
+    def action_updater_update(self, payload):
+        branch = payload.get("branch") if isinstance(payload, dict) else None
+        if branch not in {"master", "beta", "develop"}:
+            self.send_json(error_payload("INVALID_BRANCH", "The installed updater branch is unavailable."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            result = self.run_command([str(self.server.job_runner), "start-selfupdate",
+                                       str(self.server.update_script), branch], timeout=15)
+        except (OSError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("SELFUPDATE_START_FAILED", "The updater self-update job could not be started."), HTTPStatus.BAD_GATEWAY)
+            return
+        output = f"{result.stdout}\n{result.stderr}"
+        job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
+        if result.returncode == 3:
+            self.send_json(error_payload("SELFUPDATE_ALREADY_RUNNING", "An updater self-update is already running."), HTTPStatus.CONFLICT)
+            return
+        if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
+            self.send_json(error_payload("SELFUPDATE_START_FAILED", "The updater self-update job could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json({"job": job_match.group(1), "target": "selfupdate", "type": "selfupdate",
+                        "state": "running", "message": "Updater self-update job started."}, HTTPStatus.ACCEPTED)
 
     def action_check_node(self, node):
         if not self.known_node(node):
@@ -1780,6 +1866,8 @@ def main():
     server.tag_filter_script = args.config_file.parent / "tag-filter.sh"
     server.asset_dir = args.asset_dir
     server.job_runner, server.jobs_dir = args.job_runner, args.jobs_dir
+    server.update_script = args.config_file.parent / "update.sh"
+    server.version_cache = None
     server.auth = AuthStore(args.auth_file)
     print(f"Ultimate Updater UI: http://{args.bind}:{args.port}/", flush=True)
     try:

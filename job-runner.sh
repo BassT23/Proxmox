@@ -13,7 +13,7 @@ CHECK_PREFIX="ultimate-updater-check-"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | list\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | list\n' "$0"
 }
 
 valid_target() {
@@ -348,6 +348,53 @@ start_check_job() {
     "$target" "$unit" "$unit"
 }
 
+start_selfupdate_job() {
+  local update_script="$1" branch="$2" unit timestamp target=selfupdate
+  local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR" "--setenv=UU_JOB_TYPE=selfupdate" "--setenv=UU_JOB_SOURCE=web-selfupdate")
+  [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
+  [[ "$branch" == master || "$branch" == beta || "$branch" == develop ]] || { printf 'Unsupported update branch: %s\n' "$branch" >&2; return 2; }
+  command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start self-update jobs.\n' >&2; return 5; }
+  [[ "$EUID" -eq 0 ]] || { printf 'Starting self-update jobs requires root.\n' >&2; return 2; }
+  ensure_state_dir || return 1
+  if target_running "$target"; then
+    printf 'A self-update job is already running.\n' >&2
+    return 3
+  fi
+  timestamp=$(date -u '+%Y%m%d-%H%M%S')
+  unit="${JOB_PREFIX}selfupdate-$timestamp-$BASHPID"
+  UU_JOB_TYPE=selfupdate UU_JOB_SOURCE=web-selfupdate write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater self-update ($branch)" \
+    "${systemd_env[@]}" --property=Type=oneshot --property=StandardOutput=journal \
+    --property=StandardError=journal "$RUNNER_PATH" run-selfupdate "$unit" "$branch" "$update_script"; then
+    UU_JOB_TYPE=selfupdate UU_JOB_SOURCE=web-selfupdate write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
+    return 1
+  fi
+  printf 'Self-update job started\nBranch: %s\nJob: %s\nLogs: journalctl -u %s\n' "$branch" "$unit" "$unit"
+}
+
+run_selfupdate_job() {
+  local unit="$1" branch="$2" update_script="$3" target=selfupdate file started exit_code lock_file
+  valid_unit "$unit" || return 2
+  [[ "$branch" == master || "$branch" == beta || "$branch" == develop ]] || return 2
+  [[ -x "$update_script" ]] || return 1
+  file=$(state_file "$unit")
+  started=$(state_value "$file" started_at)
+  lock_file="$JOB_STATE_DIR/selfupdate.lock"
+  exec 9>"$lock_file" || { UU_JOB_TYPE=selfupdate write_state "$unit" "$target" failed "$started" "$(now)" 1 "could not open self-update lock"; return 1; }
+  if ! flock -n 9; then
+    UU_JOB_TYPE=selfupdate write_state "$unit" "$target" failed "$started" "$(now)" 75 "another self-update is running"
+    return 75
+  fi
+  "$update_script" "$branch" -up </dev/null
+  exit_code=$?
+  if [[ "$exit_code" -eq 0 ]]; then
+    UU_JOB_TYPE=selfupdate UU_JOB_SOURCE=web-selfupdate write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" || return 1
+  else
+    UU_JOB_TYPE=selfupdate UU_JOB_SOURCE=web-selfupdate write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
+  fi
+  return "$exit_code"
+}
+
 run_check_job() {
   local unit="$1" target="$2" cli="$3" mode="$4" file started exit_code lock_file
   valid_unit "$unit" || return 2
@@ -462,6 +509,10 @@ case "${1:-}" in
     [[ $# -eq 4 ]] || { usage >&2; exit 2; }
     start_check_job "$2" "$3" "$4"
     ;;
+  start-selfupdate)
+    [[ $# -eq 3 ]] || { usage >&2; exit 2; }
+    start_selfupdate_job "$2" "$3"
+    ;;
   run)
     [[ $# -eq 4 ]] || { usage >&2; exit 2; }
     run_job "$2" "$3" "$4"
@@ -473,6 +524,10 @@ case "${1:-}" in
   run-check)
     [[ $# -eq 5 ]] || { usage >&2; exit 2; }
     run_check_job "$2" "$3" "$4" "$5"
+    ;;
+  run-selfupdate)
+    [[ $# -eq 4 ]] || { usage >&2; exit 2; }
+    run_selfupdate_job "$2" "$3" "$4"
     ;;
   list)
     [[ $# -eq 1 ]] || { usage >&2; exit 2; }
