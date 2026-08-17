@@ -13,9 +13,7 @@ MIGRATION_LOG="${UU_LEGACY_MIGRATION_LOG:-$LOCAL_FILES/legacy-migration.log}"
 INVENTORY_SCRIPT="${UU_TARGET_INVENTORY_SCRIPT:-$LOCAL_FILES/target-inventory.sh}"
 [[ -x "$INVENTORY_SCRIPT" ]] || INVENTORY_SCRIPT="${BASH_SOURCE[0]%/*}/target-inventory.sh"
 
-MIGRATED=0
 REMOVED=0
-ALREADY_PRESENT=0
 SKIPPED_INVALID=0
 MANUAL_REVIEW=0
 declare -a REPORT=() ADDITIONS=()
@@ -203,8 +201,8 @@ write_report_log() {
   {
     printf 'Legacy SSH migration\n'
     printf '%s\n' "${REPORT[@]}"
-    printf 'Migrated: %d\nAlready present: %d\nSkipped invalid: %d\nManual review required: %d\n' \
-      "$MIGRATED" "$ALREADY_PRESENT" "$SKIPPED_INVALID" "$MANUAL_REVIEW"
+    printf 'Removed bug-generated entries: %d\nSkipped invalid: %d\nManual review required: %d\n' \
+      "$REMOVED" "$SKIPPED_INVALID" "$MANUAL_REVIEW"
   } >"$temporary" || { rm -f "$temporary"; return 1; }
   chmod 640 "$temporary"
   mv -f -- "$temporary" "$MIGRATION_LOG"
@@ -230,8 +228,4 @@ if (( MANUAL_REVIEW > 0 )); then
 fi
 if (( SKIPPED_INVALID > 0 || MANUAL_REVIEW > 0 )); then
   printf '%s\n' "${REPORT[@]}"
-elif (( MIGRATED > 0 )); then
-  printf '✅ %d existing SSH systems successfully migrated to the new target management.\n' "$MIGRATED"
-elif (( ALREADY_PRESENT > 0 )); then
-  printf '✅ Existing SSH systems are already integrated into the new target management.\n'
 fi
