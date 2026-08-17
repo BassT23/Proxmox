@@ -10,7 +10,7 @@ VERSION="2.1"
 
 # Branch
 
-BRANCH="${UU_TARGET_BRANCH:-develop}"
+BRANCH="${UU_TARGET_BRANCH:-beta}"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
