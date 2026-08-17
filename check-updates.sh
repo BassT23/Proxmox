@@ -42,13 +42,24 @@ fi
 RUN_SSH_COMMAND() {
   local host="$1" port="$2" user="$3"
   shift 3
-  timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"
+  timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${INTERNAL_SSH_ARGS[@]}" -p "$port" "$user@$host" "$@"
 }
 
 CLUSTER_TARGET_FILE="${CLUSTER_TARGET_FILE:-$LOCAL_FILES/cluster-target.sh}"
 if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
   # shellcheck disable=SC1090
   . "$CLUSTER_TARGET_FILE"
+fi
+
+INTERNAL_SSH_FILE="${INTERNAL_SSH_FILE:-$LOCAL_FILES/internal-ssh.sh}"
+if [[ -f "$INTERNAL_SSH_FILE" ]]; then
+  # shellcheck disable=SC1090
+  . "$INTERNAL_SSH_FILE"
+else
+  INTERNAL_SSH_ARGS=()
+  INTERNAL_SSH_USE_IDENTITY() { :; }
+  INTERNAL_SSH_RESOLVE_NODE() { INTERNAL_SSH_HOST="$2"; INTERNAL_SSH_USER=root; INTERNAL_SSH_PORT="${3:-22}"; }
+  INTERNAL_SSH_RESOLVE_VM() { INTERNAL_SSH_HOST="$2"; INTERNAL_SSH_USER="$3"; INTERNAL_SSH_PORT="${4:-22}"; }
 fi
 
 STATUS_MODEL_SCRIPT="${STATUS_MODEL_SCRIPT:-$LOCAL_FILES/status-model.sh}"
@@ -332,11 +343,13 @@ HOST_IS_LOCAL () {
 # it does not stop an SSH/SCP command that connected and then stopped
 # responding (for example an offline cluster fixture with a stale route).
 CHECK_REMOTE_SSH () {
-  timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "$@"
+  timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${INTERNAL_SSH_ARGS[@]}" "$@"
 }
 
 CHECK_REMOTE_SCP () {
-  timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp "$@"
+  local scp_args=()
+  if [[ -n "${INTERNAL_SSH_IDENTITY_FILE:-}" ]]; then scp_args=(-o BatchMode=yes -o ConnectTimeout=5 -o IdentitiesOnly=yes -i "$INTERNAL_SSH_IDENTITY_FILE"); fi
+  timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp "${scp_args[@]}" "$@"
 }
 
 HOST_CHECK_START () {
@@ -357,6 +370,10 @@ HOST_CHECK_START () {
 CHECK_HOST () {
   local HOST=$1 remote_check_dir remote_status remote_status_file HOST_NODE HOST_ID
   HOST_NODE=$(CLUSTER_HOST_NODE "$HOST")
+  INTERNAL_SSH_RESOLVE_NODE "$HOST_NODE" "$HOST" "$SSH_PORT" || return 1
+  [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
+  HOST="${INTERNAL_SSH_HOST:-$HOST}"; SSH_PORT="${INTERNAL_SSH_PORT:-$SSH_PORT}"
+  INTERNAL_SSH_USE_IDENTITY
   HOST_ID="host:$HOST_NODE"
   remote_check_dir="/tmp/ultimate-updater-check-$$"
   remote_runtime_env=""
@@ -388,7 +405,7 @@ CHECK_HOST () {
     fi
     remote_status_env=" STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'"
   fi
-  if ssh -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" \
+  if CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" \
     "UU_DEFER_NOTIFICATION=true TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env bash -s -- -c host" < "$0"; then
     remote_status=0
   else
@@ -747,6 +764,10 @@ CHECK_VM () {
     SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "$SSH_START_DELAY_TIME")
     SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-$VM_START_DELAY}"
   fi
+  INTERNAL_SSH_RESOLVE_VM "$VM" "${IP:-}" "${USER:-root}" "${SSH_VM_PORT:-22}" || return 1
+  [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
+  IP="${INTERNAL_SSH_HOST:-$IP}"; USER="${INTERNAL_SSH_USER:-$USER}"; SSH_VM_PORT="${INTERNAL_SSH_PORT:-$SSH_VM_PORT}"
+  INTERNAL_SSH_USE_IDENTITY
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   if [[ -z "$IP" || -z "$USER" || -z "$SSH_VM_PORT" ]]; then
     CHECK_VM_QEMU

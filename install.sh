@@ -324,6 +324,8 @@ INSTALL () {
     cp "$TEMP_FILES"/windows-update.sh $LOCAL_FILES/windows-update.sh
     chmod 750 $LOCAL_FILES/windows-update.sh
     cp "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
+    cp "$TEMP_FILES"/internal-ssh.sh $LOCAL_FILES/internal-ssh.sh
+    chmod 750 $LOCAL_FILES/internal-ssh.sh
     cp "$TEMP_FILES"/config-merge.sh $LOCAL_FILES/config-merge.sh
     chmod 750 $LOCAL_FILES/config-merge.sh
     if [[ -f "$TEMP_FILES"/cluster-target.sh ]]; then
@@ -531,6 +533,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/target-runtime.sh ]]; then
       mv "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
       chmod 750 $LOCAL_FILES/target-runtime.sh
+    fi
+    if [[ -f "$TEMP_FILES"/internal-ssh.sh ]]; then
+      mv "$TEMP_FILES"/internal-ssh.sh $LOCAL_FILES/internal-ssh.sh
+      chmod 750 $LOCAL_FILES/internal-ssh.sh
     fi
     if [[ -f "$TEMP_FILES"/cluster-target.sh ]]; then
       mv "$TEMP_FILES"/cluster-target.sh $LOCAL_FILES/cluster-target.sh
