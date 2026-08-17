@@ -10,14 +10,10 @@ VERSION="2.1"
 
 # Branch
 
-BRANCH="${UU_TARGET_BRANCH:-}"
+BRANCH="${UU_TARGET_BRANCH:-develop}"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
-if [[ -z "$BRANCH" && -f "$LOCAL_FILES/update.conf" ]]; then
-  BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2; exit}' "$LOCAL_FILES/update.conf")
-fi
-BRANCH="${BRANCH:-develop}"
 case "$BRANCH" in
   master|beta|develop) ;;
   *) echo "Unsupported update branch: $BRANCH" >&2; exit 2 ;;

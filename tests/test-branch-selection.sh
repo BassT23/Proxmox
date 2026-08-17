@@ -13,6 +13,7 @@ grep -Fq 'BETA_VERSION=' "$ROOT_DIR/tag-filter.sh"
 grep -Fq 'master|beta|develop)' "$ROOT_DIR/install.sh"
 grep -Fq 'tarball/' "$ROOT_DIR/install.sh"
 grep -Fq "BRANCH=\"\${BRANCH:-master}\"" "$ROOT_DIR/update.sh"
+grep -Fq 'BRANCH="${UU_TARGET_BRANCH:-' "$ROOT_DIR/install.sh"
 if grep -Fq 'beta branch is no longer active' "$ROOT_DIR/update.sh" "$ROOT_DIR/welcome-screen.sh"; then
   exit 1
 fi
