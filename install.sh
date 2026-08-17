@@ -375,6 +375,62 @@ UPDATE () {
     else
       TEMP_FILES=$TEMP_FOLDER/$(ls $TEMP_FOLDER)
     fi
+    installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
+    target_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$TEMP_FILES/update.sh" 2>/dev/null || true)
+    if [[ "$installed_version" =~ ^5\.0([.]|$) && "$target_version" =~ ^([0-9]+)\.([0-9]+)([.]|$) ]] &&
+      { (( BASH_REMATCH[1] > 5 )) || (( BASH_REMATCH[1] == 5 && BASH_REMATCH[2] > 0 )); }; then
+      if [[ "${UU_UPGRADE_INTERACTIVE:-false}" != true || ! -t 0 ]]; then
+        echo -e "⚠${RD:-} Interactive confirmation required for upgrade from 5.0 to $target_version. Run the upgrade manually.${CL:-}" >&2
+        rm -rf "$TEMP_FOLDER" || true
+        return 1
+      fi
+      echo -e "\n⚠${OR:-} Important upgrade notice${CL:-}\n"
+      echo -e "You are upgrading Ultimate Updater from version 5.0 to $target_version."
+      echo -e "This upgrade changes internal runtime components and requires a restart of this Proxmox host after the upgrade has completed."
+      echo -e "You may abort now and perform the upgrade later.\n"
+      read -r -p "Continue with upgrade? [Y/n] " upgrade_reply
+      if [[ "$upgrade_reply" =~ ^[Nn] ]]; then
+        echo "Upgrade cancelled by user."
+        rm -rf "$TEMP_FOLDER" || true
+        return 0
+      fi
+      UPGRADE_RESTART_REQUIRED=true
+    fi
+    # A 5.0 installation may not have config-merge.sh yet.  Validate and
+    # use the helper from the downloaded target release before replacing any
+    # installed files, so migration failure cannot leave a mixed installation.
+    CONFIG_MERGE_SOURCE="$TEMP_FILES/config-merge.sh"
+    if [[ ! -f "$CONFIG_MERGE_SOURCE" || ! -r "$CONFIG_MERGE_SOURCE" ]] ||
+      ! bash -n "$CONFIG_MERGE_SOURCE"; then
+      echo -e "❌${RD:-} Target release has no valid configuration migration helper; existing installation was left unchanged.${CL:-}" >&2
+      rm -rf "$TEMP_FOLDER" || true
+      return 1
+    fi
+    if [[ -f "$TEMP_FILES/update.conf.dist" ]]; then
+      CONFIG_DIST_SOURCE="$TEMP_FILES/update.conf.dist"
+    else
+      CONFIG_DIST_SOURCE="$TEMP_FILES/update.conf"
+    fi
+    if [[ ! -f "$CONFIG_DIST_SOURCE" ]]; then
+      echo -e "❌${RD:-} Target release is missing its configuration defaults; existing installation was left unchanged.${CL:-}" >&2
+      rm -rf "$TEMP_FOLDER" || true
+      return 1
+    fi
+    # shellcheck disable=SC1090
+    source "$CONFIG_MERGE_SOURCE" || {
+      echo -e "❌${RD:-} Configuration migration helper could not be loaded; existing installation was left unchanged.${CL:-}" >&2
+      rm -rf "$TEMP_FOLDER" || true
+      return 1
+    }
+    if [[ -f "$LOCAL_FILES/update.conf" ]]; then
+      if ! MERGE_UPDATE_CONFIG "$LOCAL_FILES/update.conf" "$CONFIG_DIST_SOURCE" "$BRANCH"; then
+        echo -e "❌${RD:-} Configuration migration failed; the existing installation was left unchanged.${CL:-}" >&2
+        rm -rf "$TEMP_FOLDER" || true
+        return 1
+      fi
+    else
+      cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf"
+    fi
     # Copy files
     mv "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
@@ -514,30 +570,7 @@ UPDATE () {
       rm -rf "$TEMP_FILES"/welcome-screen.sh || true
       rm -rf "$TEMP_FILES"/check-updates.sh || true
     fi
-    # Keep the active user values while adding assignments introduced by the
-    # current distribution template. Older archives may not contain the
-    # distribution file yet, so fall back to their update.conf template.
-    if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
-      CONFIG_DIST_SOURCE="$TEMP_FILES/update.conf.dist"
-    else
-      CONFIG_DIST_SOURCE="$TEMP_FILES/update.conf"
-    fi
     cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
-    if [[ -f "$LOCAL_FILES/update.conf" ]]; then
-      # shellcheck disable=SC1091
-      source "$LOCAL_FILES/config-merge.sh" || {
-        echo -e "❌${RD:-} Configuration migration helper could not be loaded.${CL:-}" >&2
-        rm -rf "$TEMP_FOLDER" || true
-        return 1
-      }
-      if ! MERGE_UPDATE_CONFIG "$LOCAL_FILES/update.conf" "$CONFIG_DIST_SOURCE" "$BRANCH"; then
-        echo -e "❌${RD:-} Configuration migration failed; the existing update.conf was kept.${CL:-}" >&2
-        rm -rf "$TEMP_FOLDER" || true
-        return 1
-      fi
-    else
-      cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf"
-    fi
     rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
     # targets.conf is runtime inventory and must not be replaced by the
     # repository template after legacy migration or user edits.
@@ -574,7 +607,9 @@ UPDATE () {
     echo -e "✅${GN:-} The Ultimate Updater updated successfully.${CL:-}"
     if [[ "$BRANCH" != master ]]; then echo -e "${OR:-}   Installed: $BRANCH version${CL:-}"; fi
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
-    if [[ $NEED_REBOOT == true ]]; then
+    if [[ "$UPGRADE_RESTART_REQUIRED" == true ]]; then
+      echo -e "${RD:-}⚠ Upgrade completed successfully.\nA restart of this Proxmox host is required to complete the Ultimate Updater upgrade.\nPlease restart the host when it is safe to do so.${CL:-}\n"
+    elif [[ $NEED_REBOOT == true ]]; then
       echo -e "${RD:-}  Please reboot, to make The Ultimative Updater workable\n${CL:-}"
     fi
   else

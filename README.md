@@ -618,6 +618,9 @@ pre-release), and `develop` (development). To switch an existing installation
 to the published Beta, use `update beta -up`; the selected branch is preserved
 in `USED_BRANCH` for later checks and self-updates.
 
+Upgrading from 5.0 to 5.1 requires a restart of the Proxmox host after the
+upgrade. The updater does not reboot automatically.
+
 # Q&A:
 [Discussion](https://github.com/BassT23/Proxmox/discussions/60)
 

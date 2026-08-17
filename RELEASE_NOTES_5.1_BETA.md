@@ -44,8 +44,10 @@ Status: Published 5.1 Beta release.
 - Legacy compatible External SSH entries are migrated without deleting the
   original configuration.
 - Verify `ultimate-updater-web.service` is enabled and active after upgrade.
-- No general host reboot is required by the updater; individual update results
-  may still report `REBOOT REQUIRED`.
+- Upgrading from 5.0 to 5.1 requires a restart of the Proxmox host after the
+  upgrade; the updater does not reboot automatically.
+- Upgrades within the 5.1 line do not require this migration restart; individual
+  update results may still report `REBOOT REQUIRED`.
 
 ## Known limitations
 
