@@ -11,6 +11,7 @@ source "$ROOT_DIR/config-merge.sh"
 
 cat > "$WORK_DIR/default.conf" <<'EOF'
 # General
+VERSION="2.1"
 KEEP_ME="new-default"
 
 # Proxmox storage ID used for backups.
@@ -22,6 +23,7 @@ EOF
 
 cat > "$WORK_DIR/user.conf" <<'EOF'
 # my local note
+VERSION="2.0"
 KEEP_ME="user value with spaces"
 CUSTOM_FOO="bar"
 EMPTY=""
@@ -29,6 +31,7 @@ SINGLE='quoted value'
 EOF
 
 MERGE_UPDATE_CONFIG "$WORK_DIR/user.conf" "$WORK_DIR/default.conf"
+grep -Fqx 'VERSION="2.1"' "$WORK_DIR/user.conf"
 grep -Fqx 'KEEP_ME="user value with spaces"' "$WORK_DIR/user.conf"
 grep -Fqx 'CUSTOM_FOO="bar"' "$WORK_DIR/user.conf"
 grep -Fqx 'BACKUP_STORAGE=""' "$WORK_DIR/user.conf"
