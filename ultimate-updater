@@ -312,6 +312,38 @@ inventory_targets() {
   ' _ "$INVENTORY_SCRIPT" "$inventory_file"
 }
 
+central_filter_value() {
+  local wanted="$1"
+  awk -F'"' -v wanted="$wanted" '$1 ~ "^" wanted "=" {print $2; exit}' \
+    "$LOCAL_FILES/update.conf" 2>/dev/null || true
+}
+
+filter_mentions_target() {
+  local specification="$1" target="$2" token normalized
+  normalized=$(printf '%s' "$specification" | tr ',;|' '   ')
+  for token in $normalized; do
+    if [[ "${token,,}" == "${target,,}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+external_target_selected_for_check() {
+  local target="$1"
+  local only exclude
+  only=$(central_filter_value ONLY_UPDATE_CHECK)
+  exclude=$(central_filter_value EXCLUDE_UPDATE_CHECK)
+  if [[ -n "$only" ]]; then
+    filter_mentions_target "$only" "$target"
+    return $?
+  fi
+  if [[ -n "$exclude" ]] && filter_mentions_target "$exclude" "$target"; then
+    return 1
+  fi
+  return 0
+}
+
 status_json() {
   require_file "$STATUS_FILE" "status file" || return 4
   if ! python3 - "$STATUS_FILE" <<'PY'
@@ -679,13 +711,22 @@ remote_target_update() {
 }
 
 run_external_checks() {
-  local target result=0 targets
+  local target result=0 target_result targets
   targets=$(inventory_targets) || return 1
   [[ -n "$targets" ]] || return 0
   require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1
   while IFS= read -r target; do
     [[ -n "$target" ]] || continue
-    "$EXTERNAL_APT_SCRIPT" check "$target" || result=$?
+    if ! external_target_selected_for_check "$target"; then
+      printf 'CHECK external-linux: %s skipped by central check filter\n' "$target"
+      continue
+    fi
+    "$EXTERNAL_APT_SCRIPT" check "$target"
+    target_result=$?
+    if [[ "$target_result" -ne 0 ]]; then
+      printf 'CHECK external-linux: %s failed (exit code %s)\n' "$target" "$target_result" >&2
+      [[ "$result" -ne 0 ]] || result="$target_result"
+    fi
   done <<< "$targets"
   return "$result"
 }
