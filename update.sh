@@ -217,7 +217,7 @@ ARGUMENTS () {
       -up)
         COMMAND=true
         if [[ "$BRANCH_SET" != true ]]; then
-          BRANCH=master
+          BRANCH="${BRANCH:-master}"
         fi
         UPDATE
         exit $?
