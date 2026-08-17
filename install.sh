@@ -391,7 +391,7 @@ UPDATE () {
       if [[ ("${UU_NONINTERACTIVE:-false}" == true && "${UU_UPGRADE_INTERACTIVE:-false}" != true) || ! -t 0 ]]; then
         echo -e "⚠${RD:-} Interactive confirmation required for upgrade from version 5.0 or earlier to $target_version. Run the upgrade manually.${CL:-}" >&2
         rm -rf "$TEMP_FOLDER" || true
-        return 1
+        return 2
       fi
       echo -e "\n⚠${OR:-} Important upgrade notice${CL:-}\n"
       echo -e "You are upgrading Ultimate Updater from version 5.0 or earlier to $target_version.\n"
@@ -414,7 +414,7 @@ UPDATE () {
       ! bash -n "$CONFIG_MERGE_SOURCE"; then
       echo -e "❌${RD:-} Target release has no valid configuration migration helper; existing installation was left unchanged.${CL:-}" >&2
       rm -rf "$TEMP_FOLDER" || true
-      return 1
+      return 2
     fi
     if [[ -f "$TEMP_FILES/update.conf.dist" ]]; then
       CONFIG_DIST_SOURCE="$TEMP_FILES/update.conf.dist"
@@ -424,19 +424,19 @@ UPDATE () {
     if [[ ! -f "$CONFIG_DIST_SOURCE" ]]; then
       echo -e "❌${RD:-} Target release is missing its configuration defaults; existing installation was left unchanged.${CL:-}" >&2
       rm -rf "$TEMP_FOLDER" || true
-      return 1
+      return 2
     fi
     # shellcheck disable=SC1090
     source "$CONFIG_MERGE_SOURCE" || {
       echo -e "❌${RD:-} Configuration migration helper could not be loaded; existing installation was left unchanged.${CL:-}" >&2
       rm -rf "$TEMP_FOLDER" || true
-      return 1
+      return 2
     }
     if [[ -f "$LOCAL_FILES/update.conf" ]]; then
       if ! MERGE_UPDATE_CONFIG "$LOCAL_FILES/update.conf" "$CONFIG_DIST_SOURCE" "$BRANCH"; then
         echo -e "❌${RD:-} Configuration migration failed; the existing installation was left unchanged.${CL:-}" >&2
         rm -rf "$TEMP_FOLDER" || true
-        return 1
+        return 2
       fi
     else
       cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf"
@@ -799,6 +799,7 @@ EXIT () {
   elif [[ $EXIT_CODE != "0" ]]; then
     rm -rf $TEMP_FOLDER || true
     echo -e "❌${RD:-} Error during install --- Exit Code: $EXIT_CODE${CL:-}\n"
+    exit "$EXIT_CODE"
   fi
 }
 
