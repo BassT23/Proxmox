@@ -54,7 +54,8 @@ state_value() {
 
 write_state() {
   local unit="$1" target="$2" state="$3" started="$4" finished="$5"
-  local exit_code="$6" message="${7:-}" type="${8:-${UU_JOB_TYPE:-update}}" file temp
+  local exit_code="$6" message="${7:-}" type="${8:-${UU_JOB_TYPE:-update}}"
+  local source="${9:-${UU_JOB_SOURCE:-}}" file temp
   file=$(state_file "$unit")
   temp="$file.tmp.$$"
   {
@@ -67,6 +68,7 @@ write_state() {
     printf 'exit_code=%s\n' "$exit_code"
     printf 'type=%s\n' "$type"
     printf 'message=%s\n' "$message"
+    printf 'source=%s\n' "$source"
   } > "$temp" || return 1
   chmod 0644 "$temp" || return 1
   mv -f -- "$temp" "$file"
@@ -334,6 +336,7 @@ start_check_job() {
   fi
   timestamp=$(date -u '+%Y%m%d-%H%M%S')
   unit="${CHECK_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
+  [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
   UU_JOB_TYPE=check write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater check for $target" \
     "${systemd_env[@]}" --property=Type=oneshot --property=StandardOutput=journal \
@@ -421,7 +424,7 @@ list_jobs() {
     started=$(state_value "$file" started_at)
     finished=$(state_value "$file" finished_at)
     exit_code=$(state_value "$file" exit_code)
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$unit" "$target" "$state" "$started" "$finished" "$exit_code" "$(state_value "$file" type)"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t%s\n' "$unit" "$target" "$state" "$started" "$finished" "$exit_code" "$(state_value "$file" type)" "$(state_value "$file" source)"
   done
   shopt -s nullglob
   for file in "$REMOTE_REF_DIR"/*.ref; do
