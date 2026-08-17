@@ -92,6 +92,12 @@ assert "Host key verification failed." in source
 assert "Connection refused." in source
 assert "Could not load Internal SSH connections." in source
 assert "internal-ssh-retry" in source
+assert "Edit SSH settings" in page
+assert "Add SSH connection" in page
+assert "Use custom SSH settings" in page
+assert "internalSshTargetLabel" in source
+assert "target_choice.required=false" in source
+assert "picker.required=true" in source
 assert "setInternalSshView(true)" in source
 assert "loadInternalSsh()" in source
 
