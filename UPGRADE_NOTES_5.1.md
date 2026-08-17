@@ -10,6 +10,12 @@ To move an existing installation to the published 5.1 Beta, run:
 update beta -up
 ```
 
+Beta maintenance remains explicit: use `update beta -up`. The bare
+`update -up` and `update master -up` target the stable master branch;
+`USED_BRANCH` records the installed branch but does not select the target of a
+bare update. A target version lower than the installed version requires an
+interactive downgrade confirmation and is blocked in noninteractive mode.
+
 The supported branch selectors are `master`, `beta`, and `develop`.
 
 The migration preserves existing `update.conf` values, comments, unknown
