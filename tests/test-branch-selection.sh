@@ -19,8 +19,8 @@ grep -Fq 'Interactive confirmation required for a downgrade' "$ROOT_DIR/update.s
 grep -Fq 'Continue with downgrade? [y/N]' "$ROOT_DIR/update.sh"
 grep -Fq 'Update/install the stable master branch' "$ROOT_DIR/update.sh"
 grep -Fq 'PRINT_BRANCH_PROMPT ()' "$ROOT_DIR/update.sh"
-grep -Fq 'beta) branch_color="$OR"' "$ROOT_DIR/update.sh"
-grep -Fq 'develop) branch_color="$RD"' "$ROOT_DIR/update.sh"
+grep -Fq "beta) branch_color=\"\$OR\"" "$ROOT_DIR/update.sh"
+grep -Fq "develop) branch_color=\"\$RD\"" "$ROOT_DIR/update.sh"
 grep -Fq "printf 'Update to %b%s%b branch?\\n'" "$ROOT_DIR/update.sh"
 grep -Fq "BRANCH=\"\${UU_TARGET_BRANCH:-" "$ROOT_DIR/install.sh"
 if grep -Fq 'beta branch is no longer active' "$ROOT_DIR/update.sh" "$ROOT_DIR/welcome-screen.sh"; then

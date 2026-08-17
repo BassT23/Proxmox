@@ -7,7 +7,7 @@ INSTALLER="$ROOT_DIR/install.sh"
 
 grep -Fq 'INITIAL_INVENTORY_STATE_FILE="/var/lib/ultimate-updater/initial-inventory.state"' "$INSTALLER"
 grep -Fq 'START_INITIAL_INVENTORY ()' "$INSTALLER"
-grep -Fq 'start-check all-systems "$cli" all' "$INSTALLER"
+grep -Fq "start-check all-systems \"\$cli\" all" "$INSTALLER"
 grep -Fq 'Initial system inventory started.' "$INSTALLER"
 grep -Fq 'state=start_failed' "$INSTALLER"
 grep -Fq "printf 'job=%s\\n'" "$INSTALLER"
