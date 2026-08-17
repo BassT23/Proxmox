@@ -46,12 +46,14 @@ DEFAULT_JOB_RUNNER = Path("/etc/ultimate-updater/job-runner.sh")
 DEFAULT_JOBS_DIR = Path("/var/lib/ultimate-updater/jobs")
 DEFAULT_BACKUP_STATE_FILE = Path("/var/lib/ultimate-updater/external-backup-verification.json")
 DEFAULT_AUTH_FILE = Path("/etc/ultimate-updater/web-auth.json")
+DEFAULT_INTERNAL_SSH_FILE = Path("/etc/ultimate-updater/internal-ssh.conf")
 DEFAULT_BIND = "127.0.0.1"
 DEFAULT_PORT = 8765
 TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 JOB_RE = re.compile(r"^ultimate-updater-(?:update|check)-[A-Za-z0-9_.-]+$")
 HOST_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 USER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
+INTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 CONFIG_BOOLEAN_KEYS = {
     "CHECK_WITH_HOST", "CHECK_WITH_LXC", "CHECK_WITH_VM",
@@ -152,12 +154,14 @@ PAGE = r"""<!doctype html>
     <section id="systems" class="systems-panel"><div class="section-title"><div class="heading-with-help"><div><h2>Systems</h2><span class="hint">Organized by Proxmox node and external target</span></div><span class="help-control"><button class="help-trigger" type="button" aria-label="About Systems" aria-expanded="false" aria-controls="systems-help-popover">?</button><span id="systems-help-popover" class="help-popover" role="tooltip"><p>Systems shows the complete active inventory grouped by Proxmox node and external target. Status and update information comes from the latest available check data.</p><p>Guests without current update information remain part of the inventory; status data is only an enrichment of the inventory.</p></span></span></div><span class="view-note">Checks and updates use the existing CLI</span></div><div id="targets" class="targets"></div><section id="details" class="details" hidden></section></section>
     <section class="management-grid">
       <section class="management-panel" id="config-panel"><div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div><button id="config-open">Open settings</button></div><form id="config-form" class="management-form"></form><div id="config-message" class="management-message"></div></section>
+      <section class="management-panel" id="internal-ssh-panel"><div class="section-title"><div><h2>Internal SSH Connections</h2><span class="hint">Proxmox nodes and internal VMs · separate from External Targets</span></div></div><div class="settings-group"><h3>Proxmox Nodes</h3><div id="internal-ssh-nodes"><div class="empty">Loading…</div></div></div><div class="settings-group"><h3>Virtual Machines</h3><div id="internal-ssh-vms"><div class="empty">Loading…</div></div></div><div id="internal-ssh-message" class="management-message"></div></section>
       <section class="management-panel" id="external-panel"><div class="section-title"><div><h2>External systems</h2><span class="hint">SSH targets from targets.conf</span></div><button id="target-add">+ Add system</button></div><div id="managed-targets"></div><form id="target-form" class="management-form"></form><div id="target-message" class="management-message"></div></section>
     </section>
     <section id="jobs" class="jobs" hidden></section>
     <footer>Local action preview · status: <code>/etc/ultimate-updater/status.json</code> · jobs: <code>/var/lib/ultimate-updater/jobs</code></footer>
   </main>
   <div id="external-settings-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="external-settings-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3>External settings</h3><button type="button" class="modal-close" id="external-settings-close">Close</button></div><p class="hint">These settings are stored on this external system.</p><input type="hidden" name="target"><label>Only check filter<input name="ONLY_UPDATE_CHECK"></label><label>Exclude check filter<input name="EXCLUDE_UPDATE_CHECK"></label><label>Only update filter<input name="ONLY"></label><label>Exclude update filter<input name="EXCLUDE"></label><div class="form-actions"><button type="submit" class="primary">Save external settings</button></div><div id="external-settings-message" class="management-message" role="status"></div></form></div>
+  <div id="internal-ssh-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="internal-ssh-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="internal-ssh-title">Internal SSH override</h3><button type="button" class="modal-close" id="internal-ssh-close">Close</button></div><p class="hint">Only the override is stored. Without an override, existing cluster/default or VM profile resolution remains active.</p><input type="hidden" name="kind"><input type="hidden" name="id"><label>Host / Address<input name="host" required></label><label>User<input name="user" value="root" required></label><label>Port<input name="port" type="number" min="1" max="65535" value="22" required></label><label>Identity file (optional)<input name="identity_file" placeholder="/root/.ssh/key"></label><label><input name="enabled" type="checkbox" checked> Override enabled</label><div class="form-actions"><button type="submit" class="primary">Save override</button><button type="button" id="internal-ssh-remove">Remove override</button></div><div id="internal-ssh-form-message" class="management-message" role="status"></div></form></div>
   <script>
     const labels={ok:['Healthy','good'],updates_available:['Updates available','warn'],offline:['Offline','bad'],unsupported:['Unsupported','neutral'],not_checked:['Not checked','neutral'],error:['Error','bad']};
     const text=(v,f='Unknown')=>v===null||v===undefined||v===''?f:String(v); const esc=v=>text(v,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -265,6 +269,15 @@ PAGE = r"""<!doctype html>
     function closeExternalSettings(){document.getElementById('external-settings-modal').classList.remove('open')}
     async function saveExternalSettings(event){event.preventDefault();const form=event.currentTarget,target=form.elements.target.value,values={};for(const key of ['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE'])values[key]=form.elements[key].value;try{await api(`/api/external-settings/${encodeURIComponent(target)}`,{method:'POST',body:JSON.stringify({values})});managementMessage('external-settings-message','External settings saved.')}catch(error){managementMessage('external-settings-message',error.message,true)}}
     const renderManagedTargetsBase=renderManagedTargets;renderManagedTargets=function(){renderManagedTargetsBase();const box=document.getElementById('managed-targets');box.querySelectorAll('.managed-actions').forEach(actions=>{const edit=actions.querySelector('[data-edit]');if(!edit)return;const settings=document.createElement('button');settings.type='button';settings.textContent='Settings';settings.dataset.settings=edit.dataset.edit;actions.insertBefore(settings,edit);settings.onclick=()=>openExternalSettings(settings.dataset.settings)})}
+    let internalSshTargets=[];
+    function renderInternalSsh(){for(const kind of ['node','vm']){const box=document.getElementById(kind==='node'?'internal-ssh-nodes':'internal-ssh-vms'),items=internalSshTargets.filter(t=>t.kind===kind);box.innerHTML=items.length?items.map(t=>`<div class="managed-target"><div><strong>${esc(t.name||t.id)}</strong><small>${t.local?'Local · no SSH required':`${esc(t.host||'Not configured')} · ${esc(t.user)}:${esc(t.port)} · ${esc(t.source)}`}</small></div><div class="managed-actions">${t.local?'':`<button data-ssh-edit="${esc(t.kind)}:${esc(t.id)}">Edit SSH</button><button data-ssh-test="${esc(t.kind)}:${esc(t.id)}">Test connection</button>`}${t.override?`<button data-ssh-remove="${esc(t.kind)}:${esc(t.id)}">Remove override</button>`:''}</div></div>`).join(''):'<div class="empty">No configured systems.</div>'}document.querySelectorAll('[data-ssh-edit]').forEach(b=>b.onclick=()=>openInternalSsh(b.dataset.sshEdit));document.querySelectorAll('[data-ssh-test]').forEach(b=>b.onclick=()=>testInternalSsh(b.dataset.sshTest));document.querySelectorAll('[data-ssh-remove]').forEach(b=>b.onclick=()=>removeInternalSsh(b.dataset.sshRemove))}
+    async function loadInternalSsh(){try{internalSshTargets=(await api('/api/internal-ssh')).targets||[];renderInternalSsh()}catch(error){managementMessage('internal-ssh-message',error.message,true)}}
+    function openInternalSsh(key){const [kind,id]=key.split(':');const t=internalSshTargets.find(item=>item.kind===kind&&item.id===id),form=document.getElementById('internal-ssh-form');form.elements.kind.value=kind;form.elements.id.value=id;form.elements.host.value=t?.host||'';form.elements.user.value=t?.user||'root';form.elements.port.value=t?.port||22;form.elements.identity_file.value=t?.identity_file||'';form.elements.enabled.checked=t?.enabled!==false;document.getElementById('internal-ssh-form-message').textContent='';document.getElementById('internal-ssh-modal').classList.add('open')}
+    function closeInternalSsh(){document.getElementById('internal-ssh-modal').classList.remove('open')}
+    async function testInternalSsh(key){const [kind,id]=key.split(':');try{const d=await api(`/api/internal-ssh/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/test`,{method:'POST',body:'{}'});managementMessage('internal-ssh-message',d.message||'Connected.')}catch(error){managementMessage('internal-ssh-message',error.message,true)}}
+    async function removeInternalSsh(key){const [kind,id]=key.split(':');if(!confirm('Remove this override and restore automatic/default resolution?'))return;try{await api(`/api/internal-ssh/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,{method:'DELETE'});await loadInternalSsh();managementMessage('internal-ssh-message','Override removed; default resolution restored.')}catch(error){managementMessage('internal-ssh-message',error.message,true)}}
+    document.getElementById('internal-ssh-form').onsubmit=async event=>{event.preventDefault();const f=event.currentTarget,values={host:f.elements.host.value,user:f.elements.user.value,port:Number(f.elements.port.value),enabled:f.elements.enabled.checked};if(f.elements.identity_file.value)values.identity_file=f.elements.identity_file.value;try{await api(`/api/internal-ssh/${encodeURIComponent(f.elements.kind.value)}/${encodeURIComponent(f.elements.id.value)}`,{method:'POST',body:JSON.stringify({values})});closeInternalSsh();await loadInternalSsh();managementMessage('internal-ssh-message','Internal SSH override saved.')}catch(error){managementMessage('internal-ssh-form-message',error.message,true)}};
+    document.getElementById('internal-ssh-close').onclick=closeInternalSsh;document.getElementById('internal-ssh-remove').onclick=()=>removeInternalSsh(`${document.querySelector('#internal-ssh-form [name=kind]').value}:${document.querySelector('#internal-ssh-form [name=id]').value}`);
     async function loadTargets(){try{managedTargets=(await api('/api/targets')).targets||[];renderManagedTargets()}catch(error){managementMessage('target-message',error.message,true)}}
     function openTargetModal(target=null){editingTarget=target;const form=document.getElementById('target-modal-form');form.reset();form.elements.id.value=target?.id||'';form.elements.host.value=target?.host||'';form.elements.user.value=target?.user||'root';form.elements.port.value=target?.port||22;form.elements.id.readOnly=Boolean(target);document.getElementById('target-modal-title').textContent=target?'Edit external system':'Add external system';managementMessage('target-modal-message','');document.getElementById('target-modal').classList.add('open')}
     function closeTargetModal(){document.getElementById('target-modal').classList.remove('open');editingTarget=null}
@@ -273,7 +286,7 @@ PAGE = r"""<!doctype html>
     async function testTarget(id){try{const d=await api(`/api/targets/${encodeURIComponent(id)}/test`,{method:'POST',body:'{}'});const t=d.target||{};managementMessage('target-message',`Connection successful · ${t.os||'OS unknown'} · ${t.updater||'updater unknown'}`)}catch(error){managementMessage('target-message',error.message,true)}}
     function targetRow(t){const row=document.createElement('div');row.className='target-row';row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div><div class="target-field"><span class="target-label">Updates</span><strong>${knownUpdates(t)===null?'Unknown':knownUpdates(t)}</strong></div><div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div><div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button></div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const update=row.querySelector('.update');update.disabled=running(t.id)||!TARGET_UPDATEABLE(t);update.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});return row}
     document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').onclick=()=>{const id=document.querySelector('#target-modal-form [name=id]').value;if(id)testTarget(id)};document.getElementById('target-modal-form').onsubmit=saveTarget;document.getElementById('external-settings-close').onclick=closeExternalSettings;document.getElementById('external-settings-form').onsubmit=saveExternalSettings;
-    async function bootstrap(){try{await ensureSession();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard()}catch(error){if(csrfToken)notice(error.message,true)}}
+    async function bootstrap(){try{await ensureSession();await Promise.all([loadStatus(),loadJobs(),loadTargets(),loadInternalSsh()]);showDashboard()}catch(error){if(csrfToken)notice(error.message,true)}}
     bootstrap();
   </script>
 </main></body></html>"""
@@ -346,6 +359,55 @@ def config_value_map(content):
 
 
 EXTERNAL_SETTING_KEYS = ("ONLY_UPDATE_CHECK", "EXCLUDE_UPDATE_CHECK", "ONLY", "EXCLUDE")
+
+
+def parse_internal_ssh_text(content):
+    values = {}
+    section = None
+    for number, raw in enumerate(content.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line == "schema_version=1" and section is None:
+            continue
+        match = re.fullmatch(r"\[(node|vm):([A-Za-z0-9_.:-]+)\]", line)
+        if match:
+            section = f"{match.group(1)}:{match.group(2)}"
+            if section in values:
+                raise ValueError(f"duplicate section at line {number}")
+            values[section] = {}
+            continue
+        if section is None or "=" not in line:
+            raise ValueError(f"invalid internal SSH config line {number}")
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key not in {"host", "user", "port", "identity_file", "enabled"} or key in values[section]:
+            raise ValueError(f"unsupported or duplicate internal SSH key at line {number}")
+        if "\n" in value or "\r" in value or len(value) > 1024:
+            raise ValueError("invalid internal SSH value")
+        if key == "host" and not HOST_RE.fullmatch(value):
+            raise ValueError("invalid internal SSH host")
+        if key == "user" and not USER_RE.fullmatch(value):
+            raise ValueError("invalid internal SSH user")
+        if key == "port" and (not value.isdigit() or not 1 <= int(value) <= 65535):
+            raise ValueError("invalid internal SSH port")
+        if key == "identity_file" and (not value.startswith("/") or "\n" in value):
+            raise ValueError("identity_file must be an absolute path")
+        if key == "enabled" and value not in {"true", "false"}:
+            raise ValueError("invalid internal SSH enabled value")
+        values[section][key] = value
+    return values
+
+
+def internal_ssh_text(values):
+    lines = ["# Internal SSH overrides for Proxmox nodes and internal VMs.",
+             "# This file is data, not a shell script.", "schema_version=1", ""]
+    for section in sorted(values):
+        lines.append(f"[{section}]")
+        for key in ("host", "user", "port", "identity_file", "enabled"):
+            if key in values[section]:
+                lines.append(f"{key}={values[section][key]}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def parse_external_config_text(content):
@@ -974,6 +1036,141 @@ class StatusHandler(BaseHTTPRequestHandler):
         validate_inventory_text(content, self.server.inventory_script)
         return [item for item in inventory_payload(content) if item["transport"] == "ssh"]
 
+    def internal_ssh_values(self):
+        if not self.server.internal_ssh_file.exists():
+            return {}
+        return parse_internal_ssh_text(self.server.internal_ssh_file.read_text(encoding="utf-8"))
+
+    def internal_ssh_targets(self):
+        overrides = self.internal_ssh_values()
+        resources = proxmox_inventory_snapshot() or []
+        nodes = [str(item.get("node")) for item in resources
+                 if isinstance(item, dict) and item.get("type") == "node" and item.get("node")]
+        local_node = subprocess.run(["hostname", "-s"], capture_output=True, text=True,
+                                    timeout=3, check=False).stdout.strip()
+        corosync = Path("/etc/pve/corosync.conf")
+        node_hosts = {}
+        if corosync.exists():
+            text = corosync.read_text(encoding="utf-8", errors="replace")
+            for block in re.findall(r"node\s*\{(.*?)\}", text, re.S):
+                name = re.search(r"\bname\s*:\s*([^\s}]+)", block)
+                addr = re.search(r"\bring0_addr\s*:\s*([^\s}]+)", block)
+                if name and addr:
+                    node_hosts[name.group(1)] = addr.group(1)
+        result = []
+        for node in sorted(set(nodes)):
+            section = f"node:{node}"
+            override = overrides.get(section, {})
+            result.append({"kind": "node", "id": node, "name": node,
+                           "local": node == local_node,
+                           "host": override.get("host", node_hosts.get(node, node)),
+                           "user": override.get("user", "root"),
+                           "port": int(override.get("port", "22")),
+                           "identity_file": override.get("identity_file", ""),
+                           "enabled": override.get("enabled", "true") == "true",
+                           "source": "override" if override else "cluster/default",
+                           "override": bool(override)})
+        vm_profiles = self.server.config_file.parent / "VMs"
+        vm_ids = {str(item.get("vmid", item.get("id", ""))).split("/")[-1]: item
+                  for item in resources if isinstance(item, dict) and item.get("type") in {"qemu", "lxc"}}
+        for vmid in sorted(vm_ids, key=lambda value: (not value.isdigit(), value)):
+            section = f"vm:{vmid}"; override = overrides.get(section, {})
+            defaults = {}
+            profile = vm_profiles / vmid
+            if profile.is_file():
+                for line in profile.read_text(encoding="utf-8", errors="replace").splitlines():
+                    if "=" in line:
+                        key, value = line.split("=", 1); defaults[key.strip()] = value.strip().strip('"')
+            host = override.get("host", defaults.get("IP", ""))
+            user = override.get("user", defaults.get("USER", "root"))
+            port = override.get("port", defaults.get("SSH_VM_PORT", "22"))
+            result.append({"kind": "vm", "id": vmid, "name": vm_ids[vmid].get("name", vmid),
+                           "node": vm_ids[vmid].get("node"), "host": host, "user": user,
+                           "port": int(port) if str(port).isdigit() else 22,
+                           "identity_file": override.get("identity_file", ""),
+                           "enabled": override.get("enabled", "true") == "true",
+                           "source": "override" if override else ("legacy VM profile" if defaults else "QGA/default"),
+                           "override": bool(override), "has_legacy_profile": profile.is_file()})
+        return result
+
+    def handle_internal_ssh_get(self):
+        self.send_json({"path": str(self.server.internal_ssh_file),
+                        "source_of_truth": "local internal SSH override; defaults remain automatic",
+                        "targets": self.internal_ssh_targets()})
+
+    def internal_ssh_section(self, kind, target_id):
+        if kind not in {"node", "vm"} or not INTERNAL_ID_RE.fullmatch(target_id):
+            raise ValueError("Invalid internal SSH target.")
+        target = next((item for item in self.internal_ssh_targets()
+                       if item["kind"] == kind and item["id"] == target_id), None)
+        if not target:
+            raise KeyError("Internal SSH target not found.")
+        return f"{kind}:{target_id}", target
+
+    def handle_internal_ssh_update(self, kind, target_id, payload):
+        section, _ = self.internal_ssh_section(kind, target_id)
+        if not isinstance(payload, dict):
+            raise ValueError("Internal SSH settings are invalid.")
+        allowed = {"host", "user", "port", "identity_file", "enabled"}
+        values = payload.get("values")
+        if not isinstance(values, dict) or set(values) - allowed:
+            raise ValueError("Unsupported internal SSH setting.")
+        clean = {}
+        for key, value in values.items():
+            if key == "host" and (not isinstance(value, str) or not HOST_RE.fullmatch(value)):
+                raise ValueError("Host or IP is invalid.")
+            if key == "user" and (not isinstance(value, str) or not USER_RE.fullmatch(value)):
+                raise ValueError("SSH user is invalid.")
+            if key == "port" and (isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 65535):
+                raise ValueError("SSH port must be between 1 and 65535.")
+            if key == "identity_file":
+                if not isinstance(value, str) or not value.startswith("/") or not Path(value).is_file():
+                    raise ValueError("Identity file must be an existing absolute path.")
+            if key == "enabled" and not isinstance(value, bool):
+                raise ValueError("Enabled must be boolean.")
+            clean[key] = str(value).lower() if isinstance(value, bool) else str(value)
+        def update(_content):
+            data = parse_internal_ssh_text(_content) if _content.strip() else {}
+            data[section] = clean
+            return internal_ssh_text(data)
+        locked_atomic_update(self.server.internal_ssh_file, update)
+        self.send_json({"message": "Internal SSH override saved.", "target": target_id})
+
+    def handle_internal_ssh_delete(self, kind, target_id):
+        section, _ = self.internal_ssh_section(kind, target_id)
+        def update(_content):
+            data = parse_internal_ssh_text(_content) if _content.strip() else {}
+            data.pop(section, None)
+            return internal_ssh_text(data)
+        locked_atomic_update(self.server.internal_ssh_file, update)
+        self.send_json({"message": "Internal SSH override removed; automatic/default resolution restored.", "target": target_id})
+
+    def handle_internal_ssh_test(self, kind, target_id):
+        _, target = self.internal_ssh_section(kind, target_id)
+        if target.get("local"):
+            self.send_json({"message": "Local node does not require an SSH test."})
+            return
+        if not target.get("host"):
+            self.send_json(error_payload("SSH_NOT_CONFIGURED", "No SSH configuration is available for this target."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        args = ["ssh", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
+        if target.get("identity_file"):
+            args += ["-o", "IdentitiesOnly=yes", "-i", target["identity_file"]]
+        args += ["-p", str(target["port"]), f"{target['user']}@{target['host']}", "true"]
+        try:
+            result = subprocess.run(args, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                    timeout=8, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("SSH_TEST_FAILED", "Connection test timed out or could not be started."), HTTPStatus.BAD_GATEWAY)
+            return
+        if result.returncode:
+            message = "Authentication failed or host is unreachable."
+            if "REMOTE HOST IDENTIFICATION HAS CHANGED" in result.stderr.upper():
+                message = "Host key verification failed."
+            self.send_json(error_payload("SSH_TEST_FAILED", message), HTTPStatus.BAD_GATEWAY)
+            return
+        self.send_json({"message": "Connected."})
+
     def external_target_known(self, target):
         return any(item["id"] == target for item in self.inventory_data())
 
@@ -1159,6 +1356,19 @@ class StatusHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 self.send_json(error_payload("TARGETS_INVALID", "External target inventory is invalid or unavailable."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
+        if path == "/api/internal-ssh":
+            try:
+                self.handle_internal_ssh_get()
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("INTERNAL_SSH_UNAVAILABLE", "Internal SSH configuration is invalid or unavailable."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        if len([part for part in path.split("/") if part]) == 4 and path.startswith("/api/internal-ssh/") and path.endswith("/test"):
+            parts = [unquote(part) for part in path.split("/") if part]
+            try:
+                self.handle_internal_ssh_test(parts[2], parts[3])
+            except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("SSH_TEST_FAILED", "The connection test could not be completed."), HTTPStatus.BAD_GATEWAY)
+            return
         if len([part for part in path.split("/") if part]) == 3 and path.startswith("/api/external-settings/"):
             target_id = unquote(path.rsplit("/", 1)[-1])
             try:
@@ -1291,6 +1501,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.handle_external_settings_update(parts[2], payload)
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 self.send_json(error_payload("EXTERNAL_SETTINGS_SAVE_FAILED", "External settings could not be saved."), HTTPStatus.BAD_GATEWAY)
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "internal-ssh"]:
+            try:
+                self.handle_internal_ssh_update(parts[2], parts[3], payload)
+            except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
+                self.send_json(error_payload("INTERNAL_SSH_SAVE_FAILED", str(error) or "Internal SSH settings were rejected."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         if parts == ["api", "targets"]:
             try:
@@ -1479,6 +1695,12 @@ class StatusHandler(BaseHTTPRequestHandler):
         if not self.write_allowed():
             return
         parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
+        if len(parts) == 4 and parts[:2] == ["api", "internal-ssh"]:
+            try:
+                self.handle_internal_ssh_delete(parts[2], parts[3])
+            except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
+                self.send_json(error_payload("INTERNAL_SSH_REMOVE_FAILED", str(error) or "Internal SSH override was not removed."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
         if len(parts) == 3 and parts[:2] == ["api", "targets"]:
             try:
                 self.handle_target_delete(parts[2])
@@ -1517,6 +1739,7 @@ def main():
     server = ThreadingHTTPServer((args.bind, args.port), StatusHandler)
     server.status_file, server.cli = args.status_file, args.cli
     server.config_file, server.inventory_file = args.config_file, args.inventory_file
+    server.internal_ssh_file = args.config_file.parent / "internal-ssh.conf"
     server.backup_state_file = DEFAULT_BACKUP_STATE_FILE
     server.inventory_script, server.external_script = args.inventory_script, args.external_script
     server.tag_filter_script = args.config_file.parent / "tag-filter.sh"

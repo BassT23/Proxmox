@@ -282,6 +282,19 @@ local, LXC (`pct`), and SSH execution. QEMU Guest Agent execution keeps its
 existing readiness and policy handling. This prepares a Target → Transport →
 Updater split without changing the existing Proxmox target behavior.
 
+### Internal SSH connections
+
+Remote Proxmox nodes and internal Proxmox VMs can have explicit SSH overrides
+in `/etc/ultimate-updater/internal-ssh.conf`. This is a validated, data-only
+configuration (not a shell file) and is separate from `targets.conf`.
+Without an override, nodes use the Corosync address and global SSH defaults;
+VMs use their existing `VMs/<VMID>` profile or QEMU Guest Agent behavior.
+The Web UI shows the resolved values and their source under **Internal SSH
+Connections**, where an authenticated owner can save, test, edit, or remove
+an override. Removing one restores automatic/default resolution. Only the
+identity-file path is stored or displayed; private key contents and passwords
+are never handled by the UI.
+
 ## Machine-readable status
 
 `check-updates.sh` additionally writes `/etc/ultimate-updater/status.json`

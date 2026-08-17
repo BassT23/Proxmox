@@ -34,6 +34,18 @@ if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
   # shellcheck disable=SC1090,SC1091
   . "$CLUSTER_TARGET_FILE"
 fi
+INTERNAL_SSH_FILE="${INTERNAL_SSH_FILE:-$LOCAL_FILES/internal-ssh.sh}"
+if [[ -f "$INTERNAL_SSH_FILE" ]]; then
+  # shellcheck disable=SC1090
+  . "$INTERNAL_SSH_FILE"
+else
+  INTERNAL_SSH_ARGS=()
+  INTERNAL_SSH_USE_IDENTITY() { :; }
+  INTERNAL_SSH_RESOLVE_NODE() { INTERNAL_SSH_HOST="$2"; INTERNAL_SSH_USER=root; INTERNAL_SSH_PORT="${3:-22}"; }
+  INTERNAL_SSH_RESOLVE_VM() { INTERNAL_SSH_HOST="$2"; INTERNAL_SSH_USER="$3"; INTERNAL_SSH_PORT="${4:-22}"; }
+fi
+ssh() { command ssh "${INTERNAL_SSH_ARGS[@]}" "$@"; }
+scp() { command scp "${INTERNAL_SSH_ARGS[@]}" "$@"; }
 WINDOWS_UPDATE_FILE="${WINDOWS_UPDATE_FILE:-$LOCAL_FILES/windows-update.sh}"
 if [[ -f "$WINDOWS_UPDATE_FILE" ]]; then
   # shellcheck disable=SC1090
@@ -1140,6 +1152,10 @@ CHECK_QGA_EXEC () {
 HOST_UPDATE_START () {
   if [[ "$RICM" != true ]]; then true > $LOCAL_FILES/check-output; fi
   for HOST in $HOSTS; do
+    HOST_NODE=$(awk -v address="$HOST" '/name[[:space:]]*:/ { name=$2 } /ring0_addr[[:space:]]*:/ && $2 == address { print name; found=1; exit } END { if (!found) print address }' /etc/pve/corosync.conf 2>/dev/null)
+    INTERNAL_SSH_RESOLVE_NODE "$HOST_NODE" "$HOST" "$SSH_PORT" || { UPDATE_FAILURE=true; continue; }
+    [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || { UPDATE_FAILURE=true; continue; }
+    HOST="${INTERNAL_SSH_HOST:-$HOST}"; SSH_PORT="${INTERNAL_SSH_PORT:-$SSH_PORT}"; INTERNAL_SSH_USE_IDENTITY
     # Check if Host/Node is available
     if ssh -q -p "$SSH_PORT" "$HOST" test >/dev/null 2>&1; [ $? -eq 255 ]; then
       echo -e "⏩ ${OR:-}Skip Host${CL:-} : ${GN:-}$HOST${CL:-} ${OR:-}- can't connect${CL:-}\n"
@@ -1176,6 +1192,9 @@ UPDATE_HOST () {
     fi
     if [[ -f "$LOCAL_FILES/target-runtime.sh" ]]; then
       scp "$LOCAL_FILES/target-runtime.sh" "$HOST":$LOCAL_FILES/target-runtime.sh
+    fi
+    if [[ -f "$LOCAL_FILES/internal-ssh.sh" ]]; then
+      scp "$LOCAL_FILES/internal-ssh.sh" "$HOST":$LOCAL_FILES/internal-ssh.sh
     fi
     if [[ -f "$LOCAL_FILES/cluster-target.sh" ]]; then
       scp "$LOCAL_FILES/cluster-target.sh" "$HOST":$LOCAL_FILES/cluster-target.sh
@@ -1527,6 +1546,9 @@ UPDATE_VM () {
     SSH_VM_PORT="${SSH_VM_PORT:-22}"
     SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-45}"
+    INTERNAL_SSH_RESOLVE_VM "$VM" "${IP:-}" "${USER:-root}" "${SSH_VM_PORT:-22}" || return 1
+    [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
+    IP="${INTERNAL_SSH_HOST:-$IP}"; USER="${INTERNAL_SSH_USER:-$USER}"; SSH_VM_PORT="${INTERNAL_SSH_PORT:-$SSH_VM_PORT}"; INTERNAL_SSH_USE_IDENTITY
     if [[ "$START_WAITING" == true ]]; then
       echo -e "⏳${OR:-} Wait for bootup${CL:-}"
       echo -e "ℹ ${OR:-} $SSH_START_DELAY_TIME seconds is set for sleep between tryouts in SSH-VM config file${CL:-}\n"
