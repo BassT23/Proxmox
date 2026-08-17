@@ -123,7 +123,7 @@ START_INITIAL_INVENTORY () {
 
   # This is intentionally the exact command used by the Web UI's
   # action_check_all(): job-runner start-check all-systems CLI all.
-  if output=$(timeout 15 "$job_runner" start-check all-systems "$cli" all 2>&1); then
+  if output=$(UU_JOB_SOURCE=initial-inventory timeout 15 "$job_runner" start-check all-systems "$cli" all 2>&1); then
     job=$(printf '%s\n' "$output" | sed -n 's/^Job:[[:space:]]*//p' | head -n 1)
     if [[ "$job" =~ ^ultimate-updater-check-[A-Za-z0-9_.-]+$ ]]; then
       marker_tmp=$(mktemp "${INITIAL_INVENTORY_STATE_FILE}.XXXXXX") || true
