@@ -43,6 +43,9 @@ cat > "$WORK_DIR/external-apt.sh" <<'EXTERNAL'
 #!/usr/bin/env bash
 printf '%s\n' "$1" >> "$UU_EXTERNAL_CALLS"
 printf 'mock external update success: %s\n' "$1"
+if [[ "$1" == rocky-984 && "${UU_FAIL_EXTERNAL:-false}" == true ]]; then
+  exit 42
+fi
 EXTERNAL
 chmod +x "$WORK_DIR"/{target-inventory.sh,update.sh,external-apt.sh}
 
@@ -69,5 +72,19 @@ run_global >/dev/null
 grep -Fxq rocky-984 "$WORK_DIR/calls"
 grep -Fxq legacy-971 "$WORK_DIR/calls"
 if grep -Fxq mediacenter "$WORK_DIR/calls"; then exit 1; fi
+
+sed -i 's/EXCLUDE="mediacenter"/EXCLUDE=""/; s/EXIT_ON_ERROR="false"/EXIT_ON_ERROR="false"/' "$WORK_DIR/update.conf"
+: > "$WORK_DIR/calls"
+export UU_FAIL_EXTERNAL=true
+if run_global >/dev/null 2>&1; then exit 1; fi
+grep -Fxq rocky-984 "$WORK_DIR/calls"
+grep -Fxq mediacenter "$WORK_DIR/calls"
+grep -Fxq legacy-971 "$WORK_DIR/calls"
+
+sed -i 's/EXIT_ON_ERROR="false"/EXIT_ON_ERROR="true"/' "$WORK_DIR/update.conf"
+: > "$WORK_DIR/calls"
+if run_global >/dev/null 2>&1; then exit 1; fi
+grep -Fxq rocky-984 "$WORK_DIR/calls"
+if [[ $(wc -l < "$WORK_DIR/calls") -ne 1 ]]; then exit 1; fi
 
 echo 'global External update selection: PASS'
