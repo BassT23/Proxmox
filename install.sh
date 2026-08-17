@@ -197,7 +197,7 @@ ${OR:-}Is it OK for you, or want to backup your files first?${CL:-}\n"
     read -p "Type [Y/y] for DELETE - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       rm -rf /root/Update-Proxmox-Scripts || true
-      bash <(curl -s $SERVER_URL/install.sh) update
+      bash <(curl -s "$SERVER_URL/install.sh") update
     else
       exit 0
     fi
@@ -207,9 +207,9 @@ ${OR:-}Is it OK for you, or want to backup your files first?${CL:-}\n"
   rm -rf /etc/update-motd.d/01-updater.bak || true
   # Check and renew to new structure
   if [[ -f /usr/local/bin/update ]] && [[ ! -f /usr/local/sbin/update ]]; then
-    curl  -s -L https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/update.sh > $LOCAL_FILES/update.sh
-    chmod 750 $LOCAL_FILES/update.sh
-    ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
+    curl  -s -L "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/update.sh" > "$LOCAL_FILES/update.sh"
+    chmod 750 "$LOCAL_FILES/update.sh"
+    ln -sf "$LOCAL_FILES/update.sh" /usr/local/sbin/update
     rm /usr/local/bin/update
     NEED_REBOOT=true
   fi
@@ -221,7 +221,7 @@ INSTALL () {
     echo -e "${OR:-}The Ultimate Updater is already installed.${CL:-}"
     read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-      bash <(curl -s $SERVER_URL/install.sh) update
+      bash <(curl -s "$SERVER_URL/install.sh") update
     else
       echo -e "${OR:-}\nBye\n${CL:-}"
       exit 0
@@ -235,7 +235,7 @@ INSTALL () {
       if [[ "$BRANCH" == master ]]; then
         curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
       else
-        curl -s -L https://github.com/BassT23/Proxmox/tarball/$BRANCH > $TEMP_FOLDER/ultimate-updater.tar.gz
+        curl -s -L "https://github.com/BassT23/Proxmox/tarball/$BRANCH" > "$TEMP_FOLDER/ultimate-updater.tar.gz"
       fi
       tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
       rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
@@ -582,7 +582,7 @@ UPDATE () {
     echo -e "⚠${RD:-} The Ultimate Updater is not installed.\n\n${OR:-}Would you like to install it?${CL:-}"
     read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-      bash <(curl -s $SERVER_URL/install.sh)
+      bash <(curl -s "$SERVER_URL/install.sh")
     else
       echo -e "\n\nBye\n"
       exit 0
@@ -654,7 +654,7 @@ WELCOME_SCREEN () {
   if [[ $COMMAND != true ]]; then
     echo -e "\n${BL:-}[Info]${GN:-} Installing The Ultimate Updater Welcome-Screen${CL:-}\n"
     if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-    curl -s $SERVER_URL/welcome-screen.sh > $TEMP_FOLDER/welcome-screen.sh
+    curl -s "$SERVER_URL/welcome-screen.sh" > "$TEMP_FOLDER/welcome-screen.sh"
     if ! [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
       echo -e "${OR:-} Welcome-Screen is not installed${CL:-}\n"
       read -p "Would you like to install it also? Type [Y/y] or Enter for yes - anything else will skip: " -r
