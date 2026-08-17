@@ -523,7 +523,11 @@ CHECK_HOST () {
   fi
   if [[ "$remote_done_found" == true && "$remote_status" -ne 0 ]]; then
     remote_diag_level=failure
-    remote_failure_class=remote-rc-nonzero
+    case "$remote_status" in
+      86) remote_failure_class=status-file-missing-after-finalization ;;
+      87) remote_failure_class=invalid-json-after-finalization ;;
+      *) remote_failure_class=remote-rc-nonzero ;;
+    esac
   fi
   REMOTE_STATUS_DIAGNOSTICS "$remote_diag_level" "$HOST_NODE" "$HOST" "$remote_check_dir" \
     "$remote_done_file" "$remote_check_dir/status.json" "$remote_done_found" \
@@ -1212,8 +1216,17 @@ fi
 # Read config
 READ_WRITE_CONFIG
 STATUS_MODEL_ENABLED=false
+status_model_init_rc=0
 if STATUS_MODEL_INIT; then
   STATUS_MODEL_ENABLED=true
+else
+  status_model_init_rc=$?
+  CHECK_FAILURE=1
+fi
+if [[ "${DEBUG:-false}" == true ]]; then
+  printf 'Status model init: script=%s file=%s records=%s enabled=%s rc=%s\n' \
+    "$STATUS_MODEL_SCRIPT" "${STATUS_MODEL_FILE:-}" "${STATUS_MODEL_RECORD_FILE:-}" \
+    "$STATUS_MODEL_ENABLED" "$status_model_init_rc" >&2
 fi
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   ARGUMENTS "$@"
@@ -1246,6 +1259,12 @@ if [[ "$STATUS_MODEL_ENABLED" == true ]]; then
   STATUS_MODEL_FINISH >/dev/null 2>&1 || status_finish_rc=$?
   if [[ "$status_finish_rc" -ne 0 ]]; then
     CHECK_FAILURE=1
+  fi
+  if [[ "${DEBUG:-false}" == true ]]; then
+    printf 'Status model finish: file=%s records=%s exists=%s rc=%s\n' \
+      "${STATUS_MODEL_FILE:-}" "${STATUS_MODEL_RECORD_FILE:-}" \
+      "$( [[ -s "${STATUS_MODEL_FILE:-}" ]] && printf true || printf false )" \
+      "$status_finish_rc" >&2
   fi
 fi
 
