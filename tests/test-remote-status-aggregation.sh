@@ -32,6 +32,10 @@ grep -Fq 'remote_rc=86' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'remote_rc=87' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'status_finish_rc=0' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'CHECK_FAILURE=1' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'status-file-missing-after-finalization' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'invalid-json-after-finalization' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'Status model init:' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'Status model finish:' "$ROOT_DIR/check-updates.sh"
 
 # An absent completion marker must not be relabelled as a remote RC failure;
 # the marker is the only authoritative source for the remote RC.
