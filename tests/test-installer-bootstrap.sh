@@ -17,9 +17,17 @@ fi
 grep -Fq 'Interactive confirmation required for upgrade from version 5.0 or earlier' "$INSTALLER"
 grep -Fq 'UPGRADE_RESTART_REQUIRED=true' "$INSTALLER"
 grep -Fq 'A restart of this Proxmox host is required' "$INSTALLER"
-grep -Fq 'Upgrade completed successfully.' "$INSTALLER"
 grep -Fq 'The host remains usable' "$INSTALLER"
 grep -Fq 'Web UI ready on port' "$INSTALLER"
+grep -Fq 'Updating Ultimate Updater...' "$INSTALLER"
+grep -Fq "Installed: \$BRANCH" "$INSTALLER"
+grep -Fq "rm -rf \"\$TEMP_FILES\"/tests" "$INSTALLER"
+if grep -Fq 'For infos and warnings please check the readme' "$INSTALLER"; then
+  exit 1
+fi
+if grep -Fq 'old file saved as' "$INSTALLER"; then
+  exit 1
+fi
 grep -Fq 'UU_UPGRADE_INTERACTIVE=true' "$ROOT_DIR/update.sh"
 
 work_dir=$(mktemp -d)

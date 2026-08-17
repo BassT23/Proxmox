@@ -465,8 +465,8 @@ INSTALL () {
     cp "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     SETUP_WEB_SERVICE start
     START_INITIAL_INVENTORY
-    echo -e "${OR:-}Finished. Run The Ultimate Updater with 'update'.${CL:-}"
-    echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
+    echo -e "✅${GN:-} Ultimate Updater installed successfully.${CL:-}"
+    echo -e "   Installed: $BRANCH"
     echo -e "${OR:-}Also want to install the Welcome-Screen?${CL:-}"
     read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
@@ -485,7 +485,7 @@ UPDATE () {
   OLD_FILESYSTEM_CHECK
   if [ -f "/usr/local/sbin/update" ]; then
     # Update
-    echo -e "\nℹ ${GN:-} Updating script ...${CL:-}\n"
+    echo -e "\nℹ ${GN:-} Updating Ultimate Updater...${CL:-}\n"
     # Cleaning
     rm -rf "$TEMP_FOLDER" || true
     # Download files
@@ -728,6 +728,9 @@ UPDATE () {
     rm -rf "$TEMP_FILES"/ssh.md || true
     rm -rf "$TEMP_FILES"/CODE_OF_CONDUCT.md || true
     rm -rf "$TEMP_FILES"/SECURITY.md || true
+    # Repository tests are not part of the installed runtime. Removing them
+    # before CHECK_DIFF also prevents test files from being copied into /etc.
+    rm -rf "$TEMP_FILES"/tests || true
     rm -rf "$TEMP_FILES"/TESTING.md || true
     chmod -R +x "$TEMP_FILES"/exit/*.sh
     cd "$TEMP_FILES"
@@ -747,11 +750,9 @@ UPDATE () {
       START_INITIAL_INVENTORY
     fi
     rm -rf $TEMP_FOLDER || true
-    echo -e "✅${GN:-} The Ultimate Updater updated successfully.${CL:-}"
-    if [[ "$BRANCH" != master ]]; then echo -e "${OR:-}   Installed: $BRANCH version${CL:-}"; fi
-    echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
+    echo -e "✅${GN:-} Ultimate Updater updated successfully.${CL:-}"
+    echo -e "   Installed: $BRANCH"
     if [[ "$UPGRADE_RESTART_REQUIRED" == true ]]; then
-      echo -e "${GN:-}✅ Upgrade completed successfully.${CL:-}"
       echo -e "${OR:-}⚠ A restart of this Proxmox host is required to fully complete the Ultimate Updater migration.\n  The host remains usable, but some Ultimate Updater components may not work reliably until it has been restarted.\n  Please restart the host when it is safe to do so.${CL:-}\n"
     elif [[ $NEED_REBOOT == true ]]; then
       echo -e "${RD:-}  Please reboot, to make The Ultimative Updater workable\n${CL:-}"
@@ -788,7 +789,6 @@ CHECK_DIFF () {
       mv "$TEMP_FILES/$FILE" "$LOCAL_FILES/$FILE"
     }
     if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
-      echo -e "\nℹ${GN:-} Installed updated file without prompting; old file saved as '$FILE.bak' (or timestamped backup)${CL:-}\n"
       install_changed_file
       unset -f install_changed_file
       return 0

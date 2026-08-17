@@ -1414,7 +1414,6 @@ UPDATE_CONTAINER () {
     echo
   fi
   if SCRIPT_ONLY_ENABLED "$CONTAINER"; then
-    SCRIPT_ONLY_RUN=true
     SCRIPT_ONLY_LXC || {
       ERROR_CODE=$?
       ID=$CONTAINER
@@ -1599,7 +1598,6 @@ UPDATE_VM () {
   fi
   echo
   if SCRIPT_ONLY_ENABLED "$VM"; then
-    SCRIPT_ONLY_RUN=true
     SCRIPT_ONLY_VM || {
       ERROR_CODE=$?
       ID=$VM
@@ -2029,11 +2027,7 @@ EXIT () {
           UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null || true
         fi
       else
-        if [[ "$SCRIPT_ONLY_RUN" == true ]]; then
-          echo -e "${GN:-}✅ Finished, all configured script-only updates done.${CL:-}\n"
-        else
-          echo -e "${GN:-}✅ Finished, all updates done.${CL:-}\n"
-        fi
+        echo -e "${GN:-}✅ Finished.${CL:-}\n"
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
         if [[ "$EMAIL_ONLY_ERROR" != true ]]; then

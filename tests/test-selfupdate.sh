@@ -23,6 +23,9 @@ grep -Fqx 'local edit' "$WORK_DIR/local/managed-file.bak"
 if grep -Fq 'What would you like' "$WORK_DIR/output"; then
   exit 1
 fi
+if grep -Fq '.bak' "$WORK_DIR/output"; then
+  exit 1
+fi
 
 printf 'repository version 2\n' > "$WORK_DIR/source/managed-file"
 printf 'existing backup\n' > "$WORK_DIR/local/managed-file.bak"
@@ -33,6 +36,9 @@ LOCAL_FILES="$WORK_DIR/local" TEMP_FILES="$WORK_DIR/source" FILE=managed-file \
 grep -Fqx 'repository version 2' "$WORK_DIR/local/managed-file"
 grep -Fqx 'existing backup' "$WORK_DIR/local/managed-file.bak"
 if grep -Fq 'What would you like' "$WORK_DIR/no-tty-output"; then
+  exit 1
+fi
+if grep -Fq '.bak' "$WORK_DIR/no-tty-output"; then
   exit 1
 fi
 
