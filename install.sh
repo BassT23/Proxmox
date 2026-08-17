@@ -10,10 +10,19 @@ VERSION="2.1"
 
 # Branch
 
-BRANCH="develop"
+BRANCH="${UU_TARGET_BRANCH:-}"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
+if [[ -z "$BRANCH" && -f "$LOCAL_FILES/update.conf" ]]; then
+  BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2; exit}' "$LOCAL_FILES/update.conf")
+fi
+BRANCH="${BRANCH:-develop}"
+case "$BRANCH" in
+  master|beta|develop) ;;
+  *) echo "Unsupported update branch: $BRANCH" >&2; exit 2 ;;
+esac
+export UU_TARGET_BRANCH="$BRANCH"
 WEB_UI_PORT_SCRIPT="$LOCAL_FILES/web-ui-port.sh"
 HARDCORE_TEST_SCRIPT="$LOCAL_FILES/hardcore-test.sh"
 WEB_SERVICE_NAME="ultimate-updater-web.service"
@@ -356,8 +365,8 @@ UPDATE () {
     if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
     if [[ "$BRANCH" == master ]]; then
       curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
-    elif [[ "$BRANCH" == develop ]]; then
-      curl -s -L https://github.com/BassT23/Proxmox/tarball/develop > $TEMP_FOLDER/ultimate-updater.tar.gz
+    elif [[ "$BRANCH" == beta || "$BRANCH" == develop ]]; then
+      curl -s -L "https://github.com/BassT23/Proxmox/tarball/$BRANCH" > $TEMP_FOLDER/ultimate-updater.tar.gz
     fi
     tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
     rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true

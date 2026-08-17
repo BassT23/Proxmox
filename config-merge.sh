@@ -75,13 +75,13 @@ CONFIG_MERGE_SET_BRANCH () {
   awk -v branch="$branch" '
     BEGIN { replaced = 0 }
     /^[[:space:]]*USED_BRANCH[[:space:]]*=/ {
-      print "USED_BRANCH=\"" branch "\"    # could be \"master/develop\""
+      print "USED_BRANCH=\"" branch "\"    # could be \"master/beta/develop\""
       replaced = 1
       next
     }
     { print }
     END {
-      if (!replaced) print "\nUSED_BRANCH=\"" branch "\"    # could be \"master/develop\""
+      if (!replaced) print "\nUSED_BRANCH=\"" branch "\"    # could be \"master/beta/develop\""
     }
   ' "$file" > "$temp" || { rm -f "$temp"; return 1; }
   mv -f "$temp" "$file"

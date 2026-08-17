@@ -91,9 +91,10 @@ FETCH_REMOTE_VERSION() {
 }
 
 UPDATE_VERSION_CACHE() {
-  local master_version develop_version cache_dir temp_file
+  local master_version beta_version develop_version cache_dir temp_file
 
   master_version=$(FETCH_REMOTE_VERSION master update.sh 5) || return 1
+  beta_version=$(FETCH_REMOTE_VERSION beta update.sh 5) || return 1
   develop_version=$(FETCH_REMOTE_VERSION develop update.sh 5) || return 1
   cache_dir=${VERSION_CACHE_FILE%/*}
   mkdir -p "$cache_dir" || return 1
@@ -101,6 +102,7 @@ UPDATE_VERSION_CACHE() {
   {
     printf 'TIMESTAMP="%s"\n' "$(date +%s)"
     printf 'MASTER_VERSION="%s"\n' "$master_version"
+    printf 'BETA_VERSION="%s"\n' "$beta_version"
     printf 'DEVELOP_VERSION="%s"\n' "$develop_version"
   } > "$temp_file" || { rm -f -- "$temp_file"; return 1; }
   chmod 644 "$temp_file" || { rm -f -- "$temp_file"; return 1; }
@@ -108,14 +110,16 @@ UPDATE_VERSION_CACHE() {
 }
 
 READ_VERSION_CACHE() {
-  local timestamp master_version develop_version now
+  local timestamp master_version beta_version develop_version now
 
   [[ -r "$VERSION_CACHE_FILE" ]] || return 1
   timestamp=$(awk -F'"' '/^TIMESTAMP=/ {print $2; exit}' "$VERSION_CACHE_FILE")
   master_version=$(awk -F'"' '/^MASTER_VERSION=/ {print $2; exit}' "$VERSION_CACHE_FILE")
+  beta_version=$(awk -F'"' '/^BETA_VERSION=/ {print $2; exit}' "$VERSION_CACHE_FILE")
   develop_version=$(awk -F'"' '/^DEVELOP_VERSION=/ {print $2; exit}' "$VERSION_CACHE_FILE")
   [[ "$timestamp" =~ ^[0-9]+$ ]] || return 1
   [[ "$master_version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1
+  [[ "$beta_version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1
   [[ "$develop_version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1
   now=$(date +%s)
   CACHE_AGE=$((now - timestamp))
@@ -123,6 +127,8 @@ READ_VERSION_CACHE() {
   # These globals are consumed by welcome-screen.sh after this function returns.
   # shellcheck disable=SC2034
   CACHE_MASTER_VERSION=$master_version
+  # shellcheck disable=SC2034
+  CACHE_BETA_VERSION=$beta_version
   # shellcheck disable=SC2034
   CACHE_DEVELOP_VERSION=$develop_version
   if (( CACHE_AGE <= VERSION_CACHE_TTL )); then

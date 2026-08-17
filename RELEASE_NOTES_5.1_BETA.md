@@ -38,6 +38,7 @@ Status: Beta candidate, not yet published.
 ## Upgrade notes
 
 - Upgrade from 5.0 through the normal installer/self-update path.
+- Existing installations can select the published Beta with `update beta -up`.
 - Existing configuration, unknown keys, comments, External settings, and a
   custom Web UI port are preserved.
 - Legacy compatible External SSH entries are migrated without deleting the
