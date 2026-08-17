@@ -75,29 +75,24 @@ External systems do not receive Proxmox snapshots or vzdump backups. Before
 an external update, an administrator must have a current verified backup or
 explicitly accept the risk of proceeding.
 
-## Migrating legacy SSH targets
+## Historical internal VM SSH profiles
 
-Older installations may contain one file per target under:
+Older installations may contain one SSH profile per internal Proxmox VM under:
 
 ```text
 /etc/ultimate-updater/VMs/<ID>
 ```
 
-During install or self-update, the updater detects these files and safely
-adds compatible entries to `targets.conf`. It recognizes `IP`, `USER`,
-and `SSH_VM_PORT`. The historical `SSH_START_DELAY_TIME` value has no
-equivalent in the external inventory and is reported as deprecated. Unknown
-fields are reported and ignored.
+These files are not External targets and are never added to `targets.conf`.
+The internal VM check/update path reads `IP`, `USER`, and `SSH_VM_PORT` from
+the matching file for SSH fallback; `SSH_START_DELAY_TIME` remains an internal
+retry delay. The files and working SSH identities are preserved.
 
-Migration never sources or evaluates a legacy file. It validates all values,
-backs up `targets.conf` before a change, writes the new inventory atomically,
-and keeps every legacy file. Existing target entries and working SSH
-identities are preserved. Matching host/user/port entries are not duplicated;
-conflicts, malformed files, and missing access are reported for manual
-review.
+Early 5.1 Beta builds could incorrectly create `[legacy-<VMID>]` External
+sections. A later self-update removes only sections with migration evidence
+whose host/user/port exactly match the corresponding VM profile. The cleanup
+backs up and atomically validates `targets.conf`; real External targets are
+preserved. No legacy file is sourced or evaluated.
 
-No SSH key is generated during a normal install or migration. Use
-`external setup` when a new dedicated identity is actually needed. A
-successful migration leaves the target usable through the new inventory; if
-the helper is missing, checks can still run but updates stop with
-`EXTERNAL_HELPER_MISSING` and a setup hint.
+Internal VM SSH fallback remains usable through the existing VM path; External
+helper setup is unrelated and applies only to actual External systems.

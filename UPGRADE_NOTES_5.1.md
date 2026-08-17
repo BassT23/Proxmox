@@ -21,8 +21,12 @@ reliably until the restart has been performed. The updater does not reboot the
 host automatically. Updates within the 5.1 line do not require this migration
 restart; individual system updates may still report `REBOOT REQUIRED` for
 unrelated package or kernel changes.
-Missing supported defaults are added without overwriting user values. Legacy
-compatible SSH target files are migrated safely and are not deleted.
+Missing supported defaults are added without overwriting user values.
+Historical `/etc/ultimate-updater/VMs/<VMID>` files remain internal Proxmox VM
+SSH profiles and are not migrated into External inventory. If an older Beta
+build created matching `[legacy-<VMID>]` sections, the next self-update removes
+only those proven bug-generated sections atomically; real External targets are
+preserved.
 
 After the upgrade:
 

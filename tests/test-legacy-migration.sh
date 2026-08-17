@@ -9,109 +9,78 @@ cp "$ROOT_DIR/target-inventory.sh" "$WORK_DIR/target-inventory.sh"
 chmod 750 "$WORK_DIR/target-inventory.sh"
 mkdir -p "$WORK_DIR/VMs"
 
+cat > "$WORK_DIR/VMs/155" <<'EOF'
+IP="10.0.0.155"
+USER="admin"
+SSH_VM_PORT="2222"
+SSH_START_DELAY_TIME="15"
+EOF
+cat > "$WORK_DIR/VMs/156" <<'EOF'
+IP="10.0.0.156"
+USER="root"
+SSH_VM_PORT="22"
+EOF
+
 cat > "$WORK_DIR/targets.conf" <<'EOF'
-# Existing user-managed inventory must remain unchanged.
-[existing]
-host=10.0.0.10
+[raspi]
+host=10.0.0.50
+transport=ssh
+user=uu-ext
+port=22
+
+[legacy-155]
+host=10.0.0.155
 transport=ssh
 user=admin
-port=22
-identity_file=/root/.ssh/legacy-key
+port=2222
 
-[plain-existing]
-host=10.0.0.11
+[legacy-156]
+host=10.0.0.156
 transport=ssh
 user=root
 port=22
 EOF
+printf 'fingerprint=old\nmanual_review=0\n' > "$WORK_DIR/legacy-migration.state"
 
-cat > "$WORK_DIR/VMs/927" <<'EOF'
-# Historical SSH definition.
-IP="10.0.0.27" # inline comments are supported
-USER="uu-ext"
-SSH_VM_PORT="2222"
-SSH_START_DELAY_TIME="45"
-CUSTOM_NOTE="preserve as report only"
-EOF
+UU_LOCAL_FILES="$WORK_DIR" UU_LEGACY_MIGRATION_LOG="$WORK_DIR/migration.log" \
+  "$ROOT_DIR/legacy-migrate.sh" > "$WORK_DIR/output"
 
-cat > "$WORK_DIR/VMs/928" <<'EOF'
-IP="10.0.0.10"
-USER="admin"
-SSH_VM_PORT="22"
-EOF
+if grep -Eq '^\[legacy-(155|156)\]$' "$WORK_DIR/targets.conf"; then
+  echo 'internal VM SSH profiles were left as external targets' >&2
+  exit 1
+fi
+grep -Fqx '[raspi]' "$WORK_DIR/targets.conf"
+grep -Fq 'Removed 2 obsolete internal VM SSH entries' "$WORK_DIR/output"
+grep -Fq 'REMOVED_BUG_GENERATED [legacy-155]' "$WORK_DIR/migration.log"
+grep -Fq 'REMOVED_BUG_GENERATED [legacy-156]' "$WORK_DIR/migration.log"
+compgen -G "$WORK_DIR/targets.conf.bak*" >/dev/null
 
-cat > "$WORK_DIR/VMs/929" <<'EOF'
-IP="$(touch /tmp/legacy-migration-must-not-run)"
-USER="root"
-SSH_VM_PORT="22"
-EOF
+# Cleanup is idempotent and does not touch real external targets.
+before=$(sha256sum "$WORK_DIR/targets.conf" | awk '{print $1}')
+UU_LOCAL_FILES="$WORK_DIR" UU_LEGACY_MIGRATION_LOG="$WORK_DIR/migration.log" \
+  "$ROOT_DIR/legacy-migrate.sh" > "$WORK_DIR/second.out"
+after=$(sha256sum "$WORK_DIR/targets.conf" | awk '{print $1}')
+[[ "$before" == "$after" ]]
+[[ ! -s "$WORK_DIR/second.out" ]]
 
-cat > "$WORK_DIR/VMs/930" <<'EOF'
-IP="10.0.0.30"
-USER="root"
-SSH_VM_PORT="22"
-EOF
-
-cat > "$WORK_DIR/VMs/931" <<'EOF'
-IP="10.0.0.11"
-USER="root"
-SSH_VM_PORT="22"
-EOF
-
-cat >> "$WORK_DIR/targets.conf" <<'EOF'
-
-[legacy-930]
-host=10.0.0.31
+# Without migration evidence, an ambiguous legacy-named external is preserved.
+mkdir -p "$WORK_DIR/no-evidence/VMs"
+cp "$WORK_DIR/VMs/155" "$WORK_DIR/no-evidence/VMs/155"
+cp "$WORK_DIR/target-inventory.sh" "$WORK_DIR/no-evidence/target-inventory.sh"
+chmod 750 "$WORK_DIR/no-evidence/target-inventory.sh"
+cat > "$WORK_DIR/no-evidence/targets.conf" <<'EOF'
+[legacy-155]
+host=10.0.0.155
 transport=ssh
-user=root
-port=22
-identity_file=/root/.ssh/other-key
+user=admin
+port=2222
 EOF
+UU_LOCAL_FILES="$WORK_DIR/no-evidence" "$ROOT_DIR/legacy-migrate.sh" >/dev/null
+grep -Fqx '[legacy-155]' "$WORK_DIR/no-evidence/targets.conf"
 
-UU_LOCAL_FILES="$WORK_DIR" UU_LEGACY_MIGRATION_LOG="$WORK_DIR/migration.log" "$ROOT_DIR/legacy-migrate.sh" > "$WORK_DIR/first.out"
+# The production VM path still reads VMs/<VMID>; no external migration call is
+# needed for internal VM SSH fallback.
+grep -Fq 'LOCAL_FILES/VMs/$VM' "$ROOT_DIR/update.sh"
+grep -Fq 'LOCAL_FILES/VMs/"$VM"' "$ROOT_DIR/check-updates.sh"
 
-grep -Fq 'MIGRATED' "$WORK_DIR/migration.log"
-grep -Fq 'SKIPPED_DUPLICATE' "$WORK_DIR/first.out"
-grep -Fq 'SKIPPED_INVALID' "$WORK_DIR/first.out"
-grep -Fq 'MANUAL_REVIEW_REQUIRED' "$WORK_DIR/first.out"
-grep -Fqx 'host=10.0.0.27' <(sed -n '/\[legacy-927\]/,/^$/p' "$WORK_DIR/targets.conf")
-grep -Fqx 'user=uu-ext' <(sed -n '/\[legacy-927\]/,/^$/p' "$WORK_DIR/targets.conf")
-grep -Fqx 'port=2222' <(sed -n '/\[legacy-927\]/,/^$/p' "$WORK_DIR/targets.conf")
-grep -Fq 'identity_file=/root/.ssh/legacy-key' "$WORK_DIR/targets.conf"
-[[ ! -e /tmp/legacy-migration-must-not-run ]]
-[[ -f "$WORK_DIR/VMs/927" && -f "$WORK_DIR/VMs/928" ]]
-
-clean_dir="$WORK_DIR/clean"
-mkdir -p "$clean_dir/VMs"
-cp "$ROOT_DIR/target-inventory.sh" "$clean_dir/target-inventory.sh"
-chmod 750 "$clean_dir/target-inventory.sh"
-cp "$WORK_DIR/VMs/927" "$clean_dir/VMs/927"
-printf '[existing]\nhost=10.0.0.10\ntransport=ssh\nuser=admin\nport=22\n' > "$clean_dir/targets.conf"
-UU_LOCAL_FILES="$clean_dir" UU_LEGACY_MIGRATION_LOG="$clean_dir/migration.log" "$ROOT_DIR/legacy-migrate.sh" > "$clean_dir/output"
-grep -Fq '1 existing SSH systems successfully migrated' "$clean_dir/output"
-if grep -Eq 'MIGRATED|UNMAPPED|Backup:' "$clean_dir/output"; then
-  echo 'successful migration leaked technical details' >&2
-  exit 1
-fi
-grep -Fq 'MIGRATED' "$clean_dir/migration.log"
-
-first_hash=$(sha256sum "$WORK_DIR/targets.conf" | awk '{print $1}')
-UU_LOCAL_FILES="$WORK_DIR" "$ROOT_DIR/legacy-migrate.sh" > "$WORK_DIR/second.out"
-second_hash=$(sha256sum "$WORK_DIR/targets.conf" | awk '{print $1}')
-[[ "$first_hash" == "$second_hash" ]]
-[[ $(grep -c '^\[legacy-927\]$' "$WORK_DIR/targets.conf") -eq 1 ]]
-
-printf '# runtime inventory was replaced\n' > "$WORK_DIR/targets.conf"
-UU_LOCAL_FILES="$WORK_DIR" "$ROOT_DIR/legacy-migrate.sh" > "$WORK_DIR/recovery.out"
-grep -Fq 'MIGRATED' "$WORK_DIR/recovery.out"
-grep -Fq '[legacy-927]' "$WORK_DIR/targets.conf"
-
-printf '[broken]\nnot-valid\n' > "$WORK_DIR/targets.conf"
-cp "$WORK_DIR/targets.conf" "$WORK_DIR/before-invalid.conf"
-if UU_LOCAL_FILES="$WORK_DIR" "$ROOT_DIR/legacy-migrate.sh" > "$WORK_DIR/invalid.out"; then
-  echo 'invalid inventory unexpectedly migrated' >&2
-  exit 1
-fi
-cmp -s "$WORK_DIR/targets.conf" "$WORK_DIR/before-invalid.conf"
-
-echo 'legacy migration tests: PASS'
+echo 'legacy internal VM SSH migration tests: PASS'

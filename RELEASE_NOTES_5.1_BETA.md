@@ -41,8 +41,9 @@ Status: Published 5.1 Beta release.
 - Existing installations can select the published Beta with `update beta -up`.
 - Existing configuration, unknown keys, comments, External settings, and a
   custom Web UI port are preserved.
-- Legacy compatible External SSH entries are migrated without deleting the
-  original configuration.
+- Historical internal VM SSH profiles remain internal and are not exposed as
+  External systems. Affected early-Beta `[legacy-<VMID>]` artifacts are
+  cleaned up safely during self-update without touching real External targets.
 - Verify `ultimate-updater-web.service` is enabled and active after upgrade.
 - Upgrading from version 5.0 or earlier to 5.1 requires a restart of the
   Proxmox host to fully complete the migration. The host remains usable before
