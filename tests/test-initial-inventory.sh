@@ -9,6 +9,14 @@ grep -Fq 'INITIAL_INVENTORY_STATE_FILE="/var/lib/ultimate-updater/initial-invent
 grep -Fq 'START_INITIAL_INVENTORY ()' "$INSTALLER"
 grep -Fq "start-check all-systems \"\$cli\" all" "$INSTALLER"
 grep -Fq 'UU_JOB_SOURCE=initial-inventory timeout 15' "$INSTALLER"
+grep -Fq 'inventory)' "$ROOT_DIR/update.sh"
+grep -Fq 'Start a read-only initial inventory job' "$ROOT_DIR/update.sh"
+grep -Fq "UU_JOB_SOURCE=initial-inventory timeout 15 \"\$job_runner\" start-check all-systems \"\$cli\" all" "$ROOT_DIR/update.sh"
+grep -Fq 'INITIAL_INVENTORY_CLI=true' "$ROOT_DIR/update.sh"
+grep -Fq "if [[ \"\${INITIAL_INVENTORY_CLI:-false}\" == true ]]" "$ROOT_DIR/update.sh"
+if sed -n '/START_INITIAL_INVENTORY ()/,/^}/p' "$ROOT_DIR/update.sh" | grep -Eq 'check-updates\.sh|start-global|update-all'; then
+  exit 1
+fi
 grep -Fq 'Initial system inventory started.' "$INSTALLER"
 grep -Fq 'state=start_failed' "$INSTALLER"
 grep -Fq "printf 'job=%s\\n'" "$INSTALLER"

@@ -169,6 +169,22 @@ CHECK_ROOT () {
   fi
 }
 
+START_INITIAL_INVENTORY () {
+  local job_runner="$LOCAL_FILES/job-runner.sh" cli="$LOCAL_FILES/ultimate-updater" output
+  [[ "$EUID" -eq 0 ]] || { echo -e "${RD:-}❌ Initial inventory requires root.${CL:-}" >&2; return 2; }
+  [[ -x "$job_runner" && -x "$cli" ]] || {
+    echo -e "${RD:-}❌ Initial inventory infrastructure is unavailable.${CL:-}" >&2
+    return 1
+  }
+  if ! output=$(UU_JOB_SOURCE=initial-inventory timeout 15 "$job_runner" start-check all-systems "$cli" all 2>&1); then
+    printf '%s\n' "$output" >&2
+    return 1
+  fi
+  INITIAL_INVENTORY_CLI=true
+  echo 'Initial inventory started.'
+  printf '%s\n' "$output"
+}
+
 # Check internet status
 CHECK_INTERNET () {
   if ! "$CHECK_URL_EXE" -q -c1 "$CHECK_URL" &>/dev/null; then
@@ -300,6 +316,11 @@ ARGUMENTS () {
         $LOCAL_FILES/check-updates.sh
         exit 2
         ;;
+      inventory)
+        COMMAND=true
+        START_INITIAL_INVENTORY
+        exit $?
+        ;;
       status)
         INFO=false
         HEADER_INFO
@@ -333,6 +354,7 @@ USAGE () {
     echo -e "  -v --version         Show The Ultimate Updater version"
     echo -e "  -dist-upgrade        Run distribution upgrade (Debian 12 -> 13)"
     echo -e "  -check               Run check-updates.sh"
+    echo -e "  inventory            Start a read-only initial inventory job"
     echo -e "  -up                  Update/install the stable master branch"
     echo -e "  master -up           Explicitly install/update master"
     echo -e "  beta -up             Explicitly install/update beta"
@@ -1986,6 +2008,11 @@ EXIT () {
   fi
   if [[ "$WELCOME_SCREEN" == true && -n "$EXEC_HOST" ]]; then
     scp "$LOCAL_FILES"/check-output "$EXEC_HOST":"$LOCAL_FILES"/check-output
+  fi
+  if [[ "${INITIAL_INVENTORY_CLI:-false}" == true ]]; then
+    rm -rf /etc/ultimate-updater/temp/var
+    rm -rf "$LOCAL_FILES"/update
+    exit "$EXIT_CODE"
   fi
   # Exit without echo
   if [[ "$EXIT_CODE" == 2 ]]; then
