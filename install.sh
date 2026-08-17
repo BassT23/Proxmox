@@ -373,15 +373,28 @@ UPDATE () {
     fi
     installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
     target_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$TEMP_FILES/update.sh" 2>/dev/null || true)
-    if [[ "$installed_version" =~ ^5\.0([.]|$) && "$target_version" =~ ^([0-9]+)\.([0-9]+)([.]|$) ]] &&
-      { (( BASH_REMATCH[1] > 5 )) || (( BASH_REMATCH[1] == 5 && BASH_REMATCH[2] > 0 )); }; then
+    installed_major=''
+    installed_minor=''
+    target_major=''
+    target_minor=''
+    if [[ "$installed_version" =~ ^([0-9]+)\.([0-9]+)([.]|$) ]]; then
+      installed_major=${BASH_REMATCH[1]}
+      installed_minor=${BASH_REMATCH[2]}
+    fi
+    if [[ "$target_version" =~ ^([0-9]+)\.([0-9]+)([.]|$) ]]; then
+      target_major=${BASH_REMATCH[1]}
+      target_minor=${BASH_REMATCH[2]}
+    fi
+    if [[ -n "$installed_major" && -n "$target_major" ]] &&
+      { (( installed_major < 5 )) || (( installed_major == 5 && installed_minor <= 0 )); } &&
+      { (( target_major > 5 )) || (( target_major == 5 && target_minor > 0 )); }; then
       if [[ "${UU_UPGRADE_INTERACTIVE:-false}" != true || ! -t 0 ]]; then
-        echo -e "⚠${RD:-} Interactive confirmation required for upgrade from 5.0 to $target_version. Run the upgrade manually.${CL:-}" >&2
+        echo -e "⚠${RD:-} Interactive confirmation required for upgrade from version 5.0 or earlier to $target_version. Run the upgrade manually.${CL:-}" >&2
         rm -rf "$TEMP_FOLDER" || true
         return 1
       fi
       echo -e "\n⚠${OR:-} Important upgrade notice${CL:-}\n"
-      echo -e "You are upgrading Ultimate Updater from version 5.0 to $target_version.\n"
+      echo -e "You are upgrading Ultimate Updater from version 5.0 or earlier to $target_version.\n"
       echo -e "A restart of this Proxmox host is required to fully complete the Ultimate Updater migration."
       echo -e "The host will remain usable after the upgrade, but some Ultimate Updater components may not work reliably until the host has been restarted."
       echo -e "The updater will NOT restart the host automatically.\n"
