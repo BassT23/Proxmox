@@ -66,23 +66,25 @@ CHECK_ROOT () {
 }
 
 SETUP_WEB_SERVICE () {
-  local action="${1:-start}"
+  local action="${1:-start}" port
 
   if [[ ! -f "$WEB_SERVICE_PATH" || ! -f "$LOCAL_FILES/web-ui/server.py" ]]; then
     echo -e "⚠${OR:-} Web UI service files are incomplete${CL:-}" >&2
     return 1
   fi
   [[ -x "$WEB_UI_PORT_SCRIPT" ]] || { echo "Web UI port helper is missing: $WEB_UI_PORT_SCRIPT" >&2; return 1; }
-  "$WEB_UI_PORT_SCRIPT" ensure || return 1
-  "$WEB_UI_PORT_SCRIPT" check || return 1
+  "$WEB_UI_PORT_SCRIPT" ensure >/dev/null || return 1
+  "$WEB_UI_PORT_SCRIPT" check >/dev/null || return 1
 
   systemctl daemon-reload
-  systemctl enable "$WEB_SERVICE_NAME"
+  systemctl enable "$WEB_SERVICE_NAME" >/dev/null || return 1
   if [[ "$action" == restart ]]; then
-    systemctl restart "$WEB_SERVICE_NAME"
+    systemctl restart "$WEB_SERVICE_NAME" || return 1
   else
-    systemctl start "$WEB_SERVICE_NAME"
+    systemctl start "$WEB_SERVICE_NAME" || return 1
   fi
+  port=$("$WEB_UI_PORT_SCRIPT" get) || return 1
+  printf '✅ Web UI ready on port %s.\n' "$port"
 }
 
 ARGUMENTS () {
@@ -619,7 +621,8 @@ UPDATE () {
     if [[ "$BRANCH" != master ]]; then echo -e "${OR:-}   Installed: $BRANCH version${CL:-}"; fi
     echo -e "For infos and warnings please check the readme under <https://github.com/BassT23/Proxmox>\n"
     if [[ "$UPGRADE_RESTART_REQUIRED" == true ]]; then
-      echo -e "${RD:-}⚠ Upgrade completed successfully.\nA restart of this Proxmox host is required to complete the Ultimate Updater upgrade.\nPlease restart the host when it is safe to do so.${CL:-}\n"
+      echo -e "${GN:-}✅ Upgrade completed successfully.${CL:-}"
+      echo -e "${OR:-}⚠ A restart of this Proxmox host is required to fully complete the Ultimate Updater migration.\n  The host remains usable, but some Ultimate Updater components may not work reliably until it has been restarted.\n  Please restart the host when it is safe to do so.${CL:-}\n"
     elif [[ $NEED_REBOOT == true ]]; then
       echo -e "${RD:-}  Please reboot, to make The Ultimative Updater workable\n${CL:-}"
     fi

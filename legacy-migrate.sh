@@ -8,6 +8,7 @@ LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
 LEGACY_DIR="${UU_LEGACY_DIR:-$LOCAL_FILES/VMs}"
 TARGETS_FILE="${UU_TARGETS_FILE:-$LOCAL_FILES/targets.conf}"
 STATE_FILE="${UU_LEGACY_STATE_FILE:-$LOCAL_FILES/legacy-migration.state}"
+MIGRATION_LOG="${UU_LEGACY_MIGRATION_LOG:-$LOCAL_FILES/legacy-migration.log}"
 INVENTORY_SCRIPT="${UU_TARGET_INVENTORY_SCRIPT:-$LOCAL_FILES/target-inventory.sh}"
 [[ -x "$INVENTORY_SCRIPT" ]] || INVENTORY_SCRIPT="${BASH_SOURCE[0]%/*}/target-inventory.sh"
 
@@ -24,7 +25,12 @@ trim() {
   value="${value%"${value##*[![:space:]]}"}"
   printf '%s' "$value"
 }
-report() { REPORT+=("$1"); printf '%s\n' "$1"; }
+report() {
+  REPORT+=("$1")
+  if [[ "${UU_LEGACY_MIGRATION_VERBOSE:-false}" == true ]]; then
+    printf '%s\n' "$1"
+  fi
+}
 fail_invalid() {
   local file="$1" reason="$2"
   ((SKIPPED_INVALID++))
@@ -111,7 +117,7 @@ backup_targets() {
     sleep 1
   done
   cp -p -- "$TARGETS_FILE" "$backup"
-  printf 'Backup: %s\n' "$backup"
+  report "Backup: $backup"
 }
 validate_inventory() {
   TARGET_INVENTORY_VALIDATE "$1" >/dev/null
@@ -187,6 +193,19 @@ port=$LEGACY_PORT"
   if (( ${#ADDITIONS[@]} > 0 )); then write_additions || return 1; CHANGED=1; fi
   if ((CHANGED || MANUAL_REVIEW > 0)); then write_state || return 1; fi
 }
+write_report_log() {
+  local temporary
+  [[ ${#REPORT[@]} -gt 0 ]] || return 0
+  temporary="$(mktemp "${MIGRATION_LOG}.XXXXXX")" || return 1
+  {
+    printf 'Legacy SSH migration\n'
+    printf '%s\n' "${REPORT[@]}"
+    printf 'Migrated: %d\nAlready present: %d\nSkipped invalid: %d\nManual review required: %d\n' \
+      "$MIGRATED" "$ALREADY_PRESENT" "$SKIPPED_INVALID" "$MANUAL_REVIEW"
+  } >"$temporary" || { rm -f "$temporary"; return 1; }
+  chmod 640 "$temporary"
+  mv -f -- "$temporary" "$MIGRATION_LOG"
+}
 if [[ -f "$STATE_FILE" && -d "$LEGACY_DIR" ]]; then
   previous_fingerprint="$(awk -F= '$1 == "fingerprint" {print $2}' "$STATE_FILE")"
   previous_review="$(awk -F= '$1 == "manual_review" {print $2}' "$STATE_FILE")"
@@ -195,15 +214,26 @@ if [[ -f "$STATE_FILE" && -d "$LEGACY_DIR" ]]; then
     exit 0
   fi
 fi
-printf 'Legacy SSH migration\n'
+if [[ "${UU_LEGACY_MIGRATION_VERBOSE:-false}" == true ]]; then
+  printf 'Legacy SSH migration\n'
+fi
 # The inventory parser is repository code, unlike the legacy files. Source it
 # once at top level so its validated arrays remain available for duplicate
 # detection.
 # shellcheck disable=SC1090
 source "$INVENTORY_SCRIPT"
 migrate || exit 1
-printf 'Migrated: %d\nAlready present: %d\nSkipped invalid: %d\nManual review required: %d\n' "$MIGRATED" "$ALREADY_PRESENT" "$SKIPPED_INVALID" "$MANUAL_REVIEW"
-if ((CHANGED || MANUAL_REVIEW > 0)); then printf 'Legacy files preserved: %s\n' "$LEGACY_DIR"; fi
-
-
-
+write_report_log || { printf 'Could not write legacy migration details to %s\n' "$MIGRATION_LOG" >&2; exit 1; }
+if (( SKIPPED_INVALID > 0 )); then
+  printf '⚠ %d legacy SSH configurations were skipped because they are invalid.\n' "$SKIPPED_INVALID"
+fi
+if (( MANUAL_REVIEW > 0 )); then
+  printf '⚠ %d legacy SSH configurations require manual review.\n' "$MANUAL_REVIEW"
+fi
+if (( SKIPPED_INVALID > 0 || MANUAL_REVIEW > 0 )); then
+  printf '%s\n' "${REPORT[@]}"
+elif (( MIGRATED > 0 )); then
+  printf '✅ %d existing SSH systems successfully migrated to the new target management.\n' "$MIGRATED"
+elif (( ALREADY_PRESENT > 0 )); then
+  printf '✅ Existing SSH systems are already integrated into the new target management.\n'
+fi
