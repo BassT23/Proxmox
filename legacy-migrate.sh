@@ -209,14 +209,6 @@ write_report_log() {
   chmod 640 "$temporary"
   mv -f -- "$temporary" "$MIGRATION_LOG"
 }
-if [[ -f "$STATE_FILE" && -d "$LEGACY_DIR" ]]; then
-  previous_fingerprint="$(awk -F= '$1 == "fingerprint" {print $2}' "$STATE_FILE")"
-  previous_review="$(awk -F= '$1 == "manual_review" {print $2}' "$STATE_FILE")"
-  if [[ "$previous_review" == 0 && "$previous_fingerprint" == "$(legacy_fingerprint)" ]] &&
-    legacy_inventory_complete; then
-    exit 0
-  fi
-fi
 if [[ "${UU_LEGACY_MIGRATION_VERBOSE:-false}" == true ]]; then
   printf 'Legacy SSH migration\n'
 fi
