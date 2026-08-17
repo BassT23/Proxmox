@@ -81,6 +81,16 @@ else
   STATUS_MODEL_FINISH() { :; }
 fi
 
+STATUS_MODEL_DIAGNOSTIC() {
+  local message="$*"
+  if [[ -n "${STATUS_MODEL_DIAGNOSTICS_FILE:-}" ]]; then
+    printf '%s\n' "$message" >> "$STATUS_MODEL_DIAGNOSTICS_FILE" 2>/dev/null || true
+  fi
+  if [[ "${DEBUG:-false}" == true ]]; then
+    printf '%s\n' "$message" >&2
+  fi
+}
+
 # Tag filter
 TAG_FILTER_FILE="${TAG_FILTER_FILE:-$LOCAL_FILES/tag-filter.sh}"
 # shellcheck disable=SC1090,SC1091
@@ -367,11 +377,13 @@ REMOTE_STATUS_DIAGNOSTICS () {
   local level="$1" node="$2" host="$3" run_dir="$4" done_file="$5" status_path="$6"
   local done_found="$7" done_value="$8" status_found="$9" status_size="${10}"
   local completion_transport_rc="${11}" status_transport_rc="${12}" json_result="${13}" cleanup_state="${14}" classification="${15}"
+  local diagnostic_found="${16}" diagnostic_size="${17}" diagnostic_transport_rc="${18}"
   [[ "$level" == failure || "${DEBUG:-false}" == true ]] || return 0
-  printf 'Remote status diagnostics: node=%s host=%s run=%s remote_dir=%s completion=%s completion_found=%s remote_rc=%s status_file=%s status_found=%s status_size=%s completion_transport_rc=%s status_transport_rc=%s json=%s classification=%s cleanup=%s\n' \
+  printf 'Remote status diagnostics: node=%s host=%s run=%s remote_dir=%s completion=%s completion_found=%s remote_rc=%s status_file=%s status_found=%s status_size=%s completion_transport_rc=%s status_transport_rc=%s json=%s classification=%s diagnostic_found=%s diagnostic_size=%s diagnostic_transport_rc=%s cleanup=%s\n' \
     "$node" "$host" "$(basename -- "$run_dir")" "$run_dir" "$done_file" \
     "$done_found" "${done_value:-unknown}" "$status_path" "$status_found" \
-    "$status_size" "$completion_transport_rc" "$status_transport_rc" "$json_result" "$classification" "$cleanup_state"
+    "$status_size" "$completion_transport_rc" "$status_transport_rc" "$json_result" "$classification" \
+    "$diagnostic_found" "$diagnostic_size" "$diagnostic_transport_rc" "$cleanup_state"
 }
 
 HOST_CHECK_START () {
@@ -391,8 +403,10 @@ HOST_CHECK_START () {
 # Host Check
 CHECK_HOST () {
   local HOST=$1 remote_check_dir remote_status remote_status_file remote_done_file
-  local remote_done_value remote_status_attempt HOST_NODE HOST_ID remote_done_error_file remote_status_error_file
+  local remote_done_value remote_status_attempt HOST_NODE HOST_ID remote_done_error_file remote_status_error_file remote_diagnostics_error_file
+  local remote_diagnostics_file remote_diagnostics_local_file remote_diagnostics_attempt
   local remote_done_found=false remote_done_transport_rc=0 remote_status_transport_rc=0
+  local remote_diagnostics_found=false remote_diagnostics_size=0 remote_diagnostics_transport_rc=0
   local remote_status_found=false remote_status_size=0 remote_json_result=not-checked
   local remote_cleanup_state=pending remote_diag_level=success remote_failure_class=none
   HOST_NODE=$(CLUSTER_HOST_NODE "$HOST")
@@ -410,8 +424,11 @@ CHECK_HOST () {
   remote_status_env=""
   remote_status_validation=""
   remote_status_file="/tmp/ultimate-updater-remote-status-$$-$RANDOM.json"
+  remote_diagnostics_file="$remote_check_dir/status-diagnostics"
+  remote_diagnostics_local_file="/tmp/ultimate-updater-remote-diagnostics-$$-$RANDOM.log"
   remote_done_error_file="${remote_status_file}.completion.err"
   remote_status_error_file="${remote_status_file}.status.err"
+  remote_diagnostics_error_file="${remote_status_file}.diagnostics.err"
   if ! CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "mkdir -p '$LOCAL_FILES' '$remote_check_dir'" ||
     ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$LOCAL_FILES/update.conf" "$HOST:$LOCAL_FILES/update.conf" >/dev/null 2>&1 ||
     ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$TAG_FILTER_FILE" "$HOST:$remote_check_dir/tag-filter.sh" >/dev/null 2>&1; then
@@ -436,7 +453,7 @@ CHECK_HOST () {
       STATUS_MODEL_RECORD "$HOST_ID" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote status helper" "$HOST_NODE"
       return 1
     fi
-    remote_status_env=" STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'"
+    remote_status_env=" STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records' STATUS_MODEL_DIAGNOSTICS_FILE='$remote_diagnostics_file'"
     remote_status_validation=" if [[ \"\$remote_rc\" -eq 0 && ! -s '$remote_check_dir/status.json' ]]; then remote_rc=86; elif [[ \"\$remote_rc\" -eq 0 ]] && ! python3 -c 'import json,sys; payload=json.load(open(sys.argv[1], encoding=\"utf-8\")); assert isinstance(payload, dict) and isinstance(payload.get(\"targets\"), list)' '$remote_check_dir/status.json'; then remote_rc=87; fi;"
   fi
   if CHECK_REMOTE_JOB_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" \
@@ -467,6 +484,19 @@ CHECK_HOST () {
     remote_status_transport_rc=$?
     [[ "$remote_status_attempt" -lt 3 ]] && sleep 0.2
   done
+  for remote_diagnostics_attempt in 1 2 3; do
+    remote_diagnostics_transport_rc=0
+    if CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_diagnostics_file" "$remote_diagnostics_local_file" > /dev/null 2>"$remote_diagnostics_error_file"; then
+      remote_diagnostics_transport_rc=0
+      break
+    fi
+    remote_diagnostics_transport_rc=$?
+    [[ "$remote_diagnostics_attempt" -lt 3 ]] && sleep 0.2
+  done
+  if [[ -e "$remote_diagnostics_local_file" ]]; then
+    remote_diagnostics_found=true
+    remote_diagnostics_size=$(stat -c '%s' "$remote_diagnostics_local_file" 2>/dev/null || printf '0')
+  fi
   if [[ -e "$remote_status_file" ]]; then
     remote_status_found=true
     remote_status_size=$(stat -c '%s' "$remote_status_file" 2>/dev/null || printf '0')
@@ -529,19 +559,30 @@ CHECK_HOST () {
       *) remote_failure_class=remote-rc-nonzero ;;
     esac
   fi
+  if [[ ("$remote_diag_level" == failure || "${DEBUG:-false}" == true) && "$remote_diagnostics_found" == true ]]; then
+    while IFS= read -r remote_diagnostic_line; do
+      [[ -n "$remote_diagnostic_line" ]] || continue
+      printf 'Remote status model: node=%s %s\n' "$HOST_NODE" "$remote_diagnostic_line"
+    done < "$remote_diagnostics_local_file"
+  elif [[ "$remote_diag_level" == failure && "$remote_diagnostics_found" != true ]]; then
+    printf 'Remote status model diagnostics unavailable: node=%s transport_rc=%s\n' \
+      "$HOST_NODE" "$remote_diagnostics_transport_rc"
+  fi
   REMOTE_STATUS_DIAGNOSTICS "$remote_diag_level" "$HOST_NODE" "$HOST" "$remote_check_dir" \
     "$remote_done_file" "$remote_check_dir/status.json" "$remote_done_found" \
     "$remote_done_value" "$remote_status_found" "$remote_status_size" \
-    "$remote_done_transport_rc" "$remote_status_transport_rc" "$remote_json_result" "$remote_cleanup_state" "$remote_failure_class"
+    "$remote_done_transport_rc" "$remote_status_transport_rc" "$remote_json_result" "$remote_cleanup_state" "$remote_failure_class" \
+    "$remote_diagnostics_found" "$remote_diagnostics_size" "$remote_diagnostics_transport_rc"
   rm -f -- "$remote_status_file"
-  rm -f -- "$remote_done_error_file" "$remote_status_error_file"
+  rm -f -- "$remote_diagnostics_local_file" "$remote_done_error_file" "$remote_status_error_file" "$remote_diagnostics_error_file"
   remote_cleanup_state=started
   CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
   remote_cleanup_state=completed
   REMOTE_STATUS_DIAGNOSTICS "$remote_diag_level" "$HOST_NODE" "$HOST" "$remote_check_dir" \
     "$remote_done_file" "$remote_check_dir/status.json" "$remote_done_found" \
     "$remote_done_value" "$remote_status_found" "$remote_status_size" \
-    "$remote_done_transport_rc" "$remote_status_transport_rc" "$remote_json_result" "$remote_cleanup_state" "$remote_failure_class"
+    "$remote_done_transport_rc" "$remote_status_transport_rc" "$remote_json_result" "$remote_cleanup_state" "$remote_failure_class" \
+    "$remote_diagnostics_found" "$remote_diagnostics_size" "$remote_diagnostics_transport_rc"
   if [[ "$remote_status" -ne 0 ]]; then
     STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "$HOST_NODE ($HOST): remote check exited with $remote_status" "$HOST_NODE"
   fi
@@ -1223,11 +1264,7 @@ else
   status_model_init_rc=$?
   CHECK_FAILURE=1
 fi
-if [[ "${DEBUG:-false}" == true ]]; then
-  printf 'Status model init: script=%s file=%s records=%s enabled=%s rc=%s\n' \
-    "$STATUS_MODEL_SCRIPT" "${STATUS_MODEL_FILE:-}" "${STATUS_MODEL_RECORD_FILE:-}" \
-    "$STATUS_MODEL_ENABLED" "$status_model_init_rc" >&2
-fi
+STATUS_MODEL_DIAGNOSTIC "STATUS_MODEL_INIT node=${STATUS_MODEL_NODE:-${HOSTNAME:-unknown}} script=${STATUS_MODEL_SCRIPT:-unknown} file=${STATUS_MODEL_FILE:-unknown} records=${STATUS_MODEL_RECORD_FILE:-unknown} enabled=$STATUS_MODEL_ENABLED rc=$status_model_init_rc"
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   ARGUMENTS "$@"
   # Print any tag selection summary captured during config parse
@@ -1256,16 +1293,23 @@ if [[ "$STATUS_MODEL_ENABLED" == true ]]; then
     CHECK_FAILURE=1
   fi
   status_finish_rc=0
-  STATUS_MODEL_FINISH >/dev/null 2>&1 || status_finish_rc=$?
+  status_finish_error_file="${STATUS_MODEL_DIAGNOSTICS_FILE:-$LOCAL_FILES/.status-model-diagnostics.$$}.finish-error"
+  STATUS_MODEL_FINISH >/dev/null 2>"$status_finish_error_file" || status_finish_rc=$?
   if [[ "$status_finish_rc" -ne 0 ]]; then
     CHECK_FAILURE=1
   fi
-  if [[ "${DEBUG:-false}" == true ]]; then
-    printf 'Status model finish: file=%s records=%s exists=%s rc=%s\n' \
-      "${STATUS_MODEL_FILE:-}" "${STATUS_MODEL_RECORD_FILE:-}" \
-      "$( [[ -s "${STATUS_MODEL_FILE:-}" ]] && printf true || printf false )" \
-      "$status_finish_rc" >&2
+  status_finish_reason=none
+  if [[ -s "$status_finish_error_file" ]]; then
+    status_finish_reason=$(tr '\n' ' ' < "$status_finish_error_file" | cut -c1-500)
   fi
+  status_finish_exists=false
+  [[ -s "${STATUS_MODEL_FILE:-}" ]] && status_finish_exists=true
+  status_finish_size=0
+  if [[ "$status_finish_exists" == true ]]; then
+    status_finish_size=$(stat -c '%s' "$STATUS_MODEL_FILE" 2>/dev/null || printf '0')
+  fi
+  STATUS_MODEL_DIAGNOSTIC "STATUS_MODEL_FINISH node=${STATUS_MODEL_NODE:-${HOSTNAME:-unknown}} file=${STATUS_MODEL_FILE:-unknown} records=${STATUS_MODEL_RECORD_FILE:-unknown} rc=$status_finish_rc exists=$status_finish_exists size=$status_finish_size reason=$status_finish_reason"
+  rm -f -- "$status_finish_error_file"
 fi
 
 exit "$CHECK_FAILURE"
