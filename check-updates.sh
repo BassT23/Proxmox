@@ -352,6 +352,14 @@ CHECK_REMOTE_SCP () {
   timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp "${scp_args[@]}" "$@"
 }
 
+# A remote check contains the complete read-only host/guest inspection.  Its
+# bounded execution window must be separate from the short SSH connect and
+# transfer timeout; otherwise a healthy remote node can be killed before
+# STATUS_MODEL_FINISH creates its result artifact.
+CHECK_REMOTE_JOB_SSH () {
+  timeout "${UU_CHECK_REMOTE_JOB_TIMEOUT:-120}" ssh "${INTERNAL_SSH_ARGS[@]}" "$@"
+}
+
 HOST_CHECK_START () {
   for HOST in $HOSTS; do
     if HOST_IS_LOCAL "$HOST"; then
@@ -368,14 +376,19 @@ HOST_CHECK_START () {
 
 # Host Check
 CHECK_HOST () {
-  local HOST=$1 remote_check_dir remote_status remote_status_file HOST_NODE HOST_ID
+  local HOST=$1 remote_check_dir remote_status remote_status_file remote_done_file
+  local remote_done_value remote_status_attempt HOST_NODE HOST_ID
   HOST_NODE=$(CLUSTER_HOST_NODE "$HOST")
   INTERNAL_SSH_RESOLVE_NODE "$HOST_NODE" "$HOST" "$SSH_PORT" || return 1
   [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
   HOST="${INTERNAL_SSH_HOST:-$HOST}"; SSH_PORT="${INTERNAL_SSH_PORT:-$SSH_PORT}"
   INTERNAL_SSH_USE_IDENTITY
   HOST_ID="host:$HOST_NODE"
-  remote_check_dir="/tmp/ultimate-updater-check-$$"
+  # The central shell PID alone is not a sufficient remote-job identity when
+  # checks overlap or are retried.  Keep the artifact private to this one
+  # dispatch and let the remote wrapper signal completion explicitly.
+  remote_check_dir="/tmp/ultimate-updater-check-${$}-${RANDOM}-${RANDOM}"
+  remote_done_file="$remote_check_dir/completed"
   remote_runtime_env=""
   remote_status_env=""
   remote_status_file="/tmp/ultimate-updater-remote-status-$$-$RANDOM.json"
@@ -405,25 +418,43 @@ CHECK_HOST () {
     fi
     remote_status_env=" STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'"
   fi
-  if CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" \
-    "UU_DEFER_NOTIFICATION=true TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env bash -s -- -c host" < "$0"; then
+  if CHECK_REMOTE_JOB_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" \
+    "UU_DEFER_NOTIFICATION=true TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env bash -s -- -c host; remote_rc=\$?; printf '%s\\n' \"\$remote_rc\" > '$remote_done_file'; exit \"\$remote_rc\"" < "$0"; then
     remote_status=0
   else
     remote_status=$?
   fi
-  if CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_check_dir/status.json" "$remote_status_file" >/dev/null 2>&1; then
+  remote_done_value=""
+  for remote_status_attempt in 1 2 3; do
+    remote_done_value=$(CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "cat -- '$remote_done_file'" 2>/dev/null || true)
+    if [[ "$remote_done_value" =~ ^[0-9]+$ ]]; then
+      break
+    fi
+    sleep 0.2
+  done
+  if [[ -n "$remote_done_value" && "$remote_done_value" != "$remote_status" ]]; then
+    remote_status="$remote_done_value"
+  fi
+  for remote_status_attempt in 1 2 3; do
+    if CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_check_dir/status.json" "$remote_status_file" >/dev/null 2>&1; then
+      break
+    fi
+    [[ "$remote_status_attempt" -lt 3 ]] && sleep 0.2
+  done
+  if [[ -s "$remote_status_file" ]]; then
     if ! STATUS_MODEL_IMPORT_FILE "$remote_status_file"; then
-      echo -e "${RD}Could not import status from remote host $HOST${CL}"
-      STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not import remote check status" "$HOST_NODE"
+      echo -e "${RD}$HOST_NODE ($HOST): remote check status was invalid and could not be imported.${CL}"
+      STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "$HOST_NODE ($HOST): remote check status was invalid and could not be imported" "$HOST_NODE"
     fi
     rm -f -- "$remote_status_file"
   elif [[ "$remote_status" -eq 0 ]]; then
-    echo -e "${RD}Could not retrieve status from remote host $HOST${CL}"
-    STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not retrieve remote check status" "$HOST_NODE"
+    echo -e "${RD}$HOST_NODE ($HOST): remote check completed but status result could not be retrieved.${CL}"
+    STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "$HOST_NODE ($HOST): remote check completed but status result could not be retrieved" "$HOST_NODE"
   fi
+  rm -f -- "$remote_status_file"
   CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
   if [[ "$remote_status" -ne 0 ]]; then
-    STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "Remote check exited with $remote_status" "$HOST_NODE"
+    STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "$HOST_NODE ($HOST): remote check exited with $remote_status" "$HOST_NODE"
   fi
   return "$remote_status"
 }
