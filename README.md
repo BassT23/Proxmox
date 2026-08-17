@@ -60,7 +60,7 @@ bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.
 ```
 
 # Usage:
- - If you want to run the updater globally for all nodes/lxc/vm only run `update`
+ - If you want to run the updater globally for all managed nodes/lxc/vm and External targets run `update`
  - If you want to update only one specific lxc/vm run `update <ID>`
 
 ##
@@ -346,6 +346,14 @@ ultimate-updater check raspi
 ultimate-updater update raspi
 ultimate-updater external verify-backup raspi maintenance-window-2026-08-16
 ```
+
+The global `Update all systems` job also considers External SSH targets. The
+central `ONLY`/`EXCLUDE` update filters are applied to the External inventory
+before any SSH, local-config read, backup gate, helper, or package-manager
+operation. A centrally skipped External target is reported as skipped and is
+not contacted. After central selection, the target-local
+`/etc/ultimate-updater/external.conf` filters and the recent-backup safety gate
+still apply. `ONLY` takes priority over `EXCLUDE` at each level.
 
 The update is handed to the node-local session-independent job runner. The
 remote system only needs SSH and apt; it does not need an updater agent. A

@@ -301,6 +301,14 @@ INSTALL () {
     fi
     cp "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
     chmod 750 $LOCAL_FILES/job-runner.sh
+    if [[ -f "$TEMP_FILES"/global-update.sh ]]; then
+      cp "$TEMP_FILES"/global-update.sh $LOCAL_FILES/global-update.sh
+      chmod 750 $LOCAL_FILES/global-update.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-selection.sh ]]; then
+      cp "$TEMP_FILES"/external-selection.sh $LOCAL_FILES/external-selection.sh
+      chmod 750 $LOCAL_FILES/external-selection.sh
+    fi
     mkdir -p "$LOCAL_FILES/web-ui"
     cp "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
     chmod 750 "$LOCAL_FILES/web-ui/server.py"
@@ -427,6 +435,14 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/job-runner.sh ]]; then
       mv "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
       chmod 750 $LOCAL_FILES/job-runner.sh
+    fi
+    if [[ -f "$TEMP_FILES"/global-update.sh ]]; then
+      mv "$TEMP_FILES"/global-update.sh $LOCAL_FILES/global-update.sh
+      chmod 750 $LOCAL_FILES/global-update.sh
+    fi
+    if [[ -f "$TEMP_FILES"/external-selection.sh ]]; then
+      mv "$TEMP_FILES"/external-selection.sh $LOCAL_FILES/external-selection.sh
+      chmod 750 $LOCAL_FILES/external-selection.sh
     fi
     if [[ -f "$TEMP_FILES"/config-merge.sh ]]; then
       mv "$TEMP_FILES"/config-merge.sh $LOCAL_FILES/config-merge.sh

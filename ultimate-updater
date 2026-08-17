@@ -23,6 +23,8 @@ HARDCORE_TEST_SCRIPT="$LOCAL_FILES/hardcore-test.sh"
 EXTERNAL_SAFETY_FILE="$LOCAL_FILES/external-backup-safety.sh"
 STATUS_MODEL_SCRIPT="$LOCAL_FILES/status-model.sh"
 CLUSTER_TARGET_SCRIPT="$LOCAL_FILES/cluster-target.sh"
+GLOBAL_UPDATE_SCRIPT="$LOCAL_FILES/global-update.sh"
+EXTERNAL_SELECTION_SCRIPT="$LOCAL_FILES/external-selection.sh"
 
 if [[ ! -f "$UPDATE_SCRIPT" && -f "$SCRIPT_DIR/update.sh" ]]; then
   UPDATE_SCRIPT="$SCRIPT_DIR/update.sh"
@@ -66,10 +68,18 @@ fi
 if [[ ! -f "$CLUSTER_TARGET_SCRIPT" && -f "$SCRIPT_DIR/cluster-target.sh" ]]; then
   CLUSTER_TARGET_SCRIPT="$SCRIPT_DIR/cluster-target.sh"
 fi
+if [[ ! -f "$GLOBAL_UPDATE_SCRIPT" && -f "$SCRIPT_DIR/global-update.sh" ]]; then
+  GLOBAL_UPDATE_SCRIPT="$SCRIPT_DIR/global-update.sh"
+fi
+if [[ ! -f "$EXTERNAL_SELECTION_SCRIPT" && -f "$SCRIPT_DIR/external-selection.sh" ]]; then
+  EXTERNAL_SELECTION_SCRIPT="$SCRIPT_DIR/external-selection.sh"
+fi
 # shellcheck disable=SC1090
 [[ -f "$STATUS_MODEL_SCRIPT" ]] && source "$STATUS_MODEL_SCRIPT"
 # shellcheck disable=SC1090
 [[ -f "$CLUSTER_TARGET_SCRIPT" ]] && source "$CLUSTER_TARGET_SCRIPT"
+# shellcheck disable=SC1090
+[[ -f "$EXTERNAL_SELECTION_SCRIPT" ]] && source "$EXTERNAL_SELECTION_SCRIPT"
 
 usage() {
   cat <<EOF
@@ -278,6 +288,7 @@ external_backup_blockers() {
   TARGET_INVENTORY_VALIDATE "$LOCAL_FILES/targets.conf" >/dev/null 2>&1 || return 1
   for target in "${TARGET_NAMES[@]}"; do
     [[ "${TARGET_TRANSPORT[$target]:-}" == ssh ]] || continue
+    external_target_selected_for_update "$target" || continue
     if ! "$EXTERNAL_SAFETY_FILE" check "$target" >/dev/null 2>&1; then
       blockers+="${blockers:+, }$target"
     fi
@@ -312,36 +323,12 @@ inventory_targets() {
   ' _ "$INVENTORY_SCRIPT" "$inventory_file"
 }
 
-central_filter_value() {
-  local wanted="$1"
-  awk -F'"' -v wanted="$wanted" '$1 ~ "^" wanted "=" {print $2; exit}' \
-    "$LOCAL_FILES/update.conf" 2>/dev/null || true
-}
-
-filter_mentions_target() {
-  local specification="$1" target="$2" token normalized
-  normalized=$(printf '%s' "$specification" | tr ',;|' '   ')
-  for token in $normalized; do
-    if [[ "${token,,}" == "${target,,}" ]]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
 external_target_selected_for_check() {
-  local target="$1"
-  local only exclude
-  only=$(central_filter_value ONLY_UPDATE_CHECK)
-  exclude=$(central_filter_value EXCLUDE_UPDATE_CHECK)
-  if [[ -n "$only" ]]; then
-    filter_mentions_target "$only" "$target"
-    return $?
-  fi
-  if [[ -n "$exclude" ]] && filter_mentions_target "$exclude" "$target"; then
-    return 1
-  fi
-  return 0
+  external_selection_allows check "$1"
+}
+
+external_target_selected_for_update() {
+  external_selection_allows update "$1"
 }
 
 status_json() {
@@ -929,7 +916,8 @@ case "$command" in
     external_backup_blockers || exit $?
     require_file "$JOB_RUNNER" "job runner" || exit 1
     require_file "$UPDATE_SCRIPT" "update script" || exit 1
-    "$JOB_RUNNER" start-global "$UPDATE_SCRIPT"
+    require_file "$GLOBAL_UPDATE_SCRIPT" "global update dispatcher" || exit 1
+    "$JOB_RUNNER" start-global "$GLOBAL_UPDATE_SCRIPT"
     ;;
   check-node)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
