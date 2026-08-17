@@ -219,6 +219,7 @@ ARGUMENTS () {
           exit 2
         fi
         BRANCH=$ARGUMENT
+        EXPLICIT_BRANCH=true
         ;;
       -up)
         COMMAND=true
@@ -381,6 +382,15 @@ UPDATE () {
       return 0
     fi
   fi
+  if [[ "${EXPLICIT_BRANCH:-false}" == true && "$BRANCH" != "$INSTALLED_BRANCH" ]]; then
+    PRINT_BRANCH_PROMPT
+    if [[ "${UU_NONINTERACTIVE:-false}" != true && -t 0 ]]; then
+      read -r -p "Type [Y/y] or [Enter] for yes - anything else will exit: " branch_reply
+      if [[ "$branch_reply" =~ ^[Nn] || ( -n "$branch_reply" && ! "$branch_reply" =~ ^[Yy]$ ) ]]; then
+        return 2
+      fi
+    fi
+  fi
   if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
     UU_TARGET_BRANCH="$BRANCH" UU_NONINTERACTIVE=true bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
     return $?
@@ -388,6 +398,19 @@ UPDATE () {
   UU_TARGET_BRANCH="$BRANCH" UU_UPGRADE_INTERACTIVE=true UU_NONINTERACTIVE=true \
     bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
   return $?
+}
+
+PRINT_BRANCH_PROMPT () {
+  local branch_color=""
+  case "$BRANCH" in
+    beta) branch_color="$OR" ;;
+    develop) branch_color="$RD" ;;
+  esac
+  if [[ -n "$branch_color" ]]; then
+    printf 'Update to %b%s%b branch?\n' "$branch_color" "$BRANCH" "$CL"
+  else
+    printf 'Update to %s branch?\n' "$BRANCH"
+  fi
 }
 
 # Uninstall
