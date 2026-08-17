@@ -610,7 +610,6 @@ UPDATE () {
      CHECK_DIFF
     done
     if [[ -x "$LOCAL_FILES/legacy-migrate.sh" ]]; then
-      echo -e "\nℹ ${OR:-}Checking for legacy SSH targets ...${CL:-}"
       if ! "$LOCAL_FILES/legacy-migrate.sh"; then
         echo -e "⚠️ ${OR:-}Legacy SSH migration needs attention; existing files were kept.${CL:-}" >&2
       fi
