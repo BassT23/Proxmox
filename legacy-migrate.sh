@@ -18,7 +18,6 @@ REMOVED=0
 ALREADY_PRESENT=0
 SKIPPED_INVALID=0
 MANUAL_REVIEW=0
-CHANGED=0
 declare -a REPORT=() ADDITIONS=()
 
 trim() {
@@ -96,17 +95,6 @@ parse_legacy() {
     [[ "$LEGACY_DELAY" =~ ^[0-9]+$ ]] || { fail_invalid "$file" "invalid SSH_START_DELAY_TIME"; return 1; }
     report "UNMAPPED_LEGACY_VALUE $file: SSH_START_DELAY_TIME is deprecated and has no targets.conf equivalent"
   fi
-}
-target_tuple_exists() {
-  local host="$1" port="$2" user="$3" section
-  for section in "${TARGET_NAMES[@]}"; do
-    [[ "${TARGET_TRANSPORT[$section]:-}" == ssh ]] || continue
-    [[ "${TARGET_HOST[$section]:-}" == "$host" ]] || continue
-    [[ "${TARGET_PORT[$section]:-22}" == "$port" ]] || continue
-    [[ "${TARGET_USER[$section]:-}" == "$user" ]] || continue
-    EXISTING_SECTION="$section"; return 0
-  done
-  return 1
 }
 backup_targets() {
   local backup stamp=0
