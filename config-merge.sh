@@ -87,6 +87,27 @@ CONFIG_MERGE_SET_BRANCH () {
   mv -f "$temp" "$file"
 }
 
+CONFIG_MERGE_SET_SCHEMA_VERSION () {
+  local file="$1" defaults="$2" default_line temp
+
+  default_line=$(awk '/^[[:space:]]*VERSION[[:space:]]*=/{print; exit}' "$defaults")
+  [[ -n "$default_line" ]] || return 0
+  temp=$(mktemp "${file}.version.XXXXXX") || return 1
+  awk -v default_line="$default_line" '
+    BEGIN { replaced = 0 }
+    /^[[:space:]]*VERSION[[:space:]]*=/ {
+      print default_line
+      replaced = 1
+      next
+    }
+    { print }
+    END {
+      if (!replaced) print "\n" default_line
+    }
+  ' "$file" > "$temp" || { rm -f "$temp"; return 1; }
+  mv -f "$temp" "$file"
+}
+
 MERGE_UPDATE_CONFIG () {
   local user_config="$1" default_config="$2" requested_branch="${3:-}"
   local lock_file temp backup key user_keys mode
@@ -190,6 +211,15 @@ MERGE_UPDATE_CONFIG () {
       }
     fi
   fi
+
+  # VERSION is the configuration schema version, not a user preference.
+  # Advance it to the validated target defaults after all missing assignments
+  # have been merged, while preserving every other existing user value.
+  CONFIG_MERGE_SET_SCHEMA_VERSION "$temp" "$default_config" || {
+    rm -f "$temp" "$user_keys" "$user_config.merge-source"
+    exec {lock_fd}>&-
+    return 1
+  }
 
   CONFIG_MERGE_VALIDATE "$temp" || {
     echo "Merged update.conf failed validation; leaving existing config unchanged." >&2

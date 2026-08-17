@@ -625,6 +625,9 @@ to the published Beta, use `update beta -up`; the selected branch is preserved
 in `USED_BRANCH` as installed-state metadata, but it never changes the target
 of a bare `update -up`. A lower target version requires explicit interactive
 confirmation and is blocked in noninteractive mode.
+Configuration schema migrations update the local `VERSION` marker only after
+the target defaults have been validated and merged; user settings remain in
+place.
 
 Upgrading from version 5.0 or earlier to 5.1 requires a restart of the Proxmox
 host to fully complete the Ultimate Updater migration. The host itself remains
