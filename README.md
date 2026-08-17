@@ -608,12 +608,23 @@ automatically; an owner must explicitly request `Hardcore-Test starten`.
 If anybody wants to help with failure search, please test our `develop` branch.
 
 Install the develop update with `update develop -up`
-To go back to master, choose `update -up`
+The bare `update -up` command always targets the stable `master` branch.
+It does not follow `USED_BRANCH`; Beta and Develop users must select their
+branch explicitly:
+
+```bash
+update -up          # stable master
+update master -up   # explicit master
+update beta -up     # explicit beta
+update develop -up  # explicit develop
+```
 
 The active update branches are `master` (stable), `beta` (published
 pre-release), and `develop` (development). To switch an existing installation
 to the published Beta, use `update beta -up`; the selected branch is preserved
-in `USED_BRANCH` for later checks and self-updates.
+in `USED_BRANCH` as installed-state metadata, but it never changes the target
+of a bare `update -up`. A lower target version requires explicit interactive
+confirmation and is blocked in noninteractive mode.
 
 Upgrading from version 5.0 or earlier to 5.1 requires a restart of the Proxmox
 host to fully complete the Ultimate Updater migration. The host itself remains

@@ -43,8 +43,15 @@ if [[ -f "$LOCAL_FILES/status-model.sh" ]]; then
   # shellcheck disable=SC1090,SC1091
   . "$LOCAL_FILES/status-model.sh"
 fi
-BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
+INSTALLED_BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
+case "$INSTALLED_BRANCH" in
+  master|beta|develop) ;;
+  *) INSTALLED_BRANCH=master ;;
+esac
+# USED_BRANCH describes the installed source only. A bare -up is always the
+# stable master target; beta/develop require an explicit selector.
+BRANCH=master
+SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$INSTALLED_BRANCH"
 DPKG_OPTIONS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 DPKG_OPTIONS_STRING="${DPKG_OPTIONS[*]}"
 
@@ -212,13 +219,11 @@ ARGUMENTS () {
           exit 2
         fi
         BRANCH=$ARGUMENT
-        BRANCH_SET=true
         ;;
       -up)
         COMMAND=true
-        if [[ "$BRANCH_SET" != true ]]; then
-          BRANCH="${BRANCH:-master}"
-        fi
+        # BRANCH is initialized to master. An explicit selector above is the
+        # only way to target beta or develop.
         UPDATE
         exit $?
         ;;
@@ -268,7 +273,10 @@ USAGE () {
     echo -e "  -v --version         Show The Ultimate Updater version"
     echo -e "  -dist-upgrade        Run distribution upgrade (Debian 12 -> 13)"
     echo -e "  -check               Run check-updates.sh"
-    echo -e "  -up                  Update The Ultimate Updater"
+    echo -e "  -up                  Update/install the stable master branch"
+    echo -e "  master -up           Explicitly install/update master"
+    echo -e "  beta -up             Explicitly install/update beta"
+    echo -e "  develop -up          Explicitly install/update develop"
     echo -e "  status               Show Status (Version Infos)"
     echo -e "  uninstall            Uninstall The Ultimate Updater\n"
     echo -e "  host                 Host-Mode"
@@ -307,22 +315,23 @@ SHOW_UPDATE_NOTICE () {
 VERSION_CHECK () {
   local candidate remote_version remote_available=false
   local -a candidates
+  local branch_for_status=${INSTALLED_BRANCH:-master}
 
   LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh")
-  case "$BRANCH" in
+  case "$branch_for_status" in
     master) candidates=(master) ;;
     beta) candidates=(master beta) ;;
     develop) candidates=(master beta develop) ;;
     *)
-      echo -e "${OR:-}The configured branch '$BRANCH' is not active; use master, beta, or develop.${CL:-}"
+      echo -e "${OR:-}The configured branch '$branch_for_status' is not active; use master, beta, or develop.${CL:-}"
       echo -e "                 Version: $VERSION"
       return 0
       ;;
   esac
 
-  if [[ "$BRANCH" == develop ]]; then
+  if [[ "$branch_for_status" == develop ]]; then
     echo -e "${OR:-}*** The Ultimate Updater is on develop branch ***${CL:-}"
-  elif [[ "$BRANCH" == beta ]]; then
+  elif [[ "$branch_for_status" == beta ]]; then
     echo -e "${OR:-}*** The Ultimate Updater is on beta branch (pre-release) ***${CL:-}"
   fi
   VERSION_NOT_SHOW=false
@@ -350,19 +359,35 @@ VERSION_CHECK () {
 # Update The Ultimate Updater
 UPDATE () {
   SELF_UPDATE_RUN=true
-  echo -e "Update to $BRANCH branch?"
+  local installed_version target_version
+  installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
+  if ! target_version=$(FETCH_REMOTE_VERSION "$BRANCH" update.sh); then
+    echo -e "${RD:-}Unable to determine the target version for branch $BRANCH; update aborted before mutation.${CL:-}" >&2
+    return 2
+  fi
+  if version_is_less "$target_version" "$installed_version"; then
+    echo -e "\n${OR:-}⚠ Downgrade notice${CL:-}\n"
+    echo -e "You are currently running Ultimate Updater $installed_version."
+    echo -e "The $BRANCH branch currently provides version $target_version."
+    echo -e "Running this command will downgrade Ultimate Updater to version $target_version.\n"
+    echo -e "The downgrade is not performed automatically. Continue with downgrade? [y/N]"
+    if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
+      echo -e "${RD:-}Interactive confirmation required for a downgrade; update aborted before mutation.${CL:-}" >&2
+      return 2
+    fi
+    read -r -p "Continue with downgrade? [y/N] " downgrade_reply
+    if [[ ! "$downgrade_reply" =~ ^[Yy]$ ]]; then
+      echo "Downgrade cancelled by user."
+      return 0
+    fi
+  fi
   if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
     UU_TARGET_BRANCH="$BRANCH" UU_NONINTERACTIVE=true bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
     return $?
   fi
-  read -p "Type [Y/y] or [Enter] for yes - anything else will exit: " -r
-  if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-    UU_TARGET_BRANCH="$BRANCH" UU_UPGRADE_INTERACTIVE=true UU_NONINTERACTIVE=true \
-      bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
-    return $?
-  else
-    return 2
-  fi
+  UU_TARGET_BRANCH="$BRANCH" UU_UPGRADE_INTERACTIVE=true UU_NONINTERACTIVE=true \
+    bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+  return $?
 }
 
 # Uninstall
@@ -380,7 +405,7 @@ UNINSTALL () {
 
 # Get Server Versions
 STATUS () {
-  local branch_for_status=$BRANCH component label local_file local_version remote_version
+  local branch_for_status=${INSTALLED_BRANCH:-master} component label local_file local_version remote_version
   local -a components=(
     "Updater|update.sh|$LOCAL_FILES/update.sh"
     "Extras|update-extras.sh|$LOCAL_FILES/update-extras.sh"
@@ -392,7 +417,7 @@ STATUS () {
     components+=("Check|check-updates.sh|$LOCAL_FILES/check-updates.sh")
   fi
   if [[ "$branch_for_status" != master && "$branch_for_status" != beta && "$branch_for_status" != develop ]]; then
-    echo -e "${RD:-}Unknown branch '$BRANCH'; status cannot be retrieved.${CL:-}"
+    echo -e "${RD:-}Unknown branch '$branch_for_status'; status cannot be retrieved.${CL:-}"
     return 1
   fi
 
@@ -1491,7 +1516,7 @@ UPDATE_VM () {
     if ! RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" exit >/dev/null 2>&1; then
       echo -e "${RD:-}  ❌ File for ssh connection found, but not correctly set?\n\
   ${BL:-}Please check SSH Key-Based Authentication${CL:-}\n\
-  Infos can be found here:<https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>
+  Infos can be found here:<https://github.com/BassT23/Proxmox/blob/${INSTALLED_BRANCH:-master}/ssh.md>
   Try to use QEMU insead\n"
       START_WAITING=false
       UPDATE_VM_QEMU
@@ -1685,7 +1710,7 @@ UPDATE_VM_QEMU () {
   else
     echo -e "${RD:-}  ❌ ${QGA_ERROR:-SSH or QEMU guest agent is not initialized on VM $VM}${CL:-}\n\
   ${OR:-}If you want to update VMs, you must set up it by yourself!${CL:-}\n\
-  For ssh (harder, but nicer output), check this: <https://github.com/BassT23/Proxmox/blob/$BRANCH/ssh.md>\n\
+  For ssh (harder, but nicer output), check this: <https://github.com/BassT23/Proxmox/blob/${INSTALLED_BRANCH:-master}/ssh.md>\n\
   For QEMU (easy connection), check this: <https://pve.proxmox.com/wiki/Qemu-guest-agent>\n"
     ERROR_CODE=1
     ID=$VM
