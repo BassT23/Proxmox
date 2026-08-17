@@ -12,6 +12,22 @@ grep -Fq "remote_done_file=\"\$remote_check_dir/completed\"" "$ROOT_DIR/check-up
 grep -Fq 'CHECK_REMOTE_JOB_TIMEOUT:-120' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'remote check completed but status result could not be retrieved' "$ROOT_DIR/check-updates.sh"
 
+# Retrieval failures must leave a correlation trail in the job log while
+# successful runs remain quiet unless DEBUG is enabled.
+grep -Fq 'REMOTE_STATUS_DIAGNOSTICS' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'completion_found=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'status_found=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'cleanup=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'classification=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'completion-marker-missing' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'status-file-missing' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'ssh-retrieval-failed' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'scp-retrieval-failed' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'permission-denied' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'invalid-json' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'remote-rc-nonzero' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'timeout' "$ROOT_DIR/check-updates.sh"
+
 # A failed remote node must not discard successful records from other nodes.
 LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
 STATUS_MODEL_RECORD_FILE="$WORK_DIR/status.records" bash -c '
