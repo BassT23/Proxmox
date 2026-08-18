@@ -95,9 +95,15 @@ assert "internal-ssh-retry" in source
 assert "Edit SSH settings" in page
 assert "Add SSH connection" in page
 assert "Use custom SSH settings" in page
+assert page.count("Use custom SSH settings for this system.") == 1
 assert "internalSshTargetLabel" in source
 assert "target_choice.required=false" in source
 assert "picker.required=true" in source
+assert "key.split(':',2)" in source
+assert "form.dataset.targetKey=key" in source
+assert "t=internalSshTargets.find(item=>item.kind===kind&&item.id===id)" in source
+assert "||internalSshAvailable.find" not in source.split("function openInternalSsh(key)", 1)[1].split("function openInternalSshAdd", 1)[0]
+assert "target_choice.value=''" in source
 assert "setInternalSshView(true)" in source
 assert "loadInternalSsh()" in source
 
