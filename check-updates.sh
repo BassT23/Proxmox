@@ -91,6 +91,17 @@ STATUS_MODEL_DIAGNOSTIC() {
   fi
 }
 
+# Central remote phases must remain visible even when the optional diagnostic
+# file is not configured. Prefer the structured journal; otherwise use the
+# central job log via stderr. Never emit these markers from the remote shell.
+CENTRAL_REMOTE_PHASE() {
+  local message="$*"
+  STATUS_MODEL_DIAGNOSTIC "$message"
+  if [[ -z "${STATUS_MODEL_DIAGNOSTICS_FILE:-}" && "${DEBUG:-false}" != true ]]; then
+    printf '%s\n' "$message" >&2
+  fi
+}
+
 # Tag filter
 TAG_FILTER_FILE="${TAG_FILTER_FILE:-$LOCAL_FILES/tag-filter.sh}"
 # shellcheck disable=SC1090,SC1091
@@ -368,8 +379,8 @@ CHECK_REMOTE_SCP () {
 # status-model finalization and completion marker can still run after an
 # inner timeout.
 CHECK_REMOTE_JOB_SSH () {
-  local job_timeout="${UU_CHECK_REMOTE_JOB_TIMEOUT:-120}"
-  local wrapper_timeout="${UU_CHECK_REMOTE_WRAPPER_TIMEOUT:-$((job_timeout + 30))}"
+  local job_timeout="${UU_CHECK_REMOTE_JOB_TIMEOUT:-300}"
+  local wrapper_timeout="${UU_CHECK_REMOTE_WRAPPER_TIMEOUT:-$((job_timeout + 60))}"
   timeout "$wrapper_timeout" ssh "${INTERNAL_SSH_ARGS[@]}" "$@"
 }
 
@@ -411,11 +422,18 @@ CHECK_HOST () {
   local remote_done_found=false remote_done_transport_rc=0 remote_status_transport_rc=0
   local remote_diagnostics_found=false remote_diagnostics_size=0 remote_diagnostics_transport_rc=0
   local remote_status_found=false remote_status_size=0 remote_json_result=not-checked
-  local remote_job_timeout="${UU_CHECK_REMOTE_JOB_TIMEOUT:-120}"
+  local remote_job_timeout="${UU_CHECK_REMOTE_JOB_TIMEOUT:-300}"
   local remote_cleanup_state=pending remote_diag_level=success remote_failure_class=none
   HOST_NODE=$(CLUSTER_HOST_NODE "$HOST")
-  INTERNAL_SSH_RESOLVE_NODE "$HOST_NODE" "$HOST" "$SSH_PORT" || return 1
-  [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
+  CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_START node=$HOST_NODE host=$HOST"
+  if ! INTERNAL_SSH_RESOLVE_NODE "$HOST_NODE" "$HOST" "$SSH_PORT"; then
+    CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=resolve"
+    return 1
+  fi
+  if [[ "${INTERNAL_SSH_ENABLED:-true}" != true ]]; then
+    CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=disabled"
+    return 1
+  fi
   HOST="${INTERNAL_SSH_HOST:-$HOST}"; SSH_PORT="${INTERNAL_SSH_PORT:-$SSH_PORT}"
   INTERNAL_SSH_USE_IDENTITY
   HOST_ID="host:$HOST_NODE"
@@ -439,6 +457,7 @@ CHECK_HOST () {
     CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
     echo -e "${RD}Could not prepare matching check helper on remote host $HOST${CL}"
     STATUS_MODEL_RECORD "$HOST_ID" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote check" "$HOST_NODE"
+    CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=prepare"
     return 1
   fi
   if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
@@ -446,6 +465,7 @@ CHECK_HOST () {
       CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
       echo -e "${RD}Could not prepare target runtime helper on remote host $HOST${CL}"
       STATUS_MODEL_RECORD "$HOST_ID" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote target runtime" "$HOST_NODE"
+      CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=prepare-target-runtime"
       return 1
     fi
     remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh'"
@@ -455,6 +475,7 @@ CHECK_HOST () {
       CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
       echo -e "${RD}Could not prepare matching status helper on remote host $HOST${CL}"
       STATUS_MODEL_RECORD "$HOST_ID" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Could not prepare remote status helper" "$HOST_NODE"
+      CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=prepare-status-helper"
       return 1
     fi
     remote_status_env=" STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records' STATUS_MODEL_DIAGNOSTICS_FILE='$remote_diagnostics_file'"
@@ -466,6 +487,8 @@ CHECK_HOST () {
   else
     remote_status=$?
   fi
+  CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_SSH_RETURN node=$HOST_NODE rc=$remote_status"
+  CENTRAL_REMOTE_PHASE "CENTRAL_COMPLETION_FETCH_START node=$HOST_NODE"
   remote_done_value=""
   for remote_status_attempt in 1 2 3; do
     remote_done_transport_rc=0
@@ -476,9 +499,11 @@ CHECK_HOST () {
     fi
     sleep 0.2
   done
+  CENTRAL_REMOTE_PHASE "CENTRAL_COMPLETION_FETCH_END node=$HOST_NODE rc=$remote_done_transport_rc found=$remote_done_found value=${remote_done_value:-unknown}"
   if [[ -n "$remote_done_value" && "$remote_done_value" != "$remote_status" ]]; then
     remote_status="$remote_done_value"
   fi
+  CENTRAL_REMOTE_PHASE "CENTRAL_STATUS_FETCH_START node=$HOST_NODE"
   for remote_status_attempt in 1 2 3; do
     remote_status_transport_rc=0
     if CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_check_dir/status.json" "$remote_status_file" > /dev/null 2>"$remote_status_error_file"; then
@@ -488,6 +513,10 @@ CHECK_HOST () {
     remote_status_transport_rc=$?
     [[ "$remote_status_attempt" -lt 3 ]] && sleep 0.2
   done
+  local remote_status_file_found=false
+  [[ -e "$remote_status_file" ]] && remote_status_file_found=true
+  CENTRAL_REMOTE_PHASE "CENTRAL_STATUS_FETCH_END node=$HOST_NODE rc=$remote_status_transport_rc found=$remote_status_file_found"
+  CENTRAL_REMOTE_PHASE "CENTRAL_DIAGNOSTICS_FETCH_START node=$HOST_NODE"
   for remote_diagnostics_attempt in 1 2 3; do
     remote_diagnostics_transport_rc=0
     if CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_diagnostics_file" "$remote_diagnostics_local_file" > /dev/null 2>"$remote_diagnostics_error_file"; then
@@ -497,6 +526,9 @@ CHECK_HOST () {
     remote_diagnostics_transport_rc=$?
     [[ "$remote_diagnostics_attempt" -lt 3 ]] && sleep 0.2
   done
+  local remote_diagnostics_file_found=false
+  [[ -e "$remote_diagnostics_local_file" ]] && remote_diagnostics_file_found=true
+  CENTRAL_REMOTE_PHASE "CENTRAL_DIAGNOSTICS_FETCH_END node=$HOST_NODE rc=$remote_diagnostics_transport_rc found=$remote_diagnostics_file_found"
   if [[ -e "$remote_diagnostics_local_file" ]]; then
     remote_diagnostics_found=true
     remote_diagnostics_size=$(stat -c '%s' "$remote_diagnostics_local_file" 2>/dev/null || printf '0')
@@ -579,9 +611,12 @@ CHECK_HOST () {
     "$remote_diagnostics_found" "$remote_diagnostics_size" "$remote_diagnostics_transport_rc"
   rm -f -- "$remote_status_file"
   rm -f -- "$remote_diagnostics_local_file" "$remote_done_error_file" "$remote_status_error_file" "$remote_diagnostics_error_file"
+  CENTRAL_REMOTE_PHASE "CENTRAL_CLEANUP_START node=$HOST_NODE"
   remote_cleanup_state=started
-  CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+  local remote_cleanup_rc=0
+  CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || remote_cleanup_rc=$?
   remote_cleanup_state=completed
+  CENTRAL_REMOTE_PHASE "CENTRAL_CLEANUP_END node=$HOST_NODE rc=$remote_cleanup_rc"
   REMOTE_STATUS_DIAGNOSTICS "$remote_diag_level" "$HOST_NODE" "$HOST" "$remote_check_dir" \
     "$remote_done_file" "$remote_check_dir/status.json" "$remote_done_found" \
     "$remote_done_value" "$remote_status_found" "$remote_status_size" \
@@ -590,6 +625,7 @@ CHECK_HOST () {
   if [[ "$remote_status" -ne 0 ]]; then
     STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "$HOST_NODE ($HOST): remote check exited with $remote_status" "$HOST_NODE"
   fi
+  CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=$remote_status phase=complete cleanup_rc=$remote_cleanup_rc"
   return "$remote_status"
 }
 

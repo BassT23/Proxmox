@@ -9,7 +9,7 @@ trap 'find "$WORK_DIR" -type f -delete 2>/dev/null || true; rmdir "$WORK_DIR" 2>
 # completion marker, and a bounded timeout distinct from SSH transfer setup.
 grep -Eq 'remote_check_dir="/tmp/ultimate-updater-check-.*RANDOM' "$ROOT_DIR/check-updates.sh"
 grep -Fq "remote_done_file=\"\$remote_check_dir/completed\"" "$ROOT_DIR/check-updates.sh"
-grep -Fq 'CHECK_REMOTE_JOB_TIMEOUT:-120' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'CHECK_REMOTE_JOB_TIMEOUT:-300' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'remote check completed but status result could not be retrieved' "$ROOT_DIR/check-updates.sh"
 
 # Retrieval failures must leave a correlation trail in the job log while
@@ -47,7 +47,21 @@ grep -Fq 'STATUS_MODEL_FINISH_END node=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'COMPLETION_WRITE node=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'UU_REMOTE_DEFER_STATUS_FINISH:-false' "$ROOT_DIR/check-updates.sh"
 # shellcheck disable=SC2016
-grep -Fq 'UU_CHECK_REMOTE_WRAPPER_TIMEOUT:-$((job_timeout + 30))' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'UU_CHECK_REMOTE_WRAPPER_TIMEOUT:-$((job_timeout + 60))' "$ROOT_DIR/check-updates.sh"
+for marker in \
+  'CENTRAL_REMOTE_START node=' \
+  'CENTRAL_REMOTE_SSH_RETURN node=' \
+  'CENTRAL_COMPLETION_FETCH_START node=' \
+  'CENTRAL_COMPLETION_FETCH_END node=' \
+  'CENTRAL_STATUS_FETCH_START node=' \
+  'CENTRAL_STATUS_FETCH_END node=' \
+  'CENTRAL_DIAGNOSTICS_FETCH_START node=' \
+  'CENTRAL_DIAGNOSTICS_FETCH_END node=' \
+  'CENTRAL_CLEANUP_START node=' \
+  'CENTRAL_CLEANUP_END node=' \
+  'CENTRAL_REMOTE_END node='; do
+  grep -Fq "$marker" "$ROOT_DIR/check-updates.sh"
+done
 grep -Fq 'bash -s -- -c host' "$ROOT_DIR/check-updates.sh"
 
 # The remote wrapper owns finalization.  An inner check that exits before its
