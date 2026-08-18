@@ -42,6 +42,9 @@ apply_only_exclude_tags() {
     ], no_filter
     assert not any("ct927" in item["label"] for item in no_filter["included"])
 
+    missing = server.target_preview(payload, {}, resolver, inventory)
+    assert missing["mode"] == "none" and missing["included"] == no_filter["included"]
+
     only = server.target_preview(payload, {**base, "ONLY_UPDATE_CHECK": "selected"}, resolver, inventory)
     assert only["mode"] == "only"
     assert [item["label"] for item in only["included"]] == ["Proxmox-Test-1", "910 · debian"]
@@ -69,5 +72,9 @@ apply_only_exclude_tags() {
                                             filter_keys=("ONLY", "EXCLUDE"))
     assert update_exclude["mode"] == "exclude"
     assert [item["label"] for item in update_exclude["excluded"]] == ["917 · cent · offline"]
+
+    update_missing = server.target_preview(payload, {}, resolver, inventory,
+                                           filter_keys=("ONLY", "EXCLUDE"))
+    assert update_missing["mode"] == "none"
 
 print("filter preview tests: PASS")

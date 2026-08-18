@@ -98,8 +98,8 @@ INCLUDE_HELPER_SCRIPTS="true"
 │ ! If 'ONLY' is set, 'EXCLUDE' did not work ! │
 └──────────────────────────────────────────────┘
 
-ONLY="update-only"            # `update-only` is an example Tag
-EXCLUDE="update-exclude"      # `update-exclude` is an example Tag
+ONLY=""
+EXCLUDE=""
 
 ┌──────────────────────────────────────────────┐
 │              Snapshot / Backup               │
@@ -168,5 +168,5 @@ CHECK_RUNNING_VM="true"
 │ ! If 'ONLY' is set, 'EXCLUDE' did not work ! │
 └──────────────────────────────────────────────┘
 
-ONLY_UPDATE_CHECK="check-only"             # `check-only` is an example Tag
-EXCLUDE_UPDATE_CHECK="check-exclude"       # `check-exclude` is an example Tag
+ONLY_UPDATE_CHECK=""
+EXCLUDE_UPDATE_CHECK=""

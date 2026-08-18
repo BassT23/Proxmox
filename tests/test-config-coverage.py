@@ -61,6 +61,11 @@ try:
     assert merged.count("VERSION=") == 1
     assert merged.count("SSH_PORT=") == 1
     assert 'EXE_FOR_INTERNET_CHECK="ping"' in merged
+    defaults = (ROOT / "update.conf.dist").read_text(encoding="utf-8")
+    assert 'ONLY=""' in defaults
+    assert 'EXCLUDE=""' in defaults
+    assert 'ONLY_UPDATE_CHECK=""' in defaults
+    assert 'EXCLUDE_UPDATE_CHECK=""' in defaults
     print("config coverage, migration and save-safety tests: PASS")
 finally:
     for path in sorted(work.glob("*"), reverse=True):

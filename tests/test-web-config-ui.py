@@ -18,7 +18,10 @@ for title in (
 ):
     assert f"title:'{title}'" in page, title
 
-assert "ONLY has priority for each run type; EXCLUDE is ignored while that ONLY filter is set." in page
+assert "Leave Only empty to include all matching targets" in page
+assert "If Only is empty, all matching targets are included except excluded ones." in page
+assert "Check/Update node: Only this node. LXCs and VMs are not checked or updated." in page
+assert "Only this Proxmox node will be updated. LXCs and VMs are not updated." in page
 assert "content:'↳'" not in page
 assert "matrix:[{label:'Containers',check:'CHECK_WITH_LXC',update:'WITH_LXC'},{label:'Running containers',check:'CHECK_RUNNING_CONTAINER',update:'RUNNING_CONTAINER'},{label:'Stopped containers',check:'CHECK_STOPPED_CONTAINER',update:'STOPPED_CONTAINER'}]" in page
 assert "matrix:[{label:'Virtual machines',check:'CHECK_WITH_VM',update:'WITH_VM'},{label:'Running VMs',check:'CHECK_RUNNING_VM',update:'RUNNING_VM'},{label:'Stopped VMs',check:'CHECK_STOPPED_VM',update:'STOPPED_VM'},{label:'Paused VMs',check:'CHECK_PAUSED_VM',update:null}]" in page
@@ -48,8 +51,8 @@ assert "update.conf remains the source of truth" in page
 assert "/api/config-preview?" in page
 assert "filter-preview" in page
 assert "Ignored while ONLY is active" in page
-assert "ONLY has priority for each run type" in page
-assert "ONLY has priority for each run type; EXCLUDE is ignored while that ONLY filter is set." in page
+assert "Leave it empty to include all matching targets." in page
+assert "If Only is empty, all matching targets are included except excluded ones." in page
 assert "ONLY','EXCLUDE" in page
 assert "filterGroups" in page
 assert "preview:'check'" in page
@@ -124,7 +127,7 @@ assert "aria-label=\"About Systems\"" in page
 assert "aria-controls=\"systems-help-popover\"" in page
 assert "Systems shows the complete active inventory grouped by Proxmox node and external target." in page
 assert "Guests without current update information remain part of the inventory" in page
-assert "The check and update previews show the targets that would be included in the respective run" in page
+assert "Only limits the check or update to targets with this tag." in page
 assert "Opening or changing the preview does not contact any target." in page
 assert "function createHelpControl(label,paragraphs)" in page
 assert "event.key!=='Escape'" in page
