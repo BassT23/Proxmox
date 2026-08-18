@@ -46,6 +46,8 @@ grep -Fq 'STATUS_MODEL_FINISH_START node=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'STATUS_MODEL_FINISH_END node=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'COMPLETION_WRITE node=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'UU_REMOTE_DEFER_STATUS_FINISH:-false' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'UU_CHECK_REMOTE_WRAPPER_TIMEOUT:-$((job_timeout + 30))' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'bash -s -- -c host' "$ROOT_DIR/check-updates.sh"
 
 # The remote wrapper owns finalization.  An inner check that exits before its
 # own epilogue must still produce a final status and completion result.
@@ -82,6 +84,29 @@ for mode in normal exit-zero exit-failure return-zero return-failure; do
   [[ -s "$WORK_DIR/status.json" ]]
   [[ -s "$WORK_DIR/completed" ]]
 done
+
+# An inner timeout must return control to the wrapper, which then completes
+# finalization and writes a deterministic completion RC.
+cat > "$WORK_DIR/slow-check.sh" <<'EOF'
+#!/bin/bash
+sleep 2
+EOF
+rm -f "$WORK_DIR/status.json" "$WORK_DIR/completed" "$WORK_DIR/diagnostics"
+(
+  set +e
+  timeout 1 bash "$WORK_DIR/slow-check.sh"
+  remote_rc=$?
+  printf '%s\n' 'REMOTE_CHECK_RETURN rc='"$remote_rc" >> "$WORK_DIR/diagnostics"
+  printf '%s\n' 'STATUS_MODEL_FINISH_START' >> "$WORK_DIR/diagnostics"
+  printf '{"targets":[]}' > "$WORK_DIR/status.json"
+  printf '%s\n' 'STATUS_MODEL_FINISH_END rc=0 exists=true' >> "$WORK_DIR/diagnostics"
+  printf '%s\n' "$remote_rc" > "$WORK_DIR/completed"
+  printf '%s\n' 'COMPLETION_WRITE rc='"$remote_rc" >> "$WORK_DIR/diagnostics"
+)
+grep -Fq 'REMOTE_CHECK_RETURN rc=124' "$WORK_DIR/diagnostics"
+grep -Fq 'STATUS_MODEL_FINISH_END rc=0 exists=true' "$WORK_DIR/diagnostics"
+grep -Fq 'COMPLETION_WRITE rc=124' "$WORK_DIR/diagnostics"
+[[ -s "$WORK_DIR/status.json" && "$(cat "$WORK_DIR/completed")" == 124 ]]
 
 # An absent completion marker must not be relabelled as a remote RC failure;
 # the marker is the only authoritative source for the remote RC.
