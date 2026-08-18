@@ -538,7 +538,7 @@ remote_node_check() {
     "install -m 0640 '$remote_config' '$LOCAL_FILES/update.conf' && rm -f -- '$remote_config'" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(configured_ssh_port)" "$host" true ||
     ! timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(configured_ssh_port)" "$host" \
-    "UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE='$node' STATUS_MODEL_SCRIPT='/etc/ultimate-updater/status-model.sh' STATUS_MODEL_FILE='$remote_file' STATUS_MODEL_RECORD_FILE='$remote_file.records' bash '/etc/ultimate-updater/check-updates.sh' host >/dev/null 2>&1; cat '$remote_file'; rm -f -- '$remote_file' '$remote_file.records'" > "$local_file"; then
+    "UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE='$node' STATUS_MODEL_SCRIPT='/etc/ultimate-updater/status-model.sh' STATUS_MODEL_FILE='$remote_file' STATUS_MODEL_RECORD_FILE='$remote_file.records' bash '/etc/ultimate-updater/check-updates.sh' node-host >/dev/null 2>&1; cat '$remote_file'; rm -f -- '$remote_file' '$remote_file.records'" > "$local_file"; then
     timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(configured_ssh_port)" "$host" \
       "rm -f -- '$remote_config' '$remote_file' '$remote_file.records'" >/dev/null 2>&1 || true
     STATUS_MODEL_RECORD "host:$node" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Node $node is unreachable" "$node" "$node"
