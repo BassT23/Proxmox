@@ -287,6 +287,8 @@ READ_WRITE_CONFIG () {
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
+  EXE_FOR_INTERNET_CHECK=$(awk -F '"' '/^EXE_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
+  EXE_FOR_INTERNET_CHECK="${EXE_FOR_INTERNET_CHECK:-ping}"
   LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   LXC_START_DELAY=$(SANITIZE_NUMBER "$LXC_START_DELAY")
   LXC_START_DELAY="${LXC_START_DELAY:-5}"
@@ -297,6 +299,38 @@ READ_WRITE_CONFIG () {
   if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
     apply_only_exclude_tags ONLY EXCLUDED
   fi
+}
+
+# Initial inventory must avoid invoking a package manager in a guest that has
+# no network access.  Keep this preflight inside the guest transport and only
+# use it for the read-only onboarding mode; normal checks retain their
+# established semantics.
+GUEST_INTERNET_PREFLIGHT_COMMAND() {
+  local executable="${EXE_FOR_INTERNET_CHECK:-ping}" url="${CHECK_URL:-}"
+  local executable_q url_q
+  [[ -n "$url" ]] || return 1
+  printf -v executable_q '%q' "$executable"
+  printf -v url_q '%q' "$url"
+  printf '%s -q -c1 %s >/dev/null 2>&1' "$executable_q" "$url_q"
+}
+
+GUEST_INTERNET_PREFLIGHT_PCT() {
+  local command
+  command=$(GUEST_INTERNET_PREFLIGHT_COMMAND) || return 1
+  RUN_PCT_COMMAND "$1" bash -c "$command"
+}
+
+GUEST_INTERNET_PREFLIGHT_SSH() {
+  local command
+  command=$(GUEST_INTERNET_PREFLIGHT_COMMAND) || return 1
+  RUN_SSH_COMMAND "$1" "$2" "$3" "$command"
+}
+
+GUEST_INTERNET_PREFLIGHT_QGA() {
+  local command
+  command=$(GUEST_INTERNET_PREFLIGHT_COMMAND) || return 1
+  QEMU_GUEST_EXEC "$1" --timeout "${UU_GUEST_PREFLIGHT_TIMEOUT:-5}" -- bash -c "$command"
+  [[ "$QEMU_EXEC_TRANSPORT_RC" -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]
 }
 
 # Wait for bootup / reboot
@@ -480,6 +514,11 @@ CHECK_HOST () {
     fi
     remote_status_env=" STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records' STATUS_MODEL_DIAGNOSTICS_FILE='$remote_diagnostics_file'"
     remote_status_validation=" if [[ \"\$remote_rc\" -eq 0 && ! -s '$remote_check_dir/status.json' ]]; then remote_rc=86; elif [[ \"\$remote_rc\" -eq 0 ]] && ! python3 -c 'import json,sys; payload=json.load(open(sys.argv[1], encoding=\"utf-8\")); assert isinstance(payload, dict) and isinstance(payload.get(\"targets\"), list)' '$remote_check_dir/status.json'; then remote_rc=87; fi;"
+  fi
+  if [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]]; then
+    # The remote check derives its lifecycle-safe mode from this explicit
+    # job context. Never infer it from the command name.
+    remote_status_env=" UU_JOB_SOURCE=initial-inventory REMOTE_JOB_SOURCE=initial-inventory REMOTE_INITIAL_INVENTORY=true$remote_status_env"
   fi
   if CHECK_REMOTE_JOB_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" \
     "printf '%s\\n' \"REMOTE_CHECK_START node=$HOST_NODE\" >> '$remote_diagnostics_file'; UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env timeout '$remote_job_timeout' bash -s -- -c host; remote_rc=\$?; printf '%s\\n' \"REMOTE_CHECK_RETURN node=$HOST_NODE rc=\$remote_rc\" >> '$remote_diagnostics_file'; finish_rc=0; finish_error_file='$remote_check_dir/status-finish.error'; printf '%s\\n' \"STATUS_MODEL_FINISH_START node=$HOST_NODE script=$remote_check_dir/status-model.sh file=$remote_check_dir/status.json records=$remote_check_dir/status.records\" >> '$remote_diagnostics_file'; if [[ -f '$remote_check_dir/status-model.sh' ]]; then STATUS_MODEL_NODE='$HOST_NODE'; STATUS_MODEL_FILE='$remote_check_dir/status.json'; STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'; . '$remote_check_dir/status-model.sh'; STATUS_MODEL_FINISH >/dev/null 2>\"\$finish_error_file\" || finish_rc=\$?; else finish_rc=1; printf '%s\\n' 'status-model script missing' > \"\$finish_error_file\"; fi; finish_reason=none; if [[ -s \"\$finish_error_file\" ]]; then finish_reason=\$(tr '\\n' ' ' < \"\$finish_error_file\" | cut -c1-500); fi; finish_exists=false; [[ -s '$remote_check_dir/status.json' ]] && finish_exists=true; finish_size=0; [[ -e '$remote_check_dir/status.json' ]] && finish_size=\$(stat -c '%s' '$remote_check_dir/status.json' 2>/dev/null || printf '0'); printf '%s\\n' \"STATUS_MODEL_FINISH_END node=$HOST_NODE rc=\$finish_rc exists=\$finish_exists size=\$finish_size reason=\$finish_reason\" >> '$remote_diagnostics_file'; if [[ \"\$remote_rc\" -eq 0 && \"\$finish_rc\" -ne 0 ]]; then remote_rc=\$finish_rc; fi;$remote_status_validation printf '%s\\n' \"COMPLETION_WRITE node=$HOST_NODE rc=\$remote_rc\" >> '$remote_diagnostics_file'; printf '%s\\n' \"\$remote_rc\" > '$remote_done_file'; rm -f -- \"\$finish_error_file\"; exit \"\$remote_rc\"" < "$0"; then
@@ -789,6 +828,14 @@ CHECK_CONTAINER () {
     CHECK_CONTAINER_FAILURE "Could not read hostname for LXC $CONTAINER"
     return
   fi
+  if [[ "${INITIAL_INVENTORY:-false}" == true ]] &&
+    ! GUEST_INTERNET_PREFLIGHT_PCT "$CONTAINER"; then
+    STATUS_MODEL_RECORD "$CONTAINER" lxc pct false "$OS" "" "null" "null" \
+      not_checked NETWORK_UNAVAILABLE \
+      "LXC $CONTAINER has no guest internet access; package check skipped" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 0
+  fi
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     if ! RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get update" >/dev/null 2>&1; then
       CHECK_CONTAINER_FAILURE "apt-get update failed for LXC $CONTAINER"
@@ -978,6 +1025,14 @@ CHECK_VM () {
     CHECK_VM_QEMU
     return
   fi
+  if [[ "${INITIAL_INVENTORY:-false}" == true ]] &&
+    ! GUEST_INTERNET_PREFLIGHT_SSH "$IP" "$SSH_VM_PORT" "$USER"; then
+    STATUS_MODEL_RECORD "$VM" vm ssh false "" "" "null" "null" \
+      not_checked NETWORK_UNAVAILABLE \
+      "VM $VM has no guest internet access; package check skipped" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 0
+  fi
   OS_BASE=$(qm config "$VM" | grep ostype || true)
   if [[ "$OS_BASE" =~ l2 ]]; then
     KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
@@ -1086,6 +1141,14 @@ CHECK_VM_QEMU () {
     return 1
   fi
   if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
+    if [[ "${INITIAL_INVENTORY:-false}" == true ]] &&
+      ! GUEST_INTERNET_PREFLIGHT_QGA "$VM"; then
+      STATUS_MODEL_RECORD "$VM" vm qga false "$OS" "" "null" "null" \
+        not_checked NETWORK_UNAVAILABLE \
+        "VM $VM has no guest internet access; package check skipped" \
+        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 0
+    fi
     KERNEL=$(printf '%s\n' "$OS_INFO" | grep kernel-version || true)
 #    if [[ "$KERNEL" =~ FreeBSD ]]; then
 #      qm guest exec "$VM" -- tcsh -c "pkg update"
@@ -1306,6 +1369,9 @@ else
   CHECK_FAILURE=1
 fi
 STATUS_MODEL_DIAGNOSTIC "STATUS_MODEL_INIT node=${STATUS_MODEL_NODE:-${HOSTNAME:-unknown}} script=${STATUS_MODEL_SCRIPT:-unknown} file=${STATUS_MODEL_FILE:-unknown} records=${STATUS_MODEL_RECORD_FILE:-unknown} enabled=$STATUS_MODEL_ENABLED rc=$status_model_init_rc"
+if [[ -n "${UU_JOB_SOURCE:-}" ]]; then
+  STATUS_MODEL_DIAGNOSTIC "REMOTE_JOB_SOURCE=${UU_JOB_SOURCE} REMOTE_INITIAL_INVENTORY=$INITIAL_INVENTORY"
+fi
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   ARGUMENTS "$@"
   # Print any tag selection summary captured during config parse
