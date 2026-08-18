@@ -264,6 +264,9 @@ start_job() {
   if [[ "${UU_EXTERNAL_BACKUP_OVERRIDE:-false}" == true ]]; then
     systemd_env+=("--setenv=UU_EXTERNAL_BACKUP_OVERRIDE=true")
   fi
+  if [[ "${UU_UPDATE_SCOPE:-}" == host ]]; then
+    systemd_env+=("--setenv=UU_UPDATE_SCOPE=host")
+  fi
 
   timestamp=$(date -u '+%Y%m%d-%H%M%S')
   unit="${JOB_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
