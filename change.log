@@ -1,7 +1,7 @@
 Changelog:
 ==========
 
-**v5.1 Beta** (unreleased)
+**v5.1 Beta 3** (public beta / release candidate for final validation)
 New:
 - central Web UI with PAM login, responsive configuration, filter previews, External management, Jobs, Logs, and running-job visibility
 - session-independent systemd-run jobs for checks and updates, including shared history, locking, reload persistence, and remote-node dispatch
