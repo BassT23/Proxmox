@@ -39,4 +39,12 @@ for marker in (
 assert "run-selfupdate" in runner
 assert "curl" not in source
 assert "wget" not in source
+assert "<span id=\"updater-version-label\">version unavailable</span></button></footer>" in source
+assert "/etc/ultimate-updater/status.json" not in source.split("<footer>", 1)[1].split("</footer>", 1)[0]
+assert "<span>Branch</span>" in source
+assert "data.update_available===true" in source
+assert "updateButton.textContent=data.state==='ok'&&data.update_available===true?'Update now':'Up to date'" in source
+assert "scheduleUpdaterVersionCheck" in source
+assert "2500" in source and "7000" in source
+assert "self.server.version_cache = {\"at\": now, \"data\": data} if data.get(\"state\") == \"ok\" else None" in source
 print("web updater version/self-update tests: PASS")
