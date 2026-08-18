@@ -63,4 +63,25 @@ grep -Eq '^state=completed$' "$WORK_DIR/jobs/$unit.state"
 grep -Eq '^exit_code=0$' "$WORK_DIR/jobs/$unit.state"
 grep -Fq 'post-update host status refresh rc=17' "$WORK_DIR/jobs/$unit.state"
 
+unit=ultimate-updater-update-all-systems-test
+cat > "$WORK_DIR/jobs/$unit.state" <<EOF
+schema_version=1
+unit=$unit
+target=all-systems
+state=running
+started_at=2026-08-18T00:00:00Z
+finished_at=
+exit_code=
+type=update
+message=
+source=
+EOF
+POST_REFRESH_LOG="$WORK_DIR/log" UU_JOB_STATE_DIR="$WORK_DIR/jobs" \
+  UU_CHECK_CLI="$WORK_DIR/check.sh" \
+  "$ROOT_DIR/job-runner.sh" run-global "$unit" "$WORK_DIR/update.sh" >/dev/null
+grep -Fq 'CHECK_SCOPE= CHECK_ARGS=check' "$WORK_DIR/log"
+grep -Eq '^state=completed$' "$WORK_DIR/jobs/$unit.state"
+grep -Eq '^exit_code=0$' "$WORK_DIR/jobs/$unit.state"
+grep -Fq 'post-update full status refresh rc=0' "$WORK_DIR/jobs/$unit.state"
+
 echo 'post-update status refresh tests: PASS'
