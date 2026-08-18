@@ -16,7 +16,14 @@ assert "remote-log-full" in source
 assert "journalctl -u %q --no-pager -o cat" in runner
 assert "logAutoFollow" in source
 assert "dataset.scrollAttached==='true'" in source
-assert "Jump to latest" in source
+assert "createLogLatest" in source
+assert "node.insertAdjacentElement('afterend',latest)" in source
+assert "data-log-latest" not in source
+assert "item.querySelector('.log-latest')?.remove()" in source
 assert "logScrollTop" in source
+assert 'text/plain; charset=utf-8' in source
+assert 'strip_ansi(result.stdout).encode("utf-8")' in source
+assert 'encoding="utf-8"' in source
+assert 'errors="replace"' in source
 
 print("job log UI/download tests: PASS")
