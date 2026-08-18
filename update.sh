@@ -187,10 +187,20 @@ START_INITIAL_INVENTORY () {
 
 # Check internet status
 CHECK_INTERNET () {
-  if ! "$CHECK_URL_EXE" -q -c1 "$CHECK_URL" &>/dev/null; then
-    echo -e "\n${OR:-} ❌ Internet check fail - Can't update without internet${CL:-}\n"
-    exit 2
-  fi
+  local attempt delay
+  for attempt in 1 2 3; do
+    if "$CHECK_URL_EXE" -q -c1 "$CHECK_URL" &>/dev/null; then
+      [[ "$attempt" -gt 1 ]] && echo -e "${GN:-}✅ Internet connection available${CL:-}"
+      return 0
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      delay=$((attempt + 1))
+      echo "Internet check failed (attempt $attempt/3), retrying..." >&2
+      sleep "$delay"
+    fi
+  done
+  echo -e "\n${OR:-} ❌ Internet check fail - Can't update without internet${CL:-}\n"
+  exit 2
 }
 
 ARGUMENTS () {

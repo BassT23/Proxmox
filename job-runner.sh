@@ -606,6 +606,14 @@ remote_log() {
   ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
 }
 
+remote_log_full() {
+  local unit="$1" ref_line target owner_node owner_host port remote_command
+  ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  printf -v remote_command 'journalctl -u %q --no-pager -o cat' "$unit"
+  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
+}
+
 case "${1:-}" in
   start)
     [[ $# -eq 3 ]] || { usage >&2; exit 2; }
@@ -650,6 +658,10 @@ case "${1:-}" in
   remote-log)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     remote_log "$2"
+    ;;
+  remote-log-full)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    remote_log_full "$2"
     ;;
   *)
     usage >&2
