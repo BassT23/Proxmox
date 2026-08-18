@@ -16,7 +16,15 @@ cat > "$WORK_DIR/check.sh" <<'EOF'
 printf 'CHECK_SCOPE=%s CHECK_ARGS=%s\n' "${UU_CHECK_SCOPE:-}" "$*" >> "$POST_REFRESH_LOG"
 exit "${POST_CHECK_RC:-0}"
 EOF
-chmod +x "$WORK_DIR/update.sh" "$WORK_DIR/check.sh"
+cat > "$WORK_DIR/status-model.sh" <<'EOF'
+#!/usr/bin/env bash
+STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
+  printf 'NOTIFICATION_AFTER_REFRESH\n' >> "$POST_REFRESH_LOG"
+}
+EOF
+printf '{}\n' > "$WORK_DIR/status.json"
+printf 'EMAIL_USER="root"\n' > "$WORK_DIR/update.conf"
+chmod +x "$WORK_DIR/update.sh" "$WORK_DIR/check.sh" "$WORK_DIR/status-model.sh"
 
 unit=ultimate-updater-update-host-test
 cat > "$WORK_DIR/jobs/$unit.state" <<EOF
@@ -34,10 +42,15 @@ EOF
 
 POST_REFRESH_LOG="$WORK_DIR/log" UU_JOB_STATE_DIR="$WORK_DIR/jobs" \
   UU_CHECK_SCRIPT="$WORK_DIR/check.sh" UU_UPDATE_SCOPE=host \
+  UU_STATUS_MODEL_SCRIPT="$WORK_DIR/status-model.sh" UU_STATUS_MODEL_FILE="$WORK_DIR/status.json" \
+  UU_UPDATE_CONFIG_FILE="$WORK_DIR/update.conf" \
   "$ROOT_DIR/job-runner.sh" run "$unit" host "$WORK_DIR/update.sh" >/dev/null
 
 grep -Fq 'UPDATE_TARGET=host' "$WORK_DIR/log"
 grep -Fq 'CHECK_SCOPE=host CHECK_ARGS=host' "$WORK_DIR/log"
+test "$(sed -n '1p' "$WORK_DIR/log")" = 'UPDATE_TARGET=host'
+test "$(sed -n '2p' "$WORK_DIR/log")" = 'CHECK_SCOPE=host CHECK_ARGS=host'
+test "$(sed -n '3p' "$WORK_DIR/log")" = 'NOTIFICATION_AFTER_REFRESH'
 grep -Eq '^state=completed$' "$WORK_DIR/jobs/$unit.state"
 grep -Eq '^exit_code=0$' "$WORK_DIR/jobs/$unit.state"
 grep -Fq 'post-update host status refresh rc=0' "$WORK_DIR/jobs/$unit.state"

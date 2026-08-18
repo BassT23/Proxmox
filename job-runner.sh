@@ -13,6 +13,9 @@ CHECK_PREFIX="ultimate-updater-check-"
 MAX_COMPLETED_JOBS="${UU_MAX_COMPLETED_JOBS:-50}"
 CHECK_SCRIPT="${UU_CHECK_SCRIPT:-/etc/ultimate-updater/check-updates.sh}"
 CHECK_CLI="${UU_CHECK_CLI:-/usr/local/sbin/ultimate-updater}"
+STATUS_MODEL_SCRIPT="${UU_STATUS_MODEL_SCRIPT:-/etc/ultimate-updater/status-model.sh}"
+STATUS_MODEL_FILE="${UU_STATUS_MODEL_FILE:-/etc/ultimate-updater/status.json}"
+UPDATE_CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-/etc/ultimate-updater/update.conf}"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 
 usage() {
@@ -214,6 +217,15 @@ job_unit_active() {
   systemctl is-active --quiet "$1" 2>/dev/null
 }
 
+send_update_notification() {
+  local status_file="${1:-$STATUS_MODEL_FILE}"
+  [[ -f "$STATUS_MODEL_SCRIPT" && -f "$status_file" ]] || return 0
+  LOCAL_FILES=$(dirname -- "$status_file") \
+    STATUS_MODEL_FILE="$status_file" \
+    bash -c 'source "$1" && STATUS_MODEL_SEND_UPDATE_NOTIFICATION "$2" "$3"' \
+      _ "$STATUS_MODEL_SCRIPT" "$status_file" "$UPDATE_CONFIG_FILE" || true
+}
+
 # Keep only terminal job history.  This function is deliberately best-effort:
 # retention must never change the result of the job that just completed.
 cleanup_completed_jobs() {
@@ -260,6 +272,7 @@ start_job() {
     printf 'An update job is already running for target %s.\n' "$target" >&2
     return 3
   fi
+  systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
   if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
     systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
   fi
@@ -296,6 +309,7 @@ start_global_job() {
     printf 'An update job is already running for all systems.\n' >&2
     return 3
   fi
+  systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
   if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
     systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
   fi
@@ -332,7 +346,7 @@ run_job() {
     write_state "$unit" "$target" failed "$started" "$(now)" 75 "target update already locked"
     return 75
   fi
-  "$update_script" "$target" </dev/null
+  UU_DEFER_UPDATE_MAIL=true "$update_script" "$target" </dev/null
   exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then
     printf 'Post-update status refresh started for %s.\n' "$target"
@@ -356,6 +370,9 @@ run_job() {
     else
       printf 'Post-update status refresh completed successfully.\n'
     fi
+    send_update_notification "$STATUS_MODEL_FILE"
+  else
+    send_update_notification "$STATUS_MODEL_FILE"
   fi
   if [[ "$exit_code" -eq 0 ]]; then
     write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
@@ -385,7 +402,7 @@ run_global_job() {
     write_state "$unit" "$target" failed "$started" "$(now)" 75 "another global update is running"
     return 75
   fi
-  "$update_script"
+  UU_DEFER_UPDATE_MAIL=true "$update_script"
   exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then
     printf 'Post-update status refresh started for all systems.\n'
@@ -401,6 +418,9 @@ run_global_job() {
     else
       printf 'Post-update status refresh completed successfully.\n'
     fi
+    send_update_notification "$STATUS_MODEL_FILE"
+  else
+    send_update_notification "$STATUS_MODEL_FILE"
   fi
   if [[ "$exit_code" -eq 0 ]]; then
     write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" "$post_check_message" || return 1

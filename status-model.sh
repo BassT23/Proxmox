@@ -434,6 +434,33 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   esac
 }
 
+# Send an update summary only after the caller has completed its post-update
+# status refresh.  Update jobs use this instead of update.sh's EXIT-trap mail,
+# so the summary is rendered from the fresh status model.
+STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
+  local status_file="${1:-${STATUS_MODEL_FILE:-${LOCAL_FILES:-/etc/ultimate-updater}/status.json}}"
+  local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
+  local email_user email_sender email_only_error notification state body
+
+  email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
+  email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
+  email_only_error=$(awk -F'"' '/^EMAIL_ONLY_ERROR=/ {print $2}' "$config_file" 2>/dev/null)
+  email_user="${email_user:-root}"
+  email_sender="${email_sender:-${USER:-root}}"
+  email_sender=$(STATUS_MODEL_EXPAND_SENDER "$email_sender")
+  email_only_error="${email_only_error:-false}"
+
+  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file" update) || return 1
+  state=${notification%%$'\n'*}
+  state=${state#STATE=}
+  body=${notification#*$'\n'}
+
+  [[ "$email_only_error" == true && "$state" != issues ]] && return 0
+  printf '%s\n' "$body" | mail -a 'Content-Type: text/plain; charset=UTF-8' \
+    -a 'Content-Transfer-Encoding: 8bit' -r "$email_sender" \
+    -s "Ultimate Updater summary - $HOSTNAME" "$email_user" || true
+}
+
 # Expand only the documented sender placeholder. Config is never evaluated as
 # shell code; the resulting value remains a normal argument to mail(1).
 STATUS_MODEL_EXPAND_SENDER() {
