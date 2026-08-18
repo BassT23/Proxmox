@@ -264,14 +264,16 @@ ARGUMENTS () {
         else
           echo -e "⏩${BL:-} Skipped host itself by the user${CL:-}\n\n"
         fi
-        if [[ "$WITH_LXC" == true ]]; then
+        if [[ "${UU_UPDATE_SCOPE:-}" == host ]]; then
+          echo -e "⏩${BL:-} Skipped all containers and VMs: host-only update${CL:-}\n"
+        elif [[ "$WITH_LXC" == true ]]; then
           CONTAINER_UPDATE_START
         else
           echo -e "⏩${BL:-} Skipped all containers by the user${CL:-}\n"
         fi
-        if [[ "$WITH_VM" == true ]]; then
+        if [[ "${UU_UPDATE_SCOPE:-}" != host && "$WITH_VM" == true ]]; then
           VM_UPDATE_START
-        else
+        elif [[ "${UU_UPDATE_SCOPE:-}" != host ]]; then
           echo -e "⏩${BL:-} Skipped all VMs by the user${CL:-}\n"
         fi
         ;;
