@@ -7,11 +7,11 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 # The node action must explicitly carry a host-only scope into both local and
 # remote jobs.  update-all and single-target dispatch remain separate paths.
-grep -Fq 'UU_UPDATE_SCOPE=host "$JOB_RUNNER" start "$UPDATE_SCRIPT" host' "$ROOT_DIR/ultimate-updater"
-grep -Fq 'UU_DEFER_NOTIFICATION=true UU_UPDATE_SCOPE=host' "$ROOT_DIR/ultimate-updater"
-grep -Fq '"${UU_UPDATE_SCOPE:-}" == host' "$ROOT_DIR/update.sh"
-grep -Fq '"${UU_UPDATE_SCOPE:-}" != host && "$WITH_VM" == true' "$ROOT_DIR/update.sh"
-grep -Fq 'systemd_env+=("--setenv=UU_UPDATE_SCOPE=host")' "$ROOT_DIR/job-runner.sh"
+grep -Fq "UU_UPDATE_SCOPE=host \"\$JOB_RUNNER\" start \"\$UPDATE_SCRIPT\" host" "$ROOT_DIR/ultimate-updater"
+grep -Fq "UU_DEFER_NOTIFICATION=true UU_UPDATE_SCOPE=host" "$ROOT_DIR/ultimate-updater"
+grep -Fq "\"\${UU_UPDATE_SCOPE:-}\" == host" "$ROOT_DIR/update.sh"
+grep -Fq "\"\${UU_UPDATE_SCOPE:-}\" != host && \"\$WITH_VM\" == true" "$ROOT_DIR/update.sh"
+grep -Fq "systemd_env+=(\"--setenv=UU_UPDATE_SCOPE=host\")" "$ROOT_DIR/job-runner.sh"
 
 if [[ "$EUID" -eq 0 ]]; then
   # Verify that the job boundary exports the scope to systemd rather than
