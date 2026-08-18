@@ -75,7 +75,7 @@ chmod 750 "$WORK_DIR/harness.sh"
 (cd "$WORK_DIR"; LOG_FILE="$WORK_DIR/commands.log" bash "$WORK_DIR/harness.sh" "$WORK_DIR")
 
 grep -Fq 'UU_JOB_SOURCE=initial-inventory REMOTE_JOB_SOURCE=initial-inventory REMOTE_INITIAL_INVENTORY=true' "$ROOT_DIR/check-updates.sh"
-grep -Fq 'REMOTE_JOB_SOURCE=${UU_JOB_SOURCE} REMOTE_INITIAL_INVENTORY=$INITIAL_INVENTORY' "$ROOT_DIR/check-updates.sh"
+grep -Fq "REMOTE_JOB_SOURCE=\${UU_JOB_SOURCE} REMOTE_INITIAL_INVENTORY=\$INITIAL_INVENTORY" "$ROOT_DIR/check-updates.sh"
 grep -Fq 'GUEST_INTERNET_PREFLIGHT_PCT' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'GUEST_INTERNET_PREFLIGHT_SSH' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'GUEST_INTERNET_PREFLIGHT_QGA' "$ROOT_DIR/check-updates.sh"
