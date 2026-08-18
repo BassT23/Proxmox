@@ -62,7 +62,7 @@ for marker in \
   'CENTRAL_REMOTE_END node='; do
   grep -Fq "$marker" "$ROOT_DIR/check-updates.sh"
 done
-grep -Fq 'bash -s -- -c host' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'bash -s -- node-host' "$ROOT_DIR/check-updates.sh"
 
 # The remote wrapper owns finalization.  An inner check that exits before its
 # own epilogue must still produce a final status and completion result.
