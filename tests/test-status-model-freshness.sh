@@ -31,6 +31,17 @@ run_check() {
     ' _ "$ROOT_DIR/status-model.sh"
 }
 
+run_imported_check() {
+  local status_file="$1" records_file="$2" remote_file="$3"
+  LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$status_file" \
+    STATUS_MODEL_RECORD_FILE="$records_file" bash -c '
+      source "$1"
+      STATUS_MODEL_INIT
+      STATUS_MODEL_IMPORT_FILE "$2"
+      STATUS_MODEL_FINISH
+    ' _ "$ROOT_DIR/status-model.sh" "$remote_file"
+}
+
 assert_full() {
   python3 - "$1" <<'PY'
 import json, sys
@@ -51,6 +62,22 @@ assert targets["211"]["error"] is None
 assert targets["999"]["check_status"] == "error"
 PY
 }
+
+REMOTE_STATUS="$WORK_DIR/remote-status.json"
+python3 - "$REMOTE_STATUS" <<'PY'
+import json, sys
+json.dump({"targets": [{
+    "id": "211", "type": "lxc", "transport": "pct", "reachable": False,
+    "check_status": "not_checked",
+    "error": {"code": "STOPPED_READ_ONLY", "message": "stopped"},
+    "last_update": {"status": "failed", "timestamp": "2026-08-17T05:00:00Z", "exit_code": 1},
+}]}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+
+IMPORTED_STATUS="$WORK_DIR/imported-status.json"
+write_stale_status "$IMPORTED_STATUS"
+run_imported_check "$IMPORTED_STATUS" "$WORK_DIR/imported-records" "$REMOTE_STATUS"
+assert_full "$IMPORTED_STATUS"
 
 FULL_STATUS="$WORK_DIR/full-status.json"
 write_stale_status "$FULL_STATUS"
