@@ -567,7 +567,7 @@ run_node_check() {
   cluster_node_resolve "$node" || { printf 'Unknown Proxmox node: %s\n' "$node" >&2; return 3; }
   if [[ "$RESOLVED_NODE_LOCAL" == true ]]; then
     require_file "$CHECK_SCRIPT" "check script" || return 1
-    UU_DEFER_NOTIFICATION=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" host
+    UU_DEFER_NOTIFICATION=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" node-host
     result=$?
   else
     STATUS_MODEL_PARTIAL=true remote_node_check "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"
