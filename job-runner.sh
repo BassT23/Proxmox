@@ -11,6 +11,8 @@ REMOTE_REF_DIR="$JOB_STATE_DIR/remote"
 JOB_PREFIX="ultimate-updater-update-"
 CHECK_PREFIX="ultimate-updater-check-"
 MAX_COMPLETED_JOBS="${UU_MAX_COMPLETED_JOBS:-50}"
+CHECK_SCRIPT="${UU_CHECK_SCRIPT:-/etc/ultimate-updater/check-updates.sh}"
+CHECK_CLI="${UU_CHECK_CLI:-/usr/local/sbin/ultimate-updater}"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 
 usage() {
@@ -313,6 +315,7 @@ start_global_job() {
 
 run_job() {
   local unit="$1" target="$2" update_script="$3" file started exit_code lock_file
+  local post_check_rc=0 post_check_message=""
   valid_target "$target" || return 2
   file=$(state_file "$unit")
   started=$(state_value "$file" started_at)
@@ -332,7 +335,30 @@ run_job() {
   "$update_script" "$target" </dev/null
   exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then
-    write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" || return 1
+    printf 'Post-update status refresh started for %s.\n' "$target"
+    if [[ "${UU_UPDATE_SCOPE:-}" == host || "$target" == host ]]; then
+      if [[ -x "$CHECK_SCRIPT" ]]; then
+        UU_DEFER_NOTIFICATION=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true \
+          "$CHECK_SCRIPT" host </dev/null || post_check_rc=$?
+      else
+        post_check_rc=127
+      fi
+      post_check_message="post-update host status refresh rc=$post_check_rc"
+    elif [[ -x "$CHECK_CLI" ]]; then
+      UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check "$target" </dev/null || post_check_rc=$?
+      post_check_message="post-update target status refresh rc=$post_check_rc"
+    else
+      post_check_rc=127
+      post_check_message="post-update target status refresh rc=127 (CLI unavailable)"
+    fi
+    if [[ "$post_check_rc" -ne 0 ]]; then
+      printf 'Post-update status refresh failed (exit code %s); update result remains successful.\n' "$post_check_rc" >&2
+    else
+      printf 'Post-update status refresh completed successfully.\n'
+    fi
+  fi
+  if [[ "$exit_code" -eq 0 ]]; then
+    write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
   else
     write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
   fi
@@ -341,6 +367,7 @@ run_job() {
 
 run_global_job() {
   local unit="$1" update_script="$2" target=all-systems file started exit_code lock_file
+  local post_check_rc=0 post_check_message=""
   valid_unit "$unit" || return 2
   valid_global_target "$target" || return 2
   file=$(state_file "$unit")
@@ -361,7 +388,22 @@ run_global_job() {
   "$update_script"
   exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then
-    write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" || return 1
+    printf 'Post-update status refresh started for all systems.\n'
+    if [[ -x "$CHECK_CLI" ]]; then
+      UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check </dev/null || post_check_rc=$?
+      post_check_message="post-update full status refresh rc=$post_check_rc"
+    else
+      post_check_rc=127
+      post_check_message="post-update full status refresh rc=127 (CLI unavailable)"
+    fi
+    if [[ "$post_check_rc" -ne 0 ]]; then
+      printf 'Post-update status refresh failed (exit code %s); update result remains successful.\n' "$post_check_rc" >&2
+    else
+      printf 'Post-update status refresh completed successfully.\n'
+    fi
+  fi
+  if [[ "$exit_code" -eq 0 ]]; then
+    write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
   else
     write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
   fi
