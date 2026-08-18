@@ -179,7 +179,11 @@ with open(record_file, encoding="utf-8") as records:
         available = None if updates in ("", "null") else int(updates)
         reboot = None if reboot_required in ("", "null") else reboot_required == "true"
         error = None
-        if error_code or error_message:
+        # A stopped/paused target in a read-only inventory was intentionally
+        # not checked.  Its explanatory record must not project as a current
+        # failure or keep a stale CHECK_COMMAND_FAILED-style error visible.
+        neutral_check = check_status in ("not_checked", "skipped", "stopped")
+        if (error_code or error_message) and not neutral_check:
             error = {"code": error_code or None, "message": error_message or None}
         record = targets.setdefault(target_id, {})
         record.update({
