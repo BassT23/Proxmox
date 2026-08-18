@@ -81,3 +81,17 @@ INTERNAL_SSH_USE_IDENTITY() {
 INTERNAL_SSH_RESOLVE_NODE() { INTERNAL_SSH_RESOLVE node "$1" "$2" root "${3:-22}"; }
 INTERNAL_SSH_RESOLVE_VM() { INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "${4:-22}"; }
 INTERNAL_SSH_RESOLVE_LXC() { INTERNAL_SSH_RESOLVE lxc "$1" "$2" "$3" "${4:-22}"; }
+
+# Return success when a target has an enabled entry in the data-only internal
+# SSH configuration.  This is used for inventory eligibility; an override must
+# not be invisible merely because the guest also has (or lacks) QGA enabled.
+INTERNAL_SSH_HAS_OVERRIDE() {
+  local section="${1:-}:${2:-}"
+  INTERNAL_SSH_LOAD "${INTERNAL_SSH_CONFIG_FILE}" || return 1
+  [[ -n "${INTERNAL_SSH_VALUES[$section|enabled]+x}" ]] ||
+    [[ -n "${INTERNAL_SSH_VALUES[$section|host]+x}" ]] ||
+    [[ -n "${INTERNAL_SSH_VALUES[$section|user]+x}" ]] ||
+    [[ -n "${INTERNAL_SSH_VALUES[$section|port]+x}" ]] ||
+    [[ -n "${INTERNAL_SSH_VALUES[$section|identity_file]+x}" ]] || return 1
+  [[ "${INTERNAL_SSH_VALUES[$section|enabled]:-true}" == true ]]
+}
