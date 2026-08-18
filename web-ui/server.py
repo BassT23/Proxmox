@@ -45,6 +45,7 @@ DEFAULT_CLI = Path("/usr/local/sbin/ultimate-updater")
 DEFAULT_UPDATE_SCRIPT = Path("/etc/ultimate-updater/update.sh")
 DEFAULT_JOB_RUNNER = Path("/etc/ultimate-updater/job-runner.sh")
 DEFAULT_JOBS_DIR = Path("/var/lib/ultimate-updater/jobs")
+VISIBLE_JOB_LIMIT = 20
 DEFAULT_BACKUP_STATE_FILE = Path("/var/lib/ultimate-updater/external-backup-verification.json")
 DEFAULT_AUTH_FILE = Path("/etc/ultimate-updater/web-auth.json")
 DEFAULT_INTERNAL_SSH_FILE = Path("/etc/ultimate-updater/internal-ssh.conf")
@@ -1049,7 +1050,18 @@ class StatusHandler(BaseHTTPRequestHandler):
         if result.returncode:
             raise RuntimeError("job state could not be read")
         rows = [parse_state_line(line) for line in result.stdout.splitlines()]
-        return [row for row in rows if row and JOB_RE.fullmatch(row["unit"])]
+        rows = [row for row in rows if row and JOB_RE.fullmatch(row["unit"])]
+        # Keep the API response bounded. Running jobs are always retained; the
+        # remaining slots contain the newest terminal jobs by metadata time.
+        def sort_key(row):
+            value = row.get("started_at") or ""
+            return value
+        rows.sort(key=sort_key, reverse=True)
+        running = [row for row in rows if row.get("state") in {"running", "pending", "starting"}]
+        finished = [row for row in rows if row.get("state") not in {"running", "pending", "starting"}]
+        selected = running + finished[:max(0, VISIBLE_JOB_LIMIT - len(running))]
+        selected.sort(key=sort_key, reverse=True)
+        return selected
 
     def updater_version(self, force=False):
         now = time.monotonic()
