@@ -57,6 +57,16 @@ assert "preview:'update'" in page
 assert "scope==='update'" in page
 assert "Update host" in page
 assert "Update running containers" in page
+for key in (
+    "VERSION_CHECK", "SSH_PORT", "EXE_FOR_INTERNET_CHECK", "URL_FOR_INTERNET_CHECK",
+    "FREEBSD_UPDATES", "INCLUDE_PHASED_UPDATES", "INCLUDE_FSTRIM",
+    "FSTRIM_WITH_MOUNTPOINT", "PACMAN_ENVIRONMENT", "INCLUDE_HELPER_SCRIPTS",
+    "EXTRA_GLOBAL", "IN_HEADLESS_MODE", "PIHOLE", "IOBROKER", "PTERODACTYL",
+    "OCTOPRINT", "DOCKER_COMPOSE", "UNIFI", "COMPOSE_PATH",
+):
+    assert key in server.CONFIG_KEYS, key
+assert "Advanced settings" in page
+assert "Extra updates" in page
 assert "setLoginLoading(true)" in page
 assert "button.disabled=loading" in page
 assert "Login successful" in page
