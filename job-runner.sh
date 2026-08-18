@@ -10,6 +10,7 @@ JOB_STATE_DIR="${UU_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
 REMOTE_REF_DIR="$JOB_STATE_DIR/remote"
 JOB_PREFIX="ultimate-updater-update-"
 CHECK_PREFIX="ultimate-updater-check-"
+MAX_COMPLETED_JOBS="${UU_MAX_COMPLETED_JOBS:-50}"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 
 usage() {
@@ -72,11 +73,15 @@ write_state() {
   } > "$temp" || return 1
   chmod 0644 "$temp" || return 1
   mv -f -- "$temp" "$file"
+  case "$state" in
+    completed|failed|interrupted) cleanup_completed_jobs || true ;;
+  esac
 }
 
 ensure_state_dir() {
   mkdir -p "$JOB_STATE_DIR" || return 1
   chmod 0755 "$JOB_STATE_DIR" || return 1
+  cleanup_completed_jobs || true
 }
 
 valid_unit() {
@@ -200,6 +205,45 @@ target_running() {
     fi
   done
   return 1
+}
+
+job_unit_active() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  systemctl is-active --quiet "$1" 2>/dev/null
+}
+
+# Keep only terminal job history.  This function is deliberately best-effort:
+# retention must never change the result of the job that just completed.
+cleanup_completed_jobs() {
+  local retention="${MAX_COMPLETED_JOBS:-50}" file unit state started epoch index_file total remove_count
+  [[ "$retention" =~ ^[0-9]+$ ]] || retention=50
+  index_file=$(mktemp "$JOB_STATE_DIR/.retention.XXXXXX" 2>/dev/null) || return 0
+  shopt -s nullglob
+  for file in "$JOB_STATE_DIR"/*.state; do
+    state=$(state_value "$file" state)
+    case "$state" in
+      completed|failed|interrupted) ;;
+      *) continue ;;
+    esac
+    unit=$(state_value "$file" unit)
+    job_unit_active "$unit" && continue
+    started=$(state_value "$file" started_at)
+    epoch=$(date -u -d "$started" +%s 2>/dev/null || true)
+    [[ "$epoch" =~ ^[0-9]+$ ]] || epoch=$(stat -c '%Y' "$file" 2>/dev/null || printf '0')
+    printf '%020s\t%s\n' "$epoch" "$file" >> "$index_file" || true
+  done
+  total=$(wc -l < "$index_file" 2>/dev/null || printf '0')
+  remove_count=$((total - retention))
+  if (( remove_count > 0 )); then
+    sort -n -k1,1 "$index_file" | head -n "$remove_count" |
+      while IFS=$'\t' read -r _ file; do
+        [[ -n "$file" && -f "$file" ]] || continue
+        unit=${file##*/}; unit=${unit%.state}
+        rm -f -- "$file" "$(remote_ref_file "$unit")" 2>/dev/null || true
+      done
+  fi
+  rm -f -- "$index_file" 2>/dev/null || true
+  return 0
 }
 
 start_job() {
@@ -462,6 +506,7 @@ refresh_running_jobs() {
 list_jobs() {
   [[ -d "$JOB_STATE_DIR" ]] || return 0
   refresh_running_jobs
+  cleanup_completed_jobs || true
   local file unit target state started finished exit_code owner_node owner_host port
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
