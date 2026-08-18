@@ -46,6 +46,7 @@ grep -Fq 'STATUS_MODEL_FINISH_START node=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'STATUS_MODEL_FINISH_END node=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'COMPLETION_WRITE node=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'UU_REMOTE_DEFER_STATUS_FINISH:-false' "$ROOT_DIR/check-updates.sh"
+# shellcheck disable=SC2016
 grep -Fq 'UU_CHECK_REMOTE_WRAPPER_TIMEOUT:-$((job_timeout + 30))' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'bash -s -- -c host' "$ROOT_DIR/check-updates.sh"
 
