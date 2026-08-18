@@ -65,15 +65,53 @@ CONFIG_BOOLEAN_KEYS = {
     "STOPPED_CONTAINER", "RUNNING_VM", "STOPPED_VM",
     "REBOOT_IF_NEEDED", "EXIT_ON_ERROR", "SNAPSHOT", "BACKUP",
     "BACKUP_LXC_MP", "EMAIL_DAILY_CHECK", "EMAIL_NO_UPDATES",
-    "EMAIL_ONLY_SECURITY", "EMAIL_ONLY_ERROR",
+    "EMAIL_ONLY_SECURITY", "EMAIL_ONLY_ERROR", "VERSION_CHECK",
+    "FREEBSD_UPDATES", "INCLUDE_PHASED_UPDATES", "INCLUDE_FSTRIM",
+    "FSTRIM_WITH_MOUNTPOINT", "INCLUDE_HELPER_SCRIPTS", "EXTRA_GLOBAL",
+    "IN_HEADLESS_MODE", "PIHOLE", "IOBROKER", "PTERODACTYL", "OCTOPRINT",
+    "DOCKER_COMPOSE", "UNIFI",
 }
-CONFIG_INTEGER_KEYS = {"LXC_START_DELAY", "VM_START_DELAY", "KEEP_SNAPSHOTS"}
+CONFIG_INTEGER_KEYS = {"SSH_PORT", "LXC_START_DELAY", "VM_START_DELAY", "KEEP_SNAPSHOTS"}
 CONFIG_STRING_KEYS = {
     "ONLY_UPDATE_CHECK", "EXCLUDE_UPDATE_CHECK", "ONLY", "EXCLUDE",
     "BACKUP_MODE", "BACKUP_STORAGE",
-    "EMAIL_USER", "EMAIL_SENDER",
+    "EMAIL_USER", "EMAIL_SENDER", "EXE_FOR_INTERNET_CHECK",
+    "URL_FOR_INTERNET_CHECK", "PACMAN_ENVIRONMENT", "COMPOSE_PATH",
 }
 CONFIG_KEYS = CONFIG_BOOLEAN_KEYS | CONFIG_INTEGER_KEYS | CONFIG_STRING_KEYS
+
+# Every schema key has an explicit audit classification.  Internal and
+# deprecated keys are intentionally not part of CONFIG_KEYS and therefore
+# cannot be written through the Web UI.
+CONFIG_KEY_CATEGORIES = {
+    "VERSION": "internal", "USED_BRANCH": "internal", "DEBUG": "internal",
+    "LOG_FILE": "internal", "ERROR_LOG_FILE": "internal",
+    "VERSION_CHECK": "advanced", "SSH_PORT": "advanced",
+    "EXE_FOR_INTERNET_CHECK": "advanced", "URL_FOR_INTERNET_CHECK": "advanced",
+    "LXC_START_DELAY": "advanced", "VM_START_DELAY": "advanced",
+    "EMAIL_USER": "visible", "EMAIL_SENDER": "visible",
+    "EMAIL_DAILY_CHECK": "visible", "EMAIL_NO_UPDATES": "visible",
+    "EMAIL_ONLY_SECURITY": "visible", "EMAIL_ONLY_ERROR": "visible",
+    "CHECK_WITH_HOST": "visible", "CHECK_WITH_LXC": "visible", "CHECK_WITH_VM": "visible",
+    "CHECK_STOPPED_CONTAINER": "visible", "CHECK_RUNNING_CONTAINER": "visible",
+    "CHECK_STOPPED_VM": "visible", "CHECK_PAUSED_VM": "visible", "CHECK_RUNNING_VM": "visible",
+    "ONLY_UPDATE_CHECK": "visible", "EXCLUDE_UPDATE_CHECK": "visible",
+    "WITH_HOST": "visible", "WITH_LXC": "visible", "WITH_VM": "visible",
+    "STOPPED_CONTAINER": "visible", "RUNNING_CONTAINER": "visible",
+    "STOPPED_VM": "visible", "RUNNING_VM": "visible",
+    "ONLY": "visible", "EXCLUDE": "visible", "EXIT_ON_ERROR": "visible",
+    "REBOOT_IF_NEEDED": "visible", "SNAPSHOT": "visible", "KEEP_SNAPSHOTS": "visible",
+    "BACKUP": "visible", "BACKUP_LXC_MP": "visible", "BACKUP_MODE": "visible",
+    "BACKUP_STORAGE": "visible",
+    "FREEBSD_UPDATES": "advanced", "INCLUDE_PHASED_UPDATES": "advanced",
+    "INCLUDE_FSTRIM": "advanced", "FSTRIM_WITH_MOUNTPOINT": "advanced",
+    "PACMAN_ENVIRONMENT": "advanced", "INCLUDE_HELPER_SCRIPTS": "advanced",
+    "EXTRA_GLOBAL": "advanced", "IN_HEADLESS_MODE": "advanced",
+    "PIHOLE": "advanced", "IOBROKER": "advanced", "PTERODACTYL": "advanced",
+    "OCTOPRINT": "advanced", "DOCKER_COMPOSE": "advanced", "UNIFI": "advanced",
+    "COMPOSE_PATH": "advanced",
+    "INCLUDE_KERNEL": "deprecated",
+}
 UI_ASSETS = {
     "/assets/ultimate-updater-header.png": ("ultimate-updater-header.png", "image/png"),
     "/assets/ultimate-updater-icon.png": ("ultimate-updater-icon.png", "image/png"),
@@ -241,16 +279,18 @@ PAGE = r"""<!doctype html>
     clearTimeout(pollTimer);
   </script>
   <script>
-    const configBooleanKeys=['CHECK_WITH_HOST','CHECK_WITH_LXC','CHECK_WITH_VM','CHECK_RUNNING_CONTAINER','CHECK_STOPPED_CONTAINER','CHECK_RUNNING_VM','CHECK_STOPPED_VM','CHECK_PAUSED_VM','WITH_HOST','WITH_LXC','WITH_VM','RUNNING_CONTAINER','STOPPED_CONTAINER','RUNNING_VM','STOPPED_VM','REBOOT_IF_NEEDED','EXIT_ON_ERROR','SNAPSHOT','BACKUP','BACKUP_LXC_MP','EMAIL_DAILY_CHECK','EMAIL_NO_UPDATES','EMAIL_ONLY_SECURITY','EMAIL_ONLY_ERROR'];
-    const configNumberKeys=['LXC_START_DELAY','VM_START_DELAY','KEEP_SNAPSHOTS'];
-    const configStringKeys=['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE','BACKUP_MODE','BACKUP_STORAGE','EMAIL_USER','EMAIL_SENDER'];
-    const configLabels={CHECK_WITH_HOST:'Check host',CHECK_WITH_LXC:'Check LXC',CHECK_WITH_VM:'Check VM',CHECK_RUNNING_CONTAINER:'Check running containers',CHECK_STOPPED_CONTAINER:'Check stopped containers',CHECK_RUNNING_VM:'Check running VMs',CHECK_STOPPED_VM:'Check stopped VMs',CHECK_PAUSED_VM:'Check paused VMs',WITH_HOST:'Update host',WITH_LXC:'Update LXC',WITH_VM:'Update VM',RUNNING_CONTAINER:'Update running containers',STOPPED_CONTAINER:'Update stopped containers',RUNNING_VM:'Update running VMs',STOPPED_VM:'Update stopped VMs',REBOOT_IF_NEEDED:'Reboot if needed',EXIT_ON_ERROR:'Continue after errors',SNAPSHOT:'Create snapshots',KEEP_SNAPSHOTS:'Snapshots to keep',BACKUP:'Create backups',BACKUP_LXC_MP:'Backup LXC mount points',BACKUP_MODE:'Backup mode',BACKUP_STORAGE:'Backup storage',EMAIL_DAILY_CHECK:'Daily email check',EMAIL_NO_UPDATES:'Email when no updates',EMAIL_ONLY_SECURITY:'Email security updates only',EMAIL_ONLY_ERROR:'Email errors only',LXC_START_DELAY:'LXC start delay',VM_START_DELAY:'VM start delay',ONLY_UPDATE_CHECK:'Only check filter',EXCLUDE_UPDATE_CHECK:'Exclude check filter',ONLY:'Only update filter',EXCLUDE:'Exclude update filter',EMAIL_USER:'Email recipient',EMAIL_SENDER:'Email sender'};
+    const configBooleanKeys=['CHECK_WITH_HOST','CHECK_WITH_LXC','CHECK_WITH_VM','CHECK_RUNNING_CONTAINER','CHECK_STOPPED_CONTAINER','CHECK_RUNNING_VM','CHECK_STOPPED_VM','CHECK_PAUSED_VM','WITH_HOST','WITH_LXC','WITH_VM','RUNNING_CONTAINER','STOPPED_CONTAINER','RUNNING_VM','STOPPED_VM','REBOOT_IF_NEEDED','EXIT_ON_ERROR','SNAPSHOT','BACKUP','BACKUP_LXC_MP','EMAIL_DAILY_CHECK','EMAIL_NO_UPDATES','EMAIL_ONLY_SECURITY','EMAIL_ONLY_ERROR','VERSION_CHECK','FREEBSD_UPDATES','INCLUDE_PHASED_UPDATES','INCLUDE_FSTRIM','FSTRIM_WITH_MOUNTPOINT','INCLUDE_HELPER_SCRIPTS','EXTRA_GLOBAL','IN_HEADLESS_MODE','PIHOLE','IOBROKER','PTERODACTYL','OCTOPRINT','DOCKER_COMPOSE','UNIFI'];
+    const configNumberKeys=['SSH_PORT','LXC_START_DELAY','VM_START_DELAY','KEEP_SNAPSHOTS'];
+    const configStringKeys=['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE','BACKUP_MODE','BACKUP_STORAGE','EMAIL_USER','EMAIL_SENDER','EXE_FOR_INTERNET_CHECK','URL_FOR_INTERNET_CHECK','PACMAN_ENVIRONMENT','COMPOSE_PATH'];
+    const configLabels={CHECK_WITH_HOST:'Check host',CHECK_WITH_LXC:'Check LXC',CHECK_WITH_VM:'Check VM',CHECK_RUNNING_CONTAINER:'Check running containers',CHECK_STOPPED_CONTAINER:'Check stopped containers',CHECK_RUNNING_VM:'Check running VMs',CHECK_STOPPED_VM:'Check stopped VMs',CHECK_PAUSED_VM:'Check paused VMs',WITH_HOST:'Update host',WITH_LXC:'Update LXC',WITH_VM:'Update VM',RUNNING_CONTAINER:'Update running containers',STOPPED_CONTAINER:'Update stopped containers',RUNNING_VM:'Update running VMs',STOPPED_VM:'Update stopped VMs',REBOOT_IF_NEEDED:'Reboot if needed',EXIT_ON_ERROR:'Continue after errors',SNAPSHOT:'Create snapshots',KEEP_SNAPSHOTS:'Snapshots to keep',BACKUP:'Create backups',BACKUP_LXC_MP:'Backup LXC mount points',BACKUP_MODE:'Backup mode',BACKUP_STORAGE:'Backup storage',EMAIL_DAILY_CHECK:'Daily email check',EMAIL_NO_UPDATES:'Email when no updates',EMAIL_ONLY_SECURITY:'Email security updates only',EMAIL_ONLY_ERROR:'Email errors only',VERSION_CHECK:'Check for updater updates',SSH_PORT:'SSH port',EXE_FOR_INTERNET_CHECK:'Internet check command',URL_FOR_INTERNET_CHECK:'Internet check address',FREEBSD_UPDATES:'Update FreeBSD guests',INCLUDE_PHASED_UPDATES:'Include phased updates',INCLUDE_FSTRIM:'Run fstrim',FSTRIM_WITH_MOUNTPOINT:'Include mount points in fstrim',PACMAN_ENVIRONMENT:'Pacman environment',INCLUDE_HELPER_SCRIPTS:'Include helper scripts',EXTRA_GLOBAL:'Enable extra updates',IN_HEADLESS_MODE:'Run extras in headless mode',PIHOLE:'Update Pi-hole',IOBROKER:'Update ioBroker',PTERODACTYL:'Update Pterodactyl',OCTOPRINT:'Update OctoPrint',DOCKER_COMPOSE:'Update Docker Compose',UNIFI:'Update UniFi',COMPOSE_PATH:'Compose search path',LXC_START_DELAY:'LXC start delay',VM_START_DELAY:'VM start delay',ONLY_UPDATE_CHECK:'Only check filter',EXCLUDE_UPDATE_CHECK:'Exclude check filter',ONLY:'Only update filter',EXCLUDE:'Exclude update filter',EMAIL_USER:'Email recipient',EMAIL_SENDER:'Email sender'};
     const configGroups=[
       {title:'Host',hint:'Host checks and updates are controlled here. Guest settings below do not change host processing.',keys:['CHECK_WITH_HOST','WITH_HOST']},
       {title:'Containers / LXC',hint:'Choose which LXC guests and lifecycle states are included for checks and updates.',matrix:[{label:'Containers',check:'CHECK_WITH_LXC',update:'WITH_LXC'},{label:'Running containers',check:'CHECK_RUNNING_CONTAINER',update:'RUNNING_CONTAINER'},{label:'Stopped containers',check:'CHECK_STOPPED_CONTAINER',update:'STOPPED_CONTAINER'}],extras:['LXC_START_DELAY','BACKUP_LXC_MP']},
       {title:'Virtual Machines',hint:'Choose which VMs and lifecycle states are included for checks and updates.',matrix:[{label:'Virtual machines',check:'CHECK_WITH_VM',update:'WITH_VM'},{label:'Running VMs',check:'CHECK_RUNNING_VM',update:'RUNNING_VM'},{label:'Stopped VMs',check:'CHECK_STOPPED_VM',update:'STOPPED_VM'},{label:'Paused VMs',check:'CHECK_PAUSED_VM',update:null}],extras:['VM_START_DELAY']},
       {title:'Target filters',hint:'Check and update filters are independent. ONLY has priority for each run type; EXCLUDE is ignored while that ONLY filter is set.',filterGroups:[{title:'Check',keys:['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK'],preview:'check'},{title:'Update',keys:['ONLY','EXCLUDE'],preview:'update'}]},
-      {title:'General update behavior',hint:'These options affect how the core processes checks and updates.',keys:['REBOOT_IF_NEEDED','EXIT_ON_ERROR']},
+      {title:'General update behavior',hint:'These options affect how the core processes checks and updates.',keys:['REBOOT_IF_NEEDED','EXIT_ON_ERROR','VERSION_CHECK','SSH_PORT','EXE_FOR_INTERNET_CHECK','URL_FOR_INTERNET_CHECK']},
+      {title:'Advanced settings',hint:'Optional behavior for specialized guests and maintenance tasks.',keys:['FREEBSD_UPDATES','INCLUDE_PHASED_UPDATES','INCLUDE_FSTRIM','FSTRIM_WITH_MOUNTPOINT','PACMAN_ENVIRONMENT','INCLUDE_HELPER_SCRIPTS']},
+      {title:'Extra updates',hint:'Optional service-specific updates. These apply only when extra updates are enabled.',keys:['EXTRA_GLOBAL','IN_HEADLESS_MODE','PIHOLE','IOBROKER','PTERODACTYL','OCTOPRINT','DOCKER_COMPOSE','UNIFI','COMPOSE_PATH']},
       {title:'Backup & safety',hint:'Configured protection is evaluated before guest updates.',keys:['SNAPSHOT','KEEP_SNAPSHOTS','BACKUP','BACKUP_MODE','BACKUP_STORAGE']},
       {title:'Notifications',hint:'Existing email notification settings only; no credentials are stored here.',keys:['EMAIL_DAILY_CHECK','EMAIL_NO_UPDATES','EMAIL_ONLY_SECURITY','EMAIL_ONLY_ERROR','EMAIL_USER','EMAIL_SENDER']}
     ];
@@ -268,7 +308,7 @@ PAGE = r"""<!doctype html>
     let managedTargets=[], editingTarget=null, internalSshTargets=[], internalSshAvailable=[];
     function setConfigOpen(open){const form=document.getElementById('config-form'),panel=document.getElementById('config-panel'),button=document.getElementById('config-open');form.classList.toggle('open',open);document.querySelector('.management-grid').classList.toggle('config-open',open);button.textContent=open?'Close settings':'Open settings';button.setAttribute('aria-expanded',String(open));if(open)loadConfig()}
     function managementMessage(id,message,error=false){const n=document.getElementById(id);n.textContent=message||'';n.className=`management-message${error?' error':''}`}
-    function configField(key,values,compact=false){const label=document.createElement('label');label.className=`config-field${configBooleanKeys.includes(key)?' boolean-field':''}${configNumberKeys.includes(key)?' numeric-field':''}${compact?' matrix-control':''}`;if(compact)label.title=configLabels[key]||key;const caption=document.createElement('span');caption.className='field-label';caption.textContent=configLabels[key]||key;const input=document.createElement('input');input.name=key;input.dataset.key=key;if(configBooleanKeys.includes(key)){input.type='checkbox';input.checked=values[key]===true;label.append(input,caption)}else{input.type=configNumberKeys.includes(key)?'number':'text';input.value=values[key]??'';if(input.type==='number'){input.min='0';input.max=key==='KEEP_SNAPSHOTS'?'99':'86400'}label.append(caption,input);if(configNumberKeys.includes(key)){const unit=document.createElement('span');unit.className='field-unit';unit.textContent=key==='KEEP_SNAPSHOTS'?'snapshots':'seconds';label.append(unit)}else if(key==='BACKUP_STORAGE'){const unit=document.createElement('span');unit.className='field-unit';unit.textContent='Proxmox storage ID, e.g. pbs';label.append(unit)}}return label}
+    function configField(key,values,compact=false){const label=document.createElement('label');label.className=`config-field${configBooleanKeys.includes(key)?' boolean-field':''}${configNumberKeys.includes(key)?' numeric-field':''}${compact?' matrix-control':''}`;if(compact)label.title=configLabels[key]||key;const caption=document.createElement('span');caption.className='field-label';caption.textContent=configLabels[key]||key;const input=document.createElement('input');input.name=key;input.dataset.key=key;if(configBooleanKeys.includes(key)){input.type='checkbox';input.checked=values[key]===true;label.append(input,caption)}else{input.type=configNumberKeys.includes(key)?'number':'text';input.value=values[key]??'';if(input.type==='number'){input.min=key==='SSH_PORT'?'1':'0';input.max=key==='SSH_PORT'?'65535':key==='KEEP_SNAPSHOTS'?'99':'86400'}label.append(caption,input);if(configNumberKeys.includes(key)){const unit=document.createElement('span');unit.className='field-unit';unit.textContent=key==='KEEP_SNAPSHOTS'?'snapshots':key==='SSH_PORT'?'TCP port':'seconds';label.append(unit)}else if(key==='BACKUP_STORAGE'){const unit=document.createElement('span');unit.className='field-unit';unit.textContent='Proxmox storage ID, e.g. pbs';label.append(unit)}}return label}
     function configMatrix(groupData,values){const wrap=document.createElement('div');wrap.className='check-update-layout';const matrix=document.createElement('div');matrix.className='check-update-matrix';matrix.setAttribute('role','table');const header=document.createElement('div');header.className='matrix-row';const blank=document.createElement('span');blank.className='matrix-label';const checkHead=document.createElement('span');checkHead.className='matrix-cell matrix-head';checkHead.textContent='Check';const updateHead=document.createElement('span');updateHead.className='matrix-cell matrix-head';updateHead.textContent='Update';header.append(blank,checkHead,updateHead);matrix.appendChild(header);groupData.matrix.forEach(row=>{const item=document.createElement('div');item.className='matrix-row';const label=document.createElement('span');label.className='matrix-label';label.textContent=row.label;const check=document.createElement('span');check.className='matrix-cell';check.appendChild(configField(row.check,values,true));const update=document.createElement('span');update.className='matrix-cell';if(row.update)update.appendChild(configField(row.update,values,true));else{const dash=document.createElement('span');dash.className='matrix-empty';dash.textContent='—';update.appendChild(dash)}item.append(label,check,update);matrix.appendChild(item)});wrap.appendChild(matrix);if(groupData.extras){const extras=document.createElement('div');extras.className='matrix-extras';groupData.extras.forEach(key=>{const field=configField(key,values);if(configNumberKeys.includes(key)){const row=document.createElement('div');row.className='matrix-extra-row';const caption=field.querySelector('.field-label');caption.className='delay-label';const control=document.createElement('span');control.className='delay-control';control.append(field.querySelector('input'),field.querySelector('.field-unit'));row.append(caption,control);extras.appendChild(row)}else extras.appendChild(field)});wrap.appendChild(extras)}return wrap}
     const filterPreviewTimers={};
     function renderFilterPreview(data,scope){const box=document.getElementById(`${scope}-filter-preview`);if(!box)return;if(!data?.available){box.innerHTML='<div class="filter-preview-note">Target preview unavailable until the initial inventory has completed.</div>';return}const p=data.preview||{},included=p.included||[],excluded=p.excluded||[],unknown=p.unknown||[],mode=p.mode;let summary=scope==='update'?(mode==='only'?`${included.length} targets selected for update`:mode==='exclude'?`${included.length} targets selected for update · ${excluded.length} excluded`:`${included.length} targets selected for update`):(mode==='only'?`${included.length} targets selected for check`:mode==='exclude'?`${included.length} targets will be checked · ${excluded.length} excluded`:`${included.length} targets will be checked`);const detail=(title,items,klass)=>items.length?`<section><h4>${title}</h4><div class="filter-preview-list">${items.map(item=>`<div class="${klass||''}">${klass==='excluded'?'✕':'✓'} ${esc(item.label)}</div>`).join('')}</div></section>`:'';const unknownHtml=unknown.length?`<section><h4>Not currently found</h4><div class="filter-preview-list"><div class="unknown">⚠ ${unknown.map(esc).join(', ')}</div></div></section>`:'';box.innerHTML=`<button type="button" class="filter-preview-toggle" aria-expanded="false"><span class="filter-preview-chevron" aria-hidden="true"></span><span>✓ ${summary}</span></button><div class="filter-preview-details">${detail(mode==='only'?'Selected':'Included',included,'')}${detail('Excluded',excluded,'excluded')}${mode==='only'&&excluded.length?'<section><h4>Exclude</h4><div class="filter-preview-note">Ignored while ONLY is active.</div></section>':''}${unknownHtml}</div>`;const toggle=box.querySelector('.filter-preview-toggle');toggle.onclick=()=>{const open=box.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open))}}
@@ -495,8 +535,10 @@ def validate_config_values(values):
                 raise ValueError(f"{key} must be boolean.")
             normalized[key] = "true" if value else "false"
         elif key in CONFIG_INTEGER_KEYS:
-            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 86400:
-                raise ValueError(f"{key} must be an integer between 0 and 86400.")
+            minimum = 1 if key == "SSH_PORT" else 0
+            maximum = 65535 if key == "SSH_PORT" else 86400
+            if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+                raise ValueError(f"{key} must be an integer between {minimum} and {maximum}.")
             normalized[key] = str(value)
         else:
             if not isinstance(value, str) or "\n" in value or "\r" in value or len(value) > 512:
