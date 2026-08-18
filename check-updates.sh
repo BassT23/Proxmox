@@ -920,6 +920,11 @@ VM_CHECK_START () {
   VMS=$(qm list | tail -n +2 | cut -c -10)
   # Loop through VMs
   for VM in $VMS; do
+    local vm_has_internal_ssh=false
+    if declare -f INTERNAL_SSH_HAS_OVERRIDE >/dev/null 2>&1 &&
+      INTERNAL_SSH_HAS_OVERRIDE vm "$VM"; then
+      vm_has_internal_ssh=true
+    fi
     STATUS_MODEL_GUEST_NAME=""
     if declare -f cluster_target_guest_name >/dev/null 2>&1; then
       STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$VM" 2>/dev/null || true)
@@ -928,7 +933,8 @@ VM_CHECK_START () {
     SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "${VM_START_DELAY:-45}")
     SSH_START_DELAY_TIME=${SSH_START_DELAY_TIME:-45}
     # Check if connection is available
-    if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] || [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
+    if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] ||
+      [[ -f $LOCAL_FILES/VMs/"$VM" ]] || [[ "$vm_has_internal_ssh" == true ]]; then
       # Check VM
       PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
       if [[ "$ONLY" == "" ]] && guest_id_matches "$EXCLUDED" "$VM"; then
@@ -1123,12 +1129,45 @@ CHECK_VM () {
 }
 
 CHECK_VM_QEMU () {
-  local OS_INFO
+  local OS_INFO OS_NAME OS_NAME_LOWER
+  # A successful agent ping proves QGA transport without assuming that the
+  # guest contains a Linux executable such as /bin/true.  FreeBSD/pfSense
+  # commonly has a working agent but no Linux guest-exec environment.
+  if ! timeout 10 qm agent "$VM" ping >/dev/null 2>&1; then
+    STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" error QGA_TRANSPORT "QEMU Guest Agent ping failed"
+    return 1
+  fi
   OS_INFO=$(qm guest cmd "$VM" get-osinfo 2>/dev/null || true)
   OS=$(printf '%s\n' "$OS_INFO" | grep name || true)
+  OS_NAME=${OS#*:}
+  OS_NAME="${OS_NAME#"${OS_NAME%%[![:space:]]*}"}"
+  OS_NAME="${OS_NAME//\"/}"
+  OS_NAME="${OS_NAME//\'/}"
+  OS_NAME_LOWER="${OS_NAME,,}"
   if [[ "${OS_INFO,,}" =~ windows ]]; then
     CHECK_VM_QEMU_WINDOWS
     return
+  fi
+  if [[ "$OS_NAME_LOWER" =~ freebsd|pfsense ]]; then
+    if [[ "${INITIAL_INVENTORY:-false}" == true ]]; then
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" "" "null" "null" \
+        not_checked UNSUPPORTED_GUEST_OS \
+        "QEMU Guest Agent is reachable, but FreeBSD/pfSense package checks are not supported" \
+        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 0
+    fi
+    STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" "" "null" "null" unsupported UNSUPPORTED_GUEST_OS "No supported updater detected"
+    return 0
+  fi
+  # Do not guess a Linux guest from a successful QGA ping alone.  In the
+  # read-only onboarding mode an unknown OS must not trigger a Linux-specific
+  # guest-exec probe and turn a reachable agent into a false transport error.
+  if [[ "${INITIAL_INVENTORY:-false}" == true && -z "$OS_NAME_LOWER" ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" \
+      not_checked UNSUPPORTED_GUEST_OS \
+      "QEMU Guest Agent is reachable, but the guest OS could not be identified" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 0
   fi
   # Use an explicit successful command for the QGA readiness probe.  The
   # shell builtin/executable `test` without arguments intentionally exits 1,
