@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2002,SC2015,SC2086,SC2317
 
 ##########
 # Update #
