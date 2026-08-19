@@ -45,4 +45,49 @@ assert full_ids == ["host:Proxmox-Test-1", "host:Proxmox-Test-3", "917", "930", 
 assert next(item for item in full["targets"] if item["id"] == "930")["check_status"] == "offline"
 assert all(item["id"] != "ct927" for item in full["targets"])
 
+stale_online = {
+    "schema_version": 1,
+    "targets": [{
+        "id": "host:Proxmox-Test-2", "type": "host", "reachable": False,
+        "check_status": "offline", "error": None,
+    }],
+}
+online = module.canonical_inventory(
+    stale_online, [], [{"type": "node", "node": "Proxmox-Test-2", "status": "online"}],
+)["targets"][0]
+assert online["reachable"] is True
+assert online["check_status"] == "unknown"
+
+fresh_online = {
+    "schema_version": 1,
+    "targets": [{
+        "id": "host:Proxmox-Test-2", "type": "host", "reachable": True,
+        "check_status": "ok", "error": None,
+    }],
+}
+healthy = module.canonical_inventory(
+    fresh_online, [], [{"type": "node", "node": "Proxmox-Test-2", "status": "online"}],
+)["targets"][0]
+assert healthy["reachable"] is True
+assert healthy["check_status"] == "ok"
+
+check_error = {
+    "schema_version": 1,
+    "targets": [{
+        "id": "host:Proxmox-Test-2", "type": "host", "reachable": False,
+        "check_status": "offline", "error": {"code": "REMOTE_STATUS_IMPORT_FAILED", "message": "fixture"},
+    }],
+}
+error = module.canonical_inventory(
+    check_error, [], [{"type": "node", "node": "Proxmox-Test-2", "status": "online"}],
+)["targets"][0]
+assert error["reachable"] is True
+assert error["check_status"] == "error"
+
+offline = module.canonical_inventory(
+    stale_online, [], [{"type": "node", "node": "Proxmox-Test-2", "status": "offline"}],
+)["targets"][0]
+assert offline["reachable"] is False
+assert offline["check_status"] == "offline"
+
 print("active status projection tests: PASS")

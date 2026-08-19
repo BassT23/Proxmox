@@ -730,11 +730,22 @@ def canonical_inventory(payload, inventory, proxmox_resources=None, backup_state
     }
     for node, resource in nodes.items():
         status = status_by_id.get(f"host:{node}")
+        cluster_online = resource.get("status") == "online"
         base = {"id": f"host:{node}", "type": "host", "transport": "local",
                 "name": node, "node": node,
-                "reachable": resource.get("status") == "online",
-                "check_status": "ok" if resource.get("status") == "online" else "offline"}
-        targets.append(merge(base, status))
+                "reachable": cluster_online,
+                "check_status": "ok" if cluster_online else "offline"}
+        merged = merge(base, status)
+        # Cluster membership is the authoritative current reachability signal
+        # for Proxmox nodes.  A stale check record must not turn an online
+        # cluster member into an Offline badge.  Preserve a real check error,
+        # but represent an old offline observation without an error as unknown.
+        merged["reachable"] = cluster_online
+        if cluster_online and merged.get("check_status") == "offline":
+            merged["check_status"] = "error" if merged.get("error") else "unknown"
+        elif not cluster_online:
+            merged["check_status"] = "offline"
+        targets.append(merged)
 
     for resource in proxmox_resources:
         kind = resource.get("type")
