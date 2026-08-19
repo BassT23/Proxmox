@@ -130,6 +130,24 @@ assert "Guests without current update information remain part of the inventory" 
 assert "Only limits the check or update to targets with this tag." in page
 assert "Opening or changing the preview does not contact any target." in page
 assert "function createHelpControl(label,paragraphs)" in page
+for title in (
+    "Host", "Containers / LXC", "Virtual Machines", "Target filters",
+    "General update behavior", "Advanced settings", "Extra updates",
+    "Backup & safety", "Notifications",
+):
+    assert f"'{title}':" in page, title
+assert "Backup mode is limited to stop, suspend, or snapshot." in page
+assert "Backup storage expects a Proxmox storage ID" in page
+assert "Internet check defaults to command ping and address google.com." in page
+assert "SSH port default: 22." in page
+assert "config-field select" in page
+assert "CONFIG_ENUMS" in source
+try:
+    server.validate_config_values({"BACKUP_MODE": "invalid"})
+except ValueError as error:
+    assert "stop" in str(error) and "snapshot" in str(error)
+else:
+    raise AssertionError("invalid BACKUP_MODE was accepted")
 assert "event.key!=='Escape'" in page
 assert "closeHelpControls()" in page
 assert "help-trigger:focus-visible" in page
