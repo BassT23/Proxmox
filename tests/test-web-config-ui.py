@@ -144,6 +144,9 @@ assert "config-field select" in page
 assert "reboot-required-badge" in page
 assert "Reboot required" in page
 assert ".job-download { display:inline-flex" in page
+assert ".log-actions + .log { margin-top:8px }" in page
+assert "node.insertAdjacentElement('beforebegin',actions)" in source
+assert "node.insertAdjacentElement('afterend',actions)" not in source
 assert ".config-actions { position:static; background:transparent; }" in page
 assert "Internal SSH Connections <span class=\"help-control\">" in page
 assert "CONFIG_ENUMS" in source
@@ -166,10 +169,14 @@ assert ".node-group .group-summary { grid-column:2; grid-row:2; display:flex; fl
 assert ".config-field.boolean-field { width:fit-content; max-width:100%; justify-self:start; cursor:pointer }" in page
 assert ".config-field.boolean-field:hover" in page
 assert ".node-group .group-status" in page
+assert ".node-group .group-status { display:flex" in page
+assert "${statusBadges}" in source
 assert ".node-group .group-updates" in page
 assert ".node-group .group-actions" in page
 assert "<div class=\"group-header\"><button class=\"group-toggle\"" in page
 assert "</div><div class=\"group-info\"><span class=\"group-updates\"" in page
+assert "</span></div><div class=\"group-actions\">" in source
+assert "</span>${rebootBadge}</div>" not in source
 assert "<div class=\"group-actions\"><button class=\"node-action node-check\"" in page
 assert "<div class=\"group-status\">" in page
 assert "sortNodes(ts.filter(isProxmoxNode))" in page

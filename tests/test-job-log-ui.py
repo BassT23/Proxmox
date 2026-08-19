@@ -18,7 +18,8 @@ assert "logAutoFollow" in source
 assert "dataset.scrollAttached==='true'" in source
 assert "createLogLatest" in source
 assert "createLogActions" in source
-assert "node.insertAdjacentElement('afterend',actions)" in source
+assert "node.insertAdjacentElement('beforebegin',actions)" in source
+assert "node.insertAdjacentElement('afterend',actions)" not in source
 assert "data-log-latest" not in source
 assert "item.querySelector('.log-actions')?.remove()" in source
 assert "item.innerHTML=`<code></code><span></span><span class=\"pill\"></span><button data-job=" in source
