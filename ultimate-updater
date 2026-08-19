@@ -703,30 +703,110 @@ record_remote_target_error() {
 }
 
 remote_target_check() {
-  local target="$1" kind="$2" node="$3" host="$4" port mode remote_file local_file rc remote_check_script
-  port=$(configured_ssh_port)
+  local target="$1" kind="$2" node="$3" host="$4" mode remote_check_dir remote_config
+  local remote_tag_filter remote_cluster_target remote_runtime remote_status_model remote_internal_ssh remote_internal_conf remote_status_file
+  local tag_filter_script target_runtime_file internal_ssh_file internal_ssh_conf local_file transport_rc
+  local -a ssh_args=("${REMOTE_NODE_ARGS[@]:-}")
   mode=$([[ "$kind" == container ]] && printf ccontainer || printf cvm)
-  remote_check_script="/etc/ultimate-updater/check-updates.sh"
-  remote_file="/tmp/ultimate-updater-target-status-$$-$RANDOM.json"
-  local_file=$(mktemp)
-  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" true
-  rc=$?
-  if [[ "$rc" -ne 0 ]]; then
-    rm -f -- "$local_file"
-    printf 'Target %s is located on %s, but the node is unreachable.\n' "$target" "$node" >&2
-    record_remote_target_error "$target" "$kind" "$node" SSH_UNREACHABLE "Could not run remote check on $node" "$rc"
-    return "$rc"
-  fi
-  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" \
-    "UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE='$node' STATUS_MODEL_FILE='$remote_file' STATUS_MODEL_RECORD_FILE='$remote_file.records' bash '$remote_check_script' '$mode' '$target' >/dev/null 2>&1"
-  rc=$?
-  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$host" \
-    "cat '$remote_file'; rm -f -- '$remote_file' '$remote_file.records'" > "$local_file"; then
-    rm -f -- "$local_file"
-    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_IMPORT_FAILED "Could not retrieve remote check status" 1
+  if ! resolve_remote_node_transport "$node" "$host"; then
+    record_remote_target_error "$target" "$kind" "$node" SSH_UNREACHABLE "Could not resolve SSH transport for node $node" 1
     return 1
   fi
-  if ! python3 - "$local_file" "$target" > "${local_file}.filtered" <<'PY'
+  host="$REMOTE_NODE_HOST"; local port="$REMOTE_NODE_PORT" user="$REMOTE_NODE_USER"
+  ssh_args=("${REMOTE_NODE_ARGS[@]}")
+  remote_check_dir="/tmp/ultimate-updater-check-target-$$-$RANDOM-$RANDOM"
+  remote_config="$remote_check_dir/update.conf"
+  remote_tag_filter="$remote_check_dir/tag-filter.sh"
+  remote_cluster_target="$remote_check_dir/cluster-target.sh"
+  remote_runtime="$remote_check_dir/target-runtime.sh"
+  remote_status_model="$remote_check_dir/status-model.sh"
+  remote_internal_ssh="$remote_check_dir/internal-ssh.sh"
+  remote_internal_conf="$remote_check_dir/internal-ssh.conf"
+  remote_status_file="$remote_check_dir/status.json"
+  tag_filter_script="$LOCAL_FILES/tag-filter.sh"
+  target_runtime_file="$LOCAL_FILES/target-runtime.sh"
+  internal_ssh_file="$LOCAL_FILES/internal-ssh.sh"
+  internal_ssh_conf="$LOCAL_FILES/internal-ssh.conf"
+  [[ -f "$tag_filter_script" ]] || tag_filter_script="$SCRIPT_DIR/tag-filter.sh"
+  [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
+  [[ -f "$internal_ssh_file" ]] || internal_ssh_file="$SCRIPT_DIR/internal-ssh.sh"
+  local_file=$(mktemp)
+  if ! STATUS_MODEL_INIT; then
+    rm -f -- "$local_file"
+    printf 'Could not initialize status model for target %s.\n' "$target" >&2
+    return 1
+  fi
+  if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "mkdir -p -- '$remote_check_dir'" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$LOCAL_FILES/update.conf" "$user@$host:$remote_config" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$tag_filter_script" "$user@$host:$remote_tag_filter" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$CLUSTER_TARGET_SCRIPT" "$user@$host:$remote_cluster_target" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$target_runtime_file" "$user@$host:$remote_runtime" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$STATUS_MODEL_SCRIPT" "$user@$host:$remote_status_model"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "$target" "$kind" ssh false "" "" null null offline SSH_UNREACHABLE "Could not transfer current check files to node $node" "$node"
+    finish_partial_status 1 >/dev/null 2>&1 || true
+    rm -f -- "$local_file"
+    printf 'Could not prepare remote check for target %s on node %s.\n' "$target" "$node" >&2
+    return 1
+  fi
+  if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$internal_ssh_file" "$user@$host:$remote_internal_ssh" ||
+    [[ -f "$internal_ssh_conf" ]] && ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$internal_ssh_conf" "$user@$host:$remote_internal_conf"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "$target" "$kind" ssh false "" "" null null offline SSH_UNREACHABLE "Could not transfer Internal SSH files to node $node" "$node"
+    finish_partial_status 1 >/dev/null 2>&1 || true
+    rm -f -- "$local_file"
+    printf 'Could not prepare Internal SSH settings for target %s.\n' "$target" >&2
+    return 1
+  fi
+  # shellcheck disable=SC2016
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true STATUS_MODEL_PARTIAL=true bash -s -- %q %q >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote guest status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; if [[ "$finish_rc" -ne 0 ]]; then exit "$finish_rc"; fi; exit "$remote_rc"' \
+    "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
+    "$remote_runtime" "$remote_internal_ssh" "$remote_internal_conf" "$node" "$remote_status_model" "$remote_status_file" \
+    "$remote_status_file.records" "$mode" "$target" "$remote_status_file.records" \
+    "$node" "$remote_status_file" "$remote_status_file.records" "$remote_status_model" \
+    "$remote_status_file" "$target" "$remote_check_dir" "$remote_status_file" "$remote_check_dir"
+  timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "$remote_command" < "$CHECK_SCRIPT" > "$local_file"
+  transport_rc=$?
+  if [[ "$transport_rc" -ne 0 && ! -s "$local_file" ]]; then
+    rm -f -- "$local_file"
+    if [[ "$transport_rc" -eq 124 ]]; then
+      record_remote_target_error "$target" "$kind" "$node" REMOTE_CHECK_TIMEOUT "Remote guest check timed out on node $node" "$transport_rc"
+    else
+      record_remote_target_error "$target" "$kind" "$node" REMOTE_CHECK_FAILED "Remote guest check failed on node $node" "$transport_rc"
+    fi
+    return "$transport_rc"
+  fi
+  if [[ ! -s "$local_file" ]]; then
+    rm -f -- "$local_file"
+    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_MISSING "Remote guest status was not produced for $target" 86
+    return 86
+  fi
+  if ! python3 - "$local_file" > /dev/null 2>&1 <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
+    raise SystemExit(1)
+PY
+  then
+    rm -f -- "$local_file"
+    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_INVALID "Remote guest status is invalid for $target" 87
+    return 87
+  fi
+  if ! python3 - "$local_file" "$target" > "${local_file}.filtered" 2>/dev/null <<'PY'
 import json
 import sys
 
@@ -742,15 +822,16 @@ json.dump({"schema_version": payload.get("schema_version", 1),
 PY
   then
     rm -f -- "$local_file" "${local_file}.filtered"
-    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_IMPORT_FAILED "Remote status did not contain target $target" 1
+    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_IMPORT_FAILED "Remote guest status did not contain target $target" 1
     return 1
   fi
-  if ! STATUS_MODEL_INIT || ! STATUS_MODEL_IMPORT_FILE "${local_file}.filtered"; then
+  if ! STATUS_MODEL_IMPORT_FILE "${local_file}.filtered" 2>/dev/null; then
     rm -f -- "$local_file" "${local_file}.filtered"
+    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_IMPORT_FAILED "Could not import remote guest status for $target" 1
     return 1
   fi
   rm -f -- "$local_file" "${local_file}.filtered"
-  finish_partial_status "$rc"
+  finish_partial_status "$transport_rc"
 }
 
 remote_target_update() {

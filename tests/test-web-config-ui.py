@@ -108,6 +108,13 @@ assert "internal-ssh-retry" in source
 assert "Edit SSH settings" in page
 assert "Add SSH connection" in page
 assert "Use custom SSH settings" in page
+assert "class=\"ssh-enabled-field\"" in page
+assert "class=\"ssh-test-feedback\"" in page
+assert "data-ssh-feedback" in source
+assert "testInternalSsh(b.dataset.sshTest,b)" in source
+assert "Connection successful." in source
+assert "Select target<select" in page
+assert "Inventory target<select" not in page
 assert page.count("Use custom SSH settings for this system.") == 1
 assert "internalSshTargetLabel" in source
 assert "target_choice.required=false" in source
