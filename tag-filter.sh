@@ -20,7 +20,7 @@
 #   - OR matching across tag tokens.
 #
 # Behavior summary:
-#   1. Tokenize ONLY if set; else tokenized EXCLUDE.
+#   1. Tokenize ONLY if set and always tokenize EXCLUDE when present.
 #   2. For each token:
 #        number        -> add as VMID
 #        range a-b     -> expand (a..b)
@@ -28,7 +28,7 @@
 #   3. Resolve tags to IDs (any tag match) and append, de-duplicating while
 #      preserving first-seen order (input order then discovery order for tags).
 #   4. Assign final space-separated list back to ONLY / EXCLUDE variable.
-#   5. If ONLY provided, EXCLUDE is ignored (legacy behavior).
+#   5. If ONLY is provided, EXCLUDE is applied after the positive selection.
 #
 # Usage examples:
 #   export ONLY="backup,windows"; apply_only_exclude_tags ONLY EXCLUDE; echo "$ONLY"
@@ -306,7 +306,7 @@ apply_only_exclude_tags() {
     echo "${final[*]}"
   }
 
-  # EXCLUDE processing (only when ONLY was empty/no matches)
+  # EXCLUDE processing applies independently after any positive selection.
   EXCLUDE_TAG () {
     if [[ -n $_EXCLUDE_VALUE ]]; then
       local _expanded_exclude
@@ -321,20 +321,18 @@ apply_only_exclude_tags() {
     fi
   }
 
-  # ONLY processing (takes precedence). Always parse mixed spec.
+  # ONLY processing (takes precedence for the initial candidate set).
   if [[ -n $_ONLY_VALUE ]]; then
     local _expanded_only
     _expanded_only=$(_expand_mixed_spec "$_ONLY_VALUE")
-    printf -v "$_only_var_name" '%s' "$_expanded_only"
+    # Keep an explicit, unmatched ONLY distinct from an empty ONLY. The
+    # callers interpret an empty ONLY as "all eligible targets".
+    printf -v "$_only_var_name" '%s' "${_expanded_only:-__uu_no_matching_only__}"
     if [[ -n $_expanded_only ]]; then
       _record_tag_log "ℹ ${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> VMIDs: $_expanded_only${CL:-}\n"
-      return 0
     else
-      # _record_tag_log "${BL:-}[Info]${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no VMIDs${CL:-}"
-      EXCLUDE_TAG
+      _record_tag_log "ℹ ${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no VMIDs${CL:-}\n"
     fi
-  else
-    # If ONLY was empty, process EXCLUDE
-    EXCLUDE_TAG
   fi
+  EXCLUDE_TAG
 }

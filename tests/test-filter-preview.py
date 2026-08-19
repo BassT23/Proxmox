@@ -27,8 +27,7 @@ with tempfile.TemporaryDirectory() as directory:
     resolver.write_text(
         """#!/bin/bash
 apply_only_exclude_tags() {
-  if [[ -n "$ONLY" ]]; then ONLY="910"; EXCLUDE="917";
-  else EXCLUDE="917"; fi
+  if [[ -n "$ONLY" ]]; then ONLY="910"; fi
 }
 """,
         encoding="utf-8",
@@ -52,7 +51,7 @@ apply_only_exclude_tags() {
 
     both = server.target_preview(payload, {"ONLY_UPDATE_CHECK": "selected", "EXCLUDE_UPDATE_CHECK": "910"}, resolver, inventory)
     assert both["mode"] == "only"
-    assert [item["label"] for item in both["included"]] == ["Proxmox-Test-1", "910 · debian"]
+    assert [item["label"] for item in both["included"]] == ["Proxmox-Test-1"]
 
     exclude = server.target_preview(payload, {**base, "EXCLUDE_UPDATE_CHECK": "917"}, resolver, inventory)
     assert exclude["mode"] == "exclude"

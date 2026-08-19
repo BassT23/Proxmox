@@ -95,7 +95,7 @@ filter_allows() {
   if [ "$action" = check ]; then only_key=ONLY_UPDATE_CHECK; exclude_key=EXCLUDE_UPDATE_CHECK; else only_key=ONLY; exclude_key=EXCLUDE; fi
   only=$(config_value "$only_key")
   exclude=$(config_value "$exclude_key")
-  if [ -n "$only" ]; then filter_match "$only" "$candidate"; return $?; fi
+  if [ -n "$only" ]; then filter_match "$only" "$candidate" || return 1; fi
   [ -z "$exclude" ] || ! filter_match "$exclude" "$candidate"
 }
 if [ ! -r /etc/os-release ]; then

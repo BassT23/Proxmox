@@ -1338,7 +1338,7 @@ CONTAINER_UPDATE_START () {
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     ERROR_CODE=""
-    if [[ "$ONLY" == "" ]] && guest_id_matches "$EXCLUDED" "$CONTAINER"; then
+    if guest_id_matches "$EXCLUDED" "$CONTAINER"; then
       echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
     elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$CONTAINER"; then
       if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"; else continue; fi
@@ -1547,7 +1547,7 @@ VM_UPDATE_START () {
   # Loop through the VMs
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep ostype || true)
-    if [[ "$ONLY" == "" ]] && guest_id_matches "$EXCLUDED" "$VM"; then
+    if guest_id_matches "$EXCLUDED" "$VM"; then
       echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
     elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
       if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"; else continue; fi

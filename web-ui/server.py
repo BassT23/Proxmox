@@ -826,27 +826,29 @@ def target_preview(payload, config, tag_filter, inventory, proxmox_resources=Non
     only = str(config.get(only_key) or "")
     exclude = str(config.get(exclude_key) or "")
     resolved_only, resolved_exclude = resolve_filter_ids(only, exclude, tag_filter)
-    selected_ids = set(resolved_only if only else resolved_exclude)
+    selected_ids = set(resolved_only)
+    excluded_ids = set(resolved_exclude)
     external_ids = {str(item.get("id", "")).lower() for item in inventory
                     if item.get("transport") == "ssh"}
-    raw_filter_tokens = {token.lower() for token in filter_tokens(only or exclude)}
-    selected_external_ids = raw_filter_tokens & external_ids
+    only_external_ids = {token.lower() for token in filter_tokens(only)} & external_ids
+    excluded_external_ids = {token.lower() for token in filter_tokens(exclude)} & external_ids
     filterable = lambda item: (
         str(item.get("type", "")).lower() in {"lxc", "vm"}
         and str(item.get("id", "")).isdigit()
     ) or str(item.get("type", "")).lower() == "external"
-    selected = lambda item: (
-        str(item.get("id", "")) in selected_ids
-        if str(item.get("type", "")).lower() in {"lxc", "vm"}
-        else str(item.get("id", "")).lower() in selected_external_ids
-    )
+    def selected(item):
+        item_id = str(item.get("id", ""))
+        if str(item.get("type", "")).lower() in {"lxc", "vm"}:
+            return ((not only) or item_id in selected_ids) and item_id not in excluded_ids
+        item_id = item_id.lower()
+        return ((not only) or item_id in only_external_ids) and item_id not in excluded_external_ids
     if only:
         included = [item for item in targets if not filterable(item) or selected(item)]
         excluded = [item for item in targets if filterable(item) and not selected(item)]
         mode = "only"
     elif exclude:
-        included = [item for item in targets if not filterable(item) or not selected(item)]
-        excluded = [item for item in targets if filterable(item) and selected(item)]
+        included = [item for item in targets if not filterable(item) or selected(item)]
+        excluded = [item for item in targets if filterable(item) and not selected(item)]
         mode = "exclude"
     else:
         included, excluded, mode = targets, [], "none"
@@ -860,8 +862,8 @@ def target_preview(payload, config, tag_filter, inventory, proxmox_resources=Non
             label = f"{label} · offline"
         return {"label": label or str(item.get("id", "")), "type": kind}
 
-    known_tokens = set(resolved_only if only else resolved_exclude) | external_ids
-    raw_tokens = filter_tokens(only or exclude)
+    known_tokens = set(resolved_only) | set(resolved_exclude) | external_ids
+    raw_tokens = filter_tokens(only) + filter_tokens(exclude)
     unknown = [token for token in raw_tokens
                if (token.isdigit() and token not in known_ids)
                or (not token.isdigit() and token.lower() not in known_tokens)]

@@ -775,7 +775,7 @@ CONTAINER_CHECK_START () {
   # Loop through the containers
   if ! [[ -d $LOCAL_FILES/temp/ ]]; then mkdir $LOCAL_FILES/temp/; fi
   for CONTAINER in $CONTAINERS; do
-    if [[ "$ONLY" == "" ]] && guest_id_matches "$EXCLUDED" "$CONTAINER"; then
+    if guest_id_matches "$EXCLUDED" "$CONTAINER"; then
       continue
     elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$CONTAINER"; then
       continue
@@ -967,7 +967,7 @@ VM_CHECK_START () {
       [[ -f $LOCAL_FILES/VMs/"$VM" ]] || [[ "$vm_has_internal_ssh" == true ]]; then
       # Check VM
       PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-      if [[ "$ONLY" == "" ]] && guest_id_matches "$EXCLUDED" "$VM"; then
+      if guest_id_matches "$EXCLUDED" "$VM"; then
         continue
       elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
         continue

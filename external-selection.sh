@@ -28,8 +28,7 @@ external_selection_allows() {
   only=$(external_selection_config_value "$only_key")
   exclude=$(external_selection_config_value "$exclude_key")
   if [[ -n "$only" ]]; then
-    external_selection_matches "$only" "$target"
-    return $?
+    external_selection_matches "$only" "$target" || return 1
   fi
   [[ -z "$exclude" ]] || ! external_selection_matches "$exclude" "$target"
 }
