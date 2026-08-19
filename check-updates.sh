@@ -208,6 +208,7 @@ QEMU_COUNT_RESULT_OK () {
 }
 
 ARGUMENTS () {
+  local check_rc
   while [[ $# -gt 0 ]]; do
     local ARGUMENT="$1"
     case "$ARGUMENT" in
@@ -216,24 +217,36 @@ ARGUMENTS () {
       chost)
         COMMAND=true
         OUTPUT_TO_FILE
-        CHECK_HOST_ITSELF
+        CHECK_HOST_ITSELF || CHECK_FAILURE=1
         ;;
       node-host)
         # Dedicated explicit node-check entry point. This path cannot
         # expand into guest checks, regardless of update.conf guest flags.
         COMMAND=true
         OUTPUT_TO_FILE
-        CHECK_HOST_ITSELF
+        CHECK_HOST_ITSELF || CHECK_FAILURE=1
         ;;
       ccontainer)
         COMMAND=true
         OUTPUT_TO_FILE
-        if [[ -n "${2:-}" ]]; then CHECK_CONTAINER "$2"; shift; else CHECK_CONTAINER; fi
+        if [[ -n "${2:-}" ]]; then
+          if CHECK_CONTAINER "$2"; then check_rc=0; else check_rc=$?; fi
+          shift
+        else
+          if CHECK_CONTAINER; then check_rc=0; else check_rc=$?; fi
+        fi
+        [[ "$check_rc" -eq 0 ]] || CHECK_FAILURE=1
         ;;
       cvm)
         COMMAND=true
         OUTPUT_TO_FILE
-        if [[ -n "${2:-}" ]]; then CHECK_VM "$2"; shift; else CHECK_VM; fi
+        if [[ -n "${2:-}" ]]; then
+          if CHECK_VM "$2"; then check_rc=0; else check_rc=$?; fi
+          shift
+        else
+          if CHECK_VM; then check_rc=0; else check_rc=$?; fi
+        fi
+        [[ "$check_rc" -eq 0 ]] || CHECK_FAILURE=1
         ;;
       host)
         COMMAND=true

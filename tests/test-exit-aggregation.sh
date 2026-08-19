@@ -78,4 +78,30 @@ CHECK_FAILURE=0 CONTAINER=912 OS=debian recorded_status='' \
     [[ "$CHECK_FAILURE" -eq 1 && "$recorded_status" == error ]]
   ' _ "$WORK_DIR/check-container-failure.sh"
 
+awk '/^ARGUMENTS \(\) \{/{copy=1} copy{print} copy && /^}/{exit}' \
+  "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/arguments.sh"
+CHECK_FAILURE=0
+OUTPUT_TO_FILE() { :; }
+CHECK_VM() { return 1; }
+CHECK_CONTAINER() { return 1; }
+CHECK_HOST_ITSELF() { return 1; }
+# shellcheck disable=SC1091
+source "$WORK_DIR/arguments.sh"
+ARGUMENTS cvm 391
+[[ "$CHECK_FAILURE" -eq 1 ]]
+
+sed -n '/^single_check_result() {/,/^}/{p}' "$ROOT_DIR/ultimate-updater" > "$WORK_DIR/single-check-result.sh"
+
+STATUS_MODEL_RECORD_FILE="$WORK_DIR/remote-status.records" \
+  bash -c '
+    source "$1"
+    STATUS_MODEL_INIT
+    STATUS_MODEL_RECORD 391 vm qga false "" "" null null error QGA_TRANSPORT "fixture"
+    source "$2"
+    if single_check_result 0; then exit 1; fi
+    STATUS_MODEL_INIT
+    STATUS_MODEL_RECORD 100 vm ssh true FreeBSD "" null null unsupported UNSUPPORTED_OS "fixture"
+    single_check_result 0
+  ' _ "$ROOT_DIR/status-model.sh" "$WORK_DIR/single-check-result.sh"
+
 echo 'exit aggregation tests: PASS'

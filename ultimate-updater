@@ -693,6 +693,16 @@ finish_partial_status() {
   return "$result"
 }
 
+single_check_result() {
+  local result="$1"
+  if [[ "$result" -eq 0 ]] &&
+    declare -f STATUS_MODEL_HAS_FAILURES >/dev/null 2>&1 &&
+    STATUS_MODEL_HAS_FAILURES; then
+    return 1
+  fi
+  return "$result"
+}
+
 record_remote_target_error() {
   local target="$1" kind="$2" node="$3" code="$4" message="$5" result=${6:-1}
   if declare -f STATUS_MODEL_INIT >/dev/null 2>&1 && STATUS_MODEL_INIT; then
@@ -831,6 +841,8 @@ PY
     return 1
   fi
   rm -f -- "$local_file" "${local_file}.filtered"
+  single_check_result "$transport_rc"
+  transport_rc=$?
   finish_partial_status "$transport_rc"
 }
 
