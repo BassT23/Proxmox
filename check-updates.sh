@@ -4,7 +4,7 @@
 # Check Updates #
 #################
 
-# shellcheck disable=SC2034
+# shellcheck disable=SC2034,SC2086,SC2317
 
 VERSION="2.1"
 
@@ -13,6 +13,8 @@ INITIAL_INVENTORY=false
 [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]] && INITIAL_INVENTORY=true
 
 #Variable / Function
+# LOCAL_FILES may intentionally point at the run-scoped helper directory used
+# by central remote checks; the legacy path consumers below are kept intact.
 LOCAL_FILES="${LOCAL_FILES:-/etc/ultimate-updater}"
 CONFIG_FILE="${CONFIG_FILE:-$LOCAL_FILES/update.conf}"
 
