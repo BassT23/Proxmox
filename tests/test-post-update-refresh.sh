@@ -4,6 +4,14 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf -- "$WORK_DIR"' EXIT
+
+# shellcheck disable=SC2016 # literal shell fragments are assertion targets.
+grep -Fq 'refresh_remote_node_status "$unit" "$owner_node"' "$ROOT_DIR/job-runner.sh"
+# shellcheck disable=SC2016 # literal shell fragments are assertion targets.
+grep -Fq '"$CHECK_CLI" check-node "$owner_node"' "$ROOT_DIR/job-runner.sh"
+grep -Fq 'status_refresh=pending' "$ROOT_DIR/job-runner.sh"
+grep -Fq 'function isNodeJob(job)' "$ROOT_DIR/web-ui/server.py"
+grep -Fq 'if(nodeJobFinished)await loadStatus()' "$ROOT_DIR/web-ui/server.py"
 mkdir -p "$WORK_DIR/jobs"
 
 cat > "$WORK_DIR/update.sh" <<'EOF'

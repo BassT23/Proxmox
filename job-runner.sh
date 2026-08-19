@@ -117,9 +117,45 @@ write_remote_ref() {
     printf 'owner_host=%s\n' "$owner_host"
     printf 'port=%s\n' "$port"
     printf 'registered_at=%s\n' "$(now)"
+    printf 'status_refresh=pending\n'
   } > "$temp" || return 1
   chmod 0644 "$temp" || return 1
   mv -f -- "$temp" "$file"
+}
+
+mark_remote_status_refresh() {
+  local unit="$1" result="$2" file temp
+  file=$(remote_ref_file "$unit")
+  [[ -f "$file" ]] || return 1
+  temp="$file.tmp.$$"
+  awk -F= -v result="$result" '$1 != "status_refresh" { print } END { print "status_refresh=" result }' \
+    "$file" > "$temp" || return 1
+  chmod 0644 "$temp" || return 1
+  mv -f -- "$temp" "$file"
+}
+
+refresh_remote_node_status() {
+  local unit="$1" owner_node="$2" refresh_state refresh_rc=0 lock
+  local ref_file
+  ref_file=$(remote_ref_file "$unit")
+  refresh_state=$(state_value "$ref_file" status_refresh)
+  [[ "$refresh_state" == "done" || "$refresh_state" == "failed" ]] && return 0
+  lock="$ref_file.refresh.lock"
+  mkdir "$lock" 2>/dev/null || return 0
+  if [[ -x "$CHECK_CLI" ]]; then
+    UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check-node "$owner_node" </dev/null || refresh_rc=$?
+  else
+    refresh_rc=127
+  fi
+  if [[ "$refresh_rc" -eq 0 ]]; then
+    mark_remote_status_refresh "$unit" "done" || true
+  else
+    mark_remote_status_refresh "$unit" "failed" || true
+    printf 'Remote post-update status refresh failed for %s (exit code %s).\n' \
+      "$owner_node" "$refresh_rc" >&2
+  fi
+  rmdir "$lock" 2>/dev/null || true
+  return 0
 }
 
 remote_ref_line() {
@@ -610,6 +646,9 @@ list_jobs() {
     remote_state=$(remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port")
     printf '%s\n' "$remote_state"
     IFS=$'\t' read -r _ remote_target remote_status _ remote_finished remote_exit _ <<< "$remote_state"
+    if [[ "$remote_status" == completed || "$remote_status" == failed || "$remote_status" == interrupted ]]; then
+      refresh_remote_node_status "$unit" "$owner_node"
+    fi
     sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true
   done
 }
