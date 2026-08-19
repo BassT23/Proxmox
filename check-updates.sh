@@ -833,6 +833,10 @@ CHECK_CONTAINER () {
   if declare -f cluster_target_guest_name >/dev/null 2>&1; then
     STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$CONTAINER" 2>/dev/null || true)
   fi
+  if ! mkdir -p -- "$LOCAL_FILES/temp"; then
+    CHECK_CONTAINER_FAILURE "Could not initialize temporary LXC check directory for $CONTAINER"
+    return
+  fi
   if ! pct config "$CONTAINER" > "$LOCAL_FILES/temp/temp" 2>"$LOCAL_FILES/temp/pct-config.error"; then
     pct_config_error=$(tr '\n' ' ' < "$LOCAL_FILES/temp/pct-config.error" 2>/dev/null | sed 's/[[:space:]]\+/ /g' | cut -c1-300)
     CHECK_CONTAINER_FAILURE "Could not read configuration for LXC $CONTAINER${pct_config_error:+: $pct_config_error}"
