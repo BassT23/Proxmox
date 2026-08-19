@@ -1557,7 +1557,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 self.send_json(error_payload("INTERNAL_SSH_UNAVAILABLE", "Internal SSH configuration is invalid or unavailable."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
-        if len([part for part in path.split("/") if part]) == 4 and path.startswith("/api/internal-ssh/") and path.endswith("/test"):
+        if len([part for part in path.split("/") if part]) == 5 and path.startswith("/api/internal-ssh/") and path.endswith("/test"):
             parts = [unquote(part) for part in path.split("/") if part]
             try:
                 self.handle_internal_ssh_test(parts[2], parts[3])
@@ -1723,6 +1723,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.handle_external_settings_update(parts[2], payload)
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 self.send_json(error_payload("EXTERNAL_SETTINGS_SAVE_FAILED", "External settings could not be saved."), HTTPStatus.BAD_GATEWAY)
+            return
+        if len(parts) == 5 and parts[:2] == ["api", "internal-ssh"] and parts[4] == "test":
+            try:
+                self.handle_internal_ssh_test(parts[2], parts[3])
+            except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("SSH_TEST_FAILED", "The connection test could not be completed."), HTTPStatus.BAD_GATEWAY)
             return
         if len(parts) == 4 and parts[:2] == ["api", "internal-ssh"]:
             try:

@@ -113,6 +113,7 @@ assert "class=\"ssh-test-feedback\"" in page
 assert "data-ssh-feedback" in source
 assert "testInternalSsh(b.dataset.sshTest,b)" in source
 assert "Connection successful." in source
+assert "len(parts) == 5 and parts[:2] == [\"api\", \"internal-ssh\"] and parts[4] == \"test\"" in source
 assert "Select target<select" in page
 assert "Inventory target<select" not in page
 assert page.count("Use custom SSH settings for this system.") == 1
