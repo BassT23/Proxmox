@@ -141,6 +141,9 @@ assert "Backup storage expects a Proxmox storage ID" in page
 assert "Internet check defaults to command ping and address google.com." in page
 assert "SSH port default: 22." in page
 assert "config-field select" in page
+assert "Legacy value: ${current}" in page
+assert "form.dataset.initialConfig=JSON.stringify(values)" in page
+assert "if(value!==previous)next[input.dataset.key]=value" in page
 assert "reboot-required-badge" in page
 assert "Reboot required" in page
 assert ".job-download { display:inline-flex" in page
@@ -156,6 +159,20 @@ except ValueError as error:
     assert "stop" in str(error) and "snapshot" in str(error)
 else:
     raise AssertionError("invalid BACKUP_MODE was accepted")
+assert server.validate_config_values({"SSH_PORT": 1, "LXC_START_DELAY": 0, "VM_START_DELAY": 999999, "KEEP_SNAPSHOTS": 100})["SSH_PORT"] == "1"
+for key in ("LXC_START_DELAY", "VM_START_DELAY", "KEEP_SNAPSHOTS"):
+    try:
+        server.validate_config_values({key: -1})
+    except ValueError as error:
+        assert "non-negative integer" in str(error)
+    else:
+        raise AssertionError(f"negative {key} was accepted")
+try:
+    server.validate_config_values({"SSH_PORT": 65536})
+except ValueError as error:
+    assert "65535" in str(error)
+else:
+    raise AssertionError("invalid SSH_PORT was accepted")
 assert "event.key!=='Escape'" in page
 assert "closeHelpControls()" in page
 assert "help-trigger:focus-visible" in page
