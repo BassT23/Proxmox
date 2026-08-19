@@ -67,6 +67,18 @@ grep -Fq 'bash -s -- host' "$ROOT_DIR/check-updates.sh"
 grep -Fq '"$LOCAL_FILES/update.conf" "$HOST:$LOCAL_FILES/update.conf"' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'DEBUG:-false' "$ROOT_DIR/check-updates.sh"
 
+# Central remote job visibility must not depend on an installed UU runner on
+# the owner node.  The persistent remote state file is authoritative, with a
+# timestamped fallback so fast/unavailable jobs remain in the UI retention set.
+grep -Fq 'REMOTE_JOB_STATE_DIR=' "$ROOT_DIR/job-runner.sh"
+# shellcheck disable=SC2016 # literal shell fragment is the assertion target.
+grep -Fq 'remote_state_file="$REMOTE_JOB_STATE_DIR/$unit.state"' "$ROOT_DIR/job-runner.sh"
+grep -Fq 'registered_at=' "$ROOT_DIR/job-runner.sh"
+grep -Fq 'remote_unavailable' "$ROOT_DIR/job-runner.sh"
+if grep -Fq '/etc/ultimate-updater/job-runner.sh list' "$ROOT_DIR/job-runner.sh"; then
+  exit 1
+fi
+
 # The remote wrapper owns finalization.  An inner check that exits before its
 # own epilogue must still produce a final status and completion result.
 cat > "$WORK_DIR/status-model.sh" <<'EOF'

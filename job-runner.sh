@@ -16,6 +16,7 @@ CHECK_CLI="${UU_CHECK_CLI:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/ultimate-upd
 STATUS_MODEL_SCRIPT="${UU_STATUS_MODEL_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/status-model.sh}"
 STATUS_MODEL_FILE="${UU_STATUS_MODEL_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/status.json}"
 UPDATE_CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
+REMOTE_JOB_STATE_DIR="${UU_REMOTE_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 
 usage() {
@@ -115,6 +116,7 @@ write_remote_ref() {
     printf 'owner_node=%s\n' "$owner_node"
     printf 'owner_host=%s\n' "$owner_host"
     printf 'port=%s\n' "$port"
+    printf 'registered_at=%s\n' "$(now)"
   } > "$temp" || return 1
   chmod 0644 "$temp" || return 1
   mv -f -- "$temp" "$file"
@@ -132,18 +134,29 @@ remote_ref_line() {
 }
 
 remote_state_line() {
-  local unit="$1" target="$2" owner_node="$3" owner_host="$4" port="$5" output
-  if ! output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" \
-      /etc/ultimate-updater/job-runner.sh list 2>/dev/null); then
-    printf '%s\t%s\tremote_unavailable\t\t\t\t%s\n' "$unit" "$target" "$owner_node"
-    return 0
+  local unit="$1" target="$2" owner_node="$3" owner_host="$4" port="$5" output remote_line
+  local remote_state_file="$REMOTE_JOB_STATE_DIR/$unit.state"
+  local ref_file registered_at
+  ref_file=$(remote_ref_file "$unit")
+  registered_at=$(state_value "$ref_file" registered_at)
+  printf -v remote_command 'if [[ -f %q ]]; then cat %q; else exit 1; fi' \
+    "$remote_state_file" "$remote_state_file"
+  if output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" \
+      "$remote_command" 2>/dev/null); then
+    remote_line=$(awk -F= -v owner="$owner_node" '
+      { values[$1]=$0; sub(/^[^=]*=/, "", values[$1]) }
+      END {
+        if (values["unit"] == "") exit 1
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", values["unit"], values["target"],
+          values["state"], values["started_at"], values["finished_at"], values["exit_code"], owner
+      }' <<< "$output") || remote_line=""
+    if [[ -n "$remote_line" ]]; then
+      printf '%s\n' "$remote_line"
+      return 0
+    fi
   fi
-  if awk -F '\t' -v wanted="$unit" -v owner="$owner_node" \
-      '$1 == wanted { print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" owner; found=1; exit } END { exit(found ? 0 : 1) }' \
-      <<< "$output"; then
-    return 0
-  fi
-  printf '%s\t%s\tremote_unavailable\t\t\t\t%s\n' "$unit" "$target" "$owner_node"
+  printf '%s\t%s\tremote_unavailable\t%s\t\t\t%s\n' \
+    "$unit" "$target" "${registered_at:-$(now)}" "$owner_node"
 }
 
 sync_remote_last_update() {
