@@ -598,7 +598,7 @@ READ_CONFIG () {
   FSTRIM_WITH_MOUNTPOINT=$(awk -F'"' '/^FSTRIM_WITH_MOUNTPOINT=/ {print $2}' "$CONFIG_FILE")
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
   if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
-    UU_FILTER_SCOPE=update
+    export UU_FILTER_SCOPE=update
     apply_only_exclude_tags ONLY EXCLUDED
   fi
   EMAIL_USER=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$CONFIG_FILE")
