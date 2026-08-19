@@ -141,6 +141,11 @@ assert "Backup storage expects a Proxmox storage ID" in page
 assert "Internet check defaults to command ping and address google.com." in page
 assert "SSH port default: 22." in page
 assert "config-field select" in page
+assert "reboot-required-badge" in page
+assert "Reboot required" in page
+assert ".job-download { display:inline-flex" in page
+assert ".config-actions { position:static; background:transparent; }" in page
+assert "Internal SSH Connections <span class=\"help-control\">" in page
 assert "CONFIG_ENUMS" in source
 try:
     server.validate_config_values({"BACKUP_MODE": "invalid"})

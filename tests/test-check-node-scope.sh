@@ -7,6 +7,10 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # The explicit node path must carry a host-only scope locally and remotely.
 grep -Fq 'UU_DEFER_NOTIFICATION=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" node-host' \
   "$ROOT_DIR/ultimate-updater"
+grep -Fq 'INTERNAL_SSH_RESOLVE_NODE "$node" "$host" "$default_port"' "$ROOT_DIR/ultimate-updater"
+grep -Fq 'REMOTE_NODE_USER="${INTERNAL_SSH_USER:-root}"' "$ROOT_DIR/ultimate-updater"
+grep -Fq '"$user@$host:$remote_config"' "$ROOT_DIR/ultimate-updater"
+grep -Fq '"$user@$host" "$command"' "$ROOT_DIR/ultimate-updater"
 grep -Fq 'bash -s -- node-host' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'bash %q node-host' "$ROOT_DIR/ultimate-updater"
 grep -Fq 'UU_CHECK_SCOPE=host TAG_FILTER_FILE=' "$ROOT_DIR/check-updates.sh"
