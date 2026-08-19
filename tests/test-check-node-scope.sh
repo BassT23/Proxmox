@@ -20,6 +20,7 @@ grep -Fq 'STATUS_MODEL_PARTIAL=true' "$ROOT_DIR/ultimate-updater"
 grep -Fq 'Remote node status was not produced for %s.' "$ROOT_DIR/ultimate-updater"
 grep -Fq 'REMOTE_STATUS_MISSING' "$ROOT_DIR/ultimate-updater"
 grep -Fq 'STATUS_MODEL_IMPORT_FILE "$local_file" 2>/dev/null' "$ROOT_DIR/ultimate-updater"
+grep -Fq 'STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q' "$ROOT_DIR/ultimate-updater"
 if grep -Fq 'bash '\''/etc/ultimate-updater/check-updates.sh'\'' node-host >/dev/null 2>&1; cat' "$ROOT_DIR/ultimate-updater"; then
   echo 'remote check-node still blindly cats the status artifact' >&2
   exit 1

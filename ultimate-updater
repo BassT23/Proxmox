@@ -532,7 +532,7 @@ remote_node_check() {
     printf 'Could not initialize status model for node %s.\n' "$node" >&2
     return 1
   fi
-  printf -v remote_command 'UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q bash %q node-host; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\\n" %q >&2; rm -f -- %q %q; exit 86; fi; cat %q; rm -f -- %q %q; exit 0' \
+  printf -v remote_command 'UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q bash %q node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\\n" %q >&2; rm -f -- %q %q; exit 86; fi; cat %q; rm -f -- %q %q; exit 0' \
     "$node" \
     "/etc/ultimate-updater/status-model.sh" \
     "$remote_file" \
