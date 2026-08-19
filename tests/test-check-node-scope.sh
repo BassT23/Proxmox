@@ -11,8 +11,18 @@ grep -Fq 'INTERNAL_SSH_RESOLVE_NODE "$node" "$host" "$default_port"' "$ROOT_DIR/
 grep -Fq 'REMOTE_NODE_USER="${INTERNAL_SSH_USER:-root}"' "$ROOT_DIR/ultimate-updater"
 grep -Fq '"$user@$host:$remote_config"' "$ROOT_DIR/ultimate-updater"
 grep -Fq '"$user@$host" "$command"' "$ROOT_DIR/ultimate-updater"
+grep -Fq 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q' "$ROOT_DIR/ultimate-updater"
+grep -Fq 'bash -s -- node-host >/dev/null 2>&1' "$ROOT_DIR/ultimate-updater"
+grep -Fq '"$remote_check_dir"' "$ROOT_DIR/ultimate-updater"
+if grep -Fq 'install -m 0640 '\''$remote_config'\'' '\''$LOCAL_FILES/update.conf'\''' "$ROOT_DIR/ultimate-updater"; then
+  echo 'remote check-node still writes the central config into /etc on the target' >&2
+  exit 1
+fi
 grep -Fq 'bash -s -- node-host' "$ROOT_DIR/check-updates.sh"
-grep -Fq 'bash %q node-host' "$ROOT_DIR/ultimate-updater"
+if grep -Fq 'bash %q node-host' "$ROOT_DIR/ultimate-updater"; then
+  echo 'remote check-node still depends on an installed remote check script' >&2
+  exit 1
+fi
 grep -Fq 'UU_CHECK_SCOPE=host TAG_FILTER_FILE=' "$ROOT_DIR/check-updates.sh"
 grep -Fq '"${UU_CHECK_SCOPE:-}" != host && "$WITH_LXC" == true' "$ROOT_DIR/check-updates.sh"
 grep -Fq '"${UU_CHECK_SCOPE:-}" != host && "$WITH_VM" == true' "$ROOT_DIR/check-updates.sh"

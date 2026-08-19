@@ -547,49 +547,63 @@ PY
   fi
 }
 
-remote_node_check() {
+remote_node_check_via_cluster_transport() {
   local node="$1" host="${REMOTE_NODE_HOST:-$2}" port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
-  local user="${REMOTE_NODE_USER:-root}" remote_file local_file remote_config remote_command
+  local user="${REMOTE_NODE_USER:-root}" local_file remote_check_dir remote_command
+  local remote_config remote_tag_filter remote_cluster_target remote_runtime remote_status_model
+  local remote_status_file tag_filter_script target_runtime_file
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
-  remote_file="/tmp/ultimate-updater-node-status-$$-$RANDOM.json"
-  remote_config="/tmp/ultimate-updater-central-config-$$-$RANDOM.conf"
+  remote_check_dir="/tmp/ultimate-updater-check-node-$$-$RANDOM-$RANDOM"
+  remote_config="$remote_check_dir/update.conf"
+  remote_tag_filter="$remote_check_dir/tag-filter.sh"
+  remote_cluster_target="$remote_check_dir/cluster-target.sh"
+  remote_runtime="$remote_check_dir/target-runtime.sh"
+  remote_status_model="$remote_check_dir/status-model.sh"
+  remote_status_file="$remote_check_dir/status.json"
+  tag_filter_script="$LOCAL_FILES/tag-filter.sh"
+  target_runtime_file="$LOCAL_FILES/target-runtime.sh"
+  [[ -f "$tag_filter_script" ]] || tag_filter_script="$SCRIPT_DIR/tag-filter.sh"
+  [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
   local_file=$(mktemp)
   if ! STATUS_MODEL_INIT; then
     rm -f -- "$local_file"
     printf 'Could not initialize status model for node %s.\n' "$node" >&2
     return 1
   fi
-  printf -v remote_command 'UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q bash %q node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\\n" %q >&2; rm -f -- %q %q; exit 86; fi; cat %q; rm -f -- %q %q; exit 0' \
-    "$node" \
-    "/etc/ultimate-updater/status-model.sh" \
-    "$remote_file" \
-    "$remote_file.records" \
-    "/etc/ultimate-updater/check-updates.sh" \
-    "/etc/ultimate-updater/status-model.sh" \
-    "$node" \
-    "$remote_file" \
-    "$remote_file.records" \
-    "/etc/ultimate-updater/status-model.sh" \
-    "$remote_file" \
-    "$node" \
-    "$remote_file" \
-    "$remote_file.records" \
-    "$remote_file" \
-    "$remote_file" \
-    "$remote_file.records"
-  if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" \
-    -P "$port" "$LOCAL_FILES/update.conf" "$user@$host:$remote_config" ||
-    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
-    "install -m 0640 '$remote_config' '$LOCAL_FILES/update.conf' && rm -f -- '$remote_config'" ||
-    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" true ||
-    ! timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
-    "$remote_command" > "$local_file"; then
+  if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "mkdir -p -- '$remote_check_dir'" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$LOCAL_FILES/update.conf" "$user@$host:$remote_config" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$tag_filter_script" "$user@$host:$remote_tag_filter" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$CLUSTER_TARGET_SCRIPT" "$user@$host:$remote_cluster_target" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$target_runtime_file" "$user@$host:$remote_runtime" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$STATUS_MODEL_SCRIPT" "$user@$host:$remote_status_model"; then
     timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
-      "rm -f -- '$remote_config' '$remote_file' '$remote_file.records'" >/dev/null 2>&1 || true
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
     STATUS_MODEL_RECORD "host:$node" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Node $node is unreachable" "$node" "$node"
     STATUS_MODEL_FINISH >/dev/null 2>&1 || true
     rm -f -- "$local_file"
     printf 'Node %s is unreachable.\n' "$node" >&2
+    return 1
+  fi
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true bash -s -- node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; exit 0' \
+    "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
+    "$remote_runtime" "$node" "$remote_status_model" "$remote_status_file" \
+    "$remote_status_file.records" "$remote_status_model" "$node" "$remote_status_file" \
+    "$remote_status_file.records" "$remote_status_model" "$remote_status_file" "$node" \
+    "$remote_check_dir" "$remote_status_file" "$remote_check_dir"
+  if ! timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "$remote_command" < "$CHECK_SCRIPT" > "$local_file"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "Remote check failed for $node" "$node" "$node"
+    STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+    rm -f -- "$local_file"
+    printf 'Remote check failed for %s.\n' "$node" >&2
     return 1
   fi
   if [[ ! -s "$local_file" ]]; then
@@ -600,7 +614,7 @@ remote_node_check() {
     return 1
   fi
   if ! STATUS_MODEL_IMPORT_FILE "$local_file" 2>/dev/null; then
-    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not import remote check status" "$node" "$node"
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not import status from node $node" "$node" "$node"
     STATUS_MODEL_FINISH >/dev/null 2>&1 || true
     rm -f -- "$local_file"
     printf 'Could not import status from node %s.\n' "$node" >&2
@@ -612,6 +626,10 @@ remote_node_check() {
     return 1
   fi
   rm -f -- "$local_file"
+}
+
+remote_node_check() {
+  remote_node_check_via_cluster_transport "$@"
 }
 
 run_node_check() {

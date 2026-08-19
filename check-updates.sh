@@ -13,8 +13,8 @@ INITIAL_INVENTORY=false
 [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]] && INITIAL_INVENTORY=true
 
 #Variable / Function
-LOCAL_FILES="/etc/ultimate-updater"
-CONFIG_FILE="$LOCAL_FILES/update.conf"
+LOCAL_FILES="${LOCAL_FILES:-/etc/ultimate-updater}"
+CONFIG_FILE="${CONFIG_FILE:-$LOCAL_FILES/update.conf}"
 
 TARGET_RUNTIME_FILE="${TARGET_RUNTIME_FILE:-$LOCAL_FILES/target-runtime.sh}"
 if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
