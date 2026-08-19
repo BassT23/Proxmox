@@ -37,7 +37,7 @@ EXCLUDE_UPDATE_CHECK="alpha"
 ONLY=""
 EXCLUDE=""
 CONFIG
-EXTERNAL_SELECTION_CONFIG_FILE="$WORK_DIR/update.conf"
+export EXTERNAL_SELECTION_CONFIG_FILE="$WORK_DIR/update.conf"
 # shellcheck disable=SC1091
 source "$ROOT_DIR/external-selection.sh"
 if external_selection_allows check alpha; then exit 1; fi
