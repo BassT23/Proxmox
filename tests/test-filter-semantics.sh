@@ -42,6 +42,7 @@ apply_only_exclude_tags ONLY EXCLUDE
 ONLY="112 230 310"
 EXCLUDE="230"
 export UU_FILTER_ELIGIBLE_IDS="112 230 310"
+# shellcheck disable=SC2034 # apply_only_exclude_tags reads caller variables indirectly.
 TAG_FILTER_LAST_LOG=""
 apply_only_exclude_tags ONLY EXCLUDE
 [[ "$ONLY" == "112 230 310" && "$EXCLUDE" == "230" ]]
