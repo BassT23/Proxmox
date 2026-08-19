@@ -14,10 +14,10 @@ SAFETY_FAILURE=false
 UPDATE_FAILURE=false
 
 # Variable / Function
-LOCAL_FILES="/etc/ultimate-updater"
+LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
-USER_SCRIPTS="/etc/ultimate-updater/scripts.d"
+USER_SCRIPTS="${USER_SCRIPTS:-$LOCAL_FILES/scripts.d}"
 TARGET_RUNTIME_FILE="${TARGET_RUNTIME_FILE:-$LOCAL_FILES/target-runtime.sh}"
 if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
   # shellcheck disable=SC1090,SC1091

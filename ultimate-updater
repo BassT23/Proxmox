@@ -653,10 +653,38 @@ run_node_check() {
 
 remote_node_update() {
   local node="$1" host="${REMOTE_NODE_HOST:-$2}" port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
-  local user="${REMOTE_NODE_USER:-root}" output job_unit target="node-$1" command
+  local user="${REMOTE_NODE_USER:-root}" output job_unit target="node-$1" command remote_update_dir source
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
-  printf -v command 'exec /usr/bin/env UU_DEFER_NOTIFICATION=true UU_UPDATE_SCOPE=host %q start %q %q' "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" host
-  if ! output=$(ssh "${ssh_args[@]}" -p "$port" "$user@$host" "$command"); then
+  remote_update_dir="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
+  if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "mkdir -p -- '$remote_update_dir'"; then
+    printf 'Could not prepare remote update workspace on %s.\n' "$node" >&2
+    return 6
+  fi
+  for source in \
+    "$JOB_RUNNER" "$UPDATE_SCRIPT" "$LOCAL_FILES/update.conf" \
+    "$LOCAL_FILES/tag-filter.sh" "$LOCAL_FILES/status-model.sh" \
+    "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/ultimate-updater" \
+    "$LOCAL_FILES/target-runtime.sh" "$LOCAL_FILES/cluster-target.sh" \
+    "$LOCAL_FILES/internal-ssh.sh" "$LOCAL_FILES/update-extras.sh" \
+    "$LOCAL_FILES/windows-update.sh"; do
+    [[ -f "$source" ]] || continue
+    if ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$source" \
+      "$user@$host:$remote_update_dir/$(basename -- "$source")"; then
+      timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
+      printf 'Could not transfer remote update helper to %s.\n' "$node" >&2
+      return 6
+    fi
+  done
+  if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "chmod 750 '$remote_update_dir/job-runner.sh' '$remote_update_dir/update.sh'"; then
+    timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
+    printf 'Could not prepare remote update runner on %s.\n' "$node" >&2
+    return 6
+  fi
+  printf -v command 'exec /usr/bin/env UU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q UU_UPDATE_SCOPE=host %q start %q host' \
+    "$remote_update_dir" "$remote_update_dir" "$remote_update_dir/job-runner.sh" "$remote_update_dir/update.sh"
+  if ! output=$(timeout 30 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "$command"); then
+    timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
     printf 'Could not start update job on %s.\n' "$node" >&2
     return 6
   fi
@@ -668,6 +696,7 @@ remote_node_update() {
     return 7
   fi
 }
+
 
 run_node_update() {
   local node="$1"

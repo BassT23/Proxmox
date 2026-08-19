@@ -11,11 +11,11 @@ REMOTE_REF_DIR="$JOB_STATE_DIR/remote"
 JOB_PREFIX="ultimate-updater-update-"
 CHECK_PREFIX="ultimate-updater-check-"
 MAX_COMPLETED_JOBS="${UU_MAX_COMPLETED_JOBS:-50}"
-CHECK_SCRIPT="${UU_CHECK_SCRIPT:-/etc/ultimate-updater/check-updates.sh}"
-CHECK_CLI="${UU_CHECK_CLI:-/usr/local/sbin/ultimate-updater}"
-STATUS_MODEL_SCRIPT="${UU_STATUS_MODEL_SCRIPT:-/etc/ultimate-updater/status-model.sh}"
-STATUS_MODEL_FILE="${UU_STATUS_MODEL_FILE:-/etc/ultimate-updater/status.json}"
-UPDATE_CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-/etc/ultimate-updater/update.conf}"
+CHECK_SCRIPT="${UU_CHECK_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/check-updates.sh}"
+CHECK_CLI="${UU_CHECK_CLI:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/ultimate-updater}"
+STATUS_MODEL_SCRIPT="${UU_STATUS_MODEL_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/status-model.sh}"
+STATUS_MODEL_FILE="${UU_STATUS_MODEL_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/status.json}"
+UPDATE_CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 
 usage() {
@@ -282,6 +282,8 @@ start_job() {
   if [[ "${UU_UPDATE_SCOPE:-}" == host ]]; then
     systemd_env+=("--setenv=UU_UPDATE_SCOPE=host")
   fi
+  [[ -n "${UU_LOCAL_FILES:-}" ]] && systemd_env+=("--setenv=UU_LOCAL_FILES=$UU_LOCAL_FILES")
+  [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && systemd_env+=("--setenv=UU_REMOTE_WORK_DIR=$UU_REMOTE_WORK_DIR")
 
   timestamp=$(date -u '+%Y%m%d-%H%M%S')
   unit="${JOB_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
@@ -379,6 +381,7 @@ run_job() {
   else
     write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
   fi
+  [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && rm -rf -- "$UU_REMOTE_WORK_DIR"
   return "$exit_code"
 }
 

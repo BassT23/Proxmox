@@ -1978,7 +1978,11 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("JOB_ALREADY_RUNNING", "An update job is already running for this node."), HTTPStatus.CONFLICT)
             return
         if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
-            self.send_json(error_payload("UPDATE_START_FAILED", "The node update job could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            detail = (result.stderr or result.stdout or "").strip().replace("\n", " ")[:300]
+            message = "The node update job could not be started."
+            if detail:
+                message += f" {detail}"
+            self.send_json(error_payload("UPDATE_START_FAILED", message), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         self.send_json({"node": node, "job": job_match.group(1), "state": "running", "message": "Node update job started."}, HTTPStatus.ACCEPTED)
 
