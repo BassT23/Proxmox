@@ -13,6 +13,8 @@ assert "JOB_RE.fullmatch(unit)" in source
 assert '"journalctl", "-u", unit, "--no-pager", "-o", "cat"' in source
 assert '"Full log is no longer available."' in source
 assert "remote-log-full" in source
+assert "UPDATE_NOT_REGISTERED" in source
+assert "registered = self.job_record(job_unit)" in source
 assert "journalctl -u %q --no-pager -o cat" in runner
 assert "logAutoFollow" in source
 assert "dataset.scrollAttached==='true'" in source

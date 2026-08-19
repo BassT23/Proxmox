@@ -1984,7 +1984,18 @@ class StatusHandler(BaseHTTPRequestHandler):
                 message += f" {detail}"
             self.send_json(error_payload("UPDATE_START_FAILED", message), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
-        self.send_json({"node": node, "job": job_match.group(1), "state": "running", "message": "Node update job started."}, HTTPStatus.ACCEPTED)
+        job_unit = job_match.group(1)
+        try:
+            registered = self.job_record(job_unit)
+        except RuntimeError:
+            registered = None
+        if not registered:
+            self.send_json(error_payload(
+                "UPDATE_NOT_REGISTERED",
+                "The node update started remotely but was not registered in the central job list.",
+            ), HTTPStatus.BAD_GATEWAY)
+            return
+        self.send_json({"node": node, "job": job_unit, "state": "running", "message": "Node update job started."}, HTTPStatus.ACCEPTED)
 
     def do_PUT(self):  # noqa: N802
         if not self.write_allowed():
