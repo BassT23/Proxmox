@@ -28,7 +28,8 @@
 #   3. Resolve tags to IDs (any tag match) and append, de-duplicating while
 #      preserving first-seen order (input order then discovery order for tags).
 #   4. Assign final space-separated list back to ONLY / EXCLUDE variable.
-#   5. If ONLY is provided, EXCLUDE is applied after the positive selection.
+#   5. ONLY is activated only when an eligible target matches it. EXCLUDE is
+#      applied after the positive selection in all cases.
 #
 # Usage examples:
 #   export ONLY="backup,windows"; apply_only_exclude_tags ONLY EXCLUDE; echo "$ONLY"
@@ -306,6 +307,60 @@ apply_only_exclude_tags() {
     echo "${final[*]}"
   }
 
+  # Return targets eligible for the current check/update scope. Tests and
+  # callers with a computed scope may provide this list explicitly; normal
+  # Proxmox runs derive it from the current cluster resource inventory.
+  _filter_eligible_ids() {
+    if [[ ${UU_FILTER_ELIGIBLE_IDS+x} ]]; then
+      printf '%s\n' "${UU_FILTER_ELIGIBLE_IDS:-}"
+      return 0
+    fi
+    command -v pvesh >/dev/null 2>&1 || return 1
+    local resources
+    resources=$(pvesh get /cluster/resources --type vm --output-format json 2>/dev/null) || return 1
+    python3 -c '
+import json
+import sys
+
+_, with_lxc, with_vm, running_ct, stopped_ct, running_vm, stopped_vm, paused_vm = sys.argv[1:]
+try:
+    resources = json.load(sys.stdin)
+except (json.JSONDecodeError, TypeError):
+    raise SystemExit(1)
+
+def enabled(value):
+    return value.lower() == "true"
+
+eligible = []
+for resource in resources if isinstance(resources, list) else []:
+    kind = resource.get("type")
+    vmid = str(resource.get("vmid", ""))
+    if kind not in {"lxc", "qemu"} or not vmid or resource.get("template"):
+        continue
+    state = str(resource.get("status", "")).lower()
+    if kind == "lxc":
+        if not enabled(with_lxc):
+            continue
+        if state == "running" and not enabled(running_ct):
+            continue
+        if state == "stopped" and not enabled(stopped_ct):
+            continue
+    else:
+        if not enabled(with_vm):
+            continue
+        if state == "running" and not enabled(running_vm):
+            continue
+        if state == "stopped" and not enabled(stopped_vm):
+            continue
+        if state == "paused" and not enabled(paused_vm):
+            continue
+    eligible.append(vmid)
+print(" ".join(eligible))
+    ' "${UU_FILTER_SCOPE:-}" "${WITH_LXC:-}" "${WITH_VM:-}" \
+      "${RUNNING:-${RUNNING_CONTAINER:-}}" "${STOPPED:-${STOPPED_CONTAINER:-}}" \
+      "${RUNNING_VM:-}" "${STOPPED_VM:-}" "${PAUSED_VM:-}" <<< "$resources"
+  }
+
   # EXCLUDE processing applies independently after any positive selection.
   EXCLUDE_TAG () {
     if [[ -n $_EXCLUDE_VALUE ]]; then
@@ -321,17 +376,26 @@ apply_only_exclude_tags() {
     fi
   }
 
-  # ONLY processing (takes precedence for the initial candidate set).
+  # ONLY is a configured tag name, not an unconditional filter switch. It is
+  # active only if at least one currently eligible target matches it.
   if [[ -n $_ONLY_VALUE ]]; then
     local _expanded_only
     _expanded_only=$(_expand_mixed_spec "$_ONLY_VALUE")
-    # Keep an explicit, unmatched ONLY distinct from an empty ONLY. The
-    # callers interpret an empty ONLY as "all eligible targets".
-    printf -v "$_only_var_name" '%s' "${_expanded_only:-__uu_no_matching_only__}"
+    local _eligible_only
+    if _eligible_only=$(_filter_eligible_ids 2>/dev/null); then
+      local _matched_only=() _candidate
+      for _candidate in $_expanded_only; do
+        if guest_id_matches "$_eligible_only" "$_candidate"; then
+          _matched_only+=("$_candidate")
+        fi
+      done
+      _expanded_only="${_matched_only[*]}"
+    fi
+    printf -v "$_only_var_name" '%s' "$_expanded_only"
     if [[ -n $_expanded_only ]]; then
       _record_tag_log "ℹ ${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> VMIDs: $_expanded_only${CL:-}\n"
     else
-      _record_tag_log "ℹ ${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no VMIDs${CL:-}\n"
+      _record_tag_log "ℹ ${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no eligible targets; using all eligible targets${CL:-}\n"
     fi
   fi
   EXCLUDE_TAG

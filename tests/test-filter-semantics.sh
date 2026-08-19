@@ -20,6 +20,7 @@ apply_only_exclude_tags ONLY EXCLUDE
 
 ONLY="101 102"
 EXCLUDE="102"
+export UU_FILTER_ELIGIBLE_IDS="101 102"
 apply_only_exclude_tags ONLY EXCLUDE
 [[ "$ONLY" == "101 102" && "$EXCLUDE" == "102" ]]
 guest_id_matches "$ONLY" 101
@@ -28,8 +29,23 @@ guest_id_matches "$EXCLUDE" 102
 
 ONLY="does-not-exist"
 EXCLUDE="101"
+export UU_FILTER_ELIGIBLE_IDS=""
 apply_only_exclude_tags ONLY EXCLUDE
-[[ "$ONLY" == __uu_no_matching_only__ && "$EXCLUDE" == "101" ]]
+[[ "$ONLY" == "" && "$EXCLUDE" == "101" ]]
+
+ONLY="101"
+EXCLUDE="102"
+export UU_FILTER_ELIGIBLE_IDS="101 102"
+apply_only_exclude_tags ONLY EXCLUDE
+[[ "$ONLY" == "101" && "$EXCLUDE" == "102" ]]
+
+# Removing the last matching Proxmox tag falls back to all eligible targets;
+# the configured tag name itself is not changed by this runtime decision.
+ONLY="101"
+EXCLUDE="102"
+export UU_FILTER_ELIGIBLE_IDS="103"
+apply_only_exclude_tags ONLY EXCLUDE
+[[ "$ONLY" == "" && "$EXCLUDE" == "102" ]]
 
 cat > "$WORK_DIR/update.conf" <<'CONFIG'
 ONLY_UPDATE_CHECK="alpha"
@@ -41,7 +57,7 @@ export EXTERNAL_SELECTION_CONFIG_FILE="$WORK_DIR/update.conf"
 # shellcheck disable=SC1091
 source "$ROOT_DIR/external-selection.sh"
 if external_selection_allows check alpha; then exit 1; fi
-if external_selection_allows check beta; then exit 1; fi
+if external_selection_allows check beta; then :; else exit 1; fi
 
 sed -i 's/ONLY_UPDATE_CHECK="alpha"/ONLY_UPDATE_CHECK=""/; s/EXCLUDE_UPDATE_CHECK="alpha"/EXCLUDE_UPDATE_CHECK="beta"/' "$WORK_DIR/update.conf"
 if external_selection_allows check alpha; then :; else exit 1; fi

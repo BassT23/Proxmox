@@ -10,7 +10,7 @@ CLI="$ROOT_DIR/ultimate-updater"
 grep -Fq "UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true \"\$CHECK_SCRIPT\" chost" "$CLI"
 grep -Fq "UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true \"\$CHECK_SCRIPT\" ccontainer \"\$target\"" "$CLI"
 grep -Fq "UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true \"\$CHECK_SCRIPT\" cvm \"\$target\"" "$CLI"
-grep -Fq "UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true \"\$CHECK_SCRIPT\" host" "$CLI"
+grep -Fq "UU_DEFER_NOTIFICATION=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true \"\$CHECK_SCRIPT\" node-host" "$CLI"
 
 # Keep the global check notification path intact.
 grep -Fq "STATUS_MODEL_SEND_NOTIFICATION \"\$STATUS_FILE\" \"\$LOCAL_FILES/update.conf\"" "$CLI"

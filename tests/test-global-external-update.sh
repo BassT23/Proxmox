@@ -58,9 +58,9 @@ run_global() {
 
 output=$(run_global)
 grep -Fq 'rocky-984 skipped by central update filter' <<<"$output"
-grep -Fq 'mediacenter skipped by central update filter' <<<"$output"
-grep -Fq 'legacy-971 skipped by central update filter' <<<"$output"
-[[ ! -s "$WORK_DIR/calls" ]]
+grep -Fxq mediacenter "$WORK_DIR/calls"
+grep -Fxq legacy-971 "$WORK_DIR/calls"
+if grep -Fxq rocky-984 "$WORK_DIR/calls"; then exit 1; fi
 
 sed -i 's/ONLY="rocky-984"/ONLY=""/; s/EXCLUDE="rocky-984"/EXCLUDE="mediacenter"/' "$WORK_DIR/update.conf"
 : > "$WORK_DIR/calls"

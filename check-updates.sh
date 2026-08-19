@@ -322,6 +322,7 @@ READ_WRITE_CONFIG () {
   VM_START_DELAY="${VM_START_DELAY:-45}"
 
   if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=check
     apply_only_exclude_tags ONLY EXCLUDED
   fi
 }

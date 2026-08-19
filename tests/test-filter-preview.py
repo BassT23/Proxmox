@@ -27,7 +27,12 @@ with tempfile.TemporaryDirectory() as directory:
     resolver.write_text(
         """#!/bin/bash
 apply_only_exclude_tags() {
-  if [[ -n "$ONLY" ]]; then ONLY="910"; fi
+  local eligible=" ${UU_FILTER_ELIGIBLE_IDS:-} "
+  if [[ "$ONLY" == selected && "$eligible" == *" 910 "* ]]; then
+    ONLY="910"
+  else
+    ONLY=""
+  fi
 }
 """,
         encoding="utf-8",
@@ -53,6 +58,12 @@ apply_only_exclude_tags() {
     assert both["mode"] == "only"
     assert [item["label"] for item in both["included"]] == ["Proxmox-Test-1"]
 
+    zero = server.target_preview(payload, {**base, "ONLY_UPDATE_CHECK": "missing"}, resolver, inventory)
+    assert zero["mode"] == "none"
+    assert zero["only_matches"] == 0
+    assert zero["effective_selection"] == "all-eligible"
+    assert len(zero["included"]) == len(no_filter["included"])
+
     exclude = server.target_preview(payload, {**base, "EXCLUDE_UPDATE_CHECK": "917"}, resolver, inventory)
     assert exclude["mode"] == "exclude"
     assert [item["label"] for item in exclude["excluded"]] == ["917 · cent · offline"]
@@ -67,6 +78,11 @@ apply_only_exclude_tags() {
     assert [item["label"] for item in update_only["included"]] == [
         "Proxmox-Test-1", "910 · debian"
     ]
+    update_zero = server.target_preview(payload, {**update_base, "ONLY": "missing"}, resolver, inventory,
+                                         filter_keys=("ONLY", "EXCLUDE"))
+    assert update_zero["mode"] == "none"
+    assert update_zero["only_matches"] == 0
+    assert len(update_zero["included"]) == len(no_filter["included"])
     update_exclude = server.target_preview(payload, {**update_base, "EXCLUDE": "917"}, resolver, inventory,
                                             filter_keys=("ONLY", "EXCLUDE"))
     assert update_exclude["mode"] == "exclude"

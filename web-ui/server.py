@@ -297,7 +297,7 @@ PAGE = r"""<!doctype html>
       {title:'Host',hint:'Host checks and updates are controlled here. Guest settings below do not change host processing.',keys:['CHECK_WITH_HOST','WITH_HOST']},
       {title:'Containers / LXC',hint:'Choose which LXC guests and lifecycle states are included for checks and updates.',matrix:[{label:'Containers',check:'CHECK_WITH_LXC',update:'WITH_LXC'},{label:'Running containers',check:'CHECK_RUNNING_CONTAINER',update:'RUNNING_CONTAINER'},{label:'Stopped containers',check:'CHECK_STOPPED_CONTAINER',update:'STOPPED_CONTAINER'}],extras:['LXC_START_DELAY','BACKUP_LXC_MP']},
       {title:'Virtual Machines',hint:'Choose which VMs and lifecycle states are included for checks and updates.',matrix:[{label:'Virtual machines',check:'CHECK_WITH_VM',update:'WITH_VM'},{label:'Running VMs',check:'CHECK_RUNNING_VM',update:'RUNNING_VM'},{label:'Stopped VMs',check:'CHECK_STOPPED_VM',update:'STOPPED_VM'},{label:'Paused VMs',check:'CHECK_PAUSED_VM',update:null}],extras:['VM_START_DELAY']},
-      {title:'Target filters',hint:'Check and update filters are independent. Leave Only empty to include all matching targets; Exclude is then applied.',filterGroups:[{title:'Check',keys:['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK'],preview:'check'},{title:'Update',keys:['ONLY','EXCLUDE'],preview:'update'}]},
+      {title:'Target filters',hint:'Check and update filters are independent. Only activates when an eligible target matches; with zero matches all eligible targets are used. Exclude is always applied afterwards.',filterGroups:[{title:'Check',keys:['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK'],preview:'check'},{title:'Update',keys:['ONLY','EXCLUDE'],preview:'update'}]},
       {title:'General update behavior',hint:'These options affect how the core processes checks and updates.',keys:['REBOOT_IF_NEEDED','EXIT_ON_ERROR','VERSION_CHECK','SSH_PORT','EXE_FOR_INTERNET_CHECK','URL_FOR_INTERNET_CHECK']},
       {title:'Advanced settings',hint:'Optional behavior for specialized guests and maintenance tasks.',keys:['FREEBSD_UPDATES','INCLUDE_PHASED_UPDATES','INCLUDE_FSTRIM','FSTRIM_WITH_MOUNTPOINT','PACMAN_ENVIRONMENT','INCLUDE_HELPER_SCRIPTS']},
       {title:'Extra updates',hint:'Optional service-specific updates. These apply only when extra updates are enabled.',keys:['EXTRA_GLOBAL','IN_HEADLESS_MODE','PIHOLE','IOBROKER','PTERODACTYL','OCTOPRINT','DOCKER_COMPOSE','UNIFI','COMPOSE_PATH']},
@@ -308,7 +308,7 @@ PAGE = r"""<!doctype html>
       'Host':['Purpose: Select whether the Proxmox host is checked or updated. Default: both are enabled. Node actions always remain host-only; guest settings do not expand them.'],
       'Containers / LXC':['Purpose: Choose whether LXC containers are checked or updated and which running/stopped states are included. Defaults: all listed LXC checks/updates are enabled.','Start delay: seconds before a stopped LXC is checked or updated; default 5, and 0 means no extra delay. Backup mount points applies to backup protection, not checking.'],
       'Virtual Machines':['Purpose: Choose whether VMs are checked or updated and which running/stopped/paused states are included. Defaults: all listed VM checks/updates are enabled.','Start delay: seconds before a stopped QEMU VM is handled; default 45, and 0 means no extra delay. Paused VMs are never resumed by Initial Inventory.'],
-      'Target filters':['Only limits the check or update to targets with this tag. Leave it empty to include all matching targets. Examples: check-only and update-only.','Exclude excludes targets with this tag. If Only is empty, all matching targets are included except excluded ones. Examples: check-exclude and update-exclude.','Only and Exclude are separate for checking and updating; the live preview uses the same selector as the runtime. Opening or changing the preview does not contact any target.'],
+      'Target filters':['Only names an optional Proxmox tag. It becomes active only when at least one eligible target matches it; with zero matches, all eligible targets are used.','Exclude always removes matching targets after the effective selection. Examples: check-exclude and update-exclude.','Only and Exclude are separate for checking and updating; the live preview uses the same selector as the runtime. Opening or changing the preview does not contact any target.'],
       'General update behavior':['Reboot if needed defaults to enabled; it permits the existing updater reboot-required handling and never makes the Web UI reboot a host automatically. Continue after errors defaults to disabled.','Version check defaults to enabled and only checks for newer Ultimate Updater code; it is not a system package check.','SSH port default: 22. It is the configured port for internal/remote updater SSH connections; VM-specific Internal SSH settings may override it.','Internet check defaults to command ping and address google.com. It runs before an update starts, retries briefly up to three times, and blocks the update if all attempts fail.'],
       'Advanced settings':['FreeBSD updates default to disabled and only affect supported FreeBSD/pfSense-style update paths. Linux package-manager behavior is not implied.','Phased updates default to disabled; when enabled, the existing apt update path may include packages held back by phased rollout.','Fstrim defaults to disabled. The mount-point option defaults to enabled and only matters when fstrim is enabled.','Pacman environment is an optional command prefix, for example env http_proxy=http://proxy:8080. Leave empty for no prefix. Helper scripts default to enabled and use the existing updater script locations.'],
       'Extra updates':['Extra updates default to enabled globally; individual services are enabled by default in the distributed configuration. A service is only processed when its own toggle is enabled.','Headless mode defaults to disabled and controls whether extra-update commands run without interactive output. Compose search path defaults to /home and may be set to another absolute path such as /opt.'],
@@ -325,7 +325,7 @@ PAGE = r"""<!doctype html>
     function configField(key,values,compact=false){const label=document.createElement('label');label.className=`config-field${configBooleanKeys.includes(key)?' boolean-field':''}${configNumberKeys.includes(key)?' numeric-field':''}${compact?' matrix-control':''}`;if(compact)label.title=configLabels[key]||key;const caption=document.createElement('span');caption.className='field-label';caption.textContent=configLabels[key]||key;const input=key==='BACKUP_MODE'?document.createElement('select'):document.createElement('input');input.name=key;input.dataset.key=key;if(configBooleanKeys.includes(key)){input.type='checkbox';input.checked=values[key]===true;label.append(input,caption)}else if(key==='BACKUP_MODE'){const current=values[key]||'';['stop','suspend','snapshot'].forEach(option=>{const item=document.createElement('option');item.value=option;item.textContent=option;input.appendChild(item)});if(current&&!['stop','suspend','snapshot'].includes(current)){const item=document.createElement('option');item.value=current;item.textContent=`Legacy value: ${current}`;input.appendChild(item)}input.value=current||'stop';label.append(caption,input)}else{input.type=configNumberKeys.includes(key)?'number':'text';input.value=values[key]??'';if(input.type==='number'){input.min=key==='SSH_PORT'?'1':'0';if(key==='SSH_PORT')input.max='65535'}label.append(caption,input);if(configNumberKeys.includes(key)){const unit=document.createElement('span');unit.className='field-unit';unit.textContent=key==='KEEP_SNAPSHOTS'?'snapshots':key==='SSH_PORT'?'TCP port':'seconds';label.append(unit)}else if(key==='BACKUP_STORAGE'){const unit=document.createElement('span');unit.className='field-unit';unit.textContent='Proxmox storage ID, e.g. pbs';label.append(unit)}}return label}
     function configMatrix(groupData,values){const wrap=document.createElement('div');wrap.className='check-update-layout';const matrix=document.createElement('div');matrix.className='check-update-matrix';matrix.setAttribute('role','table');const header=document.createElement('div');header.className='matrix-row';const blank=document.createElement('span');blank.className='matrix-label';const checkHead=document.createElement('span');checkHead.className='matrix-cell matrix-head';checkHead.textContent='Check';const updateHead=document.createElement('span');updateHead.className='matrix-cell matrix-head';updateHead.textContent='Update';header.append(blank,checkHead,updateHead);matrix.appendChild(header);groupData.matrix.forEach(row=>{const item=document.createElement('div');item.className='matrix-row';const label=document.createElement('span');label.className='matrix-label';label.textContent=row.label;const check=document.createElement('span');check.className='matrix-cell';check.appendChild(configField(row.check,values,true));const update=document.createElement('span');update.className='matrix-cell';if(row.update)update.appendChild(configField(row.update,values,true));else{const dash=document.createElement('span');dash.className='matrix-empty';dash.textContent='—';update.appendChild(dash)}item.append(label,check,update);matrix.appendChild(item)});wrap.appendChild(matrix);if(groupData.extras){const extras=document.createElement('div');extras.className='matrix-extras';groupData.extras.forEach(key=>{const field=configField(key,values);if(configNumberKeys.includes(key)){const row=document.createElement('div');row.className='matrix-extra-row';const caption=field.querySelector('.field-label');caption.className='delay-label';const control=document.createElement('span');control.className='delay-control';control.append(field.querySelector('input'),field.querySelector('.field-unit'));row.append(caption,control);extras.appendChild(row)}else extras.appendChild(field)});wrap.appendChild(extras)}return wrap}
     const filterPreviewTimers={};
-    function renderFilterPreview(data,scope){const box=document.getElementById(`${scope}-filter-preview`);if(!box)return;if(!data?.available){box.innerHTML='<div class="filter-preview-note">Target preview unavailable until the initial inventory has completed.</div>';return}const p=data.preview||{},included=p.included||[],excluded=p.excluded||[],unknown=p.unknown||[],mode=p.mode;let summary=scope==='update'?(mode==='only'?`${included.length} targets selected for update`:mode==='exclude'?`${included.length} targets selected for update · ${excluded.length} excluded`:`${included.length} targets selected for update`):(mode==='only'?`${included.length} targets selected for check`:mode==='exclude'?`${included.length} targets will be checked · ${excluded.length} excluded`:`${included.length} targets will be checked`);const detail=(title,items,klass)=>items.length?`<section><h4>${title}</h4><div class="filter-preview-list">${items.map(item=>`<div class="${klass||''}">${klass==='excluded'?'✕':'✓'} ${esc(item.label)}</div>`).join('')}</div></section>`:'';const unknownHtml=unknown.length?`<section><h4>Not currently found</h4><div class="filter-preview-list"><div class="unknown">⚠ ${unknown.map(esc).join(', ')}</div></div></section>`:'';box.innerHTML=`<button type="button" class="filter-preview-toggle" aria-expanded="false"><span class="filter-preview-chevron" aria-hidden="true"></span><span>✓ ${summary}</span></button><div class="filter-preview-details">${detail(mode==='only'?'Selected':'Included',included,'')}${detail('Excluded',excluded,'excluded')}${mode==='only'&&excluded.length?'<section><h4>Exclude</h4><div class="filter-preview-note">Ignored while ONLY is active.</div></section>':''}${unknownHtml}</div>`;const toggle=box.querySelector('.filter-preview-toggle');toggle.onclick=()=>{const open=box.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open))}}
+    function renderFilterPreview(data,scope){const box=document.getElementById(`${scope}-filter-preview`);if(!box)return;if(!data?.available){box.innerHTML='<div class="filter-preview-note">Target preview unavailable until the initial inventory has completed.</div>';return}const p=data.preview||{},included=p.included||[],excluded=p.excluded||[],unknown=p.unknown||[],mode=p.mode,configured=p.only_configured||'',matches=Number.isInteger(p.only_matches)?p.only_matches:0,active=Boolean(p.only_active);let summary=scope==='update'?`${included.length} targets selected for update`:`${included.length} targets selected for check`;const effective=active?`Only configured: ${esc(configured)} · matches: ${matches} · effective selection: only matching targets`:(configured?`Only configured: ${esc(configured)} · matches: 0 · effective selection: all eligible targets`:'Effective selection: all eligible targets');const detail=(title,items,klass)=>items.length?`<section><h4>${title}</h4><div class="filter-preview-list">${items.map(item=>`<div class="${klass||''}">${klass==='excluded'?'✕':'✓'} ${esc(item.label)}</div>`).join('')}</div></section>`:'';const unknownHtml=unknown.length?`<section><h4>Not currently found</h4><div class="filter-preview-list"><div class="unknown">⚠ ${unknown.map(esc).join(', ')}</div></div></section>`:'';box.innerHTML=`<button type="button" class="filter-preview-toggle" aria-expanded="false"><span class="filter-preview-chevron" aria-hidden="true"></span><span>✓ ${summary}</span></button><div class="filter-preview-details"><section><h4>Selection</h4><div class="filter-preview-note">${effective}. Exclude is always applied afterwards.</div></section>${detail(active?'Selected':'Included',included,'')}${detail('Excluded',excluded,'excluded')}${unknownHtml}</div>`;const toggle=box.querySelector('.filter-preview-toggle');toggle.onclick=()=>{const open=box.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open))}}
     async function loadFilterPreview(form,scope){const keys=scope==='update'?['ONLY','EXCLUDE']:['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK'],only=form?.querySelector(`[data-key="${keys[0]}"]`)?.value||'',exclude=form?.querySelector(`[data-key="${keys[1]}"]`)?.value||'',box=document.getElementById(`${scope}-filter-preview`);if(box)box.innerHTML='<div class="filter-preview-note">Loading target preview…</div>';try{const query=new URLSearchParams({scope,only,exclude});const data=await api(`/api/config-preview?${query.toString()}`);renderFilterPreview(data,scope)}catch(error){if(box)box.innerHTML='<div class="filter-preview-note">Target preview is currently unavailable.</div>'}}
     function scheduleFilterPreview(form,scope){clearTimeout(filterPreviewTimers[scope]);filterPreviewTimers[scope]=setTimeout(()=>loadFilterPreview(form,scope),250)}
     function buildConfigForm(values){const form=document.getElementById('config-form');form.innerHTML='';form.dataset.initialConfig=JSON.stringify(values);for(const groupData of configGroups){const group=document.createElement('section');group.className='settings-group';const heading=document.createElement('div');heading.className='settings-heading';const title=document.createElement('h3');title.textContent=groupData.title;heading.appendChild(title);if(helpContent[groupData.title])heading.appendChild(createHelpControl(groupData.title,helpContent[groupData.title]));group.appendChild(heading);const hint=document.createElement('p');hint.textContent=groupData.hint;group.appendChild(hint);if(groupData.filterGroups){const scopes=document.createElement('div');scopes.className='filter-scopes';groupData.filterGroups.forEach(scopeData=>{const scope=document.createElement('section');scope.className='filter-scope';const scopeTitle=document.createElement('h4');scopeTitle.textContent=scopeData.title;scope.appendChild(scopeTitle);const fields=document.createElement('div');fields.className='config-fields';scopeData.keys.forEach(key=>fields.appendChild(configField(key,values)));scope.appendChild(fields);const preview=document.createElement('div');preview.id=`${scopeData.preview}-filter-preview`;preview.className='filter-preview';scope.appendChild(preview);scopes.appendChild(scope)});group.appendChild(scopes)}else if(groupData.matrix){group.appendChild(configMatrix(groupData,values))}else if(groupData.columns){const columns=document.createElement('div');columns.className='settings-columns';groupData.columns.forEach(keys=>{const column=document.createElement('div');column.className='settings-column';keys.forEach(key=>column.appendChild(configField(key,values)));columns.appendChild(column)});group.appendChild(columns)}else{const fields=document.createElement('div');fields.className='config-fields';groupData.keys.forEach(key=>fields.appendChild(configField(key,values)));group.appendChild(fields)}form.appendChild(group)}const actions=document.createElement('div');actions.className='config-actions';actions.innerHTML='<button type="submit" class="primary">Save settings</button><button type="button" id="config-close">Cancel</button>';form.appendChild(actions);form.querySelectorAll('[data-key="ONLY_UPDATE_CHECK"],[data-key="EXCLUDE_UPDATE_CHECK"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'check')));form.querySelectorAll('[data-key="ONLY"],[data-key="EXCLUDE"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'update')));loadFilterPreview(form,'check');loadFilterPreview(form,'update');form.onsubmit=async e=>{e.preventDefault();const initial=JSON.parse(form.dataset.initialConfig||'{}'),next={};for(const input of form.querySelectorAll('[data-key]')){const value=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value,previous=initial[input.dataset.key]??'';if(value!==previous)next[input.dataset.key]=value}if(!Object.keys(next).length){setConfigOpen(false);return}try{const d=await api('/api/config',{method:'POST',body:JSON.stringify({values:next})});buildConfigForm(d.config);setConfigOpen(false);managementMessage('config-message','Configuration saved.')}catch(error){managementMessage('config-message',error.message,true)}};document.getElementById('config-close').onclick=()=>setConfigOpen(false)}
@@ -769,6 +769,7 @@ def canonical_inventory(payload, inventory, proxmox_resources=None, backup_state
         base = {"id": target_id, "type": "lxc" if kind == "lxc" else "vm",
                 "transport": "pct" if kind == "lxc" else "qga",
                 "name": resource.get("name") or target_id, "node": node,
+                "status": resource.get("status"),
                 "reachable": False if node_status == "offline" else None,
                 "check_status": "offline" if node_status == "offline" else "unknown"}
         targets.append(merge(base, status))
@@ -790,7 +791,7 @@ def canonical_inventory(payload, inventory, proxmox_resources=None, backup_state
     return projected
 
 
-def resolve_filter_ids(only, exclude, tag_filter):
+def resolve_filter_ids(only, exclude, tag_filter, eligible_ids=None, scope="update"):
     """Resolve the existing Proxmox tag filter without contacting targets."""
     if not tag_filter.is_file():
         raise ValueError("The tag filter is unavailable.")
@@ -802,6 +803,9 @@ def resolve_filter_ids(only, exclude, tag_filter):
     environment = os.environ.copy()
     environment["ONLY"] = only
     environment["EXCLUDE"] = exclude
+    environment["UU_FILTER_SCOPE"] = scope
+    if eligible_ids is not None:
+        environment["UU_FILTER_ELIGIBLE_IDS"] = " ".join(sorted(eligible_ids))
     result = subprocess.run(
         ["bash", "-c", script, "ultimate-updater-filter", str(tag_filter)],
         capture_output=True, text=True, timeout=10, env=environment, check=False,
@@ -816,6 +820,46 @@ def filter_tokens(value):
     return [token for token in re.split(r"[\s,;|]+", value.strip()) if token]
 
 
+def preview_eligible_ids(targets, config, scope):
+    """Mirror the runtime's type/state eligibility before tag filtering."""
+    if scope == "check":
+        enabled = {
+            "lxc": config.get("CHECK_WITH_LXC", "true"),
+            "vm": config.get("CHECK_WITH_VM", "true"),
+        }
+        states = {
+            "lxc": {"running": config.get("CHECK_RUNNING_CONTAINER", "true"),
+                    "stopped": config.get("CHECK_STOPPED_CONTAINER", "true")},
+            "vm": {"running": config.get("CHECK_RUNNING_VM", "true"),
+                   "stopped": config.get("CHECK_STOPPED_VM", "true"),
+                   "paused": config.get("CHECK_PAUSED_VM", "true")},
+        }
+    else:
+        enabled = {
+            "lxc": config.get("WITH_LXC", "true"),
+            "vm": config.get("WITH_VM", "true"),
+        }
+        states = {
+            "lxc": {"running": config.get("RUNNING_CONTAINER", "true"),
+                    "stopped": config.get("STOPPED_CONTAINER", "true")},
+            "vm": {"running": config.get("RUNNING_VM", "true"),
+                   "stopped": config.get("STOPPED_VM", "true")},
+        }
+    eligible = set()
+    for item in targets:
+        kind = str(item.get("type", "")).lower()
+        if kind not in {"lxc", "vm"} or not str(item.get("id", "")).isdigit():
+            continue
+        if str(enabled[kind]).lower() != "true":
+            continue
+        state = str(item.get("status", "")).lower()
+        if state and state in states[kind] and str(states[kind][state]).lower() != "true":
+            continue
+        if state in states[kind] or not state:
+            eligible.add(str(item["id"]))
+    return eligible
+
+
 def target_preview(payload, config, tag_filter, inventory, proxmox_resources=None,
                    filter_keys=("ONLY_UPDATE_CHECK", "EXCLUDE_UPDATE_CHECK")):
     projected = canonical_inventory(payload, inventory, proxmox_resources)
@@ -825,9 +869,13 @@ def target_preview(payload, config, tag_filter, inventory, proxmox_resources=Non
     only_key, exclude_key = filter_keys
     only = str(config.get(only_key) or "")
     exclude = str(config.get(exclude_key) or "")
-    resolved_only, resolved_exclude = resolve_filter_ids(only, exclude, tag_filter)
+    eligible_ids = preview_eligible_ids(targets, config, "check" if filter_keys[0].startswith("ONLY_UPDATE") else "update")
+    resolved_only, resolved_exclude = resolve_filter_ids(
+        only, exclude, tag_filter, eligible_ids, "check" if filter_keys[0].startswith("ONLY_UPDATE") else "update",
+    )
     selected_ids = set(resolved_only)
     excluded_ids = set(resolved_exclude)
+    only_active = bool(selected_ids)
     external_ids = {str(item.get("id", "")).lower() for item in inventory
                     if item.get("transport") == "ssh"}
     only_external_ids = {token.lower() for token in filter_tokens(only)} & external_ids
@@ -839,10 +887,10 @@ def target_preview(payload, config, tag_filter, inventory, proxmox_resources=Non
     def selected(item):
         item_id = str(item.get("id", ""))
         if str(item.get("type", "")).lower() in {"lxc", "vm"}:
-            return ((not only) or item_id in selected_ids) and item_id not in excluded_ids
+            return ((not only_active) or item_id in selected_ids) and item_id not in excluded_ids
         item_id = item_id.lower()
-        return ((not only) or item_id in only_external_ids) and item_id not in excluded_external_ids
-    if only:
+        return ((not only_active) or item_id in only_external_ids) and item_id not in excluded_external_ids
+    if only_active:
         included = [item for item in targets if not filterable(item) or selected(item)]
         excluded = [item for item in targets if filterable(item) and not selected(item)]
         mode = "only"
@@ -863,12 +911,17 @@ def target_preview(payload, config, tag_filter, inventory, proxmox_resources=Non
         return {"label": label or str(item.get("id", "")), "type": kind}
 
     known_tokens = set(resolved_only) | set(resolved_exclude) | external_ids
-    raw_tokens = filter_tokens(only) + filter_tokens(exclude)
-    unknown = [token for token in raw_tokens
+    raw_tokens = [(token, True) for token in filter_tokens(only)] + [(token, False) for token in filter_tokens(exclude)]
+    unknown = [token for token, from_only in raw_tokens
+               if not (from_only and not token.isdigit())
                if (token.isdigit() and token not in known_ids)
                or (not token.isdigit() and token.lower() not in known_tokens)]
     return {
         "mode": mode,
+        "only_configured": only,
+        "only_matches": len(selected_ids),
+        "only_active": only_active,
+        "effective_selection": "only-matches" if only_active else "all-eligible",
         "included": [public_item(item) for item in included],
         "excluded": [public_item(item) for item in excluded],
         "unknown": unknown,

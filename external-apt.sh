@@ -261,7 +261,8 @@ only=$(config_value ONLY)
 exclude=$(config_value EXCLUDE)
 if [ -n "$only" ]; then
   filter_match "$only" "$target_name" || { printf 'EXTERNAL_FILTERED: excluded by local update filter\n'; exit 0; }
-elif [ -n "$exclude" ] && filter_match "$exclude" "$target_name"; then
+fi
+if [ -n "$exclude" ] && filter_match "$exclude" "$target_name"; then
   printf 'EXTERNAL_FILTERED: excluded by local update filter\n'
   exit 0
 fi
