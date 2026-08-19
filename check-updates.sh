@@ -828,13 +828,14 @@ CHECK_CONTAINER () {
   else
     CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' $LOCAL_FILES/temp/var)
   fi
-  local CONTAINER_UPDATES=0 CONTAINER_STATUS=ok CONTAINER_REBOOT=false
+  local CONTAINER_UPDATES=0 CONTAINER_STATUS=ok CONTAINER_REBOOT=false pct_config_error
   STATUS_MODEL_GUEST_NAME=""
   if declare -f cluster_target_guest_name >/dev/null 2>&1; then
     STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$CONTAINER" 2>/dev/null || true)
   fi
-  if ! pct config "$CONTAINER" > "$LOCAL_FILES/temp/temp"; then
-    CHECK_CONTAINER_FAILURE "Could not read configuration for LXC $CONTAINER"
+  if ! pct config "$CONTAINER" > "$LOCAL_FILES/temp/temp" 2>"$LOCAL_FILES/temp/pct-config.error"; then
+    pct_config_error=$(tr '\n' ' ' < "$LOCAL_FILES/temp/pct-config.error" 2>/dev/null | sed 's/[[:space:]]\+/ /g' | cut -c1-300)
+    CHECK_CONTAINER_FAILURE "Could not read configuration for LXC $CONTAINER${pct_config_error:+: $pct_config_error}"
     return
   fi
   OS=$(awk '/^ostype/' $LOCAL_FILES/temp/temp | cut -d' ' -f2)
@@ -1011,7 +1012,7 @@ VM_CHECK_START () {
 
 # VM Check
 CHECK_VM () {
-  local IP USER SSH_VM_PORT SSH_START_DELAY_TIME
+  local IP USER SSH_VM_PORT SSH_START_DELAY_TIME ssh_profile_configured=false ssh_error
   REBOOT_REQUIRED=false
   if [[ "$RDU" != true ]]; then
     VM=$1
@@ -1023,6 +1024,7 @@ CHECK_VM () {
     STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$VM" 2>/dev/null || true)
   fi
   if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
+    ssh_profile_configured=true
     IP=$(awk -F'"' '/^IP=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
     USER=$(awk -F'"' '/^USER=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
     USER="${USER:-root}"
@@ -1031,6 +1033,10 @@ CHECK_VM () {
     SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
     SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "$SSH_START_DELAY_TIME")
     SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-$VM_START_DELAY}"
+  fi
+  if declare -f INTERNAL_SSH_HAS_OVERRIDE >/dev/null 2>&1 &&
+    INTERNAL_SSH_HAS_OVERRIDE vm "$VM"; then
+    ssh_profile_configured=true
   fi
   INTERNAL_SSH_RESOLVE_VM "$VM" "${IP:-}" "${USER:-root}" "${SSH_VM_PORT:-22}" || return 1
   [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
@@ -1041,7 +1047,14 @@ CHECK_VM () {
     CHECK_VM_QEMU
     return
   fi
-  if ! RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "true" >/dev/null 2>&1; then
+  if ! ssh_error=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "true" 2>&1); then
+    ssh_error=$(printf '%s' "$ssh_error" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | cut -c1-300)
+    if [[ "$ssh_profile_configured" == true ]]; then
+      STATUS_MODEL_RECORD "$VM" vm ssh false "" "" "null" "null" error SSH_TRANSPORT \
+        "Internal SSH connection failed for VM $VM${ssh_error:+: $ssh_error}" \
+        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 1
+    fi
     CHECK_VM_QEMU
     return
   fi

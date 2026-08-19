@@ -1754,7 +1754,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         if parts == ["api", "updater-update"]:
             self.action_updater_update(payload)
             return
-        self.send_json(error_payload("METHOD_NOT_ALLOWED", "Only defined check and update actions are available."), HTTPStatus.METHOD_NOT_ALLOWED)
+        self.send_json(error_payload("UNSUPPORTED_ACTION", "Unsupported API action."), HTTPStatus.METHOD_NOT_ALLOWED)
 
     def action_check(self, target):
         if not self.valid_target(target):

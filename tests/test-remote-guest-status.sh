@@ -20,6 +20,9 @@ fi
 grep -Fq 'REMOTE_STATUS_MISSING' "$SOURCE"
 grep -Fq 'REMOTE_STATUS_INVALID' "$SOURCE"
 grep -Fq 'Remote guest status is invalid' "$SOURCE"
+grep -Fq 'SSH_TRANSPORT' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'pct-config.error' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'target.get("error")' "$SOURCE"
 # The source assertion intentionally matches shell parameter syntax literally.
 # shellcheck disable=SC2016
 grep -Fq 'STATUS_MODEL_IMPORT_FILE "${local_file}.filtered" 2>/dev/null' "$SOURCE"
@@ -33,5 +36,6 @@ if grep -Fq 'Inventory target<select' "$WEB"; then
     exit 1
 fi
 grep -Fq 'class="ssh-enabled-field"' "$WEB"
+grep -Fq 'Unsupported API action.' "$WEB"
 
 echo "remote guest status and Internal SSH UX tests: PASS"
