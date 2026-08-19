@@ -170,6 +170,9 @@ assert ".config-field.boolean-field { width:fit-content; max-width:100%; justify
 assert ".config-field.boolean-field:hover" in page
 assert ".node-group .group-status" in page
 assert ".node-group .group-status { display:flex" in page
+assert ".node-group .group-header { grid-template-columns:32px minmax(0,1fr); grid-template-rows:auto auto;" in page
+assert ".node-group .group-title strong,.node-group .group-title small { white-space:nowrap;" in page
+assert ".node-group .group-status { grid-column:2; grid-row:2;" in page
 assert "${statusBadges}" in source
 assert ".node-group .group-updates" in page
 assert ".node-group .group-actions" in page
