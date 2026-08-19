@@ -18,12 +18,12 @@ if grep -Fq 'install -m 0640 '\''$remote_config'\'' '\''$LOCAL_FILES/update.conf
   echo 'remote check-node still writes the central config into /etc on the target' >&2
   exit 1
 fi
-grep -Fq 'bash -s -- node-host' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'bash -s -- host' "$ROOT_DIR/check-updates.sh"
 if grep -Fq 'bash %q node-host' "$ROOT_DIR/ultimate-updater"; then
   echo 'remote check-node still depends on an installed remote check script' >&2
   exit 1
 fi
-grep -Fq 'UU_CHECK_SCOPE=host TAG_FILTER_FILE=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'TAG_FILTER_FILE=' "$ROOT_DIR/check-updates.sh"
 grep -Fq '"${UU_CHECK_SCOPE:-}" != host && "$WITH_LXC" == true' "$ROOT_DIR/check-updates.sh"
 grep -Fq '"${UU_CHECK_SCOPE:-}" != host && "$WITH_VM" == true' "$ROOT_DIR/check-updates.sh"
 

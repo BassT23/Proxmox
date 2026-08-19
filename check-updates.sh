@@ -93,13 +93,13 @@ STATUS_MODEL_DIAGNOSTIC() {
   fi
 }
 
-# Central remote phases must remain visible even when the optional diagnostic
-# file is not configured. Prefer the structured journal; otherwise use the
-# central job log via stderr. Never emit these markers from the remote shell.
+# Central remote phases are diagnostic data. Keep them in the structured
+# diagnostics artifact and only expose them in the normal log in DEBUG mode.
+# User-facing failures are reported separately with their concrete cause.
 CENTRAL_REMOTE_PHASE() {
   local message="$*"
   STATUS_MODEL_DIAGNOSTIC "$message"
-  if [[ -z "${STATUS_MODEL_DIAGNOSTICS_FILE:-}" && "${DEBUG:-false}" != true ]]; then
+  if [[ "${DEBUG:-false}" == true && -z "${STATUS_MODEL_DIAGNOSTICS_FILE:-}" ]]; then
     printf '%s\n' "$message" >&2
   fi
 }
@@ -549,7 +549,7 @@ CHECK_HOST () {
     remote_status_env=" UU_JOB_SOURCE=initial-inventory REMOTE_JOB_SOURCE=initial-inventory REMOTE_INITIAL_INVENTORY=true$remote_status_env"
   fi
   if CHECK_REMOTE_JOB_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" \
-    "printf '%s\\n' \"REMOTE_CHECK_START node=$HOST_NODE\" >> '$remote_diagnostics_file'; UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env timeout '$remote_job_timeout' bash -s -- node-host; remote_rc=\$?; printf '%s\\n' \"REMOTE_CHECK_RETURN node=$HOST_NODE rc=\$remote_rc\" >> '$remote_diagnostics_file'; finish_rc=0; finish_error_file='$remote_check_dir/status-finish.error'; printf '%s\\n' \"STATUS_MODEL_FINISH_START node=$HOST_NODE script=$remote_check_dir/status-model.sh file=$remote_check_dir/status.json records=$remote_check_dir/status.records\" >> '$remote_diagnostics_file'; if [[ -f '$remote_check_dir/status-model.sh' ]]; then STATUS_MODEL_NODE='$HOST_NODE'; STATUS_MODEL_FILE='$remote_check_dir/status.json'; STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'; . '$remote_check_dir/status-model.sh'; STATUS_MODEL_FINISH >/dev/null 2>\"\$finish_error_file\" || finish_rc=\$?; else finish_rc=1; printf '%s\\n' 'status-model script missing' > \"\$finish_error_file\"; fi; finish_reason=none; if [[ -s \"\$finish_error_file\" ]]; then finish_reason=\$(tr '\\n' ' ' < \"\$finish_error_file\" | cut -c1-500); fi; finish_exists=false; [[ -s '$remote_check_dir/status.json' ]] && finish_exists=true; finish_size=0; [[ -e '$remote_check_dir/status.json' ]] && finish_size=\$(stat -c '%s' '$remote_check_dir/status.json' 2>/dev/null || printf '0'); printf '%s\\n' \"STATUS_MODEL_FINISH_END node=$HOST_NODE rc=\$finish_rc exists=\$finish_exists size=\$finish_size reason=\$finish_reason\" >> '$remote_diagnostics_file'; if [[ \"\$remote_rc\" -eq 0 && \"\$finish_rc\" -ne 0 ]]; then remote_rc=\$finish_rc; fi;$remote_status_validation printf '%s\\n' \"COMPLETION_WRITE node=$HOST_NODE rc=\$remote_rc\" >> '$remote_diagnostics_file'; printf '%s\\n' \"\$remote_rc\" > '$remote_done_file'; rm -f -- \"\$finish_error_file\"; exit \"\$remote_rc\"" < "$0"; then
+    "printf '%s\\n' \"REMOTE_CHECK_START node=$HOST_NODE\" >> '$remote_diagnostics_file'; UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env timeout '$remote_job_timeout' bash -s -- host; remote_rc=\$?; printf '%s\\n' \"REMOTE_CHECK_RETURN node=$HOST_NODE rc=\$remote_rc\" >> '$remote_diagnostics_file'; finish_rc=0; finish_error_file='$remote_check_dir/status-finish.error'; printf '%s\\n' \"STATUS_MODEL_FINISH_START node=$HOST_NODE script=$remote_check_dir/status-model.sh file=$remote_check_dir/status.json records=$remote_check_dir/status.records\" >> '$remote_diagnostics_file'; if [[ -f '$remote_check_dir/status-model.sh' ]]; then STATUS_MODEL_NODE='$HOST_NODE'; STATUS_MODEL_FILE='$remote_check_dir/status.json'; STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'; . '$remote_check_dir/status-model.sh'; STATUS_MODEL_FINISH >/dev/null 2>\"\$finish_error_file\" || finish_rc=\$?; else finish_rc=1; printf '%s\\n' 'status-model script missing' > \"\$finish_error_file\"; fi; finish_reason=none; if [[ -s \"\$finish_error_file\" ]]; then finish_reason=\$(tr '\\n' ' ' < \"\$finish_error_file\" | cut -c1-500); fi; finish_exists=false; [[ -s '$remote_check_dir/status.json' ]] && finish_exists=true; finish_size=0; [[ -e '$remote_check_dir/status.json' ]] && finish_size=\$(stat -c '%s' '$remote_check_dir/status.json' 2>/dev/null || printf '0'); printf '%s\\n' \"STATUS_MODEL_FINISH_END node=$HOST_NODE rc=\$finish_rc exists=\$finish_exists size=\$finish_size reason=\$finish_reason\" >> '$remote_diagnostics_file'; if [[ \"\$remote_rc\" -eq 0 && \"\$finish_rc\" -ne 0 ]]; then remote_rc=\$finish_rc; fi;$remote_status_validation printf '%s\\n' \"COMPLETION_WRITE node=$HOST_NODE rc=\$remote_rc\" >> '$remote_diagnostics_file'; printf '%s\\n' \"\$remote_rc\" > '$remote_done_file'; rm -f -- \"\$finish_error_file\"; exit \"\$remote_rc\"" < "$0"; then
     remote_status=0
   else
     remote_status=$?

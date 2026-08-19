@@ -163,7 +163,7 @@ READ_VERSION_CACHE() {
 }
 
 # Store the last processed message; caller prints when desired.
-_record_tag_log() { TAG_FILTER_LAST_LOG="$*"; }
+_record_tag_log() { TAG_FILTER_LAST_LOG+="$*"; }
 print_tag_log() { [[ -n ${TAG_FILTER_LAST_LOG:-} ]] && printf "%b" "$TAG_FILTER_LAST_LOG"; }
 
 apply_only_exclude_tags() {

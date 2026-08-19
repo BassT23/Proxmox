@@ -39,6 +39,18 @@ export UU_FILTER_ELIGIBLE_IDS="101 102"
 apply_only_exclude_tags ONLY EXCLUDE
 [[ "$ONLY" == "101" && "$EXCLUDE" == "102" ]]
 
+ONLY="112 230 310"
+EXCLUDE="230"
+export UU_FILTER_ELIGIBLE_IDS="112 230 310"
+TAG_FILTER_LAST_LOG=""
+apply_only_exclude_tags ONLY EXCLUDE
+[[ "$ONLY" == "112 230 310" && "$EXCLUDE" == "230" ]]
+log=$(print_tag_log)
+grep -Fq "Selection (ONLY='112 230 310')" <<<"$log"
+grep -Fq "Exclusion (EXCLUDE='230')" <<<"$log"
+guest_id_matches "$ONLY" 112
+if guest_id_matches "$ONLY" 230 && guest_id_matches "$EXCLUDE" 230; then :; else exit 1; fi
+
 # Removing the last matching Proxmox tag falls back to all eligible targets;
 # the configured tag name itself is not changed by this runtime decision.
 ONLY="101"
