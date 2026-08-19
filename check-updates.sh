@@ -307,8 +307,7 @@ READ_WRITE_CONFIG () {
   RUNNING_VM=$(awk -F'"' '/^CHECK_RUNNING_VM=/ {print $2}' $CONFIG_FILE)
   STOPPED_VM=$(awk -F'"' '/^CHECK_STOPPED_VM=/ {print $2}' $CONFIG_FILE)
   PAUSED_VM=$(awk -F'"' '/^CHECK_PAUSED_VM=/ {print $2}' $CONFIG_FILE)
-  REBOOT_IF_NEEDED=$(awk -F'"' '/^REBOOT_IF_NEEDED=/ {print $2}' "$CONFIG_FILE")
-  REBOOT_IF_NEEDED="${REBOOT_IF_NEEDED:-true}"
+  # REBOOT_IF_NEEDED belongs to update.sh; checks only report reboot_required.
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
@@ -1008,16 +1007,28 @@ VM_CHECK_START () {
             echo -e "${RD}Skipping VM $VM because QEMU Guest Agent is not ready${CL}"
             STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" offline QGA_NOT_READY "QEMU Guest Agent was not ready"
           fi
-          # Stop/Suspend VM
-          qm stop "$VM"
+          # Restore the original stopped state even when CHECK_VM failed.
+          if ! qm stop "$VM"; then
+            CHECK_FAILURE=1
+            STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "Could not restore stopped state for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+          elif [[ "$(timeout 10 qm status "$VM" 2>/dev/null)" != "status: stopped" ]]; then
+            CHECK_FAILURE=1
+            STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "VM $VM did not return to stopped state" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+          fi
           SUSPEND=
         elif [[ "$STATUS" == "status: paused" && "$PAUSED_VM" == true ]]; then
           # Start VM
           qm resume "$VM" >/dev/null 2>&1
           sleep "$SSH_START_DELAY_TIME"
           CHECK_VM "$VM"
-          # Suspend VM
-          qm suspend "$VM"
+          # Restore the original paused state even when CHECK_VM failed.
+          if ! qm suspend "$VM"; then
+            CHECK_FAILURE=1
+            STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "Could not restore paused state for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+          elif [[ "$(timeout 10 qm status "$VM" 2>/dev/null)" != "status: paused" ]]; then
+            CHECK_FAILURE=1
+            STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "VM $VM did not return to paused state" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+          fi
         elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
           VM_NOT_STOPPED=true
           CHECK_VM "$VM"
@@ -1108,9 +1119,8 @@ CHECK_VM () {
       elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
         echo -e "N: $NORMAL_APT_UPDATES"
       fi
-      if [[ "$REBOOT_REQUIRED" == true ]] && [[ "$REBOOT_IF_NEEDED" == true ]] && [[ "$VM_NOT_STOPPED" == true ]]; then
-        RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "reboot" >/dev/null 2>&1
-      fi
+      # Checks only report reboot_required. Reboot execution belongs exclusively
+      # to the update runtime and must never occur in this function.
     elif [[ "$OS" =~ Fedora ]]; then
       UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "dnf check-update | grep -Ec ' updates$'")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")

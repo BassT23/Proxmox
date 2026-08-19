@@ -12,15 +12,17 @@ cat > "$WORK_DIR/pct" <<'EOF'
 case "${1:-}" in
   list) printf 'VMID Status\n912 stopped\n' ;;
   config) exit 0 ;;
-  status) printf 'status: stopped\n' ;;
-  start) exit 0 ;;
+  status) cat "$PCT_STATE" ;;
+  start) printf 'status: running\n' > "$PCT_STATE" ;;
   shutdown) exit 1 ;;
   *) exit 0 ;;
 esac
 EOF
 chmod 750 "$WORK_DIR/pct"
+printf 'status: stopped\n' > "$WORK_DIR/pct-state"
+export PCT_STATE="$WORK_DIR/pct-state"
 
-awk '/^CONTAINER_CHECK_START \(\) \{/{copy=1} /^# Container Check$/{exit} copy' \
+awk '/^## Container ##$/{copy=1} /^# Container Check$/{exit} copy' \
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/container-check.sh"
 
 PATH="$WORK_DIR:$PATH" bash -c '
@@ -47,4 +49,9 @@ PATH="$WORK_DIR:$PATH" bash -c '
   grep -Fq "LIFECYCLE_RESTORE_FAILED" "$LOCAL_FILES/lifecycle-record"
 ' _ "$WORK_DIR"
 
+# shellcheck disable=SC2016 # assert the literal forbidden shell fragment.
+if grep -Fq 'RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "reboot"' "$ROOT_DIR/check-updates.sh"; then
+  echo 'check path still reboots guests' >&2
+  exit 1
+fi
 echo 'lxc lifecycle failure fixture: PASS'
