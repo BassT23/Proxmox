@@ -75,6 +75,11 @@ assert "renderWithSplitSummary" in source
 assert "set('updates'," not in source
 assert "Status render failed" in source
 assert "The status view could not be rendered." in source
+assert ".target-row .target-status .pill" in source
+assert "@media (max-width:760px)" in source
+assert "grid-template-columns:repeat(3,minmax(0,1fr))" in source
+assert "grid-template-columns:repeat(2,minmax(0,1fr))" in source
+assert "overflow-wrap:anywhere" in source
 
 legacy = {"schema_version": 1, "targets": [{"id": "191", "type": "lxc", "updates": {"available": 18}}]}
 modern = {"schema_version": 1, "targets": [{"id": "191", "type": "lxc", "updates": {"available": 18}, "normal_updates": 14, "security_updates": 4}]}

@@ -191,6 +191,28 @@ PAGE = r"""<!doctype html>
     .global-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; margin:0 0 18px; padding:16px 18px; border:1px solid #73a7ff55; border-radius:16px; background:#19233f99; box-shadow:0 18px 50px #00000029 } .global-actions-copy { min-width:0 } .global-actions-copy strong { display:block; font-size:.92rem } .global-actions-copy span { display:block; margin-top:4px; color:var(--muted); font-size:.74rem } .global-actions-buttons { display:flex; flex-wrap:wrap; gap:9px } .global-action { min-height:42px; padding:10px 16px; font-weight:750; font-size:.84rem } .global-action.update-all { background:#73a7ff36; border-color:#73a7ffb8 } .global-action.check-all { background:#55d39a18; border-color:#55d39a77 }
     @media (max-width:760px) { .dashboard-header { padding:16px 14px 15px; margin-bottom:14px } .dashboard-header-top { display:block } .dashboard-brand .brand-header-art { width:min(270px,82vw) } .dashboard-meta { max-width:none; padding-top:0; margin-top:8px; text-align:left; font-size:.76rem } .dashboard-kpis { margin-top:14px } }
     @media (max-width:620px) { .global-actions { display:block; padding:14px } .global-actions-buttons { display:grid; grid-template-columns:1fr; margin-top:12px } .global-action { width:100% } }
+    /* Keep guest status separate from the update metrics.  The row can stay
+       compact on wide screens, but never compress the badge into the metric
+       columns when the available width gets smaller. */
+    .target-row { grid-template-columns:minmax(170px,1.35fr) minmax(190px,1.25fr) repeat(3,minmax(72px,.7fr)) minmax(150px,1fr) auto; }
+    .target-row .target-status { min-width:0; justify-content:flex-start; }
+    .target-row .target-status .pill { max-width:100%; overflow-wrap:anywhere; text-align:left; }
+    .target-row .target-field { min-width:0; }
+    .target-row .target-field strong,.target-row .target-label { min-width:0; overflow-wrap:anywhere; }
+    @media (max-width:1080px) and (min-width:761px) {
+      .target-row { grid-template-columns:minmax(150px,1.25fr) minmax(175px,1.15fr) repeat(3,minmax(68px,.7fr)) minmax(130px,.9fr) auto; gap:8px; }
+    }
+    @media (max-width:760px) {
+      .target-row { grid-template-columns:repeat(3,minmax(0,1fr)); align-items:start; gap:8px; padding:12px 10px; }
+      .target-row > :first-child,.target-row .target-status,.target-row .row-os,.target-row .row-last-check,.target-row .row-actions { grid-column:1 / -1; }
+      .target-row .target-status { display:flex; }
+      .target-row .target-field { display:flex; }
+      .target-row .row-actions { justify-content:flex-start; }
+      .target-row .row-actions button { min-height:38px; }
+    }
+    @media (max-width:430px) {
+      .target-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    }
   </style>
 </head>
 <body>
