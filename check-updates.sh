@@ -230,10 +230,10 @@ ARGUMENTS () {
         COMMAND=true
         OUTPUT_TO_FILE
         if [[ -n "${2:-}" ]]; then
-          if CHECK_CONTAINER "$2"; then check_rc=0; else check_rc=$?; fi
+          if CHECK_SINGLE_CONTAINER "$2"; then check_rc=0; else check_rc=$?; fi
           shift
         else
-          if CHECK_CONTAINER; then check_rc=0; else check_rc=$?; fi
+          if CHECK_SINGLE_CONTAINER "$CONTAINER"; then check_rc=0; else check_rc=$?; fi
         fi
         [[ "$check_rc" -eq 0 ]] || CHECK_FAILURE=1
         ;;
@@ -948,6 +948,74 @@ CHECK_CONTAINER () {
   fi
   [[ "$CONTAINER_UPDATES" -gt 0 ]] && CONTAINER_STATUS=updates_available
   STATUS_MODEL_RECORD "$CONTAINER" lxc pct true "$OS" "${OS,,}" "$CONTAINER_UPDATES" "$CONTAINER_REBOOT" "$CONTAINER_STATUS" "" ""
+}
+
+# Single-target checks use the same lifecycle contract as check-all.  This is
+# also executed on the owner node by the remote-check wrapper, so every pct
+# command below runs in the correct Proxmox context.
+CHECK_SINGLE_CONTAINER () {
+  local target="$1" status check_rc=0 lifecycle_failure=0 lifecycle_message
+  CONTAINER="$target"
+  if ! status=$(timeout 10 pct status "$target" 2>/dev/null); then
+    CHECK_CONTAINER_FAILURE "Could not read status for LXC $target"
+    return 1
+  fi
+  if [[ "$status" == "status: stopped" ]]; then
+    if [[ "$STOPPED" != true ]]; then
+      STATUS_MODEL_GUEST_NAME=""
+      if declare -f cluster_target_guest_name >/dev/null 2>&1; then
+        STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$target" 2>/dev/null || true)
+      fi
+      STATUS_MODEL_RECORD "$target" lxc pct false "" "" "null" "null" \
+        not_checked STOPPED_READ_ONLY "LXC $target is stopped; configured check does not start it" \
+        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 0
+    fi
+    if ! pct start "$target"; then
+      CHECK_CONTAINER_FAILURE "Could not start LXC $target for check"
+      return 1
+    fi
+    if WAIT_FOR_BOOTUP_LXC; then
+      CHECK_CONTAINER "$target" || check_rc=$?
+    else
+      CHECK_CONTAINER_FAILURE "LXC $target did not become reachable after start"
+      check_rc=$?
+    fi
+    if ! pct shutdown "$target" --timeout 60 --forceStop 1; then
+      lifecycle_failure=1
+      lifecycle_message="Could not restore stopped state for LXC $target"
+    elif [[ "$(timeout 10 pct status "$target" 2>/dev/null)" != "status: stopped" ]]; then
+      lifecycle_failure=1
+      lifecycle_message="LXC $target did not return to stopped state"
+    fi
+    if [[ "$lifecycle_failure" -ne 0 ]]; then
+      STATUS_MODEL_GUEST_NAME=""
+      if declare -f cluster_target_guest_name >/dev/null 2>&1; then
+        STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$target" 2>/dev/null || true)
+      fi
+      STATUS_MODEL_RECORD "$target" lxc pct true "" "" "null" "null" \
+        error LIFECYCLE_RESTORE_FAILED "$lifecycle_message" \
+        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 1
+    fi
+    return "$check_rc"
+  fi
+  if [[ "$status" == "status: running" ]]; then
+    if [[ "$RUNNING" != true ]]; then
+      STATUS_MODEL_GUEST_NAME=""
+      if declare -f cluster_target_guest_name >/dev/null 2>&1; then
+        STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$target" 2>/dev/null || true)
+      fi
+      STATUS_MODEL_RECORD "$target" lxc pct false "" "" "null" "null" \
+        not_checked RUNNING_DISABLED "LXC $target is running; configured check does not check it" \
+        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 0
+    fi
+    CHECK_CONTAINER "$target"
+    return $?
+  fi
+  CHECK_CONTAINER_FAILURE "Unsupported LXC state for $target: $status"
+  return 1
 }
 
 ## VM ##
