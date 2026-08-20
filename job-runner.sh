@@ -287,6 +287,27 @@ target_running() {
   return 1
 }
 
+running_job_conflict() {
+  local requested="$1" file target state
+  shopt -s nullglob
+  for file in "$JOB_STATE_DIR"/*.state; do
+    target=$(state_value "$file" target)
+    state=$(state_value "$file" state)
+    [[ "$state" == running ]] || continue
+    if [[ "$requested" == all-systems || "$target" == all-systems || "$target" == "$requested" ]]; then
+      printf '%s\t%s\n' "$target" "$(state_value "$file" unit)"
+      return 0
+    fi
+  done
+  return 1
+}
+
+acquire_start_lock() {
+  local lock_file="$JOB_STATE_DIR/.start.lock"
+  exec 8>"$lock_file" || return 1
+  flock -x 8 || { exec 8>&-; return 1; }
+}
+
 job_unit_active() {
   command -v systemctl >/dev/null 2>&1 || return 1
   systemctl is-active --quiet "$1" 2>/dev/null
@@ -345,14 +366,17 @@ cleanup_completed_jobs() {
 
 start_job() {
   local update_script="$1" target="$2" unit timestamp
+  local conflict conflict_target conflict_unit
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_target "$target" || { printf 'Unsupported target: %s\n' "$target" >&2; return 2; }
   command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start update jobs.\n' >&2; return 5; }
   [[ "$EUID" -eq 0 ]] || { printf 'Starting update jobs requires root.\n' >&2; return 2; }
   ensure_state_dir || { printf 'Cannot prepare job state directory: %s\n' "$JOB_STATE_DIR" >&2; return 1; }
-  if target_running "$target"; then
-    printf 'An update job is already running for target %s.\n' "$target" >&2
+  acquire_start_lock || { printf 'Could not acquire the job start lock.\n' >&2; return 1; }
+  if conflict=$(running_job_conflict "$target"); then
+    IFS=$'\t' read -r conflict_target conflict_unit <<< "$conflict"
+    printf 'A job is already running for target %s (job: %s).\n' "$conflict_target" "$conflict_unit" >&2
     return 3
   fi
   systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
@@ -369,7 +393,7 @@ start_job() {
   [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && systemd_env+=("--setenv=UU_REMOTE_WORK_DIR=$UU_REMOTE_WORK_DIR")
   [[ "$target" =~ ^[0-9]+$ ]] && systemd_env+=("--setenv=UU_POST_UPDATE_STATUS_CAPTURE=true")
 
-  timestamp=$(date -u '+%Y%m%d-%H%M%S')
+  timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for $target" \
@@ -391,15 +415,16 @@ start_global_job() {
   command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start update jobs.\n' >&2; return 5; }
   [[ "$EUID" -eq 0 ]] || { printf 'Starting update jobs requires root.\n' >&2; return 2; }
   ensure_state_dir || { printf 'Cannot prepare job state directory: %s\n' "$JOB_STATE_DIR" >&2; return 1; }
-  if target_running "$target"; then
-    printf 'An update job is already running for all systems.\n' >&2
+  acquire_start_lock || { printf 'Could not acquire the job start lock.\n' >&2; return 1; }
+  if running_job_conflict "$target" >/dev/null; then
+    printf 'A job is already running; the full update was not started.\n' >&2
     return 3
   fi
   systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
   if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
     systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
   fi
-  timestamp=$(date -u '+%Y%m%d-%H%M%S')
+  timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}all-systems-$timestamp-$BASHPID"
   write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for all systems" \
@@ -553,11 +578,12 @@ start_check_job() {
   command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start check jobs.\n' >&2; return 5; }
   [[ "$EUID" -eq 0 ]] || { printf 'Starting check jobs requires root.\n' >&2; return 2; }
   ensure_state_dir || return 1
-  if target_running "$target"; then
+  acquire_start_lock || { printf 'Could not acquire the job start lock.\n' >&2; return 1; }
+  if running_job_conflict "$target" >/dev/null; then
     printf 'A job is already running for target %s.\n' "$target" >&2
     return 3
   fi
-  timestamp=$(date -u '+%Y%m%d-%H%M%S')
+  timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${CHECK_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
   UU_JOB_TYPE=check write_state "$unit" "$target" running "$(now)" '' '' || return 1
@@ -579,11 +605,12 @@ start_selfupdate_job() {
   command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start self-update jobs.\n' >&2; return 5; }
   [[ "$EUID" -eq 0 ]] || { printf 'Starting self-update jobs requires root.\n' >&2; return 2; }
   ensure_state_dir || return 1
-  if target_running "$target"; then
+  acquire_start_lock || { printf 'Could not acquire the job start lock.\n' >&2; return 1; }
+  if running_job_conflict "$target" >/dev/null; then
     printf 'A self-update job is already running.\n' >&2
     return 3
   fi
-  timestamp=$(date -u '+%Y%m%d-%H%M%S')
+  timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}selfupdate-$timestamp-$BASHPID"
   UU_JOB_TYPE=selfupdate UU_JOB_SOURCE=web-selfupdate write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater self-update ($branch)" \
@@ -646,7 +673,7 @@ run_check_job() {
 }
 
 refresh_running_jobs() {
-  local file unit target state active_state load_state started age_seconds type
+  local file unit target state active_state load_state started age_seconds type show_rc systemd_details
   command -v systemctl >/dev/null 2>&1 || return 0
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
@@ -659,16 +686,18 @@ refresh_running_jobs() {
       # window into a false interrupted state.
       active_state=""
       load_state=""
+      show_rc=0
+      systemd_details=$(systemctl show "$unit" -p ActiveState -p LoadState 2>/dev/null) || show_rc=$?
       while IFS= read -r line; do
         case "$line" in
           ActiveState=*) active_state=${line#ActiveState=} ;;
           LoadState=*) load_state=${line#LoadState=} ;;
         esac
-      done < <(systemctl show "$unit" -p ActiveState -p LoadState 2>/dev/null || true)
+      done <<< "$systemd_details"
       case "$active_state" in
         active|activating|deactivating) ;;
         *)
-          if [[ "$load_state" != loaded ]]; then
+          if (( show_rc == 0 )) && [[ -n "$load_state" && "$load_state" != loaded ]]; then
             started=$(state_value "$file" started_at)
             age_seconds=$(( $(date -u +%s) - $(date -u -d "$started" +%s 2>/dev/null || date -u +%s) ))
             if (( age_seconds >= 30 )); then
