@@ -27,6 +27,7 @@ PATH="$WORK_DIR:$PATH" bash -c '
   printf "status: stopped\n" > "$PCT_STATE"
   STOPPED=true; RUNNING=true; RDU=false; CHECK_FAILURE=0; STATUS_MODEL_NODE=node2
   YL="" CL="" RD="" GN="" BL="" OS=debian
+  RUN_PROXMOX_COMMAND() { "$@"; }
   cluster_target_guest_name() { printf "fixture\n"; }
   WAIT_FOR_BOOTUP_LXC() { return 0; }
   source "$1/single.sh"
