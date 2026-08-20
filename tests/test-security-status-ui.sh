@@ -47,6 +47,10 @@ grep -Fq 'CONTAINER_NORMAL_UPDATES=$NORMAL_APT_UPDATES' "$ROOT_DIR/check-updates
 grep -Fq 'CONTAINER_SECURITY_UPDATES=$SECURITY_APT_UPDATES' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'Normal updates: $NORMAL_APT_UPDATES' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'Security updates: $SECURITY_APT_UPDATES' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true' "$ROOT_DIR/check-updates.sh"
+grep -Fq '"$STATUS_HOST_NAME" "$STATUS_HOST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'APT_OUTPUT=$(apt-get -s upgrade)' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'READ_APT_UPDATE_COUNTS "$APT_OUTPUT"' "$ROOT_DIR/check-updates.sh"
 
 cat > "$WORK_DIR/apt-output" <<'EOF'
 Inst security-one (1.0 Ubuntu-Security)

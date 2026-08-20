@@ -704,11 +704,12 @@ CHECK_HOST_ITSELF () {
   REBOOT_REQUIRED=false
   local STATUS_HOST_NAME="${STATUS_MODEL_NODE:-$HOSTNAME}"
   apt-get update >/dev/null 2>&1
-  SECURITY_APT_UPDATES=$(apt-get -s upgrade | grep -ci "^inst.*security" | tr -d '\n')
+  local APT_OUTPUT
+  APT_OUTPUT=$(apt-get -s upgrade)
+  # Keep the log and status model on the same package-manager snapshot.  The
+  # shared helper owns the security classification and disjoint split.
+  READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
   if [[ $SECURITY_APT_UPDATES != 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
-  local HOST_APT_TOTAL
-  HOST_APT_TOTAL=$(apt-get -s upgrade | grep -ci "^inst." | tr -d '\n')
-  NORMAL_APT_UPDATES=$((HOST_APT_TOTAL - SECURITY_APT_UPDATES))
   if [[ -f /var/run/reboot-required || -f /var/run/reboot-required.pkgs ]] ||
     HOST_KERNEL_REBOOT_REQUIRED; then
     REBOOT_REQUIRED=true
@@ -729,7 +730,12 @@ CHECK_HOST_ITSELF () {
   [[ "$HOST_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && HOST_STATUS=updates_available
   local HOST_OS
   HOST_OS=$(awk -F= '/^PRETTY_NAME=/{gsub(/^"|"$/, "", $2); print $2; exit}' /etc/os-release 2>/dev/null)
-  STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true "${HOST_OS:-unknown}" apt "$HOST_UPDATES" "${REBOOT_REQUIRED:-false}" "$HOST_STATUS" "" "" "$STATUS_HOST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
+  echo -e "Normal updates: $NORMAL_APT_UPDATES"
+  echo -e "Security updates: $SECURITY_APT_UPDATES"
+  # STATUS_MODEL_RECORD is positional: error code, error message, node,
+  # display name, normal count, security count.  Keep the host name in both
+  # identity positions so the split is not shifted during serialization.
+  STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true "${HOST_OS:-unknown}" apt "$HOST_UPDATES" "${REBOOT_REQUIRED:-false}" "$HOST_STATUS" "" "" "$STATUS_HOST_NAME" "$STATUS_HOST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
 }
 
 # Proxmox kernel packages can install a new bootable kernel without leaving
