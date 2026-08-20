@@ -34,7 +34,7 @@ exit 0
 EXTERNAL
 chmod +x "$WORK_DIR/check-updates.sh" "$WORK_DIR/external-apt.sh"
 
-UU_LOCAL_FILES="$WORK_DIR" UU_EXTERNAL_CALLS="$WORK_DIR/calls" \
+UU_CHECK_JOB_EXECUTION=true UU_LOCAL_FILES="$WORK_DIR" UU_EXTERNAL_CALLS="$WORK_DIR/calls" \
   "$ROOT_DIR/ultimate-updater" check >/dev/null
 grep -Fxq 'mediacenter' "$WORK_DIR/calls"
 grep -Fxq 'legacy-978' "$WORK_DIR/calls"
@@ -42,7 +42,7 @@ grep -Fxq 'legacy-971' "$WORK_DIR/calls"
 
 sed -i 's/ONLY_UPDATE_CHECK="check-only"/ONLY_UPDATE_CHECK=""/; s/EXCLUDE_UPDATE_CHECK=""/EXCLUDE_UPDATE_CHECK="legacy-971"/' "$WORK_DIR/update.conf"
 : > "$WORK_DIR/calls"
-UU_LOCAL_FILES="$WORK_DIR" UU_EXTERNAL_CALLS="$WORK_DIR/calls" \
+UU_CHECK_JOB_EXECUTION=true UU_LOCAL_FILES="$WORK_DIR" UU_EXTERNAL_CALLS="$WORK_DIR/calls" \
   "$ROOT_DIR/ultimate-updater" check >/dev/null
 grep -Fxq 'mediacenter' "$WORK_DIR/calls"
 grep -Fxq 'legacy-978' "$WORK_DIR/calls"
