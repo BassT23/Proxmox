@@ -134,8 +134,8 @@ mark_remote_status_refresh() {
   mv -f -- "$temp" "$file"
 }
 
-refresh_remote_node_status() {
-  local unit="$1" owner_node="$2" refresh_state refresh_rc=0 lock
+refresh_remote_target_status() {
+  local unit="$1" owner_node="$2" target="$3" refresh_state refresh_rc=0 lock
   local ref_file
   ref_file=$(remote_ref_file "$unit")
   refresh_state=$(state_value "$ref_file" status_refresh)
@@ -143,7 +143,11 @@ refresh_remote_node_status() {
   lock="$ref_file.refresh.lock"
   mkdir "$lock" 2>/dev/null || return 0
   if [[ -x "$CHECK_CLI" ]]; then
-    UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check-node "$owner_node" </dev/null || refresh_rc=$?
+    if [[ "$target" == node-* ]]; then
+      UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check-node "$owner_node" </dev/null || refresh_rc=$?
+    else
+      UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check "$target" </dev/null || refresh_rc=$?
+    fi
   else
     refresh_rc=127
   fi
@@ -152,7 +156,7 @@ refresh_remote_node_status() {
   else
     mark_remote_status_refresh "$unit" "failed" || true
     printf 'Remote post-update status refresh failed for %s (exit code %s).\n' \
-      "$owner_node" "$refresh_rc" >&2
+      "$target" "$refresh_rc" >&2
   fi
   rmdir "$lock" 2>/dev/null || true
   return 0
@@ -647,7 +651,7 @@ list_jobs() {
     printf '%s\n' "$remote_state"
     IFS=$'\t' read -r _ remote_target remote_status _ remote_finished remote_exit _ <<< "$remote_state"
     if [[ "$remote_status" == completed || "$remote_status" == failed || "$remote_status" == interrupted ]]; then
-      refresh_remote_node_status "$unit" "$owner_node"
+      refresh_remote_target_status "$unit" "$owner_node" "$remote_target"
     fi
     sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true
   done
