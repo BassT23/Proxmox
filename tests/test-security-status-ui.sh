@@ -72,6 +72,20 @@ assert "security-warn" in source
 assert "Security updates available" in source
 assert 'id="normal-updates"' in source and 'id="security-updates"' in source
 assert "renderWithSplitSummary" in source
+assert "set('updates'," not in source
+assert "Status render failed" in source
+assert "The status view could not be rendered." in source
+
+legacy = {"schema_version": 1, "targets": [{"id": "191", "type": "lxc", "updates": {"available": 18}}]}
+modern = {"schema_version": 1, "targets": [{"id": "191", "type": "lxc", "updates": {"available": 18}, "normal_updates": 14, "security_updates": 4}]}
+assert legacy["targets"][0]["updates"]["available"] == 18
+assert "normal_updates" not in legacy["targets"][0]
+assert modern["targets"][0]["normal_updates"] == 14
+assert modern["targets"][0]["security_updates"] == 4
+
+installer = open("install.sh", encoding="utf-8").read()
+assert 'mv "$TEMP_FILES"/web-ui/server.py' in installer
+assert 'SETUP_WEB_SERVICE restart' in installer
 PY
 
 echo "security status and UI regression tests: PASS"
