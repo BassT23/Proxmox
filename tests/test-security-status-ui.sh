@@ -80,6 +80,12 @@ assert "@media (max-width:760px)" in source
 assert "grid-template-columns:repeat(3,minmax(0,1fr))" in source
 assert "grid-template-columns:repeat(2,minmax(0,1fr))" in source
 assert "overflow-wrap:anywhere" in source
+assert "rebootDetail=t.type==='lxc'?'':`" in source
+assert "rebootField=t.type==='lxc'?'':`" in source
+assert "row.classList.add('lxc-row')" in source
+assert ".target-row.lxc-row" in source
+assert "reboot_required" in source
+assert "reboot-required-badge" in source
 
 legacy = {"schema_version": 1, "targets": [{"id": "191", "type": "lxc", "updates": {"available": 18}}]}
 modern = {"schema_version": 1, "targets": [{"id": "191", "type": "lxc", "updates": {"available": 18}, "normal_updates": 14, "security_updates": 4}]}
