@@ -395,9 +395,10 @@ USAGE () {
 
 # Version Check / Update Message in Header
 RUN_BRANCH_UPDATE () {
-  local target_branch=$1 installer
+  local target_branch=$1 installer cache_buster
+  cache_buster=$(date +%s)
 
-  if ! installer=$(DOWNLOAD_SHELL_FILE "https://raw.githubusercontent.com/BassT23/Proxmox/$target_branch/install.sh"); then
+  if ! installer=$(DOWNLOAD_SHELL_FILE "https://raw.githubusercontent.com/BassT23/Proxmox/$target_branch/install.sh?uu_cache=$cache_buster"); then
     echo -e "${RD:-}Unable to download the $target_branch installer.${CL:-}"
     return 1
   fi
@@ -469,7 +470,8 @@ VERSION_CHECK () {
 # Update The Ultimate Updater
 UPDATE () {
   SELF_UPDATE_RUN=true
-  local installed_version target_version
+  local installed_version target_version cache_buster
+  cache_buster=$(date +%s)
   installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
   if ! target_version=$(FETCH_REMOTE_VERSION "$BRANCH" update.sh); then
     echo -e "${RD:-}Unable to determine the target version for branch $BRANCH; update aborted before mutation.${CL:-}" >&2
@@ -501,11 +503,11 @@ UPDATE () {
     fi
   fi
   if [[ "${UU_NONINTERACTIVE:-false}" == true || ! -t 0 ]]; then
-    RUN_DOWNLOADED_INSTALLER "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/install.sh" \
+    RUN_DOWNLOADED_INSTALLER "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/install.sh?uu_cache=$cache_buster" \
       UU_TARGET_BRANCH="$BRANCH" UU_NONINTERACTIVE=true update
     return $?
   fi
-  RUN_DOWNLOADED_INSTALLER "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/install.sh" \
+  RUN_DOWNLOADED_INSTALLER "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/install.sh?uu_cache=$cache_buster" \
     UU_TARGET_BRANCH="$BRANCH" UU_UPGRADE_INTERACTIVE=true UU_NONINTERACTIVE=true update
   return $?
 }
