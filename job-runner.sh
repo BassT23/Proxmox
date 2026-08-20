@@ -18,6 +18,7 @@ STATUS_MODEL_FILE="${UU_STATUS_MODEL_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updat
 UPDATE_CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
 REMOTE_JOB_STATE_DIR="${UU_REMOTE_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
+SYSTEMD_LOG_FILTER_ARGS=()
 
 usage() {
   printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | list\n' "$0"
@@ -44,6 +45,30 @@ safe_unit_target() {
 
 now() {
   date -u '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+configured_debug_enabled() {
+  local value="${DEBUG:-}"
+  if [[ -z "$value" && -f "$UPDATE_CONFIG_FILE" ]]; then
+    value=$(awk -F= '$1 == "DEBUG" { sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); gsub(/^"|"$/, "", $2); gsub(/^\x27|\x27$/, "", $2); print $2; exit }' \
+      "$UPDATE_CONFIG_FILE" 2>/dev/null || true)
+  fi
+  [[ "${value,,}" == true || "${value,,}" == 1 || "${value,,}" == yes ]]
+}
+
+prepare_systemd_log_filters() {
+  SYSTEMD_LOG_FILTER_ARGS=()
+  configured_debug_enabled && return 0
+
+  # Proxmox task clients write these messages directly to journald. They do
+  # not travel through pct/qm stdout/stderr, so shell redirection cannot hide
+  # them. Keep the filter narrow and unit-local; DEBUG=true leaves the full
+  # journal untouched.
+  SYSTEMD_LOG_FILTER_ARGS+=(
+    '--property=LogFilterPatterns=~^<root@pam> (starting task UPID:|end task UPID:|.*UPID:).*'
+    '--property=LogFilterPatterns=~^(starting|shutdown) (CT|VM) [^:]+: UPID:.*'
+    '--property=LogFilterPatterns=~^push_file([[:space:]]|$).*'
+  )
 }
 
 state_file() {
@@ -392,12 +417,14 @@ start_job() {
   [[ -n "${UU_LOCAL_FILES:-}" ]] && systemd_env+=("--setenv=UU_LOCAL_FILES=$UU_LOCAL_FILES")
   [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && systemd_env+=("--setenv=UU_REMOTE_WORK_DIR=$UU_REMOTE_WORK_DIR")
   [[ "$target" =~ ^[0-9]+$ ]] && systemd_env+=("--setenv=UU_POST_UPDATE_STATUS_CAPTURE=true")
+  prepare_systemd_log_filters
 
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for $target" \
     "${systemd_env[@]}" \
+    "${SYSTEMD_LOG_FILTER_ARGS[@]}" \
     --property=Type=oneshot --property=StandardOutput=journal \
     --property=StandardError=journal "$RUNNER_PATH" run "$unit" "$target" "$update_script"; then
     write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
@@ -426,9 +453,11 @@ start_global_job() {
   fi
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}all-systems-$timestamp-$BASHPID"
+  prepare_systemd_log_filters
   write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for all systems" \
     "${systemd_env[@]}" \
+    "${SYSTEMD_LOG_FILTER_ARGS[@]}" \
     --property=Type=oneshot --property=StandardOutput=journal \
     --property=StandardError=journal "$RUNNER_PATH" run-global "$unit" "$update_script"; then
     write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
@@ -586,9 +615,10 @@ start_check_job() {
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${CHECK_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
+  prepare_systemd_log_filters
   UU_JOB_TYPE=check write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater check for $target" \
-    "${systemd_env[@]}" --property=Type=oneshot --property=StandardOutput=journal \
+    "${systemd_env[@]}" "${SYSTEMD_LOG_FILTER_ARGS[@]}" --property=Type=oneshot --property=StandardOutput=journal \
     --property=StandardError=journal "$RUNNER_PATH" run-check "$unit" "$target" "$cli" "$mode"; then
     UU_JOB_TYPE=check write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
     return 1
@@ -612,9 +642,10 @@ start_selfupdate_job() {
   fi
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}selfupdate-$timestamp-$BASHPID"
+  prepare_systemd_log_filters
   UU_JOB_TYPE=selfupdate UU_JOB_SOURCE=web-selfupdate write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater self-update ($branch)" \
-    "${systemd_env[@]}" --property=Type=oneshot --property=StandardOutput=journal \
+    "${systemd_env[@]}" "${SYSTEMD_LOG_FILTER_ARGS[@]}" --property=Type=oneshot --property=StandardOutput=journal \
     --property=StandardError=journal "$RUNNER_PATH" run-selfupdate "$unit" "$branch" "$update_script"; then
     UU_JOB_TYPE=selfupdate UU_JOB_SOURCE=web-selfupdate write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
     return 1
