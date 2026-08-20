@@ -644,15 +644,23 @@ GET_BACKUP_STORAGE () {
 
 # Snapshot/Backup
 CAPTURE_POST_UPDATE_STATUS() {
-  local target="$1" kind="$2" refresh_rc=127
+  local target="$1" kind="$2" refresh_rc=0 artifact_dir
   [[ "${UU_POST_UPDATE_STATUS_CAPTURE:-false}" == true ]] || return 0
+  artifact_dir="${UU_REMOTE_WORK_DIR:-$TEMP_STATE_DIR}"
+  if ! mkdir -p -- "$artifact_dir"; then
+    printf '%s\n' "$refresh_rc" > "$TEMP_STATE_DIR/post-update-status.rc"
+    return 0
+  fi
   if [[ -x "$CHECK_SCRIPT" ]]; then
     STATUS_MODEL_FILE="$LOCAL_FILES/status.json" \
       STATUS_MODEL_RECORD_FILE="$TEMP_STATE_DIR/post-update-status.records" \
       STATUS_MODEL_PARTIAL=false UU_DEFER_NOTIFICATION=true \
       "$CHECK_SCRIPT" "$kind" "$target" </dev/null || refresh_rc=$?
+  else
+    refresh_rc=127
+    printf 'POST_UPDATE_CAPTURE_HELPER_NOT_EXECUTABLE: %s\n' "$CHECK_SCRIPT" >&2
   fi
-  printf '%s\n' "$refresh_rc" > "$TEMP_STATE_DIR/post-update-status.rc"
+  printf '%s\n' "$refresh_rc" > "$artifact_dir/post-update-status.rc"
   return 0
 }
 
