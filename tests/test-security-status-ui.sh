@@ -86,6 +86,11 @@ assert "row.classList.add('lxc-row')" in source
 assert ".target-row.lxc-row" in source
 assert "reboot_required" in source
 assert "reboot-required-badge" in source
+assert "parts.push(knownNormal.length?`${knownNormal.reduce((a,v)=>a+v,0)} normal`:'normal unknown')" in source
+assert "parts.push(knownSecurity.length===items.length?`${knownSecurity.reduce((a,v)=>a+v,0)} security`:'security unknown')" in source
+assert "normal===0&&security===null" in source
+assert "const aggregateFieldComplete" in source
+assert "updateSummary((host?[host]:guests).filter(Boolean))" in source
 
 legacy = {"schema_version": 1, "targets": [{"id": "191", "type": "lxc", "updates": {"available": 18}}]}
 modern = {"schema_version": 1, "targets": [{"id": "191", "type": "lxc", "updates": {"available": 18}, "normal_updates": 14, "security_updates": 4}]}
