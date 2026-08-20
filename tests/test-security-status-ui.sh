@@ -70,6 +70,8 @@ assert "normal_updates" in source and "security_updates" in source
 assert "Normal updates" in source and "Security updates" in source
 assert "security-warn" in source
 assert "Security updates available" in source
+assert 'id="normal-updates"' in source and 'id="security-updates"' in source
+assert "renderWithSplitSummary" in source
 PY
 
 echo "security status and UI regression tests: PASS"
