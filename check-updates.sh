@@ -856,10 +856,17 @@ CHECK_CONTAINER () {
     return
   fi
   OS=$(awk '/^ostype/' $LOCAL_FILES/temp/temp | cut -d' ' -f2)
-  if ! NAME=$(RUN_PCT_COMMAND "$CONTAINER" hostname); then
-    CHECK_CONTAINER_FAILURE "Could not read hostname for LXC $CONTAINER"
-    return
+  if ! NAME=$(RUN_PCT_COMMAND "$CONTAINER" hostname 2>"$LOCAL_FILES/temp/hostname.error"); then
+    # The guest hostname is display metadata, not a prerequisite for the
+    # package check.  A broken/missing hostname command must not turn an
+    # otherwise checkable container into CHECK_COMMAND_FAILED.  Prefer the
+    # Proxmox config, then the inventory name, and finally the VMID.
+    NAME=$(awk -F': ' '$1 == "hostname" {print $2; exit}' "$LOCAL_FILES/temp/temp" 2>/dev/null || true)
+    NAME="${NAME:-$STATUS_MODEL_GUEST_NAME}"
+    NAME="${NAME:-$CONTAINER}"
+    echo -e "${YL}Could not read hostname for LXC $CONTAINER; using ${NAME} as display name and continuing${CL}"
   fi
+  NAME=$(printf '%s' "$NAME" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')
   if [[ "${INITIAL_INVENTORY:-false}" == true ]] &&
     ! GUEST_INTERNET_PREFLIGHT_PCT "$CONTAINER"; then
     STATUS_MODEL_RECORD "$CONTAINER" lxc pct false "$OS" "" "null" "null" \
