@@ -113,6 +113,11 @@ DOWNLOAD_ARCHIVE() {
 WRITE_BUILD_METADATA() {
   local branch="$1" commit="${2:-}" tag="${3:-}" temporary
   [[ "$branch" =~ ^(master|beta|develop)$ ]] || branch="unknown"
+  if [[ "$branch" != unknown && ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+    commit=$(curl -4 -sS --connect-timeout 5 --max-time 15 \
+      "https://api.github.com/repos/BassT23/Proxmox/commits/$branch" 2>/dev/null |
+      awk -F'"' '/"sha"[[:space:]]*:/ {print $4; exit}' || true)
+  fi
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || commit="unknown"
   [[ "$tag" =~ ^[A-Za-z0-9._/-]+$ ]] || tag=""
   temporary=$(mktemp "${BUILD_METADATA_FILE}.XXXXXX") || return 1
