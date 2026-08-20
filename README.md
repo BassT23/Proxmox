@@ -447,9 +447,22 @@ behind a local administrator login; setup is intentionally explicit and there
 is no default password:
 
 ```text
-http://<updater-node>:8765/
+https://<updater-node>:8765/
 sudo /usr/local/sbin/ultimate-updater-web-auth admin
 ```
+
+The Web UI prefers HTTPS automatically. It directly references the
+Proxmox-managed certificate pair (`/etc/pve/local/pve-ssl.pem` and
+`/etc/pve/local/pve-ssl.key`, or the custom `pveproxy-ssl` pair when present)
+without copying or changing private-key permissions. If no usable Proxmox
+certificate is available, the default `auto` mode logs a warning and uses HTTP
+as a transition fallback. Set `WEB_UI_HTTPS=true` in the root-owned
+`/etc/ultimate-updater/web-ui.conf` to require HTTPS, or set
+`WEB_UI_CERT_FILE` and `WEB_UI_KEY_FILE` there for an explicit certificate
+pair. A Proxmox certificate rotation requires restarting
+`ultimate-updater-web.service` so the process reloads the files. Accessing the
+HTTPS URL by an IP address can still show a browser name-mismatch warning when
+that IP is not listed in the certificate SANs.
 
 The central Web UI port is stored outside the Web UI in the root-owned local
 file `/etc/ultimate-updater/web-ui.conf` as `WEB_UI_PORT=8765`. Existing

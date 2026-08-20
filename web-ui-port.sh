@@ -18,11 +18,16 @@ read_port() {
     [[ -z "${line//[[:space:]]/}" || "$line" == \#* ]] && continue
     [[ "$line" == *=* ]] || { printf 'Invalid Web UI config line\n' >&2; return 64; }
     key=${line%%=*}
-    [[ "$key" == WEB_UI_PORT ]] || { printf 'Unsupported Web UI config key: %s\n' "$key" >&2; return 64; }
-    [[ -z "$value" ]] || { printf 'Duplicate WEB_UI_PORT setting\n' >&2; return 64; }
-    value=${line#*=}
-    value="${value#"${value%%[![:space:]]*}"}"
-    value="${value%"${value##*[![:space:]]}"}"
+    case "$key" in
+      WEB_UI_PORT)
+        [[ -z "$value" ]] || { printf 'Duplicate WEB_UI_PORT setting\n' >&2; return 64; }
+        value=${line#*=}
+        value="${value#"${value%%[![:space:]]*}"}"
+        value="${value%"${value##*[![:space:]]}"}"
+        ;;
+      WEB_UI_HTTPS|WEB_UI_CERT_FILE|WEB_UI_KEY_FILE) ;;
+      *) printf 'Unsupported Web UI config key: %s\n' "$key" >&2; return 64 ;;
+    esac
   done < "$WEB_UI_CONFIG_FILE"
   [[ -n "$value" ]] || { printf 'WEB_UI_PORT is missing\n' >&2; return 64; }
   valid_port "$value" || { printf 'Invalid WEB_UI_PORT: %s\n' "$value" >&2; return 64; }
@@ -71,6 +76,9 @@ write_config() {
   install -d -o root -g root -m 0755 "$directory"
   temporary=$(mktemp "$WEB_UI_CONFIG_FILE.tmp.XXXXXX")
   printf 'WEB_UI_PORT=%s\n' "$port" > "$temporary"
+  if [[ -f "$WEB_UI_CONFIG_FILE" ]]; then
+    awk -F= '$1 != "WEB_UI_PORT"' "$WEB_UI_CONFIG_FILE" >> "$temporary"
+  fi
   chown root:root "$temporary"; chmod 0644 "$temporary"
   mv -f "$temporary" "$WEB_UI_CONFIG_FILE"
 }

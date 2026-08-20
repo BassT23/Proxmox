@@ -12,6 +12,7 @@ import re
 import secrets
 import shlex
 import stat
+import ssl
 import subprocess
 import tempfile
 import time
@@ -51,11 +52,82 @@ DEFAULT_AUTH_FILE = Path("/etc/ultimate-updater/web-auth.json")
 DEFAULT_INTERNAL_SSH_FILE = Path("/etc/ultimate-updater/internal-ssh.conf")
 DEFAULT_BIND = "127.0.0.1"
 DEFAULT_PORT = 8765
+DEFAULT_PROXMOX_CERT = Path("/etc/pve/local/pve-ssl.pem")
+DEFAULT_PROXMOX_KEY = Path("/etc/pve/local/pve-ssl.key")
+DEFAULT_PROXMOX_CUSTOM_CERT = Path("/etc/pve/local/pveproxy-ssl.pem")
+DEFAULT_PROXMOX_CUSTOM_KEY = Path("/etc/pve/local/pveproxy-ssl.key")
 TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 JOB_RE = re.compile(r"^ultimate-updater-(?:update|check)-[A-Za-z0-9_.-]+$")
 HOST_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 USER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 INTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
+
+
+class TLSConfigurationError(RuntimeError):
+    """Raised when explicitly requested WebUI TLS cannot be initialized."""
+
+
+def _tls_mode():
+    mode = os.environ.get("WEB_UI_HTTPS", "auto").strip().lower()
+    if mode in {"1", "yes", "on", "true"}:
+        return "required"
+    if mode in {"0", "no", "off", "false"}:
+        return "disabled"
+    if mode == "auto":
+        return mode
+    raise TLSConfigurationError(
+        "WEB_UI_HTTPS must be auto, true, or false (received: %s)" % mode
+    )
+
+
+def build_tls_context():
+    """Return (SSL context, source, certificate path, fallback reason).
+
+    Certificate files are referenced in place.  No private key is copied or
+    permission-adjusted; the service already runs as root for the updater CLI.
+    """
+    mode = _tls_mode()
+    if mode == "disabled":
+        return None, "disabled", None, "HTTPS disabled by configuration"
+
+    configured_cert = os.environ.get("WEB_UI_CERT_FILE", "").strip()
+    configured_key = os.environ.get("WEB_UI_KEY_FILE", "").strip()
+    custom_configured = bool(configured_cert or configured_key)
+    if custom_configured:
+        if not configured_cert or not configured_key:
+            message = "WEB_UI_CERT_FILE and WEB_UI_KEY_FILE must be configured together"
+            if mode == "required":
+                raise TLSConfigurationError(message)
+            raise TLSConfigurationError(message)
+        candidates = [(Path(configured_cert), Path(configured_key), "custom")]
+    else:
+        # pveproxy prefers the custom pair when present and otherwise uses the
+        # node certificate pair.  Use the same priority without copying files.
+        candidates = [
+            (DEFAULT_PROXMOX_CUSTOM_CERT, DEFAULT_PROXMOX_CUSTOM_KEY, "Proxmox custom"),
+            (DEFAULT_PROXMOX_CERT, DEFAULT_PROXMOX_KEY, "Proxmox"),
+        ]
+
+    failures = []
+    for cert_file, key_file, source in candidates:
+        if not cert_file.is_file() or not key_file.is_file():
+            failures.append(f"missing certificate/key pair: {cert_file} / {key_file}")
+            continue
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        try:
+            context.load_cert_chain(certfile=str(cert_file), keyfile=str(key_file))
+        except (OSError, ssl.SSLError) as error:
+            failures.append(f"could not load {cert_file}: {error}")
+            continue
+        return context, source, cert_file, ""
+
+    reason = "; ".join(failures) or "no certificate/key pair configured"
+    if mode == "required":
+        raise TLSConfigurationError(f"HTTPS requested but unavailable: {reason}")
+    if custom_configured:
+        raise TLSConfigurationError(f"Configured WebUI HTTPS certificate is invalid: {reason}")
+    return None, "HTTP fallback", None, reason
 
 CONFIG_BOOLEAN_KEYS = {
     "CHECK_WITH_HOST", "CHECK_WITH_LXC", "CHECK_WITH_VM",
@@ -1806,7 +1878,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.send_json(error_payload("LOGIN_FAILED", "Invalid credentials."), HTTPStatus.UNAUTHORIZED)
                 return
             token, csrf = login
-            secure = "; Secure" if self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+            secure = "; Secure" if getattr(self.server, "tls_enabled", False) or self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
             cookie = f"UU_SESSION={token}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; HttpOnly; SameSite=Lax{secure}"
             self.send_json_with_cookie({"authenticated": True, "username": username, "csrf": csrf}, cookie)
             return
@@ -2136,7 +2208,15 @@ def main():
     args = parse_args()
     if not 1 <= args.port <= 65535:
         raise SystemExit("port must be between 1 and 65535")
+    try:
+        tls_context, tls_source, tls_cert, tls_fallback_reason = build_tls_context()
+    except TLSConfigurationError as error:
+        print(f"WebUI TLS configuration error: {error}", flush=True)
+        raise SystemExit(78)
     server = ThreadingHTTPServer((args.bind, args.port), StatusHandler)
+    server.tls_enabled = tls_context is not None
+    if tls_context is not None:
+        server.socket = tls_context.wrap_socket(server.socket, server_side=True)
     server.status_file, server.cli = args.status_file, args.cli
     server.config_file, server.inventory_file = args.config_file, args.inventory_file
     server.internal_ssh_file = args.config_file.parent / "internal-ssh.conf"
@@ -2148,7 +2228,13 @@ def main():
     server.update_script = args.config_file.parent / "update.sh"
     server.version_cache = None
     server.auth = AuthStore(args.auth_file)
-    print(f"Ultimate Updater UI: http://{args.bind}:{args.port}/", flush=True)
+    if tls_context is not None:
+        print(f"HTTPS enabled; certificate source: {tls_source}; certificate: {tls_cert}", flush=True)
+        protocol = "https"
+    else:
+        print(f"HTTPS unavailable; using HTTP fallback: {tls_fallback_reason}", flush=True)
+        protocol = "http"
+    print(f"Ultimate Updater UI: {protocol}://{args.bind}:{args.port}/", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

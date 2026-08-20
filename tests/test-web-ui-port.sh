@@ -11,6 +11,15 @@ printf 'WEB_UI_PORT=8876\n' > "$CONFIG"
 WEB_UI_CONFIG_FILE="$CONFIG" "$ROOT_DIR/web-ui-port.sh" ensure >/dev/null
 grep -Fxq 'WEB_UI_PORT=8876' "$CONFIG"
 
+printf 'WEB_UI_PORT=8876\nWEB_UI_HTTPS=auto\nWEB_UI_CERT_FILE=/etc/pve/local/pve-ssl.pem\nWEB_UI_KEY_FILE=/etc/pve/local/pve-ssl.key\n' > "$CONFIG"
+[[ "$(WEB_UI_CONFIG_FILE="$CONFIG" "$ROOT_DIR/web-ui-port.sh" get)" == 8876 ]]
+if [[ "$(id -u)" -eq 0 ]]; then
+  WEB_UI_CONFIG_FILE="$CONFIG" "$ROOT_DIR/web-ui-port.sh" set 8877 >/dev/null
+  grep -Fxq 'WEB_UI_HTTPS=auto' "$CONFIG"
+  grep -Fxq 'WEB_UI_CERT_FILE=/etc/pve/local/pve-ssl.pem' "$CONFIG"
+  grep -Fxq 'WEB_UI_KEY_FILE=/etc/pve/local/pve-ssl.key' "$CONFIG"
+fi
+
 for invalid in 0 65536 abc -1 8765x ''; do
   if WEB_UI_CONFIG_FILE="$CONFIG" "$ROOT_DIR/web-ui-port.sh" set "$invalid" >/dev/null 2>&1; then
     echo "invalid port accepted: <$invalid>" >&2
