@@ -146,6 +146,11 @@ for title in (
     assert f"'{title}':" in page, title
 assert "Backup mode is limited to stop, suspend, or snapshot." in page
 assert "Backup storage expects a Proxmox storage ID" in page
+assert "const fieldHelpContent=" in page
+assert "An unsupported snapshot does not automatically enable a backup." in page
+assert "A backup may take significantly longer depending on guest size and storage." in page
+assert "This is the backup mode and is separate from the Ultimate Updater Snapshot option." in page
+assert "caption.appendChild(createHelpControl(configLabels[key]||key,fieldHelpContent[key]))" in page
 assert "Internet check defaults to command ping and address google.com." in page
 assert "SSH port default: 22." in page
 assert "config-field select" in page
