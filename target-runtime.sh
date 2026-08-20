@@ -27,10 +27,13 @@ RUN_SSH_COMMAND() {
 
 READ_APT_UPDATE_COUNTS() {
   local apt_output="$1"
-  # shellcheck disable=SC2034
+  local apt_total
   SECURITY_APT_UPDATES=$(printf '%s\n' "$apt_output" | grep -ci '^inst.*security' || true)
+  apt_total=$(printf '%s\n' "$apt_output" | grep -ci '^inst.' || true)
+  # The total install count includes security updates.  Keep the status
+  # fields disjoint so normal + security never double-counts packages.
   # shellcheck disable=SC2034
-  NORMAL_APT_UPDATES=$(printf '%s\n' "$apt_output" | grep -ci '^inst.' || true)
+  NORMAL_APT_UPDATES=$((apt_total - SECURITY_APT_UPDATES))
 }
 
 # Proxmox commands are noisy because the API prints task/UPID progress. Keep

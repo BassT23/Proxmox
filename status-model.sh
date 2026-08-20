@@ -98,8 +98,9 @@ STATUS_MODEL_RECORD() {
   local error_code="${10:-}" error_message="${11:-}"
   local node="${12:-$STATUS_MODEL_NODE}"
   local name="${13:-${STATUS_MODEL_GUEST_NAME:-}}"
+  local normal_updates="${14:-null}" security_updates="${15:-null}"
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(STATUS_MODEL_B64 "$id")" \
     "$(STATUS_MODEL_B64 "$type")" \
     "$(STATUS_MODEL_B64 "$transport")" \
@@ -112,7 +113,9 @@ STATUS_MODEL_RECORD() {
     "$(STATUS_MODEL_B64 "$error_code")" \
     "$(STATUS_MODEL_B64 "$error_message")" \
     "$(STATUS_MODEL_B64 "$node")" \
-    "$(STATUS_MODEL_B64 "$name")" >> "$STATUS_MODEL_RECORD_FILE"
+    "$(STATUS_MODEL_B64 "$name")" \
+    "$(STATUS_MODEL_B64 "$normal_updates")" \
+    "$(STATUS_MODEL_B64 "$security_updates")" >> "$STATUS_MODEL_RECORD_FILE"
 }
 
 STATUS_MODEL_IMPORT_FILE() {
@@ -163,6 +166,8 @@ with open(record_file, "a", encoding="utf-8") as records:
             encode(error.get("message")),
             encode(target.get("node")),
             encode(target.get("name")),
+            encode(target.get("normal_updates"), "null"),
+            encode(target.get("security_updates"), "null"),
         ]
         last_update = target.get("last_update")
         if isinstance(last_update, dict):
@@ -220,15 +225,27 @@ def is_newer_or_equal(candidate, current):
 with open(record_file, encoding="utf-8") as records:
     for line in records:
         fields = line.rstrip("\n").split("\t")
-        if len(fields) not in (12, 13, 14):
+        if len(fields) not in (12, 13, 14, 15, 16):
             raise ValueError("invalid status record")
         (target_id, target_type, transport, reachable, os_name, updater,
          updates, reboot_required, check_status, error_code, error_message,
          node, *optional_fields) = map(decode, fields)
         name_fields = optional_fields[:1]
         imported_last_update = None
-        if len(optional_fields) > 1 and optional_fields[1]:
+        normal_updates = security_updates = None
+        optional_offset = 1
+        # Records written before the split-update schema used the second
+        # optional field for last_update. Keep those records readable.
+        if len(optional_fields) > 1 and optional_fields[1].lstrip().startswith("{"):
             imported_last_update = json.loads(optional_fields[1])
+            optional_offset = 3
+        else:
+            if len(optional_fields) > 1:
+                normal_updates = None if optional_fields[1] in ("", "null") else int(optional_fields[1])
+            if len(optional_fields) > 2:
+                security_updates = None if optional_fields[2] in ("", "null") else int(optional_fields[2])
+            if len(optional_fields) > 3 and optional_fields[3]:
+                imported_last_update = json.loads(optional_fields[3])
         name = name_fields[0] if name_fields else ""
         available = None if updates in ("", "null") else int(updates)
         reboot = None if reboot_required in ("", "null") else reboot_required == "true"
@@ -249,6 +266,8 @@ with open(record_file, encoding="utf-8") as records:
             "os_version": None,
             "updater": updater or None,
             "updates": {"available": available},
+            **({"normal_updates": normal_updates} if len(optional_fields) > 1 and optional_offset == 1 else {}),
+            **({"security_updates": security_updates} if len(optional_fields) > 2 and optional_offset == 1 else {}),
             "reboot_required": reboot,
             "last_check": generated_at,
             "check_status": check_status or "not_checked",
