@@ -677,6 +677,21 @@ remote_update_job() {
     fi
   done
   if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "mkdir -p -- '$remote_update_dir/exit'"; then
+    timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
+    printf 'Could not prepare remote update exit handlers on %s.\n' "$node" >&2
+    return 6
+  fi
+  for source in "$LOCAL_FILES/exit/error.sh" "$LOCAL_FILES/exit/passed.sh"; do
+    [[ -f "$source" ]] || continue
+    if ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$source" \
+      "$user@$host:$remote_update_dir/exit/$(basename -- "$source")"; then
+      timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
+      printf 'Could not transfer remote update exit handler to %s.\n' "$node" >&2
+      return 6
+    fi
+  done
+  if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
     "chmod 750 '$remote_update_dir/job-runner.sh' '$remote_update_dir/update.sh'"; then
     timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
     printf 'Could not prepare remote update runner on %s.\n' "$node" >&2

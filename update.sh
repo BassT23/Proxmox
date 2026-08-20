@@ -17,6 +17,7 @@ UPDATE_FAILURE=false
 # Variable / Function
 LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
+TEMP_STATE_DIR="${UU_TEMP_STATE_DIR:-$LOCAL_FILES/temp}"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 USER_SCRIPTS="${USER_SCRIPTS:-$LOCAL_FILES/scripts.d}"
 TARGET_RUNTIME_FILE="${TARGET_RUNTIME_FILE:-$LOCAL_FILES/target-runtime.sh}"
@@ -642,12 +643,12 @@ GET_BACKUP_STORAGE () {
 
 # Snapshot/Backup
 CONTAINER_BACKUP () {
-  local snapshot_requested="$SNAPSHOT"
+  local snapshot_requested="$SNAPSHOT" snapshot_output
   local backup_requested="$BACKUP"
 
   if [[ "$snapshot_requested" == true || "$backup_requested" == true ]]; then
     if [[ "$snapshot_requested" == true ]]; then
-      if pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
+      if snapshot_output=$(pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" 2>&1); then
         echo -e "✅${GN:-} Snapshot created${CL:-}"
         echo -e "ℹ ${GN:-} Delete old snapshots${CL:-}"
         LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
@@ -656,9 +657,10 @@ CONTAINER_BACKUP () {
         done
       echo -e "✅${GN:-} Done${CL:-}"
       else
-        echo -e "❌${RD:-} Snapshot creation failed for LXC $CONTAINER${CL:-}"
-        if [[ "$backup_requested" == true ]]; then
-          backup_requested=true
+        if grep -Eqi 'snapshot feature is not available|snapshot[^[:alnum:]]*(feature )?(is )?(not available|unsupported|not supported)|not supported[^[:alnum:]]*snapshot' <<< "$snapshot_output"; then
+          echo -e "⚠️${OR:-} Snapshot not supported for LXC $CONTAINER; continuing without snapshot${CL:-}"
+          snapshot_requested=false
+        elif [[ "$backup_requested" == true ]]; then
           snapshot_requested=false
           echo -e "ℹ ${OR:-} Attempting configured backup fallback${CL:-}"
         elif [[ "$BACKUP_LXC_MP" == true ]] && pct config "$CONTAINER" | grep -q '^mp'; then
@@ -666,6 +668,7 @@ CONTAINER_BACKUP () {
           snapshot_requested=false
           echo -e "ℹ ${OR:-} Changed to backup, because of mount points${CL:-}"
         else
+          echo -e "❌${RD:-} Snapshot creation failed for LXC $CONTAINER${CL:-}"
           echo -e "❌${RD:-} Guest update aborted: configured snapshot protection was not created${CL:-}"
           return 1
         fi
@@ -691,12 +694,12 @@ CONTAINER_BACKUP () {
   fi
 }
 VM_BACKUP () {
-  local snapshot_requested="$SNAPSHOT"
+  local snapshot_requested="$SNAPSHOT" snapshot_output
   local backup_requested="$BACKUP"
 
   if [[ "$snapshot_requested" == true || "$backup_requested" == true ]]; then
     if [[ "$snapshot_requested" == true ]]; then
-      if qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" &>/dev/null; then
+      if snapshot_output=$(qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" 2>&1); then
         echo -e "✅${GN:-} Snapshot created${CL:-}"
         echo -e "ℹ ${GN:-} Delete old snapshot(s)${CL:-}"
         LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
@@ -705,11 +708,14 @@ VM_BACKUP () {
         done
       echo -e "✅${GN:-} Done${CL:-}"
       else
-        echo -e "❌${RD:-} Snapshot creation failed for VM $VM${CL:-}"
-        if [[ "$backup_requested" == true ]]; then
+        if grep -Eqi 'snapshot feature is not available|snapshot[^[:alnum:]]*(feature )?(is )?(not available|unsupported|not supported)|not supported[^[:alnum:]]*snapshot' <<< "$snapshot_output"; then
+          echo -e "⚠️${OR:-} Snapshot not supported for VM $VM; continuing without snapshot${CL:-}"
+          snapshot_requested=false
+        elif [[ "$backup_requested" == true ]]; then
           snapshot_requested=false
           echo -e "ℹ ${OR:-} Attempting configured backup fallback${CL:-}"
         else
+          echo -e "❌${RD:-} Snapshot creation failed for VM $VM${CL:-}"
           echo -e "❌${RD:-} Guest update aborted: configured snapshot protection was not created${CL:-}"
           return 1
         fi
@@ -1383,14 +1389,14 @@ CONTAINER_UPDATE_START () {
       fi
     fi
   done
-  rm -rf /etc/ultimate-updater/temp/temp
+  rm -rf "$TEMP_STATE_DIR/temp"
 }
 
 # Container Update
 UPDATE_CONTAINER () {
   CONTAINER=$1
   CCONTAINER="true"
-  echo 'CONTAINER="'"$CONTAINER"'"' > /etc/ultimate-updater/temp/var
+  echo 'CONTAINER="'"$CONTAINER"'"' > "$TEMP_STATE_DIR/var"
   OS=$(pct config "$CONTAINER" | awk '/^ostype/' - | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
 #  if [[ "$OS" =~ centos ]]; then
@@ -1600,7 +1606,7 @@ UPDATE_VM () {
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   CVM="true"
-  echo 'VM="'"$VM"'"' > /etc/ultimate-updater/temp/var
+  echo 'VM="'"$VM"'"' > "$TEMP_STATE_DIR/var"
   echo -e "🔄${GN:-} Updating VM ${BL:-}$VM${CL:-} : ${GN:-}$NAME${CL:-}\n"
   # Backup
   echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
@@ -1913,7 +1919,7 @@ fi
 
 # Logging
 OUTPUT_TO_FILE () {
-  echo 'EXEC_HOST="'"$HOSTNAME"'"' > /etc/ultimate-updater/temp/exec_host
+  echo 'EXEC_HOST="'"$HOSTNAME"'"' > "$TEMP_STATE_DIR/exec_host"
   if [[ "$RICM" != true ]]; then
     touch "$LOG_FILE"
     exec &> >(tee "$LOG_FILE")
@@ -2017,14 +2023,14 @@ fi
 # shellcheck disable=SC2329
 EXIT () {
   EXIT_CODE=$?
-  if [[ -f "/etc/ultimate-updater/temp/exec_host" ]]; then
-    EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' /etc/ultimate-updater/temp/exec_host)
+  if [[ -f "$TEMP_STATE_DIR/exec_host" ]]; then
+    EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' "$TEMP_STATE_DIR/exec_host")
   fi
   if [[ "$WELCOME_SCREEN" == true && -n "$EXEC_HOST" ]]; then
     scp "$LOCAL_FILES"/check-output "$EXEC_HOST":"$LOCAL_FILES"/check-output
   fi
   if [[ "${INITIAL_INVENTORY_CLI:-false}" == true ]]; then
-    rm -rf /etc/ultimate-updater/temp/var
+    rm -f -- "${TEMP_STATE_DIR:?}/var"
     rm -rf "$LOCAL_FILES"/update
     exit "$EXIT_CODE"
   fi
@@ -2065,9 +2071,9 @@ EXIT () {
     fi
   fi
   sleep 3
-  rm -rf /etc/ultimate-updater/temp/var
+  rm -f -- "${TEMP_STATE_DIR:?}/var"
   rm -rf "$LOCAL_FILES"/update
-  if [[ -f "/etc/ultimate-updater/temp/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf "$LOCAL_FILES"; fi
+  if [[ -f "$TEMP_STATE_DIR/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf "$LOCAL_FILES"; fi
 }
 trap EXIT EXIT
 
@@ -2081,7 +2087,7 @@ fi
 
 # Run
 export TERM=xterm-256color
-if ! [[ -d "/etc/ultimate-updater/temp" ]]; then mkdir /etc/ultimate-updater/temp; fi
+if ! [[ -d "$TEMP_STATE_DIR" ]]; then mkdir -p "$TEMP_STATE_DIR"; fi
 OUTPUT_TO_FILE
 IP=$(hostname -i | cut -d ' ' -f1)
 ARGUMENTS "$@"
