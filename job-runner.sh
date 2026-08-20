@@ -166,9 +166,9 @@ refresh_remote_target_status() {
     rm -f -- "$local_status_file"
   elif [[ -x "$CHECK_CLI" ]]; then
     if [[ "$target" == node-* ]]; then
-      UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check-node "$owner_node" </dev/null || refresh_rc=$?
+      UU_CHECK_JOB_EXECUTION=true UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check-node "$owner_node" </dev/null || refresh_rc=$?
     else
-      UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check "$target" </dev/null || refresh_rc=$?
+      UU_CHECK_JOB_EXECUTION=true UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check "$target" </dev/null || refresh_rc=$?
     fi
   else
     refresh_rc=127
@@ -495,7 +495,7 @@ run_job() {
       fi
       post_check_message="post-update host status refresh rc=$post_check_rc"
     elif [[ -x "$CHECK_CLI" ]]; then
-      UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check "$target" </dev/null || post_check_rc=$?
+      UU_CHECK_JOB_EXECUTION=true UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check "$target" </dev/null || post_check_rc=$?
       post_check_message="post-update target status refresh rc=$post_check_rc"
     else
       post_check_rc=127
@@ -659,9 +659,9 @@ run_check_job() {
     return 75
   fi
   case "$mode" in
-    target) "$cli" check "$target" </dev/null ;;
-    node) "$cli" check-node "$target" </dev/null ;;
-    all) "$cli" check </dev/null ;;
+    target) UU_CHECK_JOB_EXECUTION=true "$cli" check "$target" </dev/null ;;
+    node) UU_CHECK_JOB_EXECUTION=true "$cli" check-node "$target" </dev/null ;;
+    all) UU_CHECK_JOB_EXECUTION=true "$cli" check </dev/null ;;
   esac
   exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then

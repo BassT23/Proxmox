@@ -4,6 +4,12 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
+
+# Direct CLI checks must enter the same target-aware runner as WebUI checks;
+# otherwise a direct check could bypass an active update lock.
+grep -Fq '"$JOB_RUNNER" start-check "$target" "$SCRIPT_DIR/ultimate-updater" target' "$ROOT_DIR/ultimate-updater"
+grep -Fq 'UU_CHECK_JOB_EXECUTION=true "$cli" check "$target"' "$ROOT_DIR/job-runner.sh"
+
 mkdir -p "$WORK_DIR/bin" "$WORK_DIR/jobs"
 
 cat > "$WORK_DIR/bin/systemd-run" <<'EOF'
