@@ -961,7 +961,7 @@ CHECK_SINGLE_CONTAINER () {
     return 1
   fi
   if [[ "$status" == "status: stopped" ]]; then
-    if [[ "$STOPPED" != true ]]; then
+    if [[ "${UU_EXPLICIT_TARGET_CHECK:-false}" != true && "$STOPPED" != true ]]; then
       STATUS_MODEL_GUEST_NAME=""
       if declare -f cluster_target_guest_name >/dev/null 2>&1; then
         STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$target" 2>/dev/null || true)
@@ -1001,7 +1001,7 @@ CHECK_SINGLE_CONTAINER () {
     return "$check_rc"
   fi
   if [[ "$status" == "status: running" ]]; then
-    if [[ "$RUNNING" != true ]]; then
+    if [[ "${UU_EXPLICIT_TARGET_CHECK:-false}" != true && "$RUNNING" != true ]]; then
       STATUS_MODEL_GUEST_NAME=""
       if declare -f cluster_target_guest_name >/dev/null 2>&1; then
         STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$target" 2>/dev/null || true)

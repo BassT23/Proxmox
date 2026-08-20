@@ -23,6 +23,7 @@ CAPTURE_POST_UPDATE_STATUS 191 ccontainer
 test -s "$UU_REMOTE_WORK_DIR/post-update-status.rc"
 test ! -e "$TEMP_STATE_DIR/post-update-status.rc"
 grep -Fxq 0 "$UU_REMOTE_WORK_DIR/post-update-status.rc"
+grep -Fq 'UU_EXPLICIT_TARGET_CHECK=true' "$ROOT_DIR/update.sh"
 
 chmod 640 "$CHECK_SCRIPT"
 CAPTURE_POST_UPDATE_STATUS 191 ccontainer 2>"$WORK_DIR/capture-error"
