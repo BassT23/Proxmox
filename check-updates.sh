@@ -899,13 +899,8 @@ CHECK_CONTAINER () {
     if [[ "$SECURITY_APT_UPDATES" -gt 0 || "$NORMAL_APT_UPDATES" != 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
     fi
-    if [[ "$SECURITY_APT_UPDATES" -gt 0 && "$NORMAL_APT_UPDATES" != 0 ]]; then
-      echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
-    elif [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then
-      echo -e "S: $SECURITY_APT_UPDATES / "
-    elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
-      echo -e "N: $NORMAL_APT_UPDATES"
-    fi
+    echo -e "Normal updates: $NORMAL_APT_UPDATES"
+    echo -e "Security updates: $SECURITY_APT_UPDATES"
   elif [[ "$OS" =~ fedora ]]; then
     if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "dnf check-update | grep -Ec ' updates$'"); then
       CHECK_CONTAINER_FAILURE "dnf check-update failed for LXC $CONTAINER"

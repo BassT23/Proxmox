@@ -25,6 +25,29 @@ assert target["security_updates"] == 4
 assert target["normal_updates"] + target["security_updates"] == target["updates"]["available"]
 PY
 
+cat > "$WORK_DIR/import.json" <<'EOF'
+{"schema_version":1,"targets":[{"id":"230","type":"lxc","transport":"pct","reachable":true,"os":"ubuntu","updater":"apt","updates":{"available":5},"normal_updates":3,"security_updates":2,"reboot_required":false,"check_status":"updates_available","error":null,"node":"node2","name":"tasmota"}]}
+EOF
+LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/imported.json" \
+STATUS_MODEL_RECORD_FILE="$WORK_DIR/import.records" bash -c '
+  . "$1/status-model.sh"
+  STATUS_MODEL_INIT
+  STATUS_MODEL_IMPORT_FILE "$2"
+  STATUS_MODEL_FINISH
+' _ "$ROOT_DIR" "$WORK_DIR/import.json"
+python3 - "$WORK_DIR/imported.json" <<'PY'
+import json
+import sys
+
+target = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]
+assert (target["normal_updates"], target["security_updates"]) == (3, 2)
+PY
+
+grep -Fq 'CONTAINER_NORMAL_UPDATES=$NORMAL_APT_UPDATES' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'CONTAINER_SECURITY_UPDATES=$SECURITY_APT_UPDATES' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'Normal updates: $NORMAL_APT_UPDATES' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'Security updates: $SECURITY_APT_UPDATES' "$ROOT_DIR/check-updates.sh"
+
 cat > "$WORK_DIR/apt-output" <<'EOF'
 Inst security-one (1.0 Ubuntu-Security)
 Inst security-two (2.0 Ubuntu-Security)
