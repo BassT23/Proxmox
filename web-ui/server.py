@@ -295,6 +295,24 @@ PAGE = r"""<!doctype html>
     @media (max-width:430px) {
       .target-row.lxc-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
     }
+    /* Job log actions share one compact button treatment. The download link
+       is intentionally secondary, but must align with Show/Hide log. */
+    .job > button[data-job], .job .job-download, .job .log-latest { display:inline-flex; align-items:center; justify-content:center; min-height:34px; padding:8px 11px; border:1px solid var(--line); border-radius:9px; font:inherit; font-size:.72rem; line-height:1.15; white-space:nowrap }
+    .job > button[data-job] { min-width:92px }
+    .job .job-download { color:var(--muted); background:#ffffff0d; text-decoration:none }
+    .job .job-download:hover,.job .job-download:focus-visible { border-color:var(--accent); color:var(--text); outline:2px solid #73a7ff55 }
+    .job .log-actions { grid-column:5; margin:0; justify-content:flex-start; min-width:0 }
+    .job .log { grid-column:1 / -1; width:100%; min-width:0 }
+    @media (max-width:720px) {
+      .job { grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:start }
+      .job > code, .job > span:not(.pill), .job > .pill, .job > button[data-job] { min-width:0 }
+      .job > code { grid-column:1 / -1 }
+      .job > span:not(.pill) { grid-column:1 / -1 }
+      .job > .pill { grid-column:1 }
+      .job > button[data-job] { grid-column:2; grid-row:3; width:auto }
+      .job .log-actions { grid-column:1 / -1; grid-row:4; justify-content:flex-start }
+      .job .log { grid-column:1 / -1; grid-row:5 }
+    }
   </style>
 </head>
 <body>

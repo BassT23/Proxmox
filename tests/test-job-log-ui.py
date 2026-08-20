@@ -31,5 +31,9 @@ assert 'text/plain; charset=utf-8' in source
 assert 'strip_ansi(result.stdout).encode("utf-8")' in source
 assert 'encoding="utf-8"' in source
 assert 'errors="replace"' in source
+assert ".job > button[data-job], .job .job-download, .job .log-latest" in source
+assert ".job .log-actions { grid-column:5" in source
+assert ".job .log { grid-column:1 / -1" in source
+assert ".job > button[data-job] { grid-column:2; grid-row:3; width:auto }" in source
 
 print("job log UI/download tests: PASS")
