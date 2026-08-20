@@ -47,8 +47,8 @@ TAG_FILTER_LAST_LOG=""
 apply_only_exclude_tags ONLY EXCLUDE
 [[ "$ONLY" == "112 230 310" && "$EXCLUDE" == "230" ]]
 log=$(print_tag_log)
-grep -Fq "Selection (ONLY='112 230 310')" <<<"$log"
-grep -Fq "Exclusion (EXCLUDE='230')" <<<"$log"
+grep -Fq "Selection (ONLY='112 230 310') -> Target IDs: 112 230 310" <<<"$log"
+grep -Fq "Exclusion (EXCLUDE='230') -> Target IDs: 230" <<<"$log"
 guest_id_matches "$ONLY" 112
 if guest_id_matches "$ONLY" 230 && guest_id_matches "$EXCLUDE" 230; then :; else exit 1; fi
 

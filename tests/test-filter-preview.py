@@ -70,6 +70,22 @@ apply_only_exclude_tags() {
 
     unknown = server.target_preview(payload, {**base, "ONLY_UPDATE_CHECK": "999"}, resolver, inventory)
     assert "999" in unknown["unknown"]
+    assert unknown["only_unknown"] == ["999"]
+    assert unknown["exclude_unknown"] == []
+
+    only_zero_exclude_match = server.target_preview(
+        payload, {**base, "ONLY_UPDATE_CHECK": "missing", "EXCLUDE_UPDATE_CHECK": "917"}, resolver, inventory,
+    )
+    assert only_zero_exclude_match["effective_selection"] == "all-eligible"
+    assert only_zero_exclude_match["only_unknown"] == ["missing"]
+    assert only_zero_exclude_match["exclude_unknown"] == []
+    assert [item["label"] for item in only_zero_exclude_match["excluded"]] == ["917 · cent · offline"]
+
+    exclude_missing = server.target_preview(
+        payload, {**base, "EXCLUDE_UPDATE_CHECK": "missing-exclude"}, resolver, inventory,
+    )
+    assert exclude_missing["only_unknown"] == []
+    assert exclude_missing["exclude_unknown"] == ["missing-exclude"]
 
     update_base = {"ONLY": "", "EXCLUDE": ""}
     update_only = server.target_preview(payload, {**update_base, "ONLY": "selected"}, resolver, inventory,

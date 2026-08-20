@@ -873,7 +873,7 @@ CHECK_CONTAINER () {
     # The guest hostname is display metadata, not a prerequisite for the
     # package check.  A broken/missing hostname command must not turn an
     # otherwise checkable container into CHECK_COMMAND_FAILED.  Prefer the
-    # Proxmox config, then the inventory name, and finally the VMID.
+    # Proxmox config, then the inventory name, and finally the target ID.
     NAME=$(awk -F': ' '$1 == "hostname" {print $2; exit}' "$LOCAL_FILES/temp/temp" 2>/dev/null || true)
     NAME="${NAME:-$STATUS_MODEL_GUEST_NAME}"
     NAME="${NAME:-$CONTAINER}"

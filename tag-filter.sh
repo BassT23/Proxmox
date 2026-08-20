@@ -9,9 +9,9 @@
 # Proxmox VM/CT Tag & ID Expansion Helper
 #
 # apply_only_exclude_tags ONLY_VAR_NAME EXCLUDE_VAR_NAME
-# Expands ONLY (or if empty, EXCLUDE) into a space-separated list of numeric VMIDs.
+# Expands ONLY (or if empty, EXCLUDE) into a space-separated list of target IDs.
 # Supports:
-#   - Plain VMIDs: 101 202
+#   - Plain target IDs: 101 202
 #   - Delimiters: commas / semicolons / pipes / spaces intermixed (e.g. 101,202;203|204)
 #   - Ranges: 120-125 (inclusive)
 #   - Mixed IDs + ranges + tags: 110 testing 111 200-202
@@ -22,7 +22,7 @@
 # Behavior summary:
 #   1. Tokenize ONLY if set and always tokenize EXCLUDE when present.
 #   2. For each token:
-#        number        -> add as VMID
+#        number        -> add as target ID
 #        range a-b     -> expand (a..b)
 #        tag           -> collect tag for later resolution
 #   3. Resolve tags to IDs (any tag match) and append, de-duplicating while
@@ -368,9 +368,9 @@ print(" ".join(eligible))
       _expanded_exclude=$(_expand_mixed_spec "$_EXCLUDE_VALUE")
       printf -v "$_exclude_var_name" '%s' "$_expanded_exclude"
       if [[ -n $_expanded_exclude ]]; then
-        _record_tag_log "ℹ ${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> VMIDs: $_expanded_exclude${CL:-}\n"
+        _record_tag_log "ℹ ${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') -> Target IDs: $_expanded_exclude${CL:-}\n"
       else
-        # _record_tag_log "${BL:-}[Info]${OR:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') matched no VMIDs${CL:-}"
+        _record_tag_log "ℹ ${BL:-} Exclusion (EXCLUDE='${_EXCLUDE_VALUE}') matched no eligible targets${CL:-}\n"
         return 0
       fi
     fi
@@ -393,7 +393,7 @@ print(" ".join(eligible))
     fi
     printf -v "$_only_var_name" '%s' "$_expanded_only"
     if [[ -n $_expanded_only ]]; then
-      _record_tag_log "ℹ ${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> VMIDs: $_expanded_only${CL:-}\n"
+      _record_tag_log "ℹ ${OR:-} Selection (ONLY='${_ONLY_VALUE}') -> Target IDs: $_expanded_only${CL:-}\n"
     else
       _record_tag_log "ℹ ${OR:-} Selection (ONLY='${_ONLY_VALUE}') matched no eligible targets; using all eligible targets${CL:-}\n"
     fi
