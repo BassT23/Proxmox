@@ -4,12 +4,13 @@
 # Update-Extras #
 #################
 
-# shellcheck disable=SC2034
+# shellcheck disable=SC2034,SC2086
 
 VERSION="3.1"
 
 # Variables
-CONFIG_FILE="/etc/ultimate-updater/update.conf"
+LOCAL_FILES="${LOCAL_FILES:-/etc/ultimate-updater}"
+CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-$LOCAL_FILES/update.conf}"
 PIHOLE=$(awk -F'"' '/^PIHOLE=/ {print $2}' $CONFIG_FILE)
 IOBROKER=$(awk -F'"' '/^IOBROKER=/ {print $2}' $CONFIG_FILE)
 PTERODACTYL=$(awk -F'"' '/^PTERODACTYL=/ {print $2}' $CONFIG_FILE)

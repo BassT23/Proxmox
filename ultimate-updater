@@ -353,6 +353,20 @@ PY
   cat "$STATUS_FILE"
 }
 
+status_import() {
+  [[ $# -eq 1 ]] || { printf 'Usage: %s status-import FILE\n' "$(basename "$0")" >&2; return 2; }
+  require_file "$STATUS_MODEL_SCRIPT" "status model script" || return 1
+  require_file "$1" "status artifact" || return 1
+  # shellcheck disable=SC2034 # consumed by sourced status-model functions.
+  STATUS_MODEL_RECORD_FILE="${UU_STATUS_IMPORT_RECORD_FILE:-$LOCAL_FILES/.status-import.$$}"
+  STATUS_MODEL_INIT || return 1
+  STATUS_MODEL_IMPORT_FILE "$1" || { STATUS_MODEL_CLEANUP 2>/dev/null || true; return 1; }
+  STATUS_MODEL_PARTIAL=true STATUS_MODEL_FINISH
+  local result=$?
+  STATUS_MODEL_CLEANUP 2>/dev/null || true
+  return "$result"
+}
+
 status_human() {
   local status_result=0
   if [[ ! -f "$STATUS_FILE" ]]; then
@@ -711,7 +725,7 @@ remote_update_job() {
   printf '%s\n' "$output"
   job_unit=$(printf '%s\n' "$output" | sed -n 's/^Job:[[:space:]]*//p' | head -n 1)
   if [[ ! "$job_unit" =~ ^ultimate-updater-update-[A-Za-z0-9_.-]+$ ]] ||
-    ! "$JOB_RUNNER" record-remote "$job_unit" "$target" "$node" "$host" "$port"; then
+    ! "$JOB_RUNNER" record-remote "$job_unit" "$target" "$node" "$host" "$port" "$remote_update_dir"; then
     printf 'Remote job started but could not be referenced locally.\n' >&2
     return 7
   fi
@@ -1102,6 +1116,10 @@ case "$command" in
       --json) [[ $# -eq 2 ]] || { usage >&2; exit 2; }; status_json ;;
       *) usage >&2; exit 2 ;;
     esac
+    ;;
+  status-import)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    status_import "$2"
     ;;
   config)
     [[ "${2:-}" == set && "${3:-}" == web-port && $# -eq 4 ]] || { usage >&2; exit 2; }

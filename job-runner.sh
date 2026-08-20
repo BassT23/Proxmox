@@ -99,12 +99,13 @@ valid_remote_value() {
 }
 
 write_remote_ref() {
-  local unit="$1" target="$2" owner_node="$3" owner_host="$4" port="$5" file temp
+  local unit="$1" target="$2" owner_node="$3" owner_host="$4" port="$5" workspace="${6:-}" file temp
   valid_unit "$unit" || return 2
   valid_target "$target" || return 2
   valid_remote_value "$owner_node" || return 2
   valid_remote_value "$owner_host" || return 2
   [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]] || return 2
+  [[ -z "$workspace" || "$workspace" =~ ^/tmp/ultimate-updater-update-node-[0-9]+-[0-9]+-[0-9]+$ ]] || return 2
   mkdir -p "$REMOTE_REF_DIR" || return 1
   chmod 0755 "$REMOTE_REF_DIR" || return 1
   file=$(remote_ref_file "$unit")
@@ -118,6 +119,7 @@ write_remote_ref() {
     printf 'port=%s\n' "$port"
     printf 'registered_at=%s\n' "$(now)"
     printf 'status_refresh=pending\n'
+    printf 'workspace=%s\n' "$workspace"
   } > "$temp" || return 1
   chmod 0644 "$temp" || return 1
   mv -f -- "$temp" "$file"
@@ -136,13 +138,31 @@ mark_remote_status_refresh() {
 
 refresh_remote_target_status() {
   local unit="$1" owner_node="$2" target="$3" refresh_state refresh_rc=0 lock
-  local ref_file
+  local ref_file workspace local_status_file remote_refresh_rc remote_status_file
   ref_file=$(remote_ref_file "$unit")
   refresh_state=$(state_value "$ref_file" status_refresh)
   [[ "$refresh_state" == "done" || "$refresh_state" == "failed" ]] && return 0
   lock="$ref_file.refresh.lock"
   mkdir "$lock" 2>/dev/null || return 0
-  if [[ -x "$CHECK_CLI" ]]; then
+  workspace=$(state_value "$ref_file" workspace)
+  if [[ "$target" =~ ^[0-9]+$ && -n "$workspace" && -x "$CHECK_CLI" ]]; then
+    local_status_file=$(mktemp)
+    remote_status_file="$workspace/status.json"
+    if ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
+      "$(state_value "$ref_file" owner_host)" "cat $(printf '%q' "$remote_status_file")" > "$local_status_file" 2>/dev/null &&
+      [[ -s "$local_status_file" ]] &&
+      "$CHECK_CLI" status-import "$local_status_file" </dev/null; then
+      remote_refresh_rc=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
+        "$(state_value "$ref_file" owner_host)" "cat $(printf '%q' "$workspace/post-update-status.rc")" 2>/dev/null || printf '0')
+      [[ "$remote_refresh_rc" =~ ^[0-9]+$ ]] || remote_refresh_rc=1
+      refresh_rc="$remote_refresh_rc"
+      ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
+        "$(state_value "$ref_file" owner_host)" "rm -rf -- $(printf '%q' "$workspace")" >/dev/null 2>&1 || true
+    else
+      refresh_rc=1
+    fi
+    rm -f -- "$local_status_file"
+  elif [[ -x "$CHECK_CLI" ]]; then
     if [[ "$target" == node-* ]]; then
       UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check-node "$owner_node" </dev/null || refresh_rc=$?
     else
@@ -337,6 +357,7 @@ start_job() {
   fi
   [[ -n "${UU_LOCAL_FILES:-}" ]] && systemd_env+=("--setenv=UU_LOCAL_FILES=$UU_LOCAL_FILES")
   [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && systemd_env+=("--setenv=UU_REMOTE_WORK_DIR=$UU_REMOTE_WORK_DIR")
+  [[ "$target" =~ ^[0-9]+$ ]] && systemd_env+=("--setenv=UU_POST_UPDATE_STATUS_CAPTURE=true")
 
   timestamp=$(date -u '+%Y%m%d-%H%M%S')
   unit="${JOB_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
@@ -384,7 +405,7 @@ start_global_job() {
 
 run_job() {
   local unit="$1" target="$2" update_script="$3" file started exit_code lock_file
-  local post_check_rc=0 post_check_message=""
+  local post_check_rc=0 post_check_message="" captured_status_file captured_status_rc
   valid_target "$target" || return 2
   file=$(state_file "$unit")
   started=$(state_value "$file" started_at)
@@ -405,7 +426,13 @@ run_job() {
   exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then
     printf 'Post-update status refresh started for %s.\n' "$target"
-    if [[ "${UU_UPDATE_SCOPE:-}" == host || "$target" == host ]]; then
+    captured_status_file="${UU_REMOTE_WORK_DIR:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/temp}/post-update-status.rc"
+    if [[ "$target" =~ ^[0-9]+$ && -f "$captured_status_file" ]]; then
+      captured_status_rc=$(cat "$captured_status_file" 2>/dev/null || printf '1')
+      [[ "$captured_status_rc" =~ ^[0-9]+$ ]] || captured_status_rc=1
+      post_check_rc="$captured_status_rc"
+      post_check_message="post-update target status captured before lifecycle restore rc=$post_check_rc"
+    elif [[ "${UU_UPDATE_SCOPE:-}" == host || "$target" == host ]]; then
       if [[ -x "$CHECK_SCRIPT" ]]; then
         UU_DEFER_NOTIFICATION=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true \
           "$CHECK_SCRIPT" host </dev/null || post_check_rc=$?
@@ -434,7 +461,9 @@ run_job() {
   else
     write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
   fi
-  [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && rm -rf -- "$UU_REMOTE_WORK_DIR"
+  if [[ -n "${UU_REMOTE_WORK_DIR:-}" && ( ! "$target" =~ ^[0-9]+$ || ! -f "$UU_REMOTE_WORK_DIR/post-update-status.rc" ) ]]; then
+    rm -rf -- "$UU_REMOTE_WORK_DIR"
+  fi
   return "$exit_code"
 }
 
@@ -711,8 +740,8 @@ case "${1:-}" in
     list_jobs
     ;;
   record-remote)
-    [[ $# -eq 6 ]] || { usage >&2; exit 2; }
-    write_remote_ref "$2" "$3" "$4" "$5" "$6"
+    [[ $# -eq 6 || $# -eq 7 ]] || { usage >&2; exit 2; }
+    write_remote_ref "$2" "$3" "$4" "$5" "$6" "${7:-}"
     ;;
   remote-log)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }

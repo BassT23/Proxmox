@@ -19,6 +19,7 @@ LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 TEMP_STATE_DIR="${UU_TEMP_STATE_DIR:-$LOCAL_FILES/temp}"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
+CHECK_SCRIPT="${UU_CHECK_SCRIPT:-$LOCAL_FILES/check-updates.sh}"
 USER_SCRIPTS="${USER_SCRIPTS:-$LOCAL_FILES/scripts.d}"
 TARGET_RUNTIME_FILE="${TARGET_RUNTIME_FILE:-$LOCAL_FILES/target-runtime.sh}"
 if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
@@ -642,6 +643,19 @@ GET_BACKUP_STORAGE () {
 }
 
 # Snapshot/Backup
+CAPTURE_POST_UPDATE_STATUS() {
+  local target="$1" kind="$2" refresh_rc=127
+  [[ "${UU_POST_UPDATE_STATUS_CAPTURE:-false}" == true ]] || return 0
+  if [[ -x "$CHECK_SCRIPT" ]]; then
+    STATUS_MODEL_FILE="$LOCAL_FILES/status.json" \
+      STATUS_MODEL_RECORD_FILE="$TEMP_STATE_DIR/post-update-status.records" \
+      STATUS_MODEL_PARTIAL=false UU_DEFER_NOTIFICATION=true \
+      "$CHECK_SCRIPT" "$kind" "$target" </dev/null || refresh_rc=$?
+  fi
+  printf '%s\n' "$refresh_rc" > "$TEMP_STATE_DIR/post-update-status.rc"
+  return 0
+}
+
 CONTAINER_BACKUP () {
   local snapshot_requested="$SNAPSHOT" snapshot_output
   local backup_requested="$BACKUP"
@@ -939,8 +953,8 @@ EXTRAS () {
       pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/"
       pct push "$CONTAINER" -- $LOCAL_FILES/update-extras.sh $LOCAL_FILES/update-extras.sh
       pct push "$CONTAINER" -- $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf
-      pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/update-extras.sh && \
-                                        $LOCAL_FILES/update-extras.sh && \
+      pct exec "$CONTAINER" -- bash -c "LOCAL_FILES='$LOCAL_FILES' chmod +x '$LOCAL_FILES/update-extras.sh' && \
+                                        LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh' && \
                                         rm -rf $LOCAL_FILES || true"
       USER_SCRIPTS
     # Extras in VMS with SSH_CONNECTION
@@ -950,8 +964,8 @@ EXTRAS () {
       ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/
       scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
       scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
-      ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/update-extras.sh && \
-                $LOCAL_FILES/update-extras.sh && \
+      ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "LOCAL_FILES='$LOCAL_FILES' chmod +x '$LOCAL_FILES/update-extras.sh' && \
+                LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh' && \
                 rm -rf $LOCAL_FILES || true"
       USER_SCRIPTS_VM
     fi
@@ -1366,6 +1380,7 @@ CONTAINER_UPDATE_START () {
 #        sleep "$LXC_START_DELAY"
         if WAIT_FOR_BOOTUP_LXC; then
           UPDATE_CONTAINER "$CONTAINER"
+          CAPTURE_POST_UPDATE_STATUS "$CONTAINER" ccontainer
         else
           ERROR_CODE=$?
           ID=$CONTAINER
@@ -1381,6 +1396,7 @@ CONTAINER_UPDATE_START () {
         echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" == true ]]; then
         UPDATE_CONTAINER "$CONTAINER"
+        CAPTURE_POST_UPDATE_STATUS "$CONTAINER" ccontainer
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" != true ]]; then
         echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
       else
@@ -1578,6 +1594,7 @@ VM_UPDATE_START () {
           qm start "$VM" >/dev/null 2>&1
           START_WAITING="true"
           UPDATE_VM "$VM"
+          CAPTURE_POST_UPDATE_STATUS "$VM" cvm
           # Stop the VM
           echo -e "⏹ ${GN:-} Shutting down VM${BL:-} $VM ${CL:-}\n\n"
           qm shutdown "$VM" &
@@ -1590,6 +1607,7 @@ VM_UPDATE_START () {
         echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
         UPDATE_VM "$VM"
+        CAPTURE_POST_UPDATE_STATUS "$VM" cvm
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" != true ]]; then
         echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
       else
