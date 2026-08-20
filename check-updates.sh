@@ -985,7 +985,7 @@ CHECK_SINGLE_CONTAINER () {
         "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
       return 0
     fi
-    if ! RUN_PROXMOX_COMMAND pct start "$target"; then
+    if ! RUN_PROXMOX_CAPTURE pct start "$target"; then
       CHECK_CONTAINER_FAILURE "Could not start LXC $target for check"
       return 1
     fi
@@ -995,7 +995,7 @@ CHECK_SINGLE_CONTAINER () {
       CHECK_CONTAINER_FAILURE "LXC $target did not become reachable after start"
       check_rc=$?
     fi
-    if ! RUN_PROXMOX_COMMAND pct shutdown "$target" --timeout 60 --forceStop 1; then
+    if ! RUN_PROXMOX_CAPTURE pct shutdown "$target" --timeout 60 --forceStop 1; then
       lifecycle_failure=1
       lifecycle_message="Could not restore stopped state for LXC $target"
     elif [[ "$(timeout 10 pct status "$target" 2>/dev/null)" != "status: stopped" ]]; then
