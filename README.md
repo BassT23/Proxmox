@@ -442,7 +442,8 @@ under `/etc/ultimate-updater/web-ui/assets/`; the large source graphic remains
 a repository asset and is not installed on nodes.
 
 The service listens on `0.0.0.0:8765` by default so it can be reached from a phone,
-desktop, or tablet in the trusted management/LAN network. The UI and API are
+desktop, or tablet in the trusted management/LAN network. HTTPS is the preferred
+protocol and the standard URL is `https://<proxmox-node>:8765/`. The UI and API are
 behind a local administrator login; setup is intentionally explicit and there
 is no default password:
 
@@ -451,18 +452,39 @@ https://<updater-node>:8765/
 sudo /usr/local/sbin/ultimate-updater-web-auth admin
 ```
 
-The Web UI prefers HTTPS automatically. It directly references the
-Proxmox-managed certificate pair (`/etc/pve/local/pve-ssl.pem` and
-`/etc/pve/local/pve-ssl.key`, or the custom `pveproxy-ssl` pair when present)
-without copying or changing private-key permissions. If no usable Proxmox
-certificate is available, the default `auto` mode logs a warning and uses HTTP
-as a transition fallback. Set `WEB_UI_HTTPS=true` in the root-owned
+The Web UI selects HTTPS automatically in `auto` mode. It directly references
+the Proxmox-managed certificate pair:
+
+```text
+Certificate: /etc/pve/local/pve-ssl.pem
+Private key: /etc/pve/local/pve-ssl.key
+```
+
+If the optional Proxmox proxy certificate pair exists, the corresponding
+`/etc/pve/local/pveproxy-ssl.pem` and `.key` files may be used instead. The
+files are referenced in place: they are not copied and their private-key
+permissions are not changed. TLS accepts version 1.2 or newer, and plaintext
+HTTP is not accepted on the HTTPS port.
+
+If no usable Proxmox certificate is available, `auto` logs a warning and uses
+HTTP as a transition fallback. HTTPS remains the preferred mode. Set
+`WEB_UI_HTTPS=true` in the root-owned
 `/etc/ultimate-updater/web-ui.conf` to require HTTPS, or set
 `WEB_UI_CERT_FILE` and `WEB_UI_KEY_FILE` there for an explicit certificate
-pair. A Proxmox certificate rotation requires restarting
-`ultimate-updater-web.service` so the process reloads the files. Accessing the
-HTTPS URL by an IP address can still show a browser name-mismatch warning when
-that IP is not listed in the certificate SANs.
+pair. An explicitly required but unusable certificate is reported as an error
+rather than silently falling back to HTTP.
+
+HTTPS works by hostname or IP when that name/address is included in the
+certificate SANs. Otherwise the connection is still encrypted, but the
+browser can show a certificate name-mismatch warning. After Proxmox renews
+its certificate, restart the Web UI so the process loads the new files:
+
+```bash
+systemctl restart ultimate-updater-web.service
+```
+
+The service is enabled for boot and starts again after a Proxmox node reboot,
+using the configured HTTPS/certificate source.
 
 The central Web UI port is stored outside the Web UI in the root-owned local
 file `/etc/ultimate-updater/web-ui.conf` as `WEB_UI_PORT=8765`. Existing
@@ -489,8 +511,9 @@ salted PBKDF2-SHA256 hash in the root-owned
 inactivity, use an HttpOnly/SameSite cookie, and can be ended with `Log out`.
 Browser write requests also require a session-bound CSRF token and a matching
 same-origin request. Do not expose this action-enabled service to the Internet
-or an untrusted network; use the management LAN or a properly configured
-reverse proxy/TLS boundary. The service runs as root because the existing CLI
+or an untrusted network; use the management LAN. The direct HTTPS service on
+port 8765 is the supported standard installation; a reverse proxy is not
+required. The service runs as root because the existing CLI
 and job runner require the updater's local permissions.
 
 Service control and logs:
