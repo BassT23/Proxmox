@@ -27,6 +27,9 @@ INITIAL_INVENTORY_STATE_FILE="/var/lib/ultimate-updater/initial-inventory.state"
 INITIAL_INVENTORY_LOCK_FILE="/var/lib/ultimate-updater/initial-inventory.lock"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
+BUILD_METADATA_FILE="$LOCAL_FILES/build-metadata"
+ARCHIVE_COMMIT=""
+ARCHIVE_TAG=""
 
 DOWNLOAD_FILE() {
   local url="$1" destination="$2" kind="${3:-text}" temporary headers http_code retry_after
@@ -76,16 +79,41 @@ DOWNLOAD_INSTALLER() {
 }
 
 DOWNLOAD_ARCHIVE() {
-  local archive="$TEMP_FOLDER/ultimate-updater.tar.gz" release_json asset_url
+  local archive="$TEMP_FOLDER/ultimate-updater.tar.gz" release_json asset_url archive_root release_tag
+  ARCHIVE_COMMIT=""
+  ARCHIVE_TAG=""
   if [[ "$BRANCH" == master ]]; then
     release_json="$TEMP_FOLDER/release.json"
     DOWNLOAD_FILE "https://api.github.com/repos/BassT23/Proxmox/releases/latest" "$release_json" text || return 1
     asset_url=$(grep -m1 'browser_download_url' "$release_json" | cut -d: -f2- | tr -d '" ,')
     [[ "$asset_url" =~ ^https:// ]] || { echo "GitHub release archive URL is unavailable." >&2; return 1; }
+    release_tag=$(grep -m1 '"tag_name"' "$release_json" | cut -d: -f2- | tr -d '" ,')
+    [[ "$release_tag" =~ ^[A-Za-z0-9._/-]+$ ]] && ARCHIVE_TAG="$release_tag"
     DOWNLOAD_FILE "$asset_url" "$archive" archive || return 1
   else
     DOWNLOAD_FILE "https://github.com/BassT23/Proxmox/tarball/$BRANCH" "$archive" archive || return 1
   fi
+  archive_root=$(tar -tzf "$archive" 2>/dev/null | awk -F/ 'NF {print $1; exit}')
+  if [[ "$archive_root" =~ ([0-9a-f]{40})$ ]]; then
+    ARCHIVE_COMMIT="${BASH_REMATCH[1]}"
+  elif [[ -n "$ARCHIVE_TAG" ]]; then
+    ARCHIVE_COMMIT=$(curl -4 -sS --connect-timeout 5 --max-time 15 \
+      "https://api.github.com/repos/BassT23/Proxmox/commits/$ARCHIVE_TAG" 2>/dev/null |
+      awk -F'"' '/"sha"[[:space:]]*:/ {print $4; exit}' || true)
+    [[ "$ARCHIVE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || ARCHIVE_COMMIT=""
+  fi
+}
+
+WRITE_BUILD_METADATA() {
+  local branch="$1" commit="${2:-}" tag="${3:-}" temporary
+  [[ "$branch" =~ ^(master|beta|develop)$ ]] || branch="unknown"
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || commit="unknown"
+  [[ "$tag" =~ ^[A-Za-z0-9._/-]+$ ]] || tag=""
+  temporary=$(mktemp "${BUILD_METADATA_FILE}.XXXXXX") || return 1
+  printf 'schema_version=1\nbranch="%s"\ncommit="%s"\ntag="%s"\n' \
+    "$branch" "$commit" "$tag" > "$temporary"
+  install -m 0644 "$temporary" "$BUILD_METADATA_FILE"
+  rm -f -- "$temporary"
 }
 
 #Colors
@@ -462,6 +490,7 @@ INSTALL () {
     else
       cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf.dist
     fi
+    WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" || exit 1
     cp "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     SETUP_WEB_SERVICE start
     START_INITIAL_INVENTORY
@@ -712,6 +741,7 @@ UPDATE () {
       rm -rf "$TEMP_FILES"/check-updates.sh || true
     fi
     cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
+    WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" || return 1
     rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
     # targets.conf is runtime inventory and must not be replaced by the
     # repository template after legacy migration or user edits.

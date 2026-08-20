@@ -66,6 +66,15 @@ case "$INSTALLED_BRANCH" in
   master|beta|develop) ;;
   *) INSTALLED_BRANCH=master ;;
 esac
+BUILD_METADATA_FILE="${UU_BUILD_METADATA_FILE:-$LOCAL_FILES/build-metadata}"
+INSTALLED_COMMIT=""
+INSTALLED_TAG=""
+if [[ -r "$BUILD_METADATA_FILE" ]]; then
+  INSTALLED_COMMIT=$(awk -F'"' '/^commit=/ {print $2; exit}' "$BUILD_METADATA_FILE")
+  INSTALLED_TAG=$(awk -F'"' '/^tag=/ {print $2; exit}' "$BUILD_METADATA_FILE")
+fi
+[[ "$INSTALLED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || INSTALLED_COMMIT="unknown"
+[[ "$INSTALLED_TAG" =~ ^[A-Za-z0-9._/-]+$ ]] || INSTALLED_TAG=""
 # USED_BRANCH describes the installed source only. A bare -up is always the
 # stable master target; beta/develop require an explicit selector.
 BRANCH=master
@@ -527,9 +536,19 @@ UNINSTALL () {
   fi
 }
 
+# Get the exact commit currently served by the installed branch.  This is
+# metadata for comparison only; the installer writes the installed commit.
+FETCH_REMOTE_COMMIT() {
+  local branch="$1"
+  [[ "$branch" =~ ^(master|beta|develop)$ ]] || return 1
+  curl -4 -sS --connect-timeout 5 --max-time 15 \
+    "https://api.github.com/repos/BassT23/Proxmox/commits/$branch" 2>/dev/null |
+    awk -F'"' '/"sha"[[:space:]]*:/ {print $4; exit}'
+}
+
 # Get Server Versions
 STATUS () {
-  local branch_for_status=${INSTALLED_BRANCH:-master} component label local_file local_version remote_version
+  local branch_for_status=${INSTALLED_BRANCH:-master} component label local_file local_version remote_version remote_commit
   local -a components=(
     "Updater|update.sh|$LOCAL_FILES/update.sh"
     "Extras|update-extras.sh|$LOCAL_FILES/update-extras.sh"
@@ -546,6 +565,11 @@ STATUS () {
   fi
 
   echo -e "${OR:-}  Version overview ($branch_for_status)${CL:-}\n"
+  printf 'Installed commit: %s\n' "${INSTALLED_COMMIT:-unknown}"
+  remote_commit=$(FETCH_REMOTE_COMMIT "$branch_for_status" || true)
+  [[ "$remote_commit" =~ ^[0-9a-f]{40}$ ]] || remote_commit="unavailable"
+  printf 'Available commit: %s\n' "$remote_commit"
+  printf 'Installed tag: %s\n\n' "${INSTALLED_TAG:-—}"
   printf '%-12s %-9s %-9s\n' "Component" "Local" "Server"
   printf '%-12s %-9s %-9s\n' "---------" "-----" "------"
   for component in "${components[@]}"; do

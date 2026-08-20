@@ -273,7 +273,9 @@ PAGE = r"""<!doctype html>
     async function loadJobs(){try{const d=await api('/api/jobs',{cache:'no-store'}),previous=new Map(jobs.map(job=>[job.unit,job.state]));jobs=sortJobs(Array.isArray(d.jobs)?d.jobs:[]);const statusRefreshJobFinished=jobs.some(job=>isStatusRefreshJob(job)&&['completed','failed','interrupted'].includes(job.state)&&['running','pending','starting'].includes(previous.get(job.unit)));renderJobs();reorderJobDom();if(statusRefreshJobFinished)await loadStatus();clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,10000)}}
     let updaterVersion=null,versionRetryTimer=null,versionStartupTimer=null,versionRetryUsed=false;
     function versionDisplay(data,value,includeBranch=false){return value&&includeBranch&&data?.branch?`${value} · ${data.branch}`:(value||'Unavailable')}
-    function renderUpdaterVersion(data){updaterVersion=data;const label=document.getElementById('updater-version-label'),indicator=document.getElementById('updater-version-indicator'),updateButton=document.getElementById('updater-version-update');label.textContent=data.state==='ok'?versionDisplay(data,data.installed,true):'version unavailable';indicator.hidden=!(data.state==='ok'&&data.update_available===true);updateButton.disabled=!(data.state==='ok'&&data.update_available===true&&data.branch);updateButton.textContent=data.state==='ok'&&data.update_available===true?'Update now':'Up to date';const content=document.getElementById('updater-version-content');if(data.state!=='ok'){content.innerHTML='<p class="hint">Version check unavailable. Try again later.</p>';return}let rows=(data.components||[]).map(c=>`<tr><th>${esc(c.name)}</th><td>Local ${esc(c.local)}</td><td>Server ${esc(c.server)}</td></tr>`).join('');content.innerHTML=`<div class="detail-grid"><div><span>Installed</span><strong>${esc(versionDisplay(data,data.installed))}</strong></div><div><span>Available</span><strong>${esc(versionDisplay(data,data.available))}</strong></div><div><span>Branch</span><strong>${esc(data.branch||'Unavailable')}</strong></div></div><table class="version-components"><thead><tr><th>Component</th><th>Local</th><th>Server</th></tr></thead><tbody>${rows||'<tr><td colspan="3">No component details available.</td></tr>'}</tbody></table>`}
+    const shortCommit=value=>value&&/^[0-9a-f]{40}$/.test(value)?value.slice(0,7):(value||'Unknown');
+    const versionFooterDisplay=data=>data?.state==='ok'?`${versionDisplay(data,data.installed,true)} · ${shortCommit(data.commit)}`:'version unavailable';
+    function renderUpdaterVersion(data){updaterVersion=data;const label=document.getElementById('updater-version-label'),indicator=document.getElementById('updater-version-indicator'),updateButton=document.getElementById('updater-version-update');label.textContent=versionFooterDisplay(data);indicator.hidden=!(data.state==='ok'&&data.update_available===true);updateButton.disabled=!(data.state==='ok'&&data.update_available===true&&data.branch);updateButton.textContent=data.state==='ok'&&data.update_available===true?'Update now':'Up to date';const content=document.getElementById('updater-version-content');if(data.state!=='ok'){content.innerHTML='<p class="hint">Version check unavailable. Try again later.</p>';return}let rows=(data.components||[]).map(c=>`<tr><th>${esc(c.name)}</th><td>${esc(c.installed??c.local??'Unknown')}</td><td>${esc(c.available??c.server??'Unknown')}</td></tr>`).join('');content.innerHTML=`<div class="detail-grid"><div><span>Installed version</span><strong>${esc(versionDisplay(data,data.installed))}</strong></div><div><span>Available version</span><strong>${esc(versionDisplay(data,data.available))}</strong></div><div><span>Branch</span><strong>${esc(data.branch||'Unknown')}</strong></div><div><span>Commit</span><strong>${esc(shortCommit(data.commit))}</strong></div><div><span>Tag</span><strong>${esc(data.tag||'—')}</strong></div></div><table class="version-components"><thead><tr><th>Component</th><th>Installed</th><th>Available</th></tr></thead><tbody>${rows||'<tr><td colspan="3">No component details available.</td></tr>'}</tbody></table>`}
     async function loadUpdaterVersion(force=false){try{const data=await api(`/api/updater-version${force?'?force=1':''}`,{cache:'no-store'});renderUpdaterVersion(data);return data}catch(_error){const data={state:'unavailable',update_available:false,components:[]};renderUpdaterVersion(data);return data}}
     function scheduleUpdaterVersionCheck(){clearTimeout(versionStartupTimer);clearTimeout(versionRetryTimer);versionRetryUsed=false;versionStartupTimer=setTimeout(async()=>{const data=await loadUpdaterVersion();if(data.state==='unavailable'&&!versionRetryUsed){versionRetryUsed=true;versionRetryTimer=setTimeout(()=>loadUpdaterVersion(),7000)}},2500)}
     function openUpdaterVersion(){document.getElementById('updater-version-modal').classList.add('open')}
@@ -446,22 +448,36 @@ def parse_updater_version_output(output):
     clean = strip_ansi(output)
     branch_match = re.search(r"Version overview \((master|beta|develop)\)", clean, re.IGNORECASE)
     branch = branch_match.group(1).lower() if branch_match else None
+    installed_commit_match = re.search(r"^Installed commit:\s*(\S+)", clean, re.MULTILINE | re.IGNORECASE)
+    available_commit_match = re.search(r"^Available commit:\s*(\S+)", clean, re.MULTILINE | re.IGNORECASE)
+    tag_match = re.search(r"^Installed tag:\s*(\S+)", clean, re.MULTILINE | re.IGNORECASE)
+    installed_commit = installed_commit_match.group(1) if installed_commit_match else "unknown"
+    available_commit = available_commit_match.group(1) if available_commit_match else "unknown"
+    installed_tag = tag_match.group(1) if tag_match and tag_match.group(1) not in {"—", "-"} else None
     components = []
     for line in clean.splitlines():
         match = re.match(r"^\s*(Updater|Extras|Config|Welcome|Check)\s+(\S+)\s+(\S+)\s*$", line)
         if match:
-            components.append({"name": match.group(1), "local": match.group(2), "server": match.group(3)})
+            components.append({"name": match.group(1), "local": match.group(2), "server": match.group(3),
+                               "installed": match.group(2), "available": match.group(3)})
     updater = next((item for item in components if item["name"] == "Updater"), None)
     installed = updater["local"] if updater else None
     available = updater["server"] if updater else None
     numeric = lambda value: tuple(int(part) for part in value.split(".") if part.isdigit()) if value and re.fullmatch(r"\d+(?:\.\d+)*", value) else None
     local_numbers, remote_numbers = numeric(installed), numeric(available)
+    version_update = bool(local_numbers is not None and remote_numbers is not None and remote_numbers > local_numbers)
+    commit_update = bool(re.fullmatch(r"[0-9a-f]{40}", installed_commit) and
+                         re.fullmatch(r"[0-9a-f]{40}", available_commit) and
+                         installed_commit != available_commit)
     return {
         "state": "ok" if branch and updater and updater["server"] != "unavailable" else "unavailable",
         "branch": branch,
         "installed": installed,
         "available": available,
-        "update_available": bool(local_numbers is not None and remote_numbers is not None and remote_numbers > local_numbers),
+        "commit": installed_commit,
+        "available_commit": available_commit,
+        "tag": installed_tag,
+        "update_available": version_update or commit_update,
         "components": components,
     }
 
@@ -1268,7 +1284,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             data = parse_updater_version_output(f"{result.stdout}\n{result.stderr}")
         except (OSError, subprocess.TimeoutExpired):
             data = {"state": "unavailable", "branch": None, "installed": None,
-                    "available": None, "update_available": False, "components": []}
+                    "available": None, "commit": "unknown", "available_commit": "unknown",
+                    "tag": None, "update_available": False, "components": []}
         data["checked_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         # Do not retain transient network/rate-limit failures for the normal
         # success-cache TTL. The UI performs one deliberately delayed retry.
@@ -1707,7 +1724,8 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.send_json(self.updater_version(force=force))
             except (OSError, RuntimeError, subprocess.TimeoutExpired):
                 self.send_json({"state": "unavailable", "branch": None, "installed": None,
-                                "available": None, "update_available": False, "components": []})
+                                "available": None, "commit": "unknown", "available_commit": "unknown",
+                                "tag": None, "update_available": False, "components": []})
             return
         parts = [unquote(part) for part in path.split("/") if part]
         if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "log":
