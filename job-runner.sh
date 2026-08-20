@@ -425,13 +425,20 @@ run_job() {
   UU_DEFER_UPDATE_MAIL=true "$update_script" "$target" </dev/null
   exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then
-    printf 'Post-update status refresh started for %s.\n' "$target"
     captured_status_file="${UU_REMOTE_WORK_DIR:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/temp}/post-update-status.rc"
     if [[ "$target" =~ ^[0-9]+$ && -f "$captured_status_file" ]]; then
       captured_status_rc=$(cat "$captured_status_file" 2>/dev/null || printf '1')
       [[ "$captured_status_rc" =~ ^[0-9]+$ ]] || captured_status_rc=1
       post_check_rc="$captured_status_rc"
       post_check_message="post-update target status captured before lifecycle restore rc=$post_check_rc"
+      printf 'Post-update status captured before lifecycle restore for %s.\n' "$target"
+    elif [[ "$target" =~ ^[0-9]+$ ]]; then
+      # Guest updates capture status while a temporarily started guest is
+      # still reachable. Never fall back to a normal check here: that check
+      # would apply CHECK_STOPPED_* after restore and start the guest again.
+      post_check_rc=127
+      post_check_message="post-update target status capture missing; no second guest lifecycle started"
+      printf 'Post-update status capture missing for %s; no second guest lifecycle started.\n' "$target" >&2
     elif [[ "${UU_UPDATE_SCOPE:-}" == host || "$target" == host ]]; then
       if [[ -x "$CHECK_SCRIPT" ]]; then
         UU_DEFER_NOTIFICATION=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true \

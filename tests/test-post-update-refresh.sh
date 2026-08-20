@@ -105,4 +105,37 @@ grep -Eq '^state=completed$' "$WORK_DIR/jobs/$unit.state"
 grep -Eq '^exit_code=0$' "$WORK_DIR/jobs/$unit.state"
 grep -Fq 'post-update full status refresh rc=0' "$WORK_DIR/jobs/$unit.state"
 
+# A guest update must consume the status captured before lifecycle restore.
+# It must not start a second normal check after the guest is stopped.
+cat > "$WORK_DIR/update-guest.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'UPDATE_TARGET=%s\n' "$1" >> "$POST_REFRESH_LOG"
+printf '0\n' > "$UU_REMOTE_WORK_DIR/post-update-status.rc"
+exit 0
+EOF
+chmod +x "$WORK_DIR/update-guest.sh"
+unit=ultimate-updater-update-191-captured
+cat > "$WORK_DIR/jobs/$unit.state" <<EOF
+schema_version=1
+unit=$unit
+target=191
+state=running
+started_at=2026-08-18T00:00:00Z
+finished_at=
+exit_code=
+type=update
+message=
+source=
+EOF
+POST_REFRESH_LOG="$WORK_DIR/log" UU_REMOTE_WORK_DIR="$WORK_DIR" UU_JOB_STATE_DIR="$WORK_DIR/jobs" \
+  UU_CHECK_CLI="$WORK_DIR/check.sh" UU_UPDATE_CONFIG_FILE="$WORK_DIR/update.conf" \
+  "$ROOT_DIR/job-runner.sh" run "$unit" 191 "$WORK_DIR/update-guest.sh" >/dev/null
+grep -Fq 'post-update target status captured before lifecycle restore rc=0' "$WORK_DIR/jobs/$unit.state"
+! grep -Fq 'CHECK_SCOPE=' "$WORK_DIR/log"
+! grep -Fq 'Post-update status refresh started' "$WORK_DIR/log"
+
+grep -Fq 'Continue after errors: enabled' "$ROOT_DIR/update.sh"
+grep -Fq 'Continue after errors: disabled' "$ROOT_DIR/update.sh"
+! grep -Fq 'work only on main host' "$ROOT_DIR/update.sh"
+
 echo 'post-update status refresh tests: PASS'

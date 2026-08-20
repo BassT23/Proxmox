@@ -253,8 +253,8 @@ ARGUMENTS () {
           fi
         fi
         HEADER_INFO
-        if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Exit, if error come up, is disabled${CL:-}\n"; fi
-        echo -e "ℹ ${OR:-} Update only LXC/VM $ARGUMENT - work only on main host!${CL:-}\n"
+        if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Continue after errors: enabled${CL:-}\n"; else echo -e "ℹ ${OR:-} Continue after errors: disabled${CL:-}\n"; fi
+        echo -e "ℹ ${OR:-} Updating only LXC/VM $ARGUMENT${CL:-}\n"
         CONTAINER_UPDATE_START
         VM_UPDATE_START
         ;;
@@ -269,7 +269,7 @@ ARGUMENTS () {
         if [[ "$RICM" != true ]]; then
           MODE="  Host  "
           HEADER_INFO
-          if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Exit, if error come up, is disabled${CL:-}\n"; fi
+          if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Continue after errors: enabled${CL:-}\n"; else echo -e "ℹ ${OR:-} Continue after errors: disabled${CL:-}\n"; fi
         fi
         echo -e "🔄${GN:-} Updating Host${CL:-} : ${GN:-}$IP | ($HOSTNAME)${CL:-}\n"
         if [[ "$WITH_HOST" == true ]]; then
@@ -2121,7 +2121,7 @@ fi
 if [[ "$COMMAND" != true ]]; then
   TAG_LOG=true
   HEADER_INFO
-  if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Exit, if error come up, is disabled${CL:-}\n"; fi
+  if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Continue after errors: enabled${CL:-}\n"; else echo -e "ℹ ${OR:-} Continue after errors: disabled${CL:-}\n"; fi
   if [[ "$MODE" =~ Cluster ]]; then
     HOST_UPDATE_START
   else
