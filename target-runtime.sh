@@ -32,3 +32,24 @@ READ_APT_UPDATE_COUNTS() {
   # shellcheck disable=SC2034
   NORMAL_APT_UPDATES=$(printf '%s\n' "$apt_output" | grep -ci '^inst.' || true)
 }
+
+# Proxmox commands are noisy because the API prints task/UPID progress. Keep
+# that implementation detail out of normal user logs while retaining the
+# exact command output and return code for DEBUG and caller-side diagnostics.
+RUN_PROXMOX_COMMAND() {
+  if [[ "${DEBUG:-false}" == true ]]; then
+    "$@"
+  else
+    "$@" >/dev/null 2>&1
+  fi
+}
+
+RUN_PROXMOX_CAPTURE() {
+  local rc
+  PROXMOX_CAPTURE_OUTPUT=$("$@" 2>&1)
+  rc=$?
+  if [[ "${DEBUG:-false}" == true && -n "$PROXMOX_CAPTURE_OUTPUT" ]]; then
+    printf '%s\n' "$PROXMOX_CAPTURE_OUTPUT"
+  fi
+  return "$rc"
+}

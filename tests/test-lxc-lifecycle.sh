@@ -29,6 +29,7 @@ PATH="$WORK_DIR:$PATH" bash -c '
   set -euo pipefail
   LOCAL_FILES="$1/local"
   CONTAINER_CHECK_START() { :; }
+  source "$2/target-runtime.sh"
   source "$1/container-check.sh"
   CONTAINERS=""
   STOPPED=true
@@ -47,7 +48,7 @@ PATH="$WORK_DIR:$PATH" bash -c '
   CONTAINER_CHECK_START
   [[ "$CHECK_FAILURE" -eq 1 ]]
   grep -Fq "LIFECYCLE_RESTORE_FAILED" "$LOCAL_FILES/lifecycle-record"
-' _ "$WORK_DIR"
+' _ "$WORK_DIR" "$ROOT_DIR"
 
 # shellcheck disable=SC2016 # assert the literal forbidden shell fragment.
 if grep -Fq 'RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "reboot"' "$ROOT_DIR/check-updates.sh"; then

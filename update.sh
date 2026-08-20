@@ -32,6 +32,8 @@ else
   RUN_LOCAL_COMMAND() { "$@"; }
   RUN_PCT_COMMAND() { local target_id="$1"; shift; pct exec "$target_id" -- "$@"; }
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
+  RUN_PROXMOX_COMMAND() { if [[ "${DEBUG:-false}" == true ]]; then "$@"; else "$@" >/dev/null 2>&1; fi; }
+  RUN_PROXMOX_CAPTURE() { local rc; PROXMOX_CAPTURE_OUTPUT=$("$@" 2>&1); rc=$?; [[ "${DEBUG:-false}" == true && -n "$PROXMOX_CAPTURE_OUTPUT" ]] && printf '%s\n' "$PROXMOX_CAPTURE_OUTPUT"; return "$rc"; }
 fi
 CLUSTER_TARGET_FILE="${CLUSTER_TARGET_FILE:-$LOCAL_FILES/cluster-target.sh}"
 if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
@@ -684,7 +686,8 @@ CONTAINER_BACKUP () {
 
   if [[ "$snapshot_requested" == true || "$backup_requested" == true ]]; then
     if [[ "$snapshot_requested" == true ]]; then
-      if snapshot_output=$(pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')" 2>&1); then
+      if RUN_PROXMOX_CAPTURE pct snapshot "$CONTAINER" "Update_$(date '+%Y%m%d_%H%M%S')"; then
+        snapshot_output="$PROXMOX_CAPTURE_OUTPUT"
         echo -e "✅${GN:-} Snapshot created${CL:-}"
         echo -e "ℹ ${GN:-} Delete old snapshots${CL:-}"
         LIST=$(pct listsnapshot "$CONTAINER" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
@@ -693,6 +696,7 @@ CONTAINER_BACKUP () {
         done
       echo -e "✅${GN:-} Done${CL:-}"
       else
+        snapshot_output="$PROXMOX_CAPTURE_OUTPUT"
         if grep -Eqi 'snapshot feature is not available|snapshot[^[:alnum:]]*(feature )?(is )?(not available|unsupported|not supported)|not supported[^[:alnum:]]*snapshot' <<< "$snapshot_output"; then
           echo -e "⚠️${OR:-} Snapshot not supported for LXC $CONTAINER; continuing without snapshot${CL:-}"
           snapshot_requested=false
@@ -718,7 +722,7 @@ CONTAINER_BACKUP () {
         return 1
       fi
       echo -e "💾${OR:-} Create a backup for LXC (this will take some time - please wait)${CL:-}"
-      if vzdump "$CONTAINER" --mode "$MODE" --notes-template "{{guestname}} - Ultimate-Updater" --storage "$STORAGE" --compress zstd; then
+      if RUN_PROXMOX_COMMAND vzdump "$CONTAINER" --mode "$MODE" --notes-template "{{guestname}} - Ultimate-Updater" --storage "$STORAGE" --compress zstd; then
         echo -e "✅${GN:-} Backup created${CL:-}\n"
       else
         echo -e "❌${RD:-} Backup of LXC $CONTAINER failed - skipping update${CL:-}\n"
@@ -735,7 +739,8 @@ VM_BACKUP () {
 
   if [[ "$snapshot_requested" == true || "$backup_requested" == true ]]; then
     if [[ "$snapshot_requested" == true ]]; then
-      if snapshot_output=$(qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')" 2>&1); then
+      if RUN_PROXMOX_CAPTURE qm snapshot "$VM" "Update_$(date '+%Y%m%d_%H%M%S')"; then
+        snapshot_output="$PROXMOX_CAPTURE_OUTPUT"
         echo -e "✅${GN:-} Snapshot created${CL:-}"
         echo -e "ℹ ${GN:-} Delete old snapshot(s)${CL:-}"
         LIST=$(qm listsnapshot "$VM" | sed -n "s/^.*Update\s*\(\S*\).*$/\1/p" | head -n -"$KEEP_SNAPSHOT")
@@ -744,6 +749,7 @@ VM_BACKUP () {
         done
       echo -e "✅${GN:-} Done${CL:-}"
       else
+        snapshot_output="$PROXMOX_CAPTURE_OUTPUT"
         if grep -Eqi 'snapshot feature is not available|snapshot[^[:alnum:]]*(feature )?(is )?(not available|unsupported|not supported)|not supported[^[:alnum:]]*snapshot' <<< "$snapshot_output"; then
           echo -e "⚠️${OR:-} Snapshot not supported for VM $VM; continuing without snapshot${CL:-}"
           snapshot_requested=false
@@ -765,7 +771,7 @@ VM_BACKUP () {
         return 1
       fi
       echo -e "💾${OR:-} Create a backup for the VM (this will take some time - please wait)${CL:-}"
-      if vzdump "$VM" --mode "$MODE" --storage "$STORAGE" --compress zstd; then
+      if RUN_PROXMOX_COMMAND vzdump "$VM" --mode "$MODE" --storage "$STORAGE" --compress zstd; then
         echo -e "✅${GN:-} Backup created${CL:-}"
       else
         echo -e "❌${RD:-} Backup of VM $VM failed - skipping update${CL:-}"
@@ -1397,7 +1403,7 @@ CONTAINER_UPDATE_START () {
         # Start the container
         WILL_STOP="true"
         echo -e " ▶${GN:-} Starting LXC ${BL:-}$CONTAINER ${CL:-}"
-        pct start "$CONTAINER"
+        RUN_PROXMOX_COMMAND pct start "$CONTAINER"
         echo -e "⏳${GN:-} Waiting for LXC ${BL:-}$CONTAINER${CL:-}${GN:-} to start ${CL:-}"
 #        sleep "$LXC_START_DELAY"
         if WAIT_FOR_BOOTUP_LXC; then
@@ -1412,7 +1418,7 @@ CONTAINER_UPDATE_START () {
         fi
         # Stop the container
         echo -e "⏹ ${GN:-} Shutting down LXC ${BL:-}$CONTAINER ${CL:-}\n\n"
-        pct shutdown "$CONTAINER" &
+        RUN_PROXMOX_COMMAND pct shutdown "$CONTAINER" &
         WILL_STOP="false"
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" != true ]]; then
         echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
@@ -1613,13 +1619,13 @@ VM_UPDATE_START () {
           # Start the VM
           WILL_STOP="true"
           echo -e " ▶${GN:-} Starting VM${BL:-} $VM ${CL:-}"
-          qm start "$VM" >/dev/null 2>&1
+          RUN_PROXMOX_COMMAND qm start "$VM"
           START_WAITING="true"
           UPDATE_VM "$VM"
           CAPTURE_POST_UPDATE_STATUS "$VM" cvm
           # Stop the VM
           echo -e "⏹ ${GN:-} Shutting down VM${BL:-} $VM ${CL:-}\n\n"
-          qm shutdown "$VM" &
+          RUN_PROXMOX_COMMAND qm shutdown "$VM" &
           WILL_STOP="false"
           START_WAITING="false"
         else

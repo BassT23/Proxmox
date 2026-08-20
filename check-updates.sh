@@ -36,6 +36,8 @@ else
     SECURITY_APT_UPDATES=$(printf '%s\n' "$1" | grep -ci '^inst.*security' || true)
     NORMAL_APT_UPDATES=$(printf '%s\n' "$1" | grep -ci '^inst.' || true)
   }
+  RUN_PROXMOX_COMMAND() { if [[ "${DEBUG:-false}" == true ]]; then "$@"; else "$@" >/dev/null 2>&1; fi; }
+  RUN_PROXMOX_CAPTURE() { local rc; PROXMOX_CAPTURE_OUTPUT=$("$@" 2>&1); rc=$?; [[ "${DEBUG:-false}" == true && -n "$PROXMOX_CAPTURE_OUTPUT" ]] && printf '%s\n' "$PROXMOX_CAPTURE_OUTPUT"; return "$rc"; }
 fi
 
 # The shared runtime helper deliberately keeps a longer timeout for update
@@ -790,7 +792,7 @@ CONTAINER_CHECK_START () {
         STATUS_MODEL_RECORD "$CONTAINER" lxc pct false "" "" "null" "null" not_checked STOPPED_READ_ONLY "LXC $CONTAINER is stopped; initial inventory did not start it" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
         # Start the container
-        pct start "$CONTAINER"
+        RUN_PROXMOX_COMMAND pct start "$CONTAINER"
         if WAIT_FOR_BOOTUP_LXC; then
           if ! CHECK_CONTAINER "$CONTAINER"; then
             CHECK_FAILURE=1
@@ -800,7 +802,7 @@ CONTAINER_CHECK_START () {
         fi
         # Restore the original stopped state and propagate failures instead of
         # presenting a successful check with a changed guest lifecycle.
-        if ! pct shutdown "$CONTAINER" --timeout 60 --forceStop 1; then
+        if ! RUN_PROXMOX_COMMAND pct shutdown "$CONTAINER" --timeout 60 --forceStop 1; then
           lifecycle_failure=1
           lifecycle_message="Could not restore stopped state for LXC $CONTAINER"
           echo -e "${RD}LXC $CONTAINER lifecycle restore failed; check is not successful${CL}"
@@ -1072,7 +1074,7 @@ VM_CHECK_START () {
             continue
           fi
           # Start VM
-          qm start "$VM" >/dev/null 2>&1
+          RUN_PROXMOX_COMMAND qm start "$VM"
           if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
             sleep "$SSH_START_DELAY_TIME"
             CHECK_VM "$VM"
@@ -1083,7 +1085,7 @@ VM_CHECK_START () {
             STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" offline QGA_NOT_READY "QEMU Guest Agent was not ready"
           fi
           # Restore the original stopped state even when CHECK_VM failed.
-          if ! qm stop "$VM"; then
+          if ! RUN_PROXMOX_COMMAND qm stop "$VM"; then
             CHECK_FAILURE=1
             STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "Could not restore stopped state for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
           elif [[ "$(timeout 10 qm status "$VM" 2>/dev/null)" != "status: stopped" ]]; then
@@ -1093,11 +1095,11 @@ VM_CHECK_START () {
           SUSPEND=
         elif [[ "$STATUS" == "status: paused" && "$PAUSED_VM" == true ]]; then
           # Start VM
-          qm resume "$VM" >/dev/null 2>&1
+          RUN_PROXMOX_COMMAND qm resume "$VM"
           sleep "$SSH_START_DELAY_TIME"
           CHECK_VM "$VM"
           # Restore the original paused state even when CHECK_VM failed.
-          if ! qm suspend "$VM"; then
+          if ! RUN_PROXMOX_COMMAND qm suspend "$VM"; then
             CHECK_FAILURE=1
             STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "Could not restore paused state for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
           elif [[ "$(timeout 10 qm status "$VM" 2>/dev/null)" != "status: paused" ]]; then

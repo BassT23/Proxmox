@@ -26,12 +26,13 @@ chmod 750 "$WORK_DIR/pct" "$WORK_DIR/vzdump"
 
 PATH="$WORK_DIR:$PATH" BACKUP_CALLS="$WORK_DIR/backups" bash -c '
   set -euo pipefail
+  source "$3"
   source "$1"
   SNAPSHOT=true BACKUP=false BACKUP_LXC_MP=true CONTAINER=230 KEEP_SNAPSHOT=3
   RD= OR= GN= CL= BACKUP_CALLS="$2"
   CONTAINER_BACKUP
   [[ ! -e "$2" ]]
-' _ "$WORK_DIR/container-backup.sh" "$WORK_DIR/backups"
+' _ "$WORK_DIR/container-backup.sh" "$WORK_DIR/backups" "$ROOT_DIR/target-runtime.sh"
 
 # An unsupported snapshot must not prevent an explicitly enabled backup.
 cat > "$WORK_DIR/pvesm" <<'EOF'
@@ -46,13 +47,14 @@ EOF
 chmod 750 "$WORK_DIR/pvesm" "$WORK_DIR/vzdump"
 PATH="$WORK_DIR:$PATH" BACKUP_CALLS="$WORK_DIR/backups" bash -c '
   set -euo pipefail
+  source "$3"
   source "$1"
   SNAPSHOT=true BACKUP=true BACKUP_LXC_MP=false CONTAINER=230 KEEP_SNAPSHOT=3 BACKUP_STORAGE=pbs BACKUP_MODE=stop
   RD= OR= GN= CL= BACKUP_CALLS="$2"
   GET_BACKUP_STORAGE() { printf "pbs\n"; }
   CONTAINER_BACKUP
   grep -Fq backup "$2"
-' _ "$WORK_DIR/container-backup.sh" "$WORK_DIR/backups"
+' _ "$WORK_DIR/container-backup.sh" "$WORK_DIR/backups" "$ROOT_DIR/target-runtime.sh"
 
 grep -Fq 'TEMP_STATE_DIR="${UU_TEMP_STATE_DIR:-$LOCAL_FILES/temp}"' "$ROOT_DIR/update.sh"
 grep -Fq '"$TEMP_STATE_DIR/var"' "$ROOT_DIR/update.sh"
