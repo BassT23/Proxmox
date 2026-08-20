@@ -94,8 +94,14 @@ DOWNLOAD_ARCHIVE() {
     DOWNLOAD_FILE "https://github.com/BassT23/Proxmox/tarball/$BRANCH" "$archive" archive || return 1
   fi
   archive_root=$(tar -tzf "$archive" 2>/dev/null | awk -F/ 'NF {print $1; exit}')
-  if [[ "$archive_root" =~ ([0-9a-f]{40})$ ]]; then
+  if [[ "$archive_root" =~ ([0-9a-f]{7,40})$ ]]; then
     ARCHIVE_COMMIT="${BASH_REMATCH[1]}"
+    if [[ ${#ARCHIVE_COMMIT} -ne 40 ]]; then
+      ARCHIVE_COMMIT=$(curl -4 -sS --connect-timeout 5 --max-time 15 \
+        "https://api.github.com/repos/BassT23/Proxmox/commits/$ARCHIVE_COMMIT" 2>/dev/null |
+        awk -F'"' '/"sha"[[:space:]]*:/ {print $4; exit}' || true)
+    fi
+    [[ "$ARCHIVE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || ARCHIVE_COMMIT=""
   elif [[ -n "$ARCHIVE_TAG" ]]; then
     ARCHIVE_COMMIT=$(curl -4 -sS --connect-timeout 5 --max-time 15 \
       "https://api.github.com/repos/BassT23/Proxmox/commits/$ARCHIVE_TAG" 2>/dev/null |
