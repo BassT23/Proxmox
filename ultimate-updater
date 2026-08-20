@@ -706,7 +706,7 @@ remote_update_job() {
     fi
   done
   if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
-    "chmod 750 '$remote_update_dir/job-runner.sh' '$remote_update_dir/update.sh'"; then
+    "chmod 750 '$remote_update_dir/job-runner.sh' '$remote_update_dir/update.sh' '$remote_update_dir/check-updates.sh'"; then
     timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
     printf 'Could not prepare remote update runner on %s.\n' "$node" >&2
     return 6

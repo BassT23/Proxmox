@@ -16,6 +16,7 @@ grep -Fq '"$LOCAL_FILES/exit/error.sh"' "$UPDATER"
 grep -Fq '$remote_update_dir/exit/$(basename -- "$source")' "$UPDATER"
 grep -Fq '"$CHECK_CLI" status-import "$local_status_file"' "$ROOT_DIR/job-runner.sh"
 grep -Fq 'post-update-status.rc' "$ROOT_DIR/update.sh"
+grep -Fq "chmod 750 '\$remote_update_dir/job-runner.sh' '\$remote_update_dir/update.sh' '\$remote_update_dir/check-updates.sh'" "$UPDATER"
 grep -Fq 'CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-$LOCAL_FILES/update.conf}"' "$ROOT_DIR/update-extras.sh"
 
 # A remote guest update must not depend on a complete UU installation on the owner node.
