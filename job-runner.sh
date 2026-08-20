@@ -441,7 +441,19 @@ run_job() {
       [[ "$captured_status_rc" =~ ^[0-9]+$ ]] || captured_status_rc=1
       post_check_rc="$captured_status_rc"
       post_check_message="post-update target status captured before lifecycle restore rc=$post_check_rc"
-      printf 'Post-update status captured before lifecycle restore for %s.\n' "$target"
+      if [[ "$post_check_rc" -eq 0 ]]; then
+        printf 'Post-update status captured before lifecycle restore for %s.\n' "$target"
+      else
+        if [[ "$post_check_rc" -eq 89 ]]; then
+          post_check_message="post-update status capture failed for $target: POST_UPDATE_CAPTURE_NOT_CHECKED (exit code $post_check_rc)"
+          printf 'Post-update status capture failed for %s: POST_UPDATE_CAPTURE_NOT_CHECKED (exit code %s).\n' \
+            "$target" "$post_check_rc" >&2
+        else
+          post_check_message="post-update status capture failed for $target (exit code $post_check_rc)"
+          printf 'Post-update status capture failed for %s (exit code %s).\n' \
+            "$target" "$post_check_rc" >&2
+        fi
+      fi
     elif [[ "$target" =~ ^[0-9]+$ ]]; then
       # Guest updates capture status while a temporarily started guest is
       # still reachable. Never fall back to a normal check here: that check

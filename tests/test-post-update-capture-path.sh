@@ -37,6 +37,7 @@ test -s "$UU_REMOTE_WORK_DIR/post-update-status.rc"
 test ! -e "$TEMP_STATE_DIR/post-update-status.rc"
 grep -Fxq 0 "$UU_REMOTE_WORK_DIR/post-update-status.rc"
 grep -Fq 'UU_EXPLICIT_TARGET_CHECK=true' "$ROOT_DIR/update.sh"
+grep -Fq 'UU_REMOTE_DEFER_STATUS_FINISH=false TAG_OUTPUT=false' "$ROOT_DIR/update.sh"
 
 # A successful helper with a not_checked record is not a successful capture.
 sed 's/"check_status":"ok"/"check_status":"not_checked"/' "$WORK_DIR/check-status.json" > "$WORK_DIR/check-status-not-checked.json"

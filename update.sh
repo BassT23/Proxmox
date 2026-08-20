@@ -654,7 +654,8 @@ CAPTURE_POST_UPDATE_STATUS() {
   if [[ -x "$CHECK_SCRIPT" ]]; then
     STATUS_MODEL_FILE="$LOCAL_FILES/status.json" \
     STATUS_MODEL_RECORD_FILE="$TEMP_STATE_DIR/post-update-status.records" \
-    STATUS_MODEL_PARTIAL=false UU_DEFER_NOTIFICATION=true UU_EXPLICIT_TARGET_CHECK=true \
+    STATUS_MODEL_PARTIAL=false UU_REMOTE_DEFER_STATUS_FINISH=false TAG_OUTPUT=false \
+    UU_DEFER_NOTIFICATION=true UU_EXPLICIT_TARGET_CHECK=true \
     "$CHECK_SCRIPT" "$kind" "$target" </dev/null || refresh_rc=$?
     if [[ "$refresh_rc" -eq 0 ]]; then
       if declare -F STATUS_MODEL_VALIDATE_TARGET_FILE >/dev/null 2>&1; then
