@@ -66,6 +66,7 @@ prepare_systemd_log_filters() {
   # journal untouched.
   SYSTEMD_LOG_FILTER_ARGS+=(
     '--property=LogFilterPatterns=~^<root@pam> (starting task UPID:|end task UPID:|.*UPID:).*'
+    '--property=LogFilterPatterns=~^<root@pam> (snapshot|delete snapshot) (container|VM) [^:]+:.*'
     '--property=LogFilterPatterns=~^(starting|shutdown) (CT|VM) [^:]+: UPID:.*'
     '--property=LogFilterPatterns=~^push_file([[:space:]]|$).*'
   )

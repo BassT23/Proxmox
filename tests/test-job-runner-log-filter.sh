@@ -40,6 +40,7 @@ run_start() {
 
 run_start "$WORK_DIR/jobs-false" "$WORK_DIR/false.args"
 grep -Fq -- '--property=LogFilterPatterns=~^<root@pam>' "$WORK_DIR/false.args"
+grep -Fq -- '--property=LogFilterPatterns=~^<root@pam> (snapshot|delete snapshot)' "$WORK_DIR/false.args"
 grep -Fq -- '--property=LogFilterPatterns=~^(starting|shutdown)' "$WORK_DIR/false.args"
 grep -Fq -- '--property=LogFilterPatterns=~^push_file' "$WORK_DIR/false.args"
 
