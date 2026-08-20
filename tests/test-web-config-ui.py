@@ -164,6 +164,7 @@ assert ".log-actions + .log { margin-top:8px }" in page
 assert "node.insertAdjacentElement('beforebegin',actions)" in source
 assert "node.insertAdjacentElement('afterend',actions)" not in source
 assert ".config-actions { position:static; background:transparent; }" in page
+assert ".config-field .field-label { display:inline-flex; align-items:center; gap:6px; }" in page
 assert "Internal SSH Connections <span class=\"help-control\">" in page
 assert "CONFIG_ENUMS" in source
 try:
