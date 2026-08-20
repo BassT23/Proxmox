@@ -151,7 +151,9 @@ refresh_remote_target_status() {
     if ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
       "$(state_value "$ref_file" owner_host)" "cat $(printf '%q' "$remote_status_file")" > "$local_status_file" 2>/dev/null &&
       [[ -s "$local_status_file" ]] &&
-      "$CHECK_CLI" status-import "$local_status_file" </dev/null; then
+      validate_status_target "$local_status_file" "$target" &&
+      "$CHECK_CLI" status-import "$local_status_file" </dev/null &&
+      validate_status_target "$STATUS_MODEL_FILE" "$target"; then
       remote_refresh_rc=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
         "$(state_value "$ref_file" owner_host)" "cat $(printf '%q' "$workspace/post-update-status.rc")" 2>/dev/null || printf '0')
       [[ "$remote_refresh_rc" =~ ^[0-9]+$ ]] || remote_refresh_rc=1
@@ -297,6 +299,14 @@ send_update_notification() {
     STATUS_MODEL_FILE="$status_file" \
     bash -c 'source "$1" && STATUS_MODEL_SEND_UPDATE_NOTIFICATION "$2" "$3"' \
       _ "$STATUS_MODEL_SCRIPT" "$status_file" "$UPDATE_CONFIG_FILE" || true
+}
+
+validate_status_target() {
+  local status_file="$1" target="$2"
+  [[ -f "$STATUS_MODEL_SCRIPT" ]] || return 87
+  STATUS_MODEL_FILE="$status_file" STATUS_MODEL_RECORD_FILE="${status_file}.records.$$" \
+    bash -c 'source "$1" && STATUS_MODEL_VALIDATE_TARGET_FILE "$2" "$3"' \
+      _ "$STATUS_MODEL_SCRIPT" "$status_file" "$target"
 }
 
 # Keep only terminal job history.  This function is deliberately best-effort:

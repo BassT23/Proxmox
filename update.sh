@@ -652,10 +652,18 @@ CAPTURE_POST_UPDATE_STATUS() {
     return 0
   fi
   if [[ -x "$CHECK_SCRIPT" ]]; then
-      STATUS_MODEL_FILE="$LOCAL_FILES/status.json" \
-      STATUS_MODEL_RECORD_FILE="$TEMP_STATE_DIR/post-update-status.records" \
-      STATUS_MODEL_PARTIAL=false UU_DEFER_NOTIFICATION=true UU_EXPLICIT_TARGET_CHECK=true \
-      "$CHECK_SCRIPT" "$kind" "$target" </dev/null || refresh_rc=$?
+    STATUS_MODEL_FILE="$LOCAL_FILES/status.json" \
+    STATUS_MODEL_RECORD_FILE="$TEMP_STATE_DIR/post-update-status.records" \
+    STATUS_MODEL_PARTIAL=false UU_DEFER_NOTIFICATION=true UU_EXPLICIT_TARGET_CHECK=true \
+    "$CHECK_SCRIPT" "$kind" "$target" </dev/null || refresh_rc=$?
+    if [[ "$refresh_rc" -eq 0 ]]; then
+      if declare -F STATUS_MODEL_VALIDATE_TARGET_FILE >/dev/null 2>&1; then
+        STATUS_MODEL_VALIDATE_TARGET_FILE "$LOCAL_FILES/status.json" "$target" || refresh_rc=$?
+      else
+        refresh_rc=87
+        printf 'POST_UPDATE_CAPTURE_STATUS_VALIDATOR_UNAVAILABLE\n' >&2
+      fi
+    fi
   else
     refresh_rc=127
     printf 'POST_UPDATE_CAPTURE_HELPER_NOT_EXECUTABLE: %s\n' "$CHECK_SCRIPT" >&2

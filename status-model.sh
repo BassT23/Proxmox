@@ -38,6 +38,60 @@ raise SystemExit(1)
 PY
 }
 
+# Validate the semantic result for an explicitly requested target.  A helper
+# returning zero is not sufficient for post-update capture: the target record
+# must actually describe a reachable, checked target.
+STATUS_MODEL_VALIDATE_TARGET_FILE() {
+  local status_file="$1" target_id="$2"
+  python3 - "$status_file" "$target_id" <<'PY'
+import json
+import sys
+
+status_file, target_id = sys.argv[1:]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except FileNotFoundError:
+    print(f"POST_UPDATE_CAPTURE_STATUS_MISSING: {status_file}", file=sys.stderr)
+    raise SystemExit(86)
+except (OSError, ValueError) as exc:
+    print(f"POST_UPDATE_CAPTURE_STATUS_INVALID: {status_file}: {exc}", file=sys.stderr)
+    raise SystemExit(87)
+
+targets = payload.get("targets") if isinstance(payload, dict) else None
+record = next((item for item in targets or []
+               if isinstance(item, dict) and str(item.get("id")) == target_id), None)
+if record is None:
+    print(f"POST_UPDATE_CAPTURE_TARGET_MISSING: target {target_id}", file=sys.stderr)
+    raise SystemExit(88)
+
+check_status = record.get("check_status")
+if check_status in (None, "", "not_checked", "skipped", "stopped"):
+    print(
+        f"POST_UPDATE_CAPTURE_NOT_CHECKED: target {target_id} has check_status={check_status or 'missing'}",
+        file=sys.stderr,
+    )
+    raise SystemExit(89)
+if record.get("reachable") is not True:
+    print(
+        f"POST_UPDATE_CAPTURE_NOT_REACHABLE: target {target_id} has reachable={record.get('reachable')}",
+        file=sys.stderr,
+    )
+    raise SystemExit(90)
+if not str(record.get("os") or "").strip():
+    print(f"POST_UPDATE_CAPTURE_OS_MISSING: target {target_id}", file=sys.stderr)
+    raise SystemExit(91)
+updates = record.get("updates")
+if not isinstance(updates, dict) or "available" not in updates:
+    print(f"POST_UPDATE_CAPTURE_UPDATES_MISSING: target {target_id}", file=sys.stderr)
+    raise SystemExit(92)
+if "reboot_required" not in record:
+    print(f"POST_UPDATE_CAPTURE_REBOOT_STATUS_MISSING: target {target_id}", file=sys.stderr)
+    raise SystemExit(93)
+raise SystemExit(0)
+PY
+}
+
 STATUS_MODEL_RECORD() {
   local id="$1" type="$2" transport="$3" reachable="$4" os="$5"
   local updater="$6" updates="$7" reboot_required="$8" check_status="$9"
