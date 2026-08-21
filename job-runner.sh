@@ -730,6 +730,16 @@ refresh_running_jobs() {
       done <<< "$systemd_details"
       case "$active_state" in
         active|activating|deactivating) ;;
+        failed|inactive|dead)
+          if (( show_rc == 0 )) && [[ -n "$load_state" ]]; then
+            started=$(state_value "$file" started_at)
+            age_seconds=$(( $(date -u +%s) - $(date -u -d "$started" +%s 2>/dev/null || date -u +%s) ))
+            if (( age_seconds >= 30 )); then
+              type=$(state_value "$file" type)
+              write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit is $active_state" "${type:-update}" || true
+            fi
+          fi
+          ;;
         *)
           if (( show_rc == 0 )) && [[ -n "$load_state" && "$load_state" != loaded ]]; then
             started=$(state_value "$file" started_at)
