@@ -1074,7 +1074,7 @@ run_check() {
   case "$kind" in
     host) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" chost; check_result=$? ;;
     container) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" ccontainer "$target"; check_result=$? ;;
-    vm) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" cvm "$target"; check_result=$? ;;
+    vm) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true UU_EXPLICIT_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" cvm "$target"; check_result=$? ;;
     external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; "$EXTERNAL_APT_SCRIPT" check "$target"; check_result=$? ;;
   esac
   print_check_summary "$target" "$check_result"

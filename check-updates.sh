@@ -1097,69 +1097,104 @@ VM_CHECK_START () {
       elif [[ "$PRE_OS" =~ w ]]; then
         continue
       else
-        STATUS=$(qm status "$VM")
-        if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
-          IP=$(awk -F'"' '/^IP=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
-          USER=$(awk -F'"' '/^USER=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
-          USER="${USER:-root}"
-          SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
-          SSH_VM_PORT="${SSH_VM_PORT:-22}"
-          SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
-          SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "$SSH_START_DELAY_TIME")
-          SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-$VM_START_DELAY}"
-        fi
-        if [[ "$STATUS" == "status: stopped" && "${INITIAL_INVENTORY:-false}" == true ]]; then
-          STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" not_checked STOPPED_READ_ONLY "VM $VM is stopped; initial inventory did not start it" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-        elif [[ "$STATUS" == "status: paused" && "${INITIAL_INVENTORY:-false}" == true ]]; then
-          STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" not_checked PAUSED_READ_ONLY "VM $VM is paused; initial inventory did not resume it" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-        elif [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
-          # Check suspend mode
-          if [[ $(qm config "$VM" | grep 'lock:' | sed 's/lock:\s*//') == "suspend" ]]; then 
-            SUSPEND=true
-            echo -e "${OR}skip suspend VM${CL}"
-            continue
-          fi
-          # Start VM
-          RUN_PROXMOX_COMMAND qm start "$VM"
-          if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
-            sleep "$SSH_START_DELAY_TIME"
-            CHECK_VM "$VM"
-          elif WAIT_FOR_QGA; then
-            CHECK_VM "$VM"
-          else
-            echo -e "${RD}Skipping VM $VM because QEMU Guest Agent is not ready${CL}"
-            STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" offline QGA_NOT_READY "QEMU Guest Agent was not ready"
-          fi
-          # Restore the original stopped state even when CHECK_VM failed.
-          if ! RUN_PROXMOX_COMMAND qm stop "$VM"; then
-            CHECK_FAILURE=1
-            STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "Could not restore stopped state for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-          elif [[ "$(timeout 10 qm status "$VM" 2>/dev/null)" != "status: stopped" ]]; then
-            CHECK_FAILURE=1
-            STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "VM $VM did not return to stopped state" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-          fi
-          SUSPEND=
-        elif [[ "$STATUS" == "status: paused" && "$PAUSED_VM" == true ]]; then
-          # Start VM
-          RUN_PROXMOX_COMMAND qm resume "$VM"
-          sleep "$SSH_START_DELAY_TIME"
-          CHECK_VM "$VM"
-          # Restore the original paused state even when CHECK_VM failed.
-          if ! RUN_PROXMOX_COMMAND qm suspend "$VM"; then
-            CHECK_FAILURE=1
-            STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "Could not restore paused state for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-          elif [[ "$(timeout 10 qm status "$VM" 2>/dev/null)" != "status: paused" ]]; then
-            CHECK_FAILURE=1
-            STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "VM $VM did not return to paused state" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-          fi
-        elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
-          VM_NOT_STOPPED=true
-          CHECK_VM "$VM"
-          VM_NOT_STOPPED=""
-        fi
+        CHECK_VM_LIFECYCLE "$VM"
       fi
     fi
   done
+}
+
+# Apply the same lifecycle policy to Check-All and explicit single-VM checks.
+# The original state is read before any mutation and restoration is attempted
+# independently of the check result.
+CHECK_VM_LIFECYCLE () {
+  local target="$1" status check_rc=0 lifecycle_failure=0 lifecycle_message=""
+  VM="$target"
+  STATUS=$(qm status "$VM")
+  if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
+    IP=$(awk -F'"' '/^IP=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    USER=$(awk -F'"' '/^USER=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    USER="${USER:-root}"
+    SSH_VM_PORT=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    SSH_VM_PORT="${SSH_VM_PORT:-22}"
+    SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' "$LOCAL_FILES/VMs/$VM")
+    SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "$SSH_START_DELAY_TIME")
+    SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-$VM_START_DELAY}"
+  fi
+  if [[ "$STATUS" == "status: stopped" && "${INITIAL_INVENTORY:-false}" == true ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" not_checked STOPPED_READ_ONLY "VM $VM is stopped; initial inventory did not start it" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 0
+  fi
+  if [[ "$STATUS" == "status: paused" && "${INITIAL_INVENTORY:-false}" == true ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" not_checked PAUSED_READ_ONLY "VM $VM is paused; initial inventory did not resume it" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 0
+  fi
+  if [[ "$STATUS" == "status: stopped" ]]; then
+    if [[ "$STOPPED_VM" != true ]]; then
+      STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" not_checked STOPPED_READ_ONLY "VM $VM is stopped; configured check does not start stopped VMs" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 0
+    fi
+    if [[ $(qm config "$VM" | grep 'lock:' | sed 's/lock:\s*//') == "suspend" ]]; then
+      echo -e "${OR}skip suspend VM${CL}"
+      return 0
+    fi
+    if ! RUN_PROXMOX_COMMAND qm start "$VM"; then
+      STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" error LIFECYCLE_START_FAILED "Could not start VM $VM for check" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 1
+    fi
+    if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
+      sleep "$SSH_START_DELAY_TIME"
+      CHECK_VM "$VM" || check_rc=$?
+    elif WAIT_FOR_QGA; then
+      CHECK_VM "$VM" || check_rc=$?
+    else
+      echo -e "${RD}Skipping VM $VM because QEMU Guest Agent is not ready${CL}"
+      STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" offline QGA_NOT_READY "QEMU Guest Agent was not ready"
+      check_rc=1
+    fi
+    if ! RUN_PROXMOX_COMMAND qm stop "$VM"; then
+      lifecycle_failure=1
+      lifecycle_message="Could not restore stopped state for VM $VM"
+    elif [[ "$(timeout 10 qm status "$VM" 2>/dev/null)" != "status: stopped" ]]; then
+      lifecycle_failure=1
+      lifecycle_message="VM $VM did not return to stopped state"
+    fi
+  elif [[ "$STATUS" == "status: paused" ]]; then
+    if [[ "$PAUSED_VM" != true ]]; then
+      STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" not_checked PAUSED_READ_ONLY "VM $VM is paused; configured check does not resume paused VMs" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 0
+    fi
+    if ! RUN_PROXMOX_COMMAND qm resume "$VM"; then
+      STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" error LIFECYCLE_START_FAILED "Could not resume VM $VM for check" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 1
+    fi
+    sleep "$SSH_START_DELAY_TIME"
+    CHECK_VM "$VM" || check_rc=$?
+    if ! RUN_PROXMOX_COMMAND qm suspend "$VM"; then
+      lifecycle_failure=1
+      lifecycle_message="Could not restore paused state for VM $VM"
+    elif [[ "$(timeout 10 qm status "$VM" 2>/dev/null)" != "status: paused" ]]; then
+      lifecycle_failure=1
+      lifecycle_message="VM $VM did not return to paused state"
+    fi
+  elif [[ "$STATUS" == "status: running" ]]; then
+    if [[ "${UU_EXPLICIT_TARGET_CHECK:-false}" == true || "$RUNNING_VM" == true ]]; then
+      VM_NOT_STOPPED=true
+      CHECK_VM "$VM" || check_rc=$?
+      VM_NOT_STOPPED=""
+    else
+      STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" not_checked RUNNING_DISABLED "VM $VM is running; configured check does not check running VMs" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 0
+    fi
+  else
+    STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" error CHECK_STATE "Unsupported VM state for VM $VM: $STATUS"
+    return 1
+  fi
+  if [[ "$lifecycle_failure" -ne 0 ]]; then
+    CHECK_FAILURE=1
+    STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "$lifecycle_message" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+  return "$check_rc"
 }
 
 # VM Check
