@@ -124,6 +124,17 @@ SANITIZE_NUMBER() {
   echo "$1" | tr -cd '0-9'
 }
 
+# Keep check output aligned with the canonical status fields.  A package
+# manager may provide a total or normal count without a reliable security
+# classification; never render that missing value as an empty half-line.
+PRINT_UPDATE_SPLIT() {
+  local normal="${1:-Unknown}" security="${2:-Unknown}"
+  [[ -n "$normal" && "$normal" != null ]] || normal=Unknown
+  [[ -n "$security" && "$security" != null ]] || security=Unknown
+  printf 'Normal updates: %s\n' "$normal"
+  printf 'Security updates: %s\n' "$security"
+}
+
 # Decode one structured qm guest exec response without losing the guest
 # exitcode. The qm CLI itself can return zero when only the guest command
 # failed, so transport and guest status are kept separate.
@@ -465,6 +476,34 @@ REMOTE_STATUS_DIAGNOSTICS () {
     "$diagnostic_found" "$diagnostic_size" "$diagnostic_transport_rc" "$cleanup_state"
 }
 
+# A remote status file can be valid and still describe a failed target.  Keep
+# the remote RC authoritative, but surface those target-level errors in the
+# central log instead of leaving the operator with only "remote rc=1".
+REMOTE_STATUS_FAILURE_SUMMARY () {
+  local status_file="$1" node="$2"
+  [[ -s "$status_file" ]] || return 0
+  python3 - "$status_file" "$node" <<'PY' 2>/dev/null || true
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(0)
+
+for target in payload.get("targets", []):
+    error = target.get("error")
+    if not isinstance(error, dict):
+        continue
+    target_id = target.get("id", "unknown")
+    target_name = target.get("name") or target_id
+    code = error.get("code") or "CHECK_FAILED"
+    message = error.get("message") or "remote target check failed"
+    print(f"Remote check target {target_id} ({target_name}) failed: {code} - {message}")
+PY
+}
+
 HOST_CHECK_START () {
   for HOST in $HOSTS; do
     if HOST_IS_LOCAL "$HOST"; then
@@ -616,6 +655,9 @@ CHECK_HOST () {
       STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "$HOST_NODE ($HOST): remote check status was invalid and could not be imported" "$HOST_NODE"
     else
       remote_json_result=valid
+      if [[ "$remote_status" -ne 0 ]]; then
+        REMOTE_STATUS_FAILURE_SUMMARY "$remote_status_file" "$HOST_NODE"
+      fi
     fi
     rm -f -- "$remote_status_file"
   elif [[ "$remote_status" -eq 0 ]]; then
@@ -718,20 +760,12 @@ CHECK_HOST_ITSELF () {
     echo -e "\n${BL}Host${CL} : ${GN}$HOSTNAME${CL}"
   fi
   if [[ $REBOOT_REQUIRED == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
-  if [[ $SECURITY_APT_UPDATES != 0 && $NORMAL_APT_UPDATES != 0 ]]; then
-    echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
-  elif [[ $SECURITY_APT_UPDATES != 0 ]]; then
-    echo -e "S: $SECURITY_APT_UPDATES / "
-  elif [[ $NORMAL_APT_UPDATES != 0 ]]; then
-    echo -e "N: $NORMAL_APT_UPDATES"
-  fi
   local HOST_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
   local HOST_STATUS=ok
   [[ "$HOST_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && HOST_STATUS=updates_available
   local HOST_OS
   HOST_OS=$(awk -F= '/^PRETTY_NAME=/{gsub(/^"|"$/, "", $2); print $2; exit}' /etc/os-release 2>/dev/null)
-  echo -e "Normal updates: $NORMAL_APT_UPDATES"
-  echo -e "Security updates: $SECURITY_APT_UPDATES"
+  PRINT_UPDATE_SPLIT "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
   # STATUS_MODEL_RECORD is positional: error code, error message, node,
   # display name, normal count, security count.  Keep the host name in both
   # identity positions so the split is not shifted during serialization.
@@ -1201,13 +1235,7 @@ CHECK_VM () {
       if [[ "$REBOOT_REQUIRED" == true ]]; then
         echo -e "${OR} Reboot required${CL}"
       fi
-      if [[ "$SECURITY_APT_UPDATES" -gt 0 && "$NORMAL_APT_UPDATES" -gt 0 ]]; then
-        echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
-      elif [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then
-        echo -e "S: $SECURITY_APT_UPDATES / "
-      elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
-        echo -e "N: $NORMAL_APT_UPDATES"
-      fi
+      PRINT_UPDATE_SPLIT "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
       # Checks only report reboot_required. Reboot execution belongs exclusively
       # to the update runtime and must never occur in this function.
     elif [[ "$OS" =~ Fedora ]]; then
@@ -1216,32 +1244,32 @@ CHECK_VM () {
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-        echo -e "$UPDATES"
       fi
+      PRINT_UPDATE_SPLIT "$UPDATES" Unknown
     elif [[ "$OS" =~ Arch ]]; then
       UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "pacman -Qu | wc -l")
       UPDATES=${UPDATES//[^0-9]/}
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-        echo -e "$UPDATES"
       fi
+      PRINT_UPDATE_SPLIT "$UPDATES" Unknown
     elif [[ "$OS" =~ Alpine ]]; then
       UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apk list -u | wc -l")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-        echo -e "$UPDATES"
       fi
+      PRINT_UPDATE_SPLIT "$UPDATES" Unknown
     elif [[ "$OS" =~ CentOS ]]; then
       UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "yum -q check-update | wc -l")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-        echo -e "$UPDATES"
       fi
+      PRINT_UPDATE_SPLIT "$UPDATES" Unknown
     fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
       SSH_MODEL_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
@@ -1369,13 +1397,7 @@ CHECK_VM_QEMU () {
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
       if [[ "$REBOOT_REQUIRED" == true ]]; then echo -e "${OR} Reboot required${CL}"; fi
-      if [[ "$SECURITY_APT_UPDATES" -gt 0 && "$NORMAL_APT_UPDATES" -gt 0 ]]; then
-        echo -e "S: $SECURITY_APT_UPDATES / N: $NORMAL_APT_UPDATES"
-      elif [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then
-        echo -e "S: $SECURITY_APT_UPDATES / "
-      elif [[ "$NORMAL_APT_UPDATES" -gt 0 ]]; then
-        echo -e "N: $NORMAL_APT_UPDATES"
-      fi
+      PRINT_UPDATE_SPLIT "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
       QEMU_APT_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
       QEMU_APT_STATUS=ok
       [[ "$QEMU_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && QEMU_APT_STATUS=updates_available
@@ -1388,8 +1410,8 @@ CHECK_VM_QEMU () {
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-        echo -e "$UPDATES"
       fi
+      PRINT_UPDATE_SPLIT "$UPDATES" Unknown
       QEMU_DNF_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_DNF_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "$UPDATES" false "$QEMU_DNF_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
@@ -1401,8 +1423,8 @@ CHECK_VM_QEMU () {
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-        echo -e "$UPDATES"
       fi
+      PRINT_UPDATE_SPLIT "$UPDATES" Unknown
       QEMU_PACMAN_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_PACMAN_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "$UPDATES" false "$QEMU_PACMAN_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
@@ -1414,8 +1436,8 @@ CHECK_VM_QEMU () {
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-        echo -e "$UPDATES"
       fi
+      PRINT_UPDATE_SPLIT "$UPDATES" Unknown
       QEMU_APK_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_APK_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "$UPDATES" false "$QEMU_APK_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
@@ -1427,8 +1449,8 @@ CHECK_VM_QEMU () {
       UPDATES=${UPDATES:-0}
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-        echo -e "$UPDATES"
       fi
+      PRINT_UPDATE_SPLIT "$UPDATES" Unknown
       QEMU_YUM_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_YUM_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "$UPDATES" false "$QEMU_YUM_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
@@ -1471,7 +1493,7 @@ CHECK_VM_QEMU_WINDOWS () {
   STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "$updates" "$reboot" "$STATUS_MODEL_STATUS" "" ""
   if [[ "$updates" -gt 0 || "$reboot" == true ]]; then
     echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-    echo -e "Windows updates: $updates"
+    PRINT_UPDATE_SPLIT Unknown Unknown
   fi
   [[ "$reboot" == true ]] && echo -e "${OR} Reboot required${CL}"
 }
