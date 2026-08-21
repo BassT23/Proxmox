@@ -68,6 +68,7 @@ prepare_systemd_log_filters() {
     '--property=LogFilterPatterns=~^<root@pam> (starting task UPID:|end task UPID:|.*UPID:).*'
     '--property=LogFilterPatterns=~^<root@pam> (snapshot|delete snapshot) (container|VM) [^:]+:.*'
     '--property=LogFilterPatterns=~^(starting|shutdown) (CT|VM) [^:]+: UPID:.*'
+    '--property=LogFilterPatterns=~^(start|stop|resume|suspend) VM [^:]+: UPID:.*'
     '--property=LogFilterPatterns=~^push_file([[:space:]]|$).*'
   )
 }
