@@ -21,6 +21,12 @@ grep -Fq 'PRINT_UPDATE_SPLIT "$UPDATES" Unknown' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "${VM_START_DELAY:-45}")' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'SSH_START_DELAY_TIME=${SSH_START_DELAY_TIME:-45}' "$ROOT_DIR/check-updates.sh"
 
+# Freshly started QGA VMs use a bounded readiness deadline with active
+# polling, rather than the old short fixed-attempt window.
+grep -Fq 'local max_wait=300 interval=5 probe_timeout=3' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'timeout "$probe_timeout" qm agent "$VM" ping' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'QEMU Guest Agent did not become ready within ${max_wait} seconds' "$ROOT_DIR/check-updates.sh"
+
 # Exercise the actual formatter with both complete and partial splits.
 awk '/^PRINT_UPDATE_SPLIT\(\) \{/{copy=1} copy{print} copy && /^}/{exit}' \
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/formatter.sh"

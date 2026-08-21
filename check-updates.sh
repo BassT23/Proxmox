@@ -407,15 +407,26 @@ WAIT_FOR_BOOTUP_LXC () {
 }
 
 WAIT_FOR_QGA () {
-  local attempts=15 interval=2
-  while (( attempts > 0 )); do
-    if timeout 10 qm agent "$VM" ping >/dev/null 2>&1; then
+  local max_wait=300 interval=5 probe_timeout=3 started_at now elapsed remaining
+  started_at=$(date +%s)
+  echo -e "${OR}⏳ Waiting for QEMU Guest Agent on VM $VM${CL}"
+  while :; do
+    if timeout "$probe_timeout" qm agent "$VM" ping >/dev/null 2>&1; then
+      now=$(date +%s)
+      elapsed=$((now - started_at))
+      echo -e "${GR}✅ QEMU Guest Agent ready after ${elapsed} seconds${CL}"
       return 0
     fi
-    attempts=$((attempts - 1))
-    sleep "$interval"
+    now=$(date +%s)
+    elapsed=$((now - started_at))
+    if [[ "${DEBUG:-false}" == true ]]; then
+      echo "QGA readiness probe failed for VM $VM after ${elapsed} seconds"
+    fi
+    (( elapsed >= max_wait )) && break
+    remaining=$((max_wait - elapsed))
+    sleep "$(( remaining < interval ? remaining : interval ))"
   done
-  echo -e "${RD}QEMU Guest Agent did not become ready for VM $VM${CL}"
+  echo -e "${RD}❌ QEMU Guest Agent did not become ready within ${max_wait} seconds${CL}"
   return 1
 }
 
