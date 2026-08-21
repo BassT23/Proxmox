@@ -256,10 +256,10 @@ ARGUMENTS () {
         COMMAND=true
         OUTPUT_TO_FILE
         if [[ -n "${2:-}" ]]; then
-          if CHECK_VM "$2"; then check_rc=0; else check_rc=$?; fi
+          if CHECK_VM_LIFECYCLE "$2"; then check_rc=0; else check_rc=$?; fi
           shift
         else
-          if CHECK_VM; then check_rc=0; else check_rc=$?; fi
+          if CHECK_VM_LIFECYCLE "$VM"; then check_rc=0; else check_rc=$?; fi
         fi
         [[ "$check_rc" -eq 0 ]] || CHECK_FAILURE=1
         ;;
