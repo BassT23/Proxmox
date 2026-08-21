@@ -338,6 +338,7 @@ external_target_selected_for_update() {
 }
 
 status_json() {
+  refresh_remote_jobs
   require_file "$STATUS_FILE" "status file" || return 4
   if ! python3 - "$STATUS_FILE" <<'PY'
 import json
@@ -351,6 +352,16 @@ PY
     return 4
   fi
   cat "$STATUS_FILE"
+}
+
+refresh_remote_jobs() {
+  # A remote VM update writes its post-update artifact on the owning node.
+  # Reading the central status must first give the job runner one opportunity
+  # to import that artifact, otherwise a completed remote job can leave the
+  # central status at its pre-update values indefinitely.
+  if [[ -x "$JOB_RUNNER" ]]; then
+    "$JOB_RUNNER" list >/dev/null 2>&1 || true
+  fi
 }
 
 status_import() {
@@ -368,6 +379,7 @@ status_import() {
 }
 
 status_human() {
+  refresh_remote_jobs
   local status_result=0
   if [[ ! -f "$STATUS_FILE" ]]; then
     printf 'ultimate-updater: status file is not available: %s\n' "$STATUS_FILE" >&2

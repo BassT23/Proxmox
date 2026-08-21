@@ -12,7 +12,23 @@ grep -Fq '"$CHECK_CLI" check-node "$owner_node"' "$ROOT_DIR/job-runner.sh"
 grep -Fq 'status_refresh=pending' "$ROOT_DIR/job-runner.sh"
 grep -Fq 'function isStatusRefreshJob(job)' "$ROOT_DIR/web-ui/server.py"
 grep -Fq 'if(statusRefreshJobFinished)await loadStatus()' "$ROOT_DIR/web-ui/server.py"
+grep -Fq 'self.jobs()' "$ROOT_DIR/web-ui/server.py"
+grep -Fq 'refresh_remote_jobs' "$ROOT_DIR/ultimate-updater"
 mkdir -p "$WORK_DIR/jobs"
+
+# Reading central status must give the remote-job reconciler an opportunity to
+# import a completed remote capture before the old status is returned.
+cat > "$WORK_DIR/job-runner.sh" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == list ]]
+printf 'refresh-called\n' >> "$REFRESH_CALLS"
+EOF
+chmod +x "$WORK_DIR/job-runner.sh"
+printf '{"targets":[]}\n' > "$WORK_DIR/status.json"
+REFRESH_CALLS="$WORK_DIR/refresh-calls" UU_LOCAL_FILES="$WORK_DIR" \
+  "$ROOT_DIR/ultimate-updater" status --json > "$WORK_DIR/status-output"
+grep -Fxq 'refresh-called' "$WORK_DIR/refresh-calls"
+grep -Fq '"targets"' "$WORK_DIR/status-output"
 
 cat > "$WORK_DIR/update.sh" <<'EOF'
 #!/usr/bin/env bash

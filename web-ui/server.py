@@ -1804,6 +1804,16 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/status":
             try:
+                # Remote VM updates finish their guest-side capture on the
+                # owning node.  Refresh the central import before reading the
+                # status file so a completed remote job cannot leave the UI
+                # showing pre-update values while its ref remains pending.
+                try:
+                    self.jobs()
+                except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                    # Status remains readable if the best-effort job refresh
+                    # is temporarily unavailable; the next request retries.
+                    pass
                 with self.server.status_file.open(encoding="utf-8") as source:
                     payload = json.load(source)
                 if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
