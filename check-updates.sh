@@ -1120,6 +1120,8 @@ VM_CHECK_START () {
 # independently of the check result.
 CHECK_VM_LIFECYCLE () {
   local target="$1" status check_rc=0 lifecycle_failure=0 lifecycle_message=""
+  SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "${VM_START_DELAY:-45}")
+  SSH_START_DELAY_TIME=${SSH_START_DELAY_TIME:-45}
   VM="$target"
   STATUS=$(qm status "$VM")
   if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then

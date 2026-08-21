@@ -15,6 +15,12 @@ fi
 grep -Fq 'PRINT_UPDATE_SPLIT "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'PRINT_UPDATE_SPLIT "$UPDATES" Unknown' "$ROOT_DIR/check-updates.sh"
 
+# Explicit single-VM lifecycle checks must initialize the delay before the
+# optional per-VM SSH profile is read; otherwise a direct cvm invocation can
+# call sleep with an empty interval.
+grep -Fq 'SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "${VM_START_DELAY:-45}")' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'SSH_START_DELAY_TIME=${SSH_START_DELAY_TIME:-45}' "$ROOT_DIR/check-updates.sh"
+
 # Exercise the actual formatter with both complete and partial splits.
 awk '/^PRINT_UPDATE_SPLIT\(\) \{/{copy=1} copy{print} copy && /^}/{exit}' \
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/formatter.sh"
