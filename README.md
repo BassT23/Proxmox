@@ -545,33 +545,28 @@ in a separate External systems section.
 ### Current 5.1 Web UI
 
 The following screenshots were captured from the authenticated 5.1 `develop`
-Web UI on a dedicated Proxmox test node. The displayed counts and target names
-are test-environment data and will vary by installation.
+Web UI on a dedicated Proxmox test node. The displayed counts, addresses, and
+target names are test-environment data and will vary by installation.
 
-![5.1 dashboard with system counts and update status](docs/screenshots/dashboard.png)
+![Current 5.1 Web UI dashboard](docs/screenshots/dashboard.png)
 
-> Dashboard with known systems, reachability, separate normal/security counts,
-> and attention status.
+> Current 5.1 dashboard with Proxmox nodes, update counts, Check/Update
+> actions, and links to Configuration and Internal SSH Connections.
 
-![5.1 target details view](docs/screenshots/target-details-view.png)
+![Configuration settings](docs/screenshots/settings.png)
 
-> Target details showing transport, operating system, update fields, reboot
-> status, check status, and error state.
+> Configuration view for host, LXC, VM, filters, lifecycle, snapshot, backup,
+> and notification settings.
 
-![5.1 management area with internal SSH and external systems](docs/screenshots/management-area.png)
+![Internal SSH Connections](docs/screenshots/internal-ssh.png)
 
-> Management area for Internal SSH Connections, External systems, and the
-> server-side Jobs section.
+> Internal SSH management for Proxmox nodes and virtual machines, including
+> resolved connection sources and Test connection actions.
 
-![5.1 dashboard actions and server-side job area](docs/screenshots/dashboard-actions.png)
+![Persistent server-side jobs](docs/screenshots/jobs.png)
 
-> Dashboard action area with Check/Update controls and the Internal SSH and
-> server-side job panels.
-
-![5.1 Jobs section](docs/screenshots/jobs.png)
-
-> Jobs section showing retained server-side job history and browser-independent
-> job state.
+> Loaded server-side job history with a completed job, retained log output,
+> and browser-independent job state.
 
 The dashboard also provides typed Settings, Internal SSH Connections, External
 target management, target details, job logs, and version/build information.
