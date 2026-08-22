@@ -10,8 +10,6 @@ systems.
 <img src="https://github.com/user-attachments/assets/df181f9c-683b-4e9b-9234-80c158c7da98"
        style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
 
-![Screenshot_20240109_113501](https://github.com/BassT23/Proxmox/assets/30832786/640cefd9-0659-4265-b34a-cb5b9905046b)
-
 [![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
 [![downloads](https://img.shields.io/github/downloads/BassT23/Proxmox/total.svg)](https://github.com/BassT23/Proxmox/releases)
@@ -50,7 +48,7 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 - Normal run is "Interactive" / Headless Mode can be run with `update -s`
 - Logging - location can be change in config file
 - Exit tracking, so you can send additional commands for finish or failure (edit files in `/etc/ultimate-updater/exit`)
-- [Config file](https://github.com/BassT23/Proxmox/tree/master#config-file)
+- [Config file](https://github.com/BassT23/Proxmox/tree/develop#config-file)
 - [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/tree/develop#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
 - send email after update/check
 - Trim filesystem on ext4 nodes
@@ -128,7 +126,7 @@ So connect from first node (on which you install the Proxmox-Updater) to node2 w
 
 2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
 
-     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/master/ssh.md)
+     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/develop/ssh.md)
 
 ### Kali Linux VMs
 
@@ -153,7 +151,7 @@ qm guest exec <VMID> -- true
 
 Both commands must work for QEMU-based guest updates. A reachable Guest Agent
 is not sufficient if the `guest-exec` capability is disabled. Alternatively,
-configure key-based SSH access as described in [SSH Connection](https://github.com/BassT23/Proxmox/blob/master/ssh.md).
+configure key-based SSH access as described in [SSH Connection](https://github.com/BassT23/Proxmox/blob/develop/ssh.md).
 
 Kali is handled by the Ultimate Updater as a Debian-based system and uses
 `apt` for update checks and updates.
@@ -543,6 +541,68 @@ The web preview groups multiple Proxmox host records as nodes and shows their
 LXC/VM guests below the corresponding node. With one Proxmox host, the same
 node-first view is used in a compact form. Targets from `targets.conf` remain
 in a separate External systems section.
+
+### Current 5.1 Web UI
+
+The following screenshots were captured from the authenticated 5.1 `develop`
+Web UI on a dedicated Proxmox test node. The displayed counts and target names
+are test-environment data and will vary by installation.
+
+![5.1 dashboard with system counts and update status](docs/screenshots/dashboard.png)
+
+> Dashboard with known systems, reachability, separate normal/security counts,
+> and attention status.
+
+![5.1 target details view](docs/screenshots/target-details-view.png)
+
+> Target details showing transport, operating system, update fields, reboot
+> status, check status, and error state.
+
+![5.1 management area with internal SSH and external systems](docs/screenshots/management-area.png)
+
+> Management area for Internal SSH Connections, External systems, and the
+> server-side Jobs section.
+
+![5.1 dashboard actions and server-side job area](docs/screenshots/dashboard-actions.png)
+
+> Dashboard action area with Check/Update controls and the Internal SSH and
+> server-side job panels.
+
+![5.1 Jobs section](docs/screenshots/jobs.png)
+
+> Jobs section showing retained server-side job history and browser-independent
+> job state.
+
+The dashboard also provides typed Settings, Internal SSH Connections, External
+target management, target details, job logs, and version/build information.
+Normal and security updates are separate fields: security updates are not added
+again to the normal count, and an unknown value remains `Unknown` rather than
+being displayed as zero.
+
+`Check` only inspects update state and never reboots a VM. When configured to
+include stopped or paused guests, it may start or resume them temporarily and
+restores the original lifecycle state, including after a check failure. `Update`
+performs the package update and applies the configured snapshot, backup, and
+`REBOOT_IF_NEEDED` behavior.
+
+Checks and updates run as server-side jobs through the session-independent job
+runner. Closing the browser or losing the SSH session does not stop a started
+job; its status and log remain available. Jobs for the same target are
+serialized to prevent conflicting operations.
+
+VM checks and updates can use the QEMU Guest Agent or the existing SSH path.
+For QGA, `qm agent <VMID> ping` and the required guest-exec operations must be
+available. Remote VM/LXC results are imported into the central status model so
+the Web UI does not remain on stale remote values.
+
+Settings include VM lifecycle controls, filters, DEBUG logging, snapshots,
+backups, backup mode, and `BACKUP_STORAGE`. `BACKUP_STORAGE` is a Proxmox
+storage ID such as `pbs`, not a filesystem path or PBS datastore name. Leaving
+it empty keeps automatic selection; an invalid or inactive ID is rejected.
+
+The Web UI is responsive on narrow displays. Its version/build information
+identifies the installed version, branch, commit, and exact tag when available,
+along with the available updater version.
 
 Guest status records may include the Proxmox-provided guest name. The Web UI
 shows it next to the stable guest ID when available and keeps working with
