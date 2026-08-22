@@ -23,35 +23,6 @@ OR="\e[1;33m"
 GN="\e[1;92m"
 CL="\e[0m"
 
-# NFS/CIFS reachability check: avoids calling df on an unreachable network
-# mount, which can hang indefinitely (D-state) and block MOTD/login host-wide.
-CHECK_NFS_REACHABILITY () {
-  DOWN_MOUNTS=()
-  local spec mnt fstype server port
-
-  while read -r spec mnt fstype _; do
-    case "$fstype" in
-      nfs|nfs4)
-        server="${spec%%:*}"
-        port=2049
-        ;;
-      cifs|smbfs|smb3)
-        server="${spec#\\\\}"
-        server="${server%%\\*}"
-        server="${server#//}"
-        server="${server%%/*}"
-        port=445
-        ;;
-      *)
-        continue
-        ;;
-    esac
-    if ! timeout 2 bash -c "exec 3<>/dev/tcp/${server}/${port}" 2>/dev/null; then
-      DOWN_MOUNTS+=("$mnt")
-    fi
-  done < <(awk '{print $1, $2, $3}' /proc/mounts)
-}
-
 # shellcheck disable=SC1091
 . "$LOCAL_FILES/tag-filter.sh"
 
@@ -142,30 +113,17 @@ TIME_CALCULTION () {
   MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
-# Welcome
-CHECK_NFS_REACHABILITY
-if [[ ${#DOWN_MOUNTS[@]} -eq 0 ]]; then
-  if [[ -f /usr/bin/screenfetch ]]; then
-    echo && timeout 10 screenfetch -o 'shell_type="bash"' && echo
-  elif [[ -f /usr/bin/neofetch ]]; then
-    echo
-    timeout 10 neofetch
-  else
-    echo
-  fi
+# Welcome. Disk discovery is deliberately disabled: screenfetch/neofetch
+# otherwise call df across every mounted filesystem, and a dead NFS/CIFS
+# server can leave that syscall in uninterruptible kernel sleep. A login/MOTD
+# path must not probe remote storage or rely on a network reachability guess.
+if [[ -f /usr/bin/screenfetch ]]; then
+  echo && timeout 10 screenfetch -d '-disk' -o 'shell_type="bash"' && echo
+elif [[ -f /usr/bin/neofetch ]]; then
+  echo
+  timeout 10 neofetch --disable disk
 else
-  if [[ -f /usr/bin/screenfetch ]]; then
-    echo && timeout 10 screenfetch -d '-disk' -o 'shell_type="bash"' && echo
-  elif [[ -f /usr/bin/neofetch ]]; then
-    echo
-    timeout 10 neofetch --disable disk
-  else
-    echo
-  fi
-  echo -e "${OR}*** One or more disks are offline - can't check disk usage ***${CL}"
-  for m in "${DOWN_MOUNTS[@]}"; do
-    echo -e "${OR}       $m: OFFLINE${CL}"
-  done
+  echo
 fi
 VERSION_CHECK
 READ_WRITE_CONFIG
