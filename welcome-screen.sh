@@ -113,12 +113,15 @@ TIME_CALCULTION () {
   MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
-# Welcome
+# Welcome. Disk discovery is deliberately disabled: screenfetch/neofetch
+# otherwise call df across every mounted filesystem, and a dead NFS/CIFS
+# server can leave that syscall in uninterruptible kernel sleep. A login/MOTD
+# path must not probe remote storage or rely on a network reachability guess.
 if [[ -f /usr/bin/screenfetch ]]; then
-  echo && screenfetch && echo
+  echo && timeout 10 screenfetch -d '-disk' -o 'shell_type="bash"' && echo
 elif [[ -f /usr/bin/neofetch ]]; then
   echo
-  neofetch
+  timeout 10 neofetch --disable disk
 else
   echo
 fi
