@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC1091,SC2034
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -43,6 +44,7 @@ grep -Fq 'REMOTE_STATUS_FAILURE_SUMMARY' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'Remote check target' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'status-diagnostics' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'UU_REMOTE_DEFER_STATUS_FINISH=true' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'TAG_OUTPUT=false STATUS_MODEL_NODE=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'REMOTE_CHECK_RETURN node=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'STATUS_MODEL_FINISH_START node=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'STATUS_MODEL_FINISH_END node=' "$ROOT_DIR/check-updates.sh"
@@ -68,6 +70,22 @@ grep -Fq 'bash -s -- host' "$ROOT_DIR/check-updates.sh"
 # shellcheck disable=SC2016 # the literal shell fragment is the assertion target.
 grep -Fq '"$LOCAL_FILES/update.conf" "$HOST:$LOCAL_FILES/update.conf"' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'DEBUG:-false' "$ROOT_DIR/check-updates.sh"
+
+# Internal remote correlation diagnostics are debug-only.  Target failures
+# still have a separate user-facing summary, so DEBUG=false must not expose
+# artifact paths, RCs, or transport metadata.
+awk '/^REMOTE_STATUS_DIAGNOSTICS \(\) \{/{copy=1} copy{print} copy && /^}/{exit}' \
+  "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/remote-diagnostics.sh"
+source "$WORK_DIR/remote-diagnostics.sh"
+if DEBUG=false output=$(REMOTE_STATUS_DIAGNOSTICS failure node1 host /tmp/run /tmp/run/completed /tmp/run/status.json \
+  true 1 true 12 0 0 valid pending remote-rc-nonzero true 20 0); then
+  [[ -z "$output" ]]
+else
+  exit 1
+fi
+DEBUG=true output=$(REMOTE_STATUS_DIAGNOSTICS failure node1 host /tmp/run /tmp/run/completed /tmp/run/status.json \
+  true 1 true 12 0 0 valid pending remote-rc-nonzero true 20 0)
+grep -Fq 'Remote status diagnostics:' <<< "$output"
 
 # Central remote job visibility must not depend on an installed UU runner on
 # the owner node.  The persistent remote state file is authoritative, with a

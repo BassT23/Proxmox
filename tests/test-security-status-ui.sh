@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1091,SC2016
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -45,8 +46,7 @@ PY
 
 grep -Fq 'CONTAINER_NORMAL_UPDATES=$NORMAL_APT_UPDATES' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'CONTAINER_SECURITY_UPDATES=$SECURITY_APT_UPDATES' "$ROOT_DIR/check-updates.sh"
-grep -Fq 'Normal updates: $NORMAL_APT_UPDATES' "$ROOT_DIR/check-updates.sh"
-grep -Fq 'Security updates: $SECURITY_APT_UPDATES' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'PRINT_UPDATE_SPLIT "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true' "$ROOT_DIR/check-updates.sh"
 grep -Fq '"$STATUS_HOST_NAME" "$STATUS_HOST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'APT_OUTPUT=$(apt-get -s upgrade)' "$ROOT_DIR/check-updates.sh"
