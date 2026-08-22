@@ -168,6 +168,7 @@ if [[ -f "$LOCAL_FILES/check-output" ]]; then
   if [[ $CHECK_OUTPUT -gt 0 ]]; then
     echo -e "${OR}Available Updates:${CL}"
     echo -e "S = Security / N = Normal"
+    echo
     COMPACT_WELCOME_OUTPUT "$LOCAL_FILES/check-output"
   fi
   echo

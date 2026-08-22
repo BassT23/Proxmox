@@ -27,6 +27,9 @@ grep -Fq 'scp-retrieval-failed' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'permission-denied' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'invalid-json' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'remote-rc-nonzero' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'remote_node_status_ok=false' "$ROOT_DIR/check-updates.sh"
+# shellcheck disable=SC2016 # the literal condition is the assertion target.
+grep -Fq '"$remote_status" -ne 0 && "$remote_node_status_ok" != true' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'timeout' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'remote_status_validation=' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'remote_rc=86' "$ROOT_DIR/check-updates.sh"
@@ -174,5 +177,32 @@ STATUS_MODEL_RECORD_FILE="$WORK_DIR/status.records" bash -c '
 grep -Fq '"id": "host:node1"' "$WORK_DIR/status.json"
 grep -Fq '"id": "host:node3"' "$WORK_DIR/status.json"
 grep -Fq 'REMOTE_STATUS_IMPORT_FAILED' "$WORK_DIR/status.json"
+
+# A successful remote node record must survive a failed child record.  The
+# aggregate job still has an error, but the parent is not rewritten as one.
+cat > "$WORK_DIR/remote-child-error.json" <<'JSON'
+{"targets":[
+  {"id":"host:node2","type":"host","node":"node2","name":"node2","check_status":"updates_available","reachable":true,"os":"Ubuntu","updates":{"available":66},"normal_updates":62,"security_updates":4},
+  {"id":"guest:211","type":"lxc","node":"node2","name":"iobroker","check_status":"error","reachable":true,"updates":{"available":null},"error":{"code":"CHECK_COMMAND_FAILED","message":"apt-get update failed for LXC 211"}}
+]}
+JSON
+LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/child-error-status.json" \
+STATUS_MODEL_RECORD_FILE="$WORK_DIR/child-error.records" bash -c '
+  source "$1"
+  STATUS_MODEL_INIT
+  STATUS_MODEL_IMPORT_FILE "$2"
+  STATUS_MODEL_FINISH
+' _ "$ROOT_DIR/status-model.sh" "$WORK_DIR/remote-child-error.json"
+python3 - "$WORK_DIR/child-error-status.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    targets = {target["id"]: target for target in json.load(source)["targets"]}
+assert targets["host:node2"]["check_status"] == "updates_available"
+assert targets["host:node2"]["error"] is None
+assert targets["guest:211"]["check_status"] == "error"
+assert targets["guest:211"]["error"]["code"] == "CHECK_COMMAND_FAILED"
+PY
 
 printf '%s\n' 'remote status aggregation regression tests: PASS'

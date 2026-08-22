@@ -26,10 +26,11 @@ grep -Fq '🐧 984 · unifi' "$WORK_DIR/lxc-mail"
 
 cat > "$WORK_DIR/status.json" <<'JSON'
 {"targets":[
-  {"id":"host:Proxmox-Test-1","type":"host","node":"Proxmox-Test-1","name":"Proxmox-Test-1","check_status":"updates_available","reachable":true,"updates":{"available":23}},
+  {"id":"host:Proxmox-Test-1","type":"host","node":"Proxmox-Test-1","name":"Proxmox-Test-1","check_status":"updates_available","reachable":true,"updates":{"available":66},"normal_updates":62,"security_updates":4},
   {"id":"host:Proxmox-Test-2","type":"unknown","node":"Proxmox-Test-2","check_status":"ok","reachable":true,"updates":{"available":0}},
-  {"id":"guest:984","type":"lxc","node":"Proxmox-Test-1","name":"unifi","check_status":"updates_available","reachable":true,"updates":{"available":99}},
-  {"id":"guest:985","type":"lxc","node":"Proxmox-Test-1","name":"985","check_status":"updates_available","reachable":true,"updates":{"available":1}},
+  {"id":"guest:984","type":"lxc","node":"Proxmox-Test-1","name":"unifi","check_status":"updates_available","reachable":true,"updates":{"available":10},"normal_updates":0,"security_updates":10},
+  {"id":"guest:985","type":"lxc","node":"Proxmox-Test-1","name":"985","check_status":"updates_available","reachable":true,"updates":{"available":55},"normal_updates":55,"security_updates":0},
+  {"id":"guest:987","type":"lxc","node":"Proxmox-Test-1","name":"unknown-security","check_status":"updates_available","reachable":true,"updates":{"available":1},"normal_updates":1,"security_updates":null},
   {"id":"guest:986","type":"lxc","node":"Proxmox-Test-2","name":"986","check_status":"ok","reachable":true,"updates":{"available":0}}
 ]}
 JSON
@@ -39,6 +40,15 @@ LOCAL_FILES="$WORK_DIR" source "$ROOT_DIR/status-model.sh"
 STATUS_MODEL_RENDER_NOTIFICATION "$WORK_DIR/status.json" > "$WORK_DIR/status-mail"
 [[ $(grep -Fc '🖥️ Proxmox-Test-1' "$WORK_DIR/status-mail") -eq 1 ]]
 grep -Fq '🐧 984 · unifi' "$WORK_DIR/status-mail"
+grep -Fqx 'S: 4 / N: 62' "$WORK_DIR/status-mail"
+grep -Fqx 'S: 10 / N: 0' "$WORK_DIR/status-mail"
+grep -Fqx 'S: 0 / N: 55' "$WORK_DIR/status-mail"
+grep -Fqx 'S: Unknown / N: 1' "$WORK_DIR/status-mail"
+grep -Fq 'Total available updates: 132' "$WORK_DIR/status-mail"
+if grep -Fq '⬆️' "$WORK_DIR/status-mail"; then
+  echo 'legacy total-only update lines remain in check mail' >&2
+  exit 1
+fi
 grep -Fqx '🐧 985' "$WORK_DIR/status-mail"
 [[ $(grep -Fc '✅ 2 weitere Systeme geprüft – keine Updates verfügbar' "$WORK_DIR/status-mail") -eq 1 ]]
 if grep -Fq 'host:Proxmox-Test-2' "$WORK_DIR/status-mail"; then

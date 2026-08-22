@@ -605,6 +605,14 @@ def short_error(target):
             return str(message).replace("\n", " ").strip()
     return "check failed"
 
+def update_split(target):
+    def value(name):
+        candidate = target.get(name)
+        if isinstance(candidate, int) and not isinstance(candidate, bool):
+            return str(candidate)
+        return "Unknown"
+    return f"S: {value('security_updates')} / N: {value('normal_updates')}"
+
 def update_result(target):
     result = target.get("last_update")
     return result if isinstance(result, dict) else {}
@@ -741,6 +749,15 @@ else:
 lines = ["Ultimate Updater status", "=======================", ""]
 if updates:
     lines.append("Available updates:")
+    nodes_with_updates = {str(target.get("node") or "Unassigned") for target, _ in updates}
+    rendered_ids = {str(target.get("id") or "") for target, _ in updates}
+    for target in targets:
+        is_host = target.get("type") == "host" or str(target.get("id") or "").startswith("host:")
+        node = str(target.get("node") or "Unassigned")
+        if is_host and node in nodes_with_updates and str(target.get("id") or "") not in rendered_ids and \
+            target.get("reachable") is True and target.get("check_status") in ("ok", "updates_available"):
+            updates.append((target, 0))
+            rendered_ids.add(str(target.get("id") or ""))
     node_order = []
     grouped = {}
     for target, count in updates:
@@ -750,14 +767,20 @@ if updates:
             node_order.append(node)
         grouped[node].append((target, count))
     for node in node_order:
-        lines.extend(["", f"🖥️ {node}", f"⬆️ {sum(count for _, count in grouped[node])} Updates"])
-        for target, count in grouped[node]:
+        node_targets = grouped[node]
+        node_target = next((target for target, _ in node_targets if target.get("type") == "host"), None)
+        lines.extend(["", f"🖥️ {node}"])
+        if node_target is not None:
+            lines.append(update_split(node_target))
+        else:
+            lines.append(f"⬆️ {sum(count for _, count in node_targets)} Updates")
+        for target, _ in node_targets:
             # The node heading already represents a host target. Do not
             # render the same host a second time as a guest-like row.
             if target.get("type") == "host":
                 continue
             lines.append(f"{target_icon(target)} {target_name(target)}")
-            lines.append(f"⬆️ {count} Updates")
+            lines.append(update_split(target))
             if target.get("reboot_required") is True:
                 lines.append("🔄 Neustart erforderlich")
 else:

@@ -552,6 +552,7 @@ CHECK_HOST () {
   local remote_done_found=false remote_done_transport_rc=0 remote_status_transport_rc=0
   local remote_diagnostics_found=false remote_diagnostics_size=0 remote_diagnostics_transport_rc=0
   local remote_status_found=false remote_status_size=0 remote_json_result=not-checked
+  local remote_node_status_ok=false
   local remote_job_timeout="${UU_CHECK_REMOTE_JOB_TIMEOUT:-300}"
   local remote_cleanup_state=pending remote_diag_level=success remote_failure_class=none
   HOST_NODE=$(CLUSTER_HOST_NODE "$HOST")
@@ -684,6 +685,29 @@ CHECK_HOST () {
       STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "$HOST_NODE ($HOST): remote check status was invalid and could not be imported" "$HOST_NODE"
     else
       remote_json_result=valid
+      if python3 - "$remote_status_file" "$HOST_NODE" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+node_id = f"host:{sys.argv[2]}"
+for target in payload.get("targets", []):
+    if not isinstance(target, dict):
+        continue
+    target_id = str(target.get("id") or "")
+    is_node = target_id == node_id or target.get("type") == "host" and str(target.get("node") or "") == sys.argv[2]
+    if is_node and target.get("reachable") is True and target.get("check_status") in ("ok", "updates_available"):
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+      then
+        remote_node_status_ok=true
+      fi
       if [[ "$remote_status" -ne 0 ]]; then
         REMOTE_STATUS_FAILURE_SUMMARY "$remote_status_file" "$HOST_NODE"
       fi
@@ -763,7 +787,7 @@ CHECK_HOST () {
     "$remote_done_value" "$remote_status_found" "$remote_status_size" \
     "$remote_done_transport_rc" "$remote_status_transport_rc" "$remote_json_result" "$remote_cleanup_state" "$remote_failure_class" \
     "$remote_diagnostics_found" "$remote_diagnostics_size" "$remote_diagnostics_transport_rc"
-  if [[ "$remote_status" -ne 0 ]]; then
+  if [[ "$remote_status" -ne 0 && "$remote_node_status_ok" != true ]]; then
     STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "$HOST_NODE ($HOST): remote check exited with $remote_status" "$HOST_NODE"
   fi
   CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=$remote_status phase=complete cleanup_rc=$remote_cleanup_rc"

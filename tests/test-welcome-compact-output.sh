@@ -57,6 +57,13 @@ EOF
 )
 
 [[ "$actual" == "$expected" ]]
+awk '
+  /echo -e "S = Security \/ N = Normal"/ {
+    if (getline next_line <= 0 || next_line !~ /^[[:space:]]+echo$/) exit 1
+    found = 1
+  }
+  END { exit(found ? 0 : 1) }
+' "$ROOT_DIR/welcome-screen.sh"
 if grep -Fq 'Normal updates:' <<<"$actual" ||
    grep -Fq 'Security updates:' <<<"$actual"; then
   echo 'verbose update labels remain in compact welcome output' >&2
