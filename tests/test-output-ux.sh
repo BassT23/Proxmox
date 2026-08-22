@@ -21,8 +21,21 @@ JSON
 
 cat > "$WORK_DIR/job-runner.sh" <<'SH'
 #!/bin/bash
-printf 'ultimate-updater-check-910-20260101-000000-1\t910\tcompleted\tstart\tend\t0\tcheck\n'
-printf 'ultimate-updater-update-910-20260101-000001-2\t910\tfailed\tstart\tend\t17\tupdate\n'
+case "${1:-}" in
+  list)
+    printf 'ultimate-updater-check-910-20260101-000000-1\t910\tcompleted\tstart\tend\t0\tcheck\n'
+    printf 'ultimate-updater-update-910-20260101-000001-2\t910\tfailed\tstart\tend\t17\tupdate\n'
+    ;;
+  start-check)
+    printf 'Running as unit: ultimate-updater-check-910-20260101-000002-3.service\n'
+    printf 'Check job started\nTarget: 910\nJob: ultimate-updater-check-910-20260101-000002-3\n'
+    printf 'Status: ultimate-updater status\nLogs: journalctl -u ultimate-updater-check-910-20260101-000002-3\n'
+    ;;
+  *)
+    printf 'unexpected job-runner action: %s\n' "${1:-}" >&2
+    exit 2
+    ;;
+esac
 SH
 chmod +x "$WORK_DIR/job-runner.sh"
 
@@ -48,7 +61,14 @@ JSON
 SH
 chmod +x "$WORK_DIR/check-updates.sh"
 
-check_output=$(PATH="$WORK_DIR/bin:$PATH" UU_LOCAL_FILES="$WORK_DIR" "$ROOT_DIR/ultimate-updater" check 910)
+start_output=$(PATH="$WORK_DIR/bin:$PATH" UU_LOCAL_FILES="$WORK_DIR" "$ROOT_DIR/ultimate-updater" check 910)
+grep -Fq 'Check job started' <<<"$start_output"
+grep -Fq 'Target: 910' <<<"$start_output"
+
+# The job runner owns the public asynchronous entry point. Exercise the
+# internal execution path explicitly when asserting the completed-check
+# summary, just as systemd does through run-check.
+check_output=$(PATH="$WORK_DIR/bin:$PATH" UU_CHECK_JOB_EXECUTION=true UU_LOCAL_FILES="$WORK_DIR" "$ROOT_DIR/ultimate-updater" check 910)
 diff -u "$ROOT_DIR/tests/golden/check-no-updates.txt" <(printf '%s\n' "$check_output")
 grep -Fq '0 updates available' <<<"$check_output"
 
