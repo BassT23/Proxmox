@@ -113,6 +113,35 @@ TIME_CALCULTION () {
   MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
+COMPACT_WELCOME_OUTPUT () {
+  awk '
+    /^Normal updates: / {
+      normal = $0
+      sub(/^Normal updates: /, "", normal)
+      next
+    }
+    /^Security updates: / {
+      if (normal != "") {
+        security = $0
+        sub(/^Security updates: /, "", security)
+        printf "S: %s / N: %s\n", security, normal
+        normal = ""
+        next
+      }
+    }
+    {
+      if (normal != "") {
+        print "Normal updates: " normal
+        normal = ""
+      }
+      print
+    }
+    END {
+      if (normal != "") print "Normal updates: " normal
+    }
+  ' "$1"
+}
+
 # Welcome. Disk discovery is deliberately disabled: screenfetch/neofetch
 # otherwise call df across every mounted filesystem, and a dead NFS/CIFS
 # server can leave that syscall in uninterruptible kernel sleep. A login/MOTD
@@ -139,7 +168,7 @@ if [[ -f "$LOCAL_FILES/check-output" ]]; then
   if [[ $CHECK_OUTPUT -gt 0 ]]; then
     echo -e "${OR}Available Updates:${CL}"
     echo -e "S = Security / N = Normal"
-    cat "$LOCAL_FILES/check-output"
+    COMPACT_WELCOME_OUTPUT "$LOCAL_FILES/check-output"
   fi
   echo
 fi
