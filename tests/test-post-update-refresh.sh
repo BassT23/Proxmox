@@ -123,6 +123,7 @@ grep -Fq 'post-update full status refresh rc=0' "$WORK_DIR/jobs/$unit.state"
 
 # A guest update must consume the status captured before lifecycle restore.
 # It must not start a second normal check after the guest is stopped.
+rm -f "$WORK_DIR/log"
 cat > "$WORK_DIR/update-guest.sh" <<'EOF'
 #!/usr/bin/env bash
 printf 'UPDATE_TARGET=%s\n' "$1" >> "$POST_REFRESH_LOG"
@@ -147,8 +148,12 @@ POST_REFRESH_LOG="$WORK_DIR/log" UU_REMOTE_WORK_DIR="$WORK_DIR" UU_JOB_STATE_DIR
   UU_CHECK_CLI="$WORK_DIR/check.sh" UU_UPDATE_CONFIG_FILE="$WORK_DIR/update.conf" \
   "$ROOT_DIR/job-runner.sh" run "$unit" 191 "$WORK_DIR/update-guest.sh" >/dev/null
 grep -Fq 'post-update target status captured before lifecycle restore rc=0' "$WORK_DIR/jobs/$unit.state"
-! grep -Fq 'CHECK_SCOPE=' "$WORK_DIR/log"
-! grep -Fq 'Post-update status refresh started' "$WORK_DIR/log"
+if grep -Fq 'CHECK_SCOPE=' "$WORK_DIR/log"; then
+  exit 1
+fi
+if grep -Fq 'Post-update status refresh started' "$WORK_DIR/log"; then
+  exit 1
+fi
 
 # A semantic capture failure must be visible as a capture failure, without
 # changing the successful package-update result or starting a second check.
@@ -175,12 +180,16 @@ POST_REFRESH_LOG="$WORK_DIR/log" UU_REMOTE_WORK_DIR="$WORK_DIR" UU_JOB_STATE_DIR
   UU_CHECK_CLI="$WORK_DIR/check.sh" UU_UPDATE_CONFIG_FILE="$WORK_DIR/update.conf" \
   "$ROOT_DIR/job-runner.sh" run "$unit" 191 "$WORK_DIR/update-guest-not-checked.sh" >"$WORK_DIR/not-checked-output" 2>&1
 grep -Fq 'Post-update status capture failed for 191: POST_UPDATE_CAPTURE_NOT_CHECKED' "$WORK_DIR/not-checked-output"
-! grep -Fq 'Post-update status captured before lifecycle restore for 191.' "$WORK_DIR/not-checked-output"
+if grep -Fq 'Post-update status captured before lifecycle restore for 191.' "$WORK_DIR/not-checked-output"; then
+  exit 1
+fi
 grep -Eq '^state=completed$' "$WORK_DIR/jobs/$unit.state"
 grep -Fq 'POST_UPDATE_CAPTURE_NOT_CHECKED' "$WORK_DIR/jobs/$unit.state"
 
 grep -Fq 'Continue after errors: enabled' "$ROOT_DIR/update.sh"
 grep -Fq 'Continue after errors: disabled' "$ROOT_DIR/update.sh"
-! grep -Fq 'work only on main host' "$ROOT_DIR/update.sh"
+if grep -Fq 'work only on main host' "$ROOT_DIR/update.sh"; then
+  exit 1
+fi
 
 echo 'post-update status refresh tests: PASS'

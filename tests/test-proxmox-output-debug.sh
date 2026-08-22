@@ -13,8 +13,10 @@ exit "${FIXTURE_RC:-0}"
 EOF
 chmod 750 "$WORK_DIR/proxmox-fixture"
 
+# shellcheck source=/dev/null # the test sources the runtime path dynamically.
 source "$ROOT_DIR/target-runtime.sh"
 
+# shellcheck disable=SC2034 # DEBUG is consumed by the sourced runtime function.
 DEBUG=false
 if RUN_PROXMOX_COMMAND "$WORK_DIR/proxmox-fixture" >"$WORK_DIR/normal" 2>&1; then
   rc=0
@@ -28,6 +30,7 @@ DEBUG=true
 RUN_PROXMOX_COMMAND "$WORK_DIR/proxmox-fixture" >"$WORK_DIR/debug" 2>&1
 grep -Fq 'UPID:fixture' "$WORK_DIR/debug"
 
+# shellcheck disable=SC2034 # reset the mode for the final failure assertion.
 DEBUG=false
 export FIXTURE_RC=23
 if RUN_PROXMOX_COMMAND "$WORK_DIR/proxmox-fixture" >"$WORK_DIR/failure" 2>&1; then

@@ -36,6 +36,7 @@ STATUS_MODEL_FINISH
 exit 0
 EOF
 chmod 750 "$WORK_DIR/check.sh"
+# shellcheck source=/dev/null # the test sources the runtime path dynamically.
 source "$ROOT_DIR/status-model.sh"
 # shellcheck disable=SC1091
 source "$WORK_DIR/capture.sh"
@@ -46,6 +47,7 @@ grep -Fxq 0 "$UU_REMOTE_WORK_DIR/post-update-status.rc"
 grep -Fxq false "$WORK_DIR/defer-value"
 grep -Fxq "$LOCAL_FILES/status-model.sh" "$WORK_DIR/status-script"
 grep -Fq 'UU_EXPLICIT_TARGET_CHECK=true' "$ROOT_DIR/update.sh"
+# shellcheck disable=SC2016 # literal shell fragments are assertion targets.
 grep -Fq 'STATUS_MODEL_SCRIPT="$LOCAL_FILES/status-model.sh"' "$ROOT_DIR/update.sh"
 grep -Fq 'UU_REMOTE_DEFER_STATUS_FINISH=false TAG_OUTPUT=false' "$ROOT_DIR/update.sh"
 

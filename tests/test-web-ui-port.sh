@@ -27,10 +27,29 @@ for invalid in 0 65536 abc -1 8765x ''; do
   fi
 done
 
-python3 -c 'import socket,time; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(("127.0.0.1",18765)); s.listen(); time.sleep(30)' &
+PORT_FILE="$WORK_DIR/listener-port"
+python3 - "$PORT_FILE" <<'PY' &
+import socket
+import sys
+import time
+
+listener = socket.socket()
+listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+listener.bind(("127.0.0.1", 0))
+listener.listen()
+with open(sys.argv[1], "w", encoding="ascii") as port_file:
+    port_file.write(str(listener.getsockname()[1]))
+    port_file.flush()
+time.sleep(30)
+PY
 LISTENER_PID=$!
-sleep 1
-printf 'WEB_UI_PORT=18765\n' > "$CONFIG"
+for _ in {1..50}; do
+  [[ -s "$PORT_FILE" ]] && break
+  sleep 0.1
+done
+[[ -s "$PORT_FILE" ]]
+LISTENER_PORT=$(<"$PORT_FILE")
+printf 'WEB_UI_PORT=%s\n' "$LISTENER_PORT" > "$CONFIG"
 if WEB_UI_CONFIG_FILE="$CONFIG" WEB_UI_PORT_OWN_PIDS='' "$ROOT_DIR/web-ui-port.sh" check >/dev/null 2>&1; then
   echo 'foreign listener was not detected' >&2
   exit 1
