@@ -38,11 +38,19 @@ resources = [
     {"type": "lxc", "vmid": 917, "node": "Proxmox-Test-1", "name": "cent", "template": 0},
     {"type": "lxc", "vmid": 926, "node": "Proxmox-Test-1", "name": "template", "template": 1},
     {"type": "lxc", "vmid": 930, "node": "Proxmox-Test-3", "name": "offline-guest", "template": 0},
+    {"type": "qemu", "vmid": 100, "node": "Proxmox-Test-1", "name": "pfsense", "template": 0},
 ]
+payload["targets"].append({
+    "id": "100", "type": "vm", "transport": "ssh", "os": "pfSense",
+    "updater": "pkg", "check_status": "updates_available",
+})
 full = module.canonical_inventory(payload, [{"id": "mediacenter", "transport": "ssh"}], resources)
 full_ids = [item["id"] for item in full["targets"]]
-assert full_ids == ["host:Proxmox-Test-1", "host:Proxmox-Test-3", "917", "930", "mediacenter"], full_ids
+assert full_ids == ["host:Proxmox-Test-1", "host:Proxmox-Test-3", "917", "930", "100", "mediacenter"], full_ids
 assert next(item for item in full["targets"] if item["id"] == "930")["check_status"] == "offline"
+pfSense = next(item for item in full["targets"] if item["id"] == "100")
+assert pfSense["transport"] == "ssh"
+assert pfSense["updater"] == "pkg"
 assert all(item["id"] != "ct927" for item in full["targets"])
 
 stale_online = {

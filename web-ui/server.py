@@ -881,9 +881,15 @@ def canonical_inventory(payload, inventory, proxmox_resources=None, backup_state
         merged = dict(base)
         if isinstance(status, dict):
             merged.update(status)
-        for key in ("id", "type", "transport", "name", "node"):
+        for key in ("id", "type", "name", "node"):
             if base.get(key) is not None:
                 merged[key] = base[key]
+        # The inventory only knows the default transport for Proxmox guests
+        # (QGA).  A completed check record is authoritative for the transport
+        # actually used, for example SSH for an explicitly configured
+        # pfSense/FreeBSD VM.
+        if not merged.get("transport"):
+            merged["transport"] = base.get("transport")
         return merged
 
     nodes = {
