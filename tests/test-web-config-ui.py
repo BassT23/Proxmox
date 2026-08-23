@@ -257,6 +257,11 @@ assert "target-row.total-only-row { grid-template-columns" in page
 assert "row.className=`target-row ${securitySplitSupported(t)?'split-row':'total-only-row'}`" in page
 assert "minmax(132px,max-content)" in page
 assert "target-row.lxc-row.split-row" in page
+assert "grid-template-rows:auto auto" in page
+assert ".target-row .row-os { grid-column:1 / span 2; grid-row:2;" in page
+assert ".target-row .row-last-check { grid-column:3 / span 2; grid-row:2;" in page
+assert ".target-row .row-actions { grid-column:5; grid-row:2;" in page
+assert ".guest-panel .guest-list { overflow-x:visible; }" in page
 assert ".target-row .row-last-check { min-width:150px; }" in page
 assert ".target-row .row-actions { min-width:max-content; white-space:nowrap; }" in page
 assert "picker.style.setProperty('display',visible?'':'none','important')" in page

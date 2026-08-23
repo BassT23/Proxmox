@@ -308,6 +308,26 @@ PAGE = r"""<!doctype html>
       .target-row.lxc-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
       .target-row.lxc-row.split-row,.target-row.lxc-row.total-only-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
     }
+    /* At narrow desktop widths, keep the metric row readable and move the
+       descriptive fields and actions to a second, stable row.  This avoids
+       shrinking the status/metric tracks until they collide with actions. */
+    @media (max-width:1100px) and (min-width:761px) {
+      .guest-panel .guest-list { overflow-x:visible; }
+      .target-row,.target-row.split-row,.target-row.total-only-row,
+      .target-row.lxc-row,.target-row.lxc-row.split-row,.target-row.lxc-row.total-only-row {
+        min-width:0;
+        grid-template-columns:repeat(5,minmax(0,1fr));
+        grid-template-rows:auto auto;
+        align-items:start;
+      }
+      .target-row .row-os { grid-column:1 / span 2; grid-row:2; min-width:0; }
+      .target-row .row-last-check { grid-column:3 / span 2; grid-row:2; min-width:0; }
+      .target-row .row-actions { grid-column:5; grid-row:2; min-width:0; justify-content:flex-end; }
+    }
+    @media (max-width:760px) {
+      .guest-panel .guest-list { overflow-x:visible; }
+      .target-row { min-width:0; }
+    }
     /* Job log actions share one compact button treatment. The download link
        is intentionally secondary, but must align with Show/Hide log. */
     .job > button[data-job], .job .job-download, .job .log-latest { display:inline-flex; align-items:center; justify-content:center; min-height:34px; padding:8px 11px; border:1px solid var(--line); border-radius:9px; font:inherit; font-size:.72rem; line-height:1.15; white-space:nowrap }
