@@ -1050,7 +1050,8 @@ if check_result != 0 or external_result != 0:
         suffix = "target" if attention == 1 else "targets"
         print("CHECK all systems completed with warnings")
         if attention:
-            print(f"{attention} {suffix} require attention")
+            verb = "requires" if attention == 1 else "require"
+            print(f"{attention} {suffix} {verb} attention")
     else:
         print("CHECK all systems failed")
     raise SystemExit
