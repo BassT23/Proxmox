@@ -267,15 +267,19 @@ PAGE = r"""<!doctype html>
        compact on wide screens, but never compress the badge into the metric
        columns when the available width gets smaller. */
     .target-row { grid-template-columns:minmax(170px,1.35fr) minmax(190px,1.25fr) repeat(3,minmax(72px,.7fr)) minmax(150px,1fr) auto; }
+    .target-row.split-row { grid-template-columns:minmax(170px,1.35fr) minmax(190px,1.25fr) repeat(4,minmax(72px,.7fr)) minmax(150px,1fr) auto; }
+    .target-row.total-only-row { grid-template-columns:minmax(170px,1.35fr) minmax(190px,1.25fr) repeat(3,minmax(72px,.7fr)) minmax(150px,1fr) auto; }
     .target-row .target-status { min-width:0; justify-content:flex-start; }
     .target-row .target-status .pill { max-width:100%; overflow-wrap:anywhere; text-align:left; }
     .target-row .target-field { min-width:0; }
     .target-row .target-field strong,.target-row .target-label { min-width:0; overflow-wrap:anywhere; }
     @media (max-width:1080px) and (min-width:761px) {
       .target-row { grid-template-columns:minmax(150px,1.25fr) minmax(175px,1.15fr) repeat(3,minmax(68px,.7fr)) minmax(130px,.9fr) auto; gap:8px; }
+      .target-row.split-row { grid-template-columns:minmax(150px,1.25fr) minmax(175px,1.15fr) repeat(4,minmax(68px,.7fr)) minmax(130px,.9fr) auto; }
     }
     @media (max-width:760px) {
       .target-row { grid-template-columns:repeat(3,minmax(0,1fr)); align-items:start; gap:8px; padding:12px 10px; }
+      .target-row.split-row,.target-row.total-only-row { grid-template-columns:repeat(3,minmax(0,1fr)); }
       .target-row > :first-child,.target-row .target-status,.target-row .row-os,.target-row .row-last-check,.target-row .row-actions { grid-column:1 / -1; }
       .target-row .target-status { display:flex; }
       .target-row .target-field { display:flex; }
@@ -284,16 +288,21 @@ PAGE = r"""<!doctype html>
     }
     @media (max-width:430px) {
       .target-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .target-row.split-row,.target-row.total-only-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
     }
     .target-row.lxc-row { grid-template-columns:minmax(170px,1.35fr) minmax(190px,1.25fr) repeat(2,minmax(72px,.7fr)) minmax(150px,1fr) auto; }
+    .target-row.lxc-row.split-row { grid-template-columns:minmax(170px,1.35fr) minmax(190px,1.25fr) repeat(3,minmax(72px,.7fr)) minmax(150px,1fr) auto; }
     @media (max-width:1080px) and (min-width:761px) {
       .target-row.lxc-row { grid-template-columns:minmax(150px,1.25fr) minmax(175px,1.15fr) repeat(2,minmax(68px,.7fr)) minmax(130px,.9fr) auto; }
+      .target-row.lxc-row.split-row { grid-template-columns:minmax(150px,1.25fr) minmax(175px,1.15fr) repeat(3,minmax(68px,.7fr)) minmax(130px,.9fr) auto; }
     }
     @media (max-width:760px) {
       .target-row.lxc-row { grid-template-columns:repeat(3,minmax(0,1fr)); }
+      .target-row.lxc-row.split-row,.target-row.lxc-row.total-only-row { grid-template-columns:repeat(3,minmax(0,1fr)); }
     }
     @media (max-width:430px) {
       .target-row.lxc-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .target-row.lxc-row.split-row,.target-row.lxc-row.total-only-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
     }
     /* Job log actions share one compact button treatment. The download link
        is intentionally secondary, but must align with Show/Hide log. */
@@ -494,7 +503,7 @@ PAGE = r"""<!doctype html>
     async function saveTarget(e){e.preventDefault();const form=e.currentTarget;const payload={id:form.elements.id.value,host:form.elements.host.value,user:form.elements.user.value,port:Number(form.elements.port.value)};try{await api(editingTarget?`/api/targets/${encodeURIComponent(editingTarget.id)}`:'/api/targets',{method:editingTarget?'PUT':'POST',body:JSON.stringify(payload)});closeTargetModal();await loadTargets();await loadStatus();managementMessage('target-message','External target saved.')}catch(error){managementMessage('target-modal-message',error.message,true)}}
     async function removeTarget(id){if(!confirm(`Remove external system "${id}"?`))return;try{await api(`/api/targets/${encodeURIComponent(id)}`,{method:'DELETE'});await loadTargets();await loadStatus();managementMessage('target-message','External target removed.')}catch(error){managementMessage('target-message',error.message,true)}}
     async function testTarget(id){try{const d=await api(`/api/targets/${encodeURIComponent(id)}/test`,{method:'POST',body:'{}'});const t=d.target||{};managementMessage('target-message',`Connection successful · ${t.os||'OS unknown'} · ${t.updater||'updater unknown'}`)}catch(error){managementMessage('target-message',error.message,true)}}
-    function targetRow(t){const rebootField=t.type==='lxc'?'':`<div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div>`;const row=document.createElement('div');row.className='target-row';if(t.type==='lxc')row.classList.add('lxc-row');row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div>${securitySplitSupported(t)?`<div class="target-field"><span class="target-label">Normal</span><strong>${updateValue(knownNormalUpdates(t))}</strong></div><div class="target-field"><span class="target-label">Security</span><strong>${updateValue(knownSecurityUpdates(t))}</strong></div>`:`<div class="target-field"><span class="target-label">Updates</span><strong>${updateValue(knownTotalOnlyUpdates(t))}</strong></div>`}${rebootField}<div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button></div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const update=row.querySelector('.update');update.disabled=running(t.id)||!TARGET_UPDATEABLE(t);update.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});return row}
+    function targetRow(t){const rebootField=t.type==='lxc'?'':`<div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div>`;const row=document.createElement('div');row.className=`target-row ${securitySplitSupported(t)?'split-row':'total-only-row'}`;if(t.type==='lxc')row.classList.add('lxc-row');row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div>${securitySplitSupported(t)?`<div class="target-field"><span class="target-label">Normal</span><strong>${updateValue(knownNormalUpdates(t))}</strong></div><div class="target-field"><span class="target-label">Security</span><strong>${updateValue(knownSecurityUpdates(t))}</strong></div>`:`<div class="target-field"><span class="target-label">Updates</span><strong>${updateValue(knownTotalOnlyUpdates(t))}</strong></div>`}${rebootField}<div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button></div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const update=row.querySelector('.update');update.disabled=running(t.id)||!TARGET_UPDATEABLE(t);update.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});return row}
     document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));document.getElementById('internal-ssh-open').onclick=()=>setInternalSshView(true);document.getElementById('internal-ssh-back').onclick=()=>setInternalSshView(false);document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').onclick=()=>{const id=document.querySelector('#target-modal-form [name=id]').value;if(id)testTarget(id)};document.getElementById('target-modal-form').onsubmit=saveTarget;document.getElementById('external-settings-close').onclick=closeExternalSettings;document.getElementById('external-settings-form').onsubmit=saveExternalSettings;
     async function bootstrap(){try{await ensureSession();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){if(csrfToken)notice(error.message,true)}}
     const aggregateField=field=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[],values=targets.map(t=>t?.[field]).filter(Number.isInteger);return values.length?values.reduce((sum,value)=>sum+value,0):null};

@@ -252,6 +252,9 @@ assert "prefers-reduced-motion:reduce" in page
 assert "friendlyTarget(t)" in page
 assert "friendlyJobTarget(j.target)" in page
 assert "replace(/^host:/,'')" in page
+assert "target-row.split-row { grid-template-columns" in page
+assert "target-row.total-only-row { grid-template-columns" in page
+assert "row.className=`target-row ${securitySplitSupported(t)?'split-row':'total-only-row'}`" in page
 
 # External runtime rows expose status/actions only; configuration management
 # remains in the separate management list below.
