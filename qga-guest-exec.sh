@@ -28,8 +28,12 @@ QEMU_GUEST_EXEC () {
   while [[ $# -gt 0 ]]; do
     if [[ "$1" == --timeout && $# -ge 2 ]]; then
       timeout="$2"
+      shift 2
+      continue
     elif [[ "$1" == --timeout=* ]]; then
       timeout="${1#*=}"
+      shift
+      continue
     fi
     exec_args+=("$1")
     shift

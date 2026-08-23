@@ -11,12 +11,12 @@ cat > "$WORK_DIR/qm" <<'MOCK'
 set -euo pipefail
 if [[ "$1 ${2:-}" == 'guest exec-status' ]]; then
   status_count=$(grep -c '^status$' "$QGA_CALLS" 2>/dev/null || true)
-  if [[ "$QGA_STATUS_RESPONSE" == '{"exited":false}' && "$status_count" -gt 0 ]]; then
+  printf '%s\n' status >> "$QGA_CALLS"
+  if [[ "$QGA_STATUS_RESPONSE" == '{"exited":0}' && "$status_count" -gt 0 ]]; then
     printf '%s\n' '{"exited":true,"exitcode":0}'
   else
     printf '%s\n' "$QGA_STATUS_RESPONSE"
   fi
-  printf '%s\n' status >> "$QGA_CALLS"
 else
   printf '%s\n' exec >> "$QGA_CALLS"
   printf '%s\n' "$QGA_EXEC_RESPONSE"
