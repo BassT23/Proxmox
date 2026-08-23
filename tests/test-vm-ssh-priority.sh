@@ -95,6 +95,49 @@ HARNESS
 chmod 750 "$WORK_DIR/ssh-harness.sh"
 (cd "$WORK_DIR" && bash ssh-harness.sh)
 
+# A persisted override with enabled=false is a deliberate QGA fallback, not
+# a failed VM check.  The disabled entry must not invoke SSH or return 1
+# before CHECK_VM_QEMU gets a chance to perform the guest check.
+cat > "$WORK_DIR/internal-ssh.conf" <<'EOF'
+schema_version=1
+
+[vm:100]
+host=192.0.2.100
+user=root
+port=22
+enabled=false
+EOF
+cat > "$WORK_DIR/disabled-ssh-harness.sh" <<'HARNESS'
+#!/bin/bash
+set -euo pipefail
+LOCAL_FILES="$PWD"
+INTERNAL_SSH_CONFIG_FILE="$PWD/internal-ssh.conf"
+INITIAL_INVENTORY=false RDU=false VM=100
+STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME=""
+LOG="$PWD/disabled-result"
+SANITIZE_NUMBER() { printf '%s' "$1"; }
+INTERNAL_SSH_USE_IDENTITY() { :; }
+INTERNAL_SSH_RESOLVE_VM() { source "$PWD/internal-ssh.sh"; INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "$4"; }
+RUN_SSH_COMMAND() { printf 'ssh-called\n' >> "$LOG"; return 1; }
+CHECK_VM_QEMU() { printf 'qga-called\n' >> "$LOG"; return 0; }
+STATUS_MODEL_RECORD() { :; }
+qm() {
+  case "$1" in
+    config) printf 'ostype: l2\nname: pfsense\n' ;;
+  esac
+}
+source "$PWD/internal-ssh.sh"
+source "$PWD/check-vm.sh"
+CHECK_VM 100
+grep -Fxq 'qga-called' "$LOG"
+if grep -Fxq 'ssh-called' "$LOG"; then
+  echo 'disabled Internal SSH override unexpectedly invoked SSH' >&2
+  exit 1
+fi
+HARNESS
+chmod 750 "$WORK_DIR/disabled-ssh-harness.sh"
+(cd "$WORK_DIR" && bash disabled-ssh-harness.sh)
+
 # With no SSH override, a reachable FreeBSD-shaped QGA uses the read-only pkg
 # check and must not run the Linux /bin/true probe.
 awk '/^CHECK_VM_QEMU \(\) \{/{copy=1} /^CHECK_VM_QEMU_WINDOWS \(\) \{/{if(copy) exit} copy' \

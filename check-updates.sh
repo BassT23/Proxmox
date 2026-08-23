@@ -1295,10 +1295,16 @@ CHECK_VM () {
     ssh_profile_configured=true
   fi
   INTERNAL_SSH_RESOLVE_VM "$VM" "${IP:-}" "${USER:-root}" "${SSH_VM_PORT:-22}" || return 1
-  [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
+  NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
+  # A stored Internal SSH entry may be deliberately disabled.  That state
+  # means "do not use SSH", not "the VM check failed": continue with the
+  # normal QGA path instead.
+  if [[ "${INTERNAL_SSH_ENABLED:-true}" != true ]]; then
+    CHECK_VM_QEMU
+    return $?
+  fi
   IP="${INTERNAL_SSH_HOST:-$IP}"; USER="${INTERNAL_SSH_USER:-$USER}"; SSH_VM_PORT="${INTERNAL_SSH_PORT:-$SSH_VM_PORT}"
   INTERNAL_SSH_USE_IDENTITY
-  NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   if [[ -z "$IP" || -z "$USER" || -z "$SSH_VM_PORT" ]]; then
     CHECK_VM_QEMU
     return
