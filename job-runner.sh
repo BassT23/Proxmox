@@ -10,6 +10,7 @@ JOB_STATE_DIR="${UU_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
 REMOTE_REF_DIR="$JOB_STATE_DIR/remote"
 JOB_PREFIX="ultimate-updater-update-"
 CHECK_PREFIX="ultimate-updater-check-"
+CHECK_WARNING_RC="${UU_CHECK_WARNING_RC:-10}"
 MAX_COMPLETED_JOBS="${UU_MAX_COMPLETED_JOBS:-50}"
 CHECK_SCRIPT="${UU_CHECK_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/check-updates.sh}"
 CHECK_CLI="${UU_CHECK_CLI:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/ultimate-updater}"
@@ -108,7 +109,7 @@ write_state() {
   chmod 0644 "$temp" || return 1
   mv -f -- "$temp" "$file"
   case "$state" in
-    completed|failed|interrupted) cleanup_completed_jobs || true ;;
+    completed|completed_with_warnings|failed|interrupted) cleanup_completed_jobs || true ;;
   esac
 }
 
@@ -368,7 +369,7 @@ cleanup_completed_jobs() {
   for file in "$JOB_STATE_DIR"/*.state; do
     state=$(state_value "$file" state)
     case "$state" in
-      completed|failed|interrupted) ;;
+      completed|completed_with_warnings|failed|interrupted) ;;
       *) continue ;;
     esac
     unit=$(state_value "$file" unit)
@@ -698,7 +699,10 @@ run_check_job() {
     all) UU_CHECK_JOB_EXECUTION=true "$cli" check </dev/null ;;
   esac
   exit_code=$?
-  if [[ "$exit_code" -eq 0 ]]; then
+  if [[ "$mode" != target && "$exit_code" -eq "$CHECK_WARNING_RC" ]]; then
+    UU_JOB_TYPE=check write_state "$unit" "$target" completed_with_warnings "$started" "$(now)" 0 "Check completed with warnings" || return 1
+    return 0
+  elif [[ "$exit_code" -eq 0 ]]; then
     UU_JOB_TYPE=check write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" || return 1
   else
     UU_JOB_TYPE=check write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
@@ -781,7 +785,7 @@ list_jobs() {
     remote_state=$(remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port")
     printf '%s\n' "$remote_state"
     IFS=$'\t' read -r _ remote_target remote_status _ remote_finished remote_exit _ <<< "$remote_state"
-    if [[ "$remote_status" == completed || "$remote_status" == failed || "$remote_status" == interrupted ]]; then
+    if [[ "$remote_status" == completed || "$remote_status" == completed_with_warnings || "$remote_status" == failed || "$remote_status" == interrupted ]]; then
       refresh_remote_target_status "$unit" "$owner_node" "$remote_target"
     fi
     sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true

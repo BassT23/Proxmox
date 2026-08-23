@@ -6,6 +6,11 @@
 
 set -o pipefail
 
+# A collection check can finish its complete iteration while individual
+# targets need attention. The job runner maps this private code to a
+# successful systemd unit with a persisted warning state.
+CHECK_WARNING_RC=10
+
 LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 UPDATE_SCRIPT="$LOCAL_FILES/update.sh"
@@ -674,6 +679,11 @@ run_node_check() {
     result=$?
   fi
   print_check_summary "$node" "$result"
+  # check-node is a collection of the node plus its eligible guests. A
+  # failed guest is therefore a warning; a failed node runner remains hard.
+  if [[ "$result" -eq 1 ]] && status_has_target_failures "$STATUS_FILE"; then
+    return "$CHECK_WARNING_RC"
+  fi
   return "$result"
 }
 
@@ -944,6 +954,10 @@ run_external_checks() {
     "$EXTERNAL_APT_SCRIPT" check "$target"
     target_result=$?
     if [[ "$target_result" -ne 0 ]]; then
+      if status_target_is_expected "$STATUS_FILE" "$target"; then
+        printf 'CHECK external-linux: %s skipped by target capability\n' "$target"
+        continue
+      fi
       printf 'CHECK external-linux: %s failed (exit code %s)\n' "$target" "$target_result" >&2
       [[ "$result" -ne 0 ]] || result="$target_result"
     fi
@@ -1028,7 +1042,17 @@ except (OSError, ValueError):
     raise SystemExit
 
 if check_result != 0 or external_result != 0:
-    print("CHECK all systems failed")
+    attention = sum(
+        1 for target in payload.get("targets", [])
+        if isinstance(target, dict) and target.get("check_status") in {"error", "offline"}
+    )
+    if check_result == 10 or external_result == 10:
+        suffix = "target" if attention == 1 else "targets"
+        print("CHECK all systems completed with warnings")
+        if attention:
+            print(f"{attention} {suffix} require attention")
+    else:
+        print("CHECK all systems failed")
     raise SystemExit
 available = 0
 known = True
@@ -1042,6 +1066,57 @@ for target in payload.get("targets", []):
 print(f"CHECK all systems completed: {available} updates available" if known else
       "CHECK all systems completed")
 PY
+}
+
+status_has_target_failures() {
+  python3 - "${1:-$STATUS_FILE}" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, IndexError):
+    raise SystemExit(1)
+
+for target in payload.get("targets", []):
+    if isinstance(target, dict) and target.get("check_status") in {"error", "offline"}:
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+status_target_is_expected() {
+  python3 - "${1:-$STATUS_FILE}" "$2" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, IndexError):
+    raise SystemExit(1)
+
+wanted = sys.argv[2]
+for target in payload.get("targets", []):
+    if isinstance(target, dict) and str(target.get("id")) == wanted:
+        raise SystemExit(0 if target.get("check_status") in {"unsupported", "not_checked", "skipped", "stopped"} else 1)
+raise SystemExit(1)
+PY
+}
+
+classify_collection_result() {
+  local result="$1" status_file hard_marker
+  status_file="${2:-$STATUS_FILE}"
+  hard_marker="${status_file}.hard-failure"
+  [[ "$result" -eq 0 ]] && return 0
+  # A failed status-model lifecycle or a central offline runner is never a
+  # target warning. check-updates.sh leaves this marker for the aggregator.
+  [[ -e "$hard_marker" ]] && return "$result"
+  if [[ "$result" -eq 1 ]] && status_has_target_failures "$status_file"; then
+    return "$CHECK_WARNING_RC"
+  fi
+  return "$result"
 }
 
 run_check() {
@@ -1059,13 +1134,19 @@ run_check() {
     require_file "$CHECK_SCRIPT" "check script" || return 1
     local check_result external_result
     UU_DEFER_NOTIFICATION=true "$CHECK_SCRIPT"; check_result=$?
+    classify_collection_result "$check_result"; check_result=$?
     run_external_checks; external_result=$?
+    classify_collection_result "$external_result"; external_result=$?
     if declare -f STATUS_MODEL_SEND_NOTIFICATION >/dev/null 2>&1; then
       STATUS_MODEL_SEND_NOTIFICATION "$STATUS_FILE" "$LOCAL_FILES/update.conf" || true
     fi
     print_global_check_summary "$check_result" "$external_result"
-    [[ "$check_result" -eq 0 ]] || return "$check_result"
-    return "$external_result"
+    [[ "$check_result" -eq 0 || "$check_result" -eq "$CHECK_WARNING_RC" ]] || return "$check_result"
+    [[ "$external_result" -eq 0 || "$external_result" -eq "$CHECK_WARNING_RC" ]] || return "$external_result"
+    if [[ "$check_result" -eq "$CHECK_WARNING_RC" || "$external_result" -eq "$CHECK_WARNING_RC" ]]; then
+      return "$CHECK_WARNING_RC"
+    fi
+    return 0
   fi
   resolve_target_kind "$target" >/dev/null
   resolve_result=$?

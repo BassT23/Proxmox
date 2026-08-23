@@ -87,6 +87,20 @@ else
   STATUS_MODEL_FINISH() { :; }
 fi
 
+# The aggregate runner uses this sidecar to distinguish a central lifecycle
+# failure from a completed collection containing target-level errors. It is
+# deliberately outside status.json so the structured target records remain
+# unchanged and older consumers continue to work.
+CHECK_HARD_FAILURE_FILE="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}.hard-failure"
+rm -f -- "$CHECK_HARD_FAILURE_FILE"
+if [[ ! -f "$STATUS_MODEL_SCRIPT" ]]; then
+  : > "$CHECK_HARD_FAILURE_FILE"
+  CHECK_FAILURE=1
+fi
+mark_check_hard_failure() {
+  : > "$CHECK_HARD_FAILURE_FILE" 2>/dev/null || true
+}
+
 STATUS_MODEL_DIAGNOSTIC() {
   local message="$*"
   if [[ -n "${STATUS_MODEL_DIAGNOSTICS_FILE:-}" ]]; then
@@ -1745,6 +1759,7 @@ if STATUS_MODEL_INIT; then
 else
   status_model_init_rc=$?
   CHECK_FAILURE=1
+  mark_check_hard_failure
 fi
 STATUS_MODEL_DIAGNOSTIC "STATUS_MODEL_INIT node=${STATUS_MODEL_NODE:-${HOSTNAME:-unknown}} script=${STATUS_MODEL_SCRIPT:-unknown} file=${STATUS_MODEL_FILE:-unknown} records=${STATUS_MODEL_RECORD_FILE:-unknown} enabled=$STATUS_MODEL_ENABLED rc=$status_model_init_rc"
 if [[ -n "${UU_JOB_SOURCE:-}" ]]; then
@@ -1756,6 +1771,7 @@ if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   if [[ "$RDU" != true && "$RICM" != true && "$TAG_OUTPUT" != false ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
 else
   echo -e "${OR} You are offline${CL}"
+  mark_check_hard_failure
   exit 2
 fi
 
@@ -1782,6 +1798,7 @@ if [[ "$STATUS_MODEL_ENABLED" == true && "${UU_REMOTE_DEFER_STATUS_FINISH:-false
   STATUS_MODEL_FINISH >/dev/null 2>"$status_finish_error_file" || status_finish_rc=$?
   if [[ "$status_finish_rc" -ne 0 ]]; then
     CHECK_FAILURE=1
+    mark_check_hard_failure
   fi
   status_finish_reason=none
   if [[ -s "$status_finish_error_file" ]]; then
