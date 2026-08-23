@@ -132,6 +132,8 @@ assert "function setInternalSshTargetPicker(form,visible)" in source
 assert "setInternalSshTargetPicker(form,false)" in source
 assert "setInternalSshTargetPicker(form,true)" in source
 assert "form.elements.target_choice.disabled=!visible" in source
+assert ".internal-ssh-target-picker[hidden],.internal-ssh-target-summary[hidden] { display:none !important }" in page
+assert ".internal-ssh-target-picker select { width:100%; min-height:40px" in page
 assert "form.dataset.mode='edit'" in source
 assert "form.dataset.mode='add'" in source
 assert "form.elements.target_choice.required=visible" in source
