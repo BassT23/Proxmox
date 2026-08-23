@@ -13,13 +13,25 @@ containers, VMs, and selected external systems.
 [![downloads](https://img.shields.io/github/downloads/BassT23/Proxmox/total.svg)](https://github.com/BassT23/Proxmox/releases)
 [![Discord](https://img.shields.io/discord/1149671790864506882)](https://discord.gg/nVpUg6BKn8)
 
+Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
+
+Ultimate Updater is an independent project and is not an official program
+from Proxmox Server Solutions GmbH.
+
 </div>
 
-> Ultimate Updater is distributed without warranty. Keep current backups and
-> review the safety settings before using it on important systems.
+> This software is distributed in the hope that it will be useful, but
+> **WITHOUT ANY WARRANTY**. See the [GNU General Public License](LICENSE) for
+> more details. You are responsible for validating the configuration and
+> maintaining suitable backups before using it on important systems.
 
-Proxmox® is a registered trademark of Proxmox Server Solutions GmbH. This is
-an independent project and is not an official Proxmox program.
+<div align="center">
+
+**IN CASE OF EMERGENCY, I HOPE YOU HAVE BACKUPS FROM YOUR MACHINES!**
+
+**YOU HAVE BEEN WARNED!**
+
+</div>
 
 ## What it does
 
