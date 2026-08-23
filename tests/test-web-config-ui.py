@@ -92,6 +92,15 @@ assert "kind==='vm'?'VM':'CT'" in source
 assert "${t.id} · ${t.name||t.id}" in source
 assert "Existing SSH profile (legacy format)" in source
 assert "QGA/default" in source
+assert '"has_legacy_profile": False' in source
+assert "function internalSshState(t)" in source
+assert "Internal SSH override · Disabled" in source
+assert "Internal SSH override'" in source
+assert "Existing SSH profile'" in source
+assert "ssh-state${disabled?' disabled':''}" in source
+assert "t.enabled===false" in source
+assert "data-ssh-state" in source
+assert "Remove override" in source
 assert "internal_ssh_available_targets" in source
 assert "kind not in {\"node\", \"vm\", \"lxc\"}" in source
 assert "nodes are detected automatically" in page.lower()
