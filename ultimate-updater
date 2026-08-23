@@ -690,6 +690,7 @@ run_node_check() {
 remote_update_job() {
   local remote_target="$1" target="$2" node="$3" host="${REMOTE_NODE_HOST:-$4}"
   local port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
+  local legacy_profile="$LOCAL_FILES/VMs/$target"
   local user="${REMOTE_NODE_USER:-root}" output job_unit command remote_update_dir source scope_env=''
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
   remote_update_dir="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
@@ -718,6 +719,16 @@ remote_update_job() {
     timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
     printf 'Could not prepare remote update exit handlers on %s.\n' "$node" >&2
     return 6
+  fi
+  if [[ -f "$legacy_profile" ]]; then
+    if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "mkdir -p -- '$remote_update_dir/VMs'" ||
+      ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$legacy_profile" \
+        "$user@$host:$remote_update_dir/VMs/$target"; then
+      timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
+      printf 'Could not transfer legacy SSH profile for target %s to %s.\n' "$target" "$node" >&2
+      return 6
+    fi
   fi
   for source in "$LOCAL_FILES/exit/error.sh" "$LOCAL_FILES/exit/passed.sh"; do
     [[ -f "$source" ]] || continue
@@ -805,7 +816,7 @@ record_remote_target_error() {
 remote_target_check() {
   local target="$1" kind="$2" node="$3" host="$4" mode remote_check_dir remote_config
   local remote_tag_filter remote_cluster_target remote_runtime remote_status_model remote_internal_ssh remote_internal_conf remote_status_file
-  local tag_filter_script target_runtime_file internal_ssh_file internal_ssh_conf local_file transport_rc
+  local tag_filter_script target_runtime_file internal_ssh_file internal_ssh_conf legacy_profile local_file transport_rc
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]:-}")
   mode=$([[ "$kind" == container ]] && printf ccontainer || printf cvm)
   if ! resolve_remote_node_transport "$node" "$host"; then
@@ -827,6 +838,7 @@ remote_target_check() {
   target_runtime_file="$LOCAL_FILES/target-runtime.sh"
   internal_ssh_file="$LOCAL_FILES/internal-ssh.sh"
   internal_ssh_conf="$LOCAL_FILES/internal-ssh.conf"
+  legacy_profile="$LOCAL_FILES/VMs/$target"
   [[ -f "$tag_filter_script" ]] || tag_filter_script="$SCRIPT_DIR/tag-filter.sh"
   [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
   [[ -f "$internal_ssh_file" ]] || internal_ssh_file="$SCRIPT_DIR/internal-ssh.sh"
@@ -837,7 +849,7 @@ remote_target_check() {
     return 1
   fi
   if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
-    "mkdir -p -- '$remote_check_dir'" ||
+    "mkdir -p -- '$remote_check_dir' '$remote_check_dir/VMs'" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$LOCAL_FILES/update.conf" "$user@$host:$remote_config" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
@@ -866,6 +878,16 @@ remote_target_check() {
     finish_partial_status 1 >/dev/null 2>&1 || true
     rm -f -- "$local_file"
     printf 'Could not prepare Internal SSH settings for target %s.\n' "$target" >&2
+    return 1
+  fi
+  if [[ -f "$legacy_profile" ]] && ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$legacy_profile" "$user@$host:$remote_check_dir/VMs/$target"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "$target" "$kind" ssh false "" "" null null offline SSH_UNREACHABLE "Could not transfer legacy SSH profile for target $target to node $node" "$node"
+    finish_partial_status 1 >/dev/null 2>&1 || true
+    rm -f -- "$local_file"
+    printf 'Could not transfer legacy SSH profile for target %s to node %s.\n' "$target" "$node" >&2
     return 1
   fi
   # shellcheck disable=SC2016
