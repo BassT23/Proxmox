@@ -47,9 +47,9 @@ HARNESS
 chmod 750 "$WORK_DIR/selector-harness.sh"
 (cd "$WORK_DIR" && bash selector-harness.sh)
 
-# With SSH available, CHECK_VM must not invoke the QGA fallback.  The
-# FreeBSD-shaped SSH result is intentionally unsupported for package updates,
-# but remains a successful, neutral initial-inventory record.
+# With SSH available, CHECK_VM must not invoke the QGA fallback.  FreeBSD/
+# pfSense is checked through its native pkg tooling over the explicit SSH
+# transport; hostnamectl is intentionally unavailable on this guest.
 awk '/^CHECK_VM \(\) \{/{copy=1} /^CHECK_VM_QEMU \(\) \{/{if(copy) exit} copy' \
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/check-vm.sh"
 cat > "$WORK_DIR/ssh-harness.sh" <<'HARNESS'
@@ -59,13 +59,18 @@ LOCAL_FILES="$PWD"
 INTERNAL_SSH_CONFIG_FILE="$PWD/internal-ssh.conf"
 INITIAL_INVENTORY=true RDU=false VM=100
 STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME=""
+GN='' BL='' CL=''
 LOG="$PWD/ssh-result"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
+PRINT_UPDATE_SPLIT() { :; }
 INTERNAL_SSH_USE_IDENTITY() { :; }
 INTERNAL_SSH_RESOLVE_VM() { source "$PWD/internal-ssh.sh"; INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "$4"; }
 RUN_SSH_COMMAND() {
   printf 'ssh:%s\n' "$*" >> "$LOG"
   [[ "$4" == hostnamectl ]] && printf 'System: FreeBSD\n'
+  [[ "$4" == "uname -s" ]] && printf 'FreeBSD\n'
+  [[ "$4" == "uname -v" ]] && printf 'FreeBSD ... pfSense ...\n'
+  [[ "$4" == "pkg version -U -l '<'" ]] && printf 'pfSense-1.0 <\n'
   return 0
 }
 GUEST_INTERNET_PREFLIGHT_SSH() { return 0; }
@@ -80,7 +85,7 @@ source "$PWD/internal-ssh.sh"
 source "$PWD/check-vm.sh"
 CHECK_VM 100
 grep -Fq 'ssh:192.0.2.100 22 root true' "$LOG"
-grep -Fq 'record:100 vm ssh true System: FreeBSD' "$LOG"
+grep -Fq 'record:100 vm ssh true pfSense pkg 1 false updates_available' "$LOG"
 if grep -Fq qga-called "$LOG"; then
   echo 'SSH-configured FreeBSD VM incorrectly fell back to QGA' >&2
   exit 1

@@ -1320,6 +1320,39 @@ CHECK_VM () {
   if [[ "$OS_BASE" =~ l2 ]]; then
     KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
     OS=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" hostnamectl 2>/dev/null | grep System || true)
+    # FreeBSD/pfSense does not provide hostnamectl.  Detect it through the
+    # SSH guest instead of treating a reachable, explicitly configured SSH
+    # transport as an unsupported Linux guest.  QGA-only FreeBSD remains on
+    # the deliberate unsupported path in CHECK_VM_QEMU.
+    SSH_UNAME=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "uname -s" 2>/dev/null || true)
+    SSH_UNAME_VERSION=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "uname -v" 2>/dev/null || true)
+    if [[ "$SSH_UNAME" == FreeBSD || "$KERNEL" =~ FreeBSD ]]; then
+      if [[ "$SSH_UNAME_VERSION" =~ [Pp][Ff][Ss]ense ]]; then
+        OS=pfSense
+      else
+        OS=FreeBSD
+      fi
+      if FREEBSD_PKG_LIST=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "pkg version -U -l '<'" 2>/dev/null); then
+        PKG_RC=0
+      else
+        PKG_RC=$?
+      fi
+      if [[ $PKG_RC -ne 0 ]]; then
+        STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error CHECK_COMMAND_FAILED \
+          "pkg version failed for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$(printf '%s\n' "$FREEBSD_PKG_LIST" | awk '$NF == "<" {count++} END {print count+0}')
+      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+      UPDATES=${UPDATES:-0}
+      [[ "$UPDATES" -gt 0 ]] && echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+      STATUS_MODEL_STATUS=ok
+      [[ "$UPDATES" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pkg "$UPDATES" false "$STATUS_MODEL_STATUS" "" "" \
+        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
+      return 0
+    fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
       RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apt-get update" >/dev/null 2>&1
       APT_OUTPUT=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apt-get -s upgrade")
