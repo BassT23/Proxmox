@@ -16,6 +16,8 @@ assert "cluster-target.sh" in source
 assert "Testing connection…" in server.PAGE
 assert "Connection failed:" in server.PAGE
 assert "testTarget(payload.id,payload,button)" in server.PAGE
+assert "function testExternalForm(event){event.preventDefault()" in server.PAGE
+assert "target-modal-test').addEventListener('click',testExternalForm)" in server.PAGE
 assert "SSH port unreachable" in source
 assert "SSH authentication failed." in source
 assert "socket.create_connection" in source
@@ -70,6 +72,7 @@ assert message == "Host reachable · SSH authentication failed."
 
 assert server.ssh_failure_message("ssh: connect to host x port 22: Connection refused") == "Connection refused."
 assert server.ssh_failure_message("Permission denied (publickey)") == "Authentication failed."
+assert server.ssh_failure_message("no supported authentication methods available") == "Authentication failed."
 assert server.ssh_failure_message("") == "Connection failed."
 
 owner = object.__new__(server.StatusHandler)
