@@ -701,6 +701,7 @@ remote_update_job() {
     "$JOB_RUNNER" "$UPDATE_SCRIPT" "$LOCAL_FILES/update.conf" \
     "$LOCAL_FILES/tag-filter.sh" "$LOCAL_FILES/status-model.sh" \
     "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/ultimate-updater" \
+    "$LOCAL_FILES/qga-guest-exec.sh" \
     "$LOCAL_FILES/target-runtime.sh" "$LOCAL_FILES/cluster-target.sh" \
     "$LOCAL_FILES/internal-ssh.sh" "$LOCAL_FILES/update-extras.sh" \
     "$LOCAL_FILES/windows-update.sh"; do
@@ -728,7 +729,7 @@ remote_update_job() {
     fi
   done
   if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
-    "chmod 750 '$remote_update_dir/job-runner.sh' '$remote_update_dir/update.sh' '$remote_update_dir/check-updates.sh'"; then
+    "chmod 750 '$remote_update_dir/job-runner.sh' '$remote_update_dir/update.sh' '$remote_update_dir/check-updates.sh' '$remote_update_dir/qga-guest-exec.sh'"; then
     timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
     printf 'Could not prepare remote update runner on %s.\n' "$node" >&2
     return 6

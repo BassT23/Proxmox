@@ -155,72 +155,21 @@ PRINT_UPDATE_TOTAL() {
   printf 'Updates: %s\n' "$total"
 }
 
-# Decode one structured qm guest exec response without losing the guest
-# exitcode. The qm CLI itself can return zero when only the guest command
-# failed, so transport and guest status are kept separate.
-QEMU_GUEST_EXEC () {
-  QEMU_EXEC_STDOUT=""
-  QEMU_EXEC_STDERR=""
-  QEMU_EXEC_OUTPUT=""
-  QEMU_EXEC_EXITCODE=""
-  QEMU_EXEC_TRANSPORT_RC=0
-  local QEMU_RAW QEMU_PARSED QEMU_STATUS
-
-  QEMU_RAW=$(qm guest exec "$@" 2>&1)
-  QEMU_STATUS=$?
-  if [[ $QEMU_STATUS -ne 0 ]]; then
-    QEMU_EXEC_STDERR="$QEMU_RAW"
-    QEMU_EXEC_OUTPUT="$QEMU_RAW"
-    QEMU_EXEC_TRANSPORT_RC=$QEMU_STATUS
-    return 0
-  fi
-
-  if ! QEMU_PARSED=$(printf '%s' "$QEMU_RAW" | python3 -c '
-import base64
-import json
-import sys
-
-try:
-    response = json.load(sys.stdin)
-except (TypeError, ValueError):
-    sys.exit(1)
-
-for key in ("out-data", "err-data"):
-    value = response.get(key, "")
-    if not isinstance(value, str):
-        value = str(value)
-    print(base64.b64encode(value.encode()).decode())
-
-exitcode = response.get("exitcode", 0)
-if not isinstance(exitcode, int) or exitcode < 0:
-    sys.exit(1)
-print(exitcode)
-'); then
-    QEMU_EXEC_STDERR="$QEMU_RAW"
-    QEMU_EXEC_OUTPUT="$QEMU_RAW"
+QGA_EXEC_SCRIPT="${UU_QGA_EXEC_SCRIPT:-$LOCAL_FILES/qga-guest-exec.sh}"
+[[ -f "$QGA_EXEC_SCRIPT" ]] || QGA_EXEC_SCRIPT="$(dirname -- "${BASH_SOURCE[0]}")/qga-guest-exec.sh"
+if [[ -f "$QGA_EXEC_SCRIPT" ]]; then
+  # shellcheck source=/dev/null
+  source "$QGA_EXEC_SCRIPT"
+else
+  QEMU_GUEST_EXEC() {
+    QEMU_EXEC_STDOUT=""
+    QEMU_EXEC_STDERR=""
+    QEMU_EXEC_OUTPUT="QGA guest-exec helper is missing"
+    QEMU_EXEC_EXITCODE=""
     QEMU_EXEC_TRANSPORT_RC=1
-    return 0
-  fi
-
-  local -a QEMU_FIELDS
-  mapfile -t QEMU_FIELDS <<< "$QEMU_PARSED"
-  if [[ ${#QEMU_FIELDS[@]} -ne 3 || ! ${QEMU_FIELDS[2]} =~ ^[0-9]+$ ]]; then
-    QEMU_EXEC_STDERR="$QEMU_RAW"
-    QEMU_EXEC_OUTPUT="$QEMU_RAW"
-    QEMU_EXEC_TRANSPORT_RC=1
-    return 0
-  fi
-  IFS= read -r -d '' QEMU_EXEC_STDOUT < <(printf '%s' "${QEMU_FIELDS[0]}" | base64 -d) || true
-  IFS= read -r -d '' QEMU_EXEC_STDERR < <(printf '%s' "${QEMU_FIELDS[1]}" | base64 -d) || true
-  QEMU_EXEC_EXITCODE=${QEMU_FIELDS[2]}
-  if [[ -n "$QEMU_EXEC_STDOUT" && -n "$QEMU_EXEC_STDERR" ]]; then
-    QEMU_EXEC_OUTPUT="${QEMU_EXEC_STDOUT}
-${QEMU_EXEC_STDERR}"
-  else
-    QEMU_EXEC_OUTPUT="${QEMU_EXEC_STDOUT}${QEMU_EXEC_STDERR}"
-  fi
-  return 0
-}
+    QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC
+  }
+fi
 
 QEMU_COUNT_RESULT_OK () {
   local QEMU_COUNT_LABEL="$1"

@@ -413,6 +413,8 @@ INSTALL () {
     cp "$TEMP_FILES"/update-extras.sh $LOCAL_FILES/update-extras.sh
     cp "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod -R +x "$LOCAL_FILES"/check-updates.sh
+    cp "$TEMP_FILES"/qga-guest-exec.sh $LOCAL_FILES/qga-guest-exec.sh
+    chmod 750 "$LOCAL_FILES"/qga-guest-exec.sh
     cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
     cp "$TEMP_FILES"/target-inventory.sh $LOCAL_FILES/target-inventory.sh
     chmod 750 $LOCAL_FILES/target-inventory.sh
@@ -719,6 +721,10 @@ UPDATE () {
     fi
     mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod +x $LOCAL_FILES/check-updates.sh
+    if [[ -f "$TEMP_FILES"/qga-guest-exec.sh ]]; then
+      mv "$TEMP_FILES"/qga-guest-exec.sh $LOCAL_FILES/qga-guest-exec.sh
+      chmod 750 "$LOCAL_FILES"/qga-guest-exec.sh
+    fi
     mv "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
     if ! [[ -d "$LOCAL_FILES"/scripts.d/ ]]; then
       mkdir -p $LOCAL_FILES/scripts.d/000
