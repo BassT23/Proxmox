@@ -15,6 +15,7 @@ import stat
 import ssl
 import subprocess
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -346,11 +347,12 @@ PAGE = r"""<!doctype html>
       .job .log-actions { grid-column:1 / -1; grid-row:4; justify-content:flex-start }
       .job .log { grid-column:1 / -1; grid-row:5 }
     }
+    .login-version { color:var(--muted); font-size:.72rem; margin:8px 0 0; overflow-wrap:anywhere }
   </style>
 </head>
 <body>
   <section id="auth-loading" class="modal-backdrop open" aria-live="polite"><div class="modal auth-loading"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><p>Loading…</p></div></section>
-  <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p class="login-account-hint">Please use your current root account to sign in.</p><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
+  <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Please use your current root account to sign in.</p><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
   <main class="app-main" id="dashboard" hidden>
     <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta"><span id="generated">Loading status…</span><button id="job-running-indicator" class="job-running-indicator" type="button" hidden aria-controls="jobs"><span class="job-running-dot" aria-hidden="true"></span><span id="job-running-label">Job running</span></button><button id="updater-version-indicator" class="updater-update-indicator" type="button" hidden>Updater update available</button><button id="logout" type="button">Log out</button></div></div><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
     <div id="notice" hidden></div>
@@ -543,6 +545,44 @@ PAGE = r"""<!doctype html>
 # replacement also covers the legacy render path kept for compatibility with
 # older browser state; the active renderer adds CHECK/UPDATE labels per row.
 PAGE = PAGE.replace("Update jobs", "Jobs")
+PAGE = PAGE.replace("Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}",
+                    "Generated ${date(data.generated_at)}")
+PAGE = PAGE.replace("</body></html>", """<script>
+    let loginVersionTimer=null;
+    function loginVersionText(data){
+      const version=data?.installed||'version unavailable';
+      const branch=data?.branch?` · ${data.branch}`:'';
+      const commit=data?.commit&&/^[0-9a-f]{40}$/.test(data.commit)?` · ${data.commit.slice(0,7)}`:'';
+      const state=data?.update_state==='checking'?'Checking for updates…':data?.update_state==='available'?'Update available':data?.update_state==='up_to_date'?'Up to date':data?.update_state==='unavailable'?'Update status unavailable':'';
+      return `Ultimate Updater ${version}${branch}${commit}${state?' · '+state:''}`;
+    }
+    function applyPublicVersion(data){
+      const login=document.getElementById('login-version');
+      if(login)login.textContent=loginVersionText(data);
+      const display={...data,state:data?.state==='local'?'ok':data?.state};
+      renderUpdaterVersion(display);
+      const button=document.getElementById('updater-version-update');
+      if(button&&data?.update_state==='checking'){button.textContent='Checking…';button.disabled=true}
+      if(button&&data?.update_state==='unavailable'){button.textContent='Check again';button.disabled=true}
+    }
+    async function loadPublicVersion(){
+      try{
+        const response=await fetch('/api/public-version',{cache:'no-store'});
+        const data=await response.json();
+        applyPublicVersion(data);
+        clearTimeout(loginVersionTimer);
+        if(data?.update_state==='checking')loginVersionTimer=setTimeout(loadPublicVersion,1200);
+        else if(data?.update_state==='unavailable')loginVersionTimer=setTimeout(loadPublicVersion,7000);
+      }catch(_error){
+        const data={state:'local',installed:null,branch:null,commit:'unknown',update_state:'unavailable'};
+        applyPublicVersion(data);
+        clearTimeout(loginVersionTimer);
+        loginVersionTimer=setTimeout(loadPublicVersion,7000);
+      }
+    }
+    scheduleUpdaterVersionCheck=()=>{clearTimeout(versionStartupTimer);clearTimeout(versionRetryTimer);loadPublicVersion()};
+    loadPublicVersion();
+  </script></main></body></html>""")
 
 
 def error_payload(code, message):
@@ -1421,6 +1461,72 @@ class StatusHandler(BaseHTTPRequestHandler):
         selected.sort(key=sort_key, reverse=True)
         return selected
 
+    def local_version(self):
+        """Return harmless installed build metadata without network access."""
+        branch = "master"
+        installed = None
+        commit = "unknown"
+        tag = None
+        try:
+            config = self.config_content()
+            match = re.search(r'^USED_BRANCH="(master|beta|develop)"', config, re.MULTILINE)
+            if match:
+                branch = match.group(1)
+            if self.server.update_script.is_file():
+                match = re.search(r'^VERSION="([^"]+)"', self.server.update_script.read_text(encoding="utf-8"), re.MULTILINE)
+                installed = match.group(1) if match else None
+            metadata = self.server.update_script.parent / "build-metadata"
+            if metadata.is_file():
+                content = metadata.read_text(encoding="utf-8")
+                match = re.search(r'^commit="([0-9a-f]{40})"', content, re.MULTILINE)
+                if match:
+                    commit = match.group(1)
+                match = re.search(r'^tag="([A-Za-z0-9._/-]+)"', content, re.MULTILINE)
+                if match:
+                    tag = match.group(1)
+        except (OSError, UnicodeError):
+            pass
+        return {
+            "state": "local", "branch": branch, "installed": installed,
+            "available": None, "commit": commit, "available_commit": "unknown",
+            "tag": tag, "update_available": None, "components": [],
+            "update_state": "checking",
+        }
+
+    def _refresh_updater_version(self):
+        try:
+            data = self.updater_version(force=True)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            data = {"state": "unavailable", "branch": None, "installed": None,
+                    "available": None, "commit": "unknown", "available_commit": "unknown",
+                    "tag": None, "update_available": False, "components": []}
+        data["update_state"] = "available" if data.get("update_available") else (
+            "up_to_date" if data.get("state") == "ok" else "unavailable")
+        self.server.version_last_data = data
+        with self.server.version_refresh_lock:
+            self.server.version_refresh_running = False
+
+    def start_version_refresh(self):
+        with self.server.version_refresh_lock:
+            if self.server.version_refresh_running:
+                return
+            self.server.version_refresh_running = True
+        threading.Thread(target=self._refresh_updater_version, daemon=True).start()
+
+    def public_version(self):
+        local = self.local_version()
+        cached = getattr(self.server, "version_last_data", None)
+        if cached:
+            if cached.get("state") == "ok":
+                result = {**local, **cached}
+            else:
+                result = {**local, "update_state": "unavailable"}
+            result["update_state"] = "available" if cached.get("update_available") else (
+                "up_to_date" if cached.get("state") == "ok" else "unavailable")
+            return result
+        self.start_version_refresh()
+        return local
+
     def updater_version(self, force=False):
         now = time.monotonic()
         cached = getattr(self.server, "version_cache", None)
@@ -1787,6 +1893,15 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.send_bytes((self.server.asset_dir / filename).read_bytes(), content_type)
             except (OSError, UnicodeError):
                 self.send_json(error_payload("ASSET_NOT_FOUND", "The requested UI asset is unavailable."), HTTPStatus.NOT_FOUND)
+            return
+        if path == "/api/public-version":
+            try:
+                self.send_json(self.public_version())
+            except (OSError, UnicodeError, RuntimeError):
+                self.send_json({"state": "local", "branch": None, "installed": None,
+                                "available": None, "commit": "unknown", "available_commit": "unknown",
+                                "tag": None, "update_available": None, "components": [],
+                                "update_state": "unavailable"})
             return
         if path == "/api/session":
             session = self.current_session()
@@ -2300,6 +2415,9 @@ def main():
     server.job_runner, server.jobs_dir = args.job_runner, args.jobs_dir
     server.update_script = args.config_file.parent / "update.sh"
     server.version_cache = None
+    server.version_last_data = None
+    server.version_refresh_lock = threading.Lock()
+    server.version_refresh_running = False
     server.auth = AuthStore(args.auth_file)
     if tls_context is not None:
         print(f"HTTPS enabled; certificate source: {tls_source}; certificate: {tls_cert}", flush=True)

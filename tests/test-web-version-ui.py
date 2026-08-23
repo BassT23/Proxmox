@@ -2,7 +2,9 @@
 """Regression coverage for the Web UI updater version/self-update boundary."""
 
 import importlib.util
+import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 root = Path(__file__).parents[1]
 spec = importlib.util.spec_from_file_location("ultimate_updater_web", root / "web-ui" / "server.py")
@@ -74,4 +76,42 @@ assert "updateButton.textContent=data.state==='ok'&&data.update_available===true
 assert "scheduleUpdaterVersionCheck" in source
 assert "2500" in source and "7000" in source
 assert "self.server.version_cache = {\"at\": now, \"data\": data} if data.get(\"state\") == \"ok\" else None" in source
+assert "/api/public-version" in source
+assert 'id="login-version"' in source
+assert "loginVersionText" in source
+assert "version_refresh_running" in source
+assert "Schema ${text(data.schema_version)}" not in module.PAGE
+assert "schema 1" not in module.PAGE.lower()
+
+with tempfile.TemporaryDirectory() as directory:
+    root_dir = Path(directory)
+    update = root_dir / "update.sh"
+    update.write_text('#!/bin/bash\nVERSION="5.1"\n', encoding="utf-8")
+    (root_dir / "update.conf").write_text('USED_BRANCH="beta"\n', encoding="utf-8")
+    (root_dir / "build-metadata").write_text(
+        'schema_version=1\nbranch="beta"\ncommit="0123456789abcdef0123456789abcdef01234567"\ntag="v5.1-beta"\n',
+        encoding="utf-8",
+    )
+    handler = object.__new__(module.StatusHandler)
+    handler.server = SimpleNamespace(config_file=root_dir / "update.conf", update_script=update)
+    local = handler.local_version()
+    assert local["state"] == "local"
+    assert (local["installed"], local["branch"], local["commit"], local["tag"]) == (
+        "5.1", "beta", "0123456789abcdef0123456789abcdef01234567", "v5.1-beta"
+    )
+    handler.start_version_refresh = lambda: setattr(handler.server, "refresh_started", True)
+    handler.server.version_last_data = None
+    public = handler.public_version()
+    assert public["installed"] == "5.1"
+    assert public["branch"] == "beta"
+    assert public["update_state"] == "checking"
+    assert handler.server.refresh_started is True
+    handler.server.version_last_data = {
+        "state": "unavailable", "update_available": False,
+        "installed": None, "branch": None, "commit": "unknown",
+    }
+    offline = handler.public_version()
+    assert offline["installed"] == "5.1"
+    assert offline["branch"] == "beta"
+    assert offline["update_state"] == "unavailable"
 print("web updater version/self-update tests: PASS")
