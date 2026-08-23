@@ -85,7 +85,7 @@ assert "schema 1" not in module.PAGE.lower()
 assert 'id="generated"' not in module.PAGE
 assert 'Generated ${date(data.generated_at)}' not in module.PAGE
 assert 'login-version-footer' in module.PAGE
-assert '<p class="login-account-hint">' not in module.PAGE
+assert '<p class="login-account-hint">Sign in with the local Proxmox root account.</p>' in module.PAGE
 assert 'id="login-message"' in module.PAGE
 login_markup = module.PAGE.split('<section id="login-screen"', 1)[1].split('</section>', 1)[0]
 assert login_markup.count('class="login-branding"') == 1
