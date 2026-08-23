@@ -87,6 +87,13 @@ assert 'Generated ${date(data.generated_at)}' not in module.PAGE
 assert 'login-version-footer' in module.PAGE
 assert '<p class="login-account-hint">' not in module.PAGE
 assert 'id="login-message"' in module.PAGE
+login_markup = module.PAGE.split('<section id="login-screen"', 1)[1].split('</section>', 1)[0]
+assert login_markup.count('class="login-branding"') == 1
+assert '<h2>Ultimate Updater</h2>' not in login_markup
+assert 'Sign in to access system status and actions.' in login_markup
+assert 'name="username"' in login_markup
+assert 'name="password"' in login_markup
+assert '>Sign in</button>' in login_markup
 
 with tempfile.TemporaryDirectory() as directory:
     root_dir = Path(directory)

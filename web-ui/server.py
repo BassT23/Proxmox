@@ -584,6 +584,7 @@ PAGE = PAGE.replace("</body></html>", """<script>
     loadPublicVersion();
   </script></main></body></html>""")
 PAGE = PAGE.replace('<span id="generated">Loading status…</span>', '')
+PAGE = PAGE.replace('<h2>Ultimate Updater</h2>', '')
 PAGE = PAGE.replace('<p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Please use your current root account to sign in.</p>', '')
 PAGE = PAGE.replace('<div id="login-message" class="management-message" role="alert"></div></form></section>', '<div id="login-message" class="management-message" role="alert"></div><p id="login-version" class="login-version login-version-footer" aria-live="polite">Ultimate Updater · checking local version…</p></form></section>')
 PAGE = PAGE.replace('const set=(id,v)=>document.getElementById(id).textContent=v;', 'const set=(id,v)=>{const element=document.getElementById(id);if(element)element.textContent=v};')
