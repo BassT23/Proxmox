@@ -409,12 +409,16 @@ WAIT_FOR_BOOTUP_LXC () {
 WAIT_FOR_QGA () {
   local max_wait=300 interval=5 probe_timeout=3 started_at now elapsed remaining
   started_at=$(date +%s)
-  echo -e "${OR}⏳ Waiting for QEMU Guest Agent on VM $VM${CL}"
+  if [[ "${DEBUG:-false}" == true ]]; then
+    echo -e "${OR}⏳ Waiting for QEMU Guest Agent on VM $VM${CL}"
+  fi
   while :; do
     if timeout "$probe_timeout" qm agent "$VM" ping >/dev/null 2>&1; then
       now=$(date +%s)
       elapsed=$((now - started_at))
-      echo -e "${GR}✅ QEMU Guest Agent ready after ${elapsed} seconds${CL}"
+      if [[ "${DEBUG:-false}" == true ]]; then
+        echo -e "${GR}✅ QEMU Guest Agent ready after ${elapsed} seconds${CL}"
+      fi
       return 0
     fi
     now=$(date +%s)
@@ -507,6 +511,7 @@ REMOTE_STATUS_DIAGNOSTICS () {
 # central log instead of leaving the operator with only "remote rc=1".
 REMOTE_STATUS_FAILURE_SUMMARY () {
   local status_file="$1" node="$2"
+  [[ "${DEBUG:-false}" == true ]] || return 0
   [[ -s "$status_file" ]] || return 0
   python3 - "$status_file" "$node" <<'PY' 2>/dev/null || true
 import json
@@ -708,7 +713,7 @@ PY
       then
         remote_node_status_ok=true
       fi
-      if [[ "$remote_status" -ne 0 ]]; then
+      if [[ "$remote_status" -ne 0 && "${DEBUG:-false}" == true ]]; then
         REMOTE_STATUS_FAILURE_SUMMARY "$remote_status_file" "$HOST_NODE"
       fi
     fi
