@@ -119,10 +119,11 @@ response = next((obj for obj in objects if isinstance(obj, dict) and
                   "out-data" in obj or "err-data" in obj)), None)
 if response is None:
     raise SystemExit(1)
-if response.get("exited") is False:
+exited = response.get("exited")
+if exited is False or exited == 0:
     print("RUNNING")
     raise SystemExit(0)
-if response.get("exited") is not True and "exitcode" not in response:
+if exited is not True and exited != 1 and "exitcode" not in response:
     raise SystemExit(1)
 exitcode = response.get("exitcode", 0)
 if not isinstance(exitcode, int) or isinstance(exitcode, bool) or exitcode < 0:

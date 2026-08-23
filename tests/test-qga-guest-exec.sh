@@ -60,7 +60,7 @@ done
 # guest exit codes rather than transport failures.
 : > "$QGA_CALLS"
 export QGA_EXEC_RESPONSE='{"pid":9}'
-export QGA_STATUS_RESPONSE='{"exited":false}'
+export QGA_STATUS_RESPONSE='{"exited":0}'
 QEMU_GUEST_EXEC 310 --timeout 5 -- /bin/true
 [[ "$QEMU_EXEC_TRANSPORT_RC" == 0 && "$QEMU_EXEC_EXITCODE" == 0 ]]
 
