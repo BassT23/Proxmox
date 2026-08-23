@@ -267,8 +267,8 @@ PAGE = r"""<!doctype html>
        compact on wide screens, but never compress the badge into the metric
        columns when the available width gets smaller. */
     .target-row { grid-template-columns:minmax(170px,1.35fr) minmax(190px,1.25fr) repeat(3,minmax(72px,.7fr)) minmax(150px,1fr) auto; }
-    .target-row.split-row { grid-template-columns:minmax(170px,1.35fr) minmax(190px,1.25fr) repeat(4,minmax(72px,.7fr)) minmax(150px,1fr) auto; }
-    .target-row.total-only-row { grid-template-columns:minmax(170px,1.35fr) minmax(190px,1.25fr) repeat(3,minmax(72px,.7fr)) minmax(150px,1fr) auto; }
+    .target-row.split-row { grid-template-columns:minmax(180px,1.5fr) minmax(120px,.9fr) repeat(2,minmax(72px,.7fr)) minmax(80px,.75fr) minmax(140px,1.2fr) minmax(150px,1fr) minmax(132px,max-content); }
+    .target-row.total-only-row { grid-template-columns:minmax(180px,1.5fr) minmax(120px,.9fr) minmax(80px,.75fr) minmax(80px,.75fr) minmax(140px,1.2fr) minmax(150px,1fr) minmax(132px,max-content); }
     .target-row .target-status { min-width:0; justify-content:flex-start; }
     .target-row .target-status .pill { max-width:100%; overflow-wrap:anywhere; text-align:left; }
     .target-row .target-field { min-width:0; }
@@ -278,7 +278,8 @@ PAGE = r"""<!doctype html>
     .target-row .target-field strong,.target-row .target-label { min-width:0; overflow-wrap:anywhere; }
     @media (max-width:1080px) and (min-width:761px) {
       .target-row { grid-template-columns:minmax(150px,1.25fr) minmax(175px,1.15fr) repeat(3,minmax(68px,.7fr)) minmax(130px,.9fr) auto; gap:8px; }
-      .target-row.split-row { grid-template-columns:minmax(150px,1.25fr) minmax(175px,1.15fr) repeat(4,minmax(68px,.7fr)) minmax(130px,.9fr) auto; }
+      .target-row.split-row { grid-template-columns:minmax(160px,1.35fr) minmax(110px,.85fr) repeat(2,minmax(68px,.7fr)) minmax(76px,.7fr) minmax(130px,1fr) minmax(145px,1fr) minmax(132px,max-content); }
+      .target-row.total-only-row { grid-template-columns:minmax(160px,1.35fr) minmax(110px,.85fr) minmax(76px,.7fr) minmax(76px,.7fr) minmax(130px,1fr) minmax(145px,1fr) minmax(132px,max-content); }
     }
     @media (max-width:760px) {
       .target-row { grid-template-columns:repeat(3,minmax(0,1fr)); align-items:start; gap:8px; padding:12px 10px; }
@@ -294,10 +295,10 @@ PAGE = r"""<!doctype html>
       .target-row.split-row,.target-row.total-only-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
     }
     .target-row.lxc-row { grid-template-columns:minmax(170px,1.35fr) minmax(190px,1.25fr) repeat(2,minmax(72px,.7fr)) minmax(150px,1fr) auto; }
-    .target-row.lxc-row.split-row { grid-template-columns:minmax(170px,1.35fr) minmax(190px,1.25fr) repeat(3,minmax(72px,.7fr)) minmax(150px,1fr) auto; }
+    .target-row.lxc-row.split-row { grid-template-columns:minmax(180px,1.5fr) minmax(120px,.9fr) repeat(2,minmax(72px,.7fr)) minmax(140px,1.2fr) minmax(150px,1fr) minmax(132px,max-content); }
     @media (max-width:1080px) and (min-width:761px) {
       .target-row.lxc-row { grid-template-columns:minmax(150px,1.25fr) minmax(175px,1.15fr) repeat(2,minmax(68px,.7fr)) minmax(130px,.9fr) auto; }
-      .target-row.lxc-row.split-row { grid-template-columns:minmax(150px,1.25fr) minmax(175px,1.15fr) repeat(3,minmax(68px,.7fr)) minmax(130px,.9fr) auto; }
+      .target-row.lxc-row.split-row { grid-template-columns:minmax(160px,1.35fr) minmax(110px,.85fr) repeat(2,minmax(68px,.7fr)) minmax(130px,1fr) minmax(145px,1fr) minmax(132px,max-content); }
     }
     @media (max-width:760px) {
       .target-row.lxc-row { grid-template-columns:repeat(3,minmax(0,1fr)); }
