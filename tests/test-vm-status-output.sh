@@ -13,7 +13,7 @@ if grep -Eq 'S: \$|N: \$' "$ROOT_DIR/check-updates.sh"; then
   exit 1
 fi
 grep -Fq 'PRINT_UPDATE_SPLIT "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"' "$ROOT_DIR/check-updates.sh"
-grep -Fq 'PRINT_UPDATE_SPLIT "$UPDATES" Unknown' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'PRINT_UPDATE_TOTAL "$UPDATES"' "$ROOT_DIR/check-updates.sh"
 
 # Explicit single-VM lifecycle checks must initialize the delay before the
 # optional per-VM SSH profile is read; otherwise a direct cvm invocation can

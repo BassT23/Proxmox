@@ -169,6 +169,10 @@ with open(record_file, "a", encoding="utf-8") as records:
             encode(target.get("normal_updates"), "null"),
             encode(target.get("security_updates"), "null"),
         ]
+        capability = target.get("security_split_supported")
+        if not isinstance(capability, bool):
+            capability = target.get("updater") == "apt"
+        fields.append(encode(capability))
         last_update = target.get("last_update")
         if isinstance(last_update, dict):
             fields.append(encode(json.dumps(last_update, separators=(",", ":"))))
@@ -225,7 +229,7 @@ def is_newer_or_equal(candidate, current):
 with open(record_file, encoding="utf-8") as records:
     for line in records:
         fields = line.rstrip("\n").split("\t")
-        if len(fields) not in (12, 13, 14, 15, 16):
+        if len(fields) not in (12, 13, 14, 15, 16, 17):
             raise ValueError("invalid status record")
         (target_id, target_type, transport, reachable, os_name, updater,
          updates, reboot_required, check_status, error_code, error_message,
@@ -233,6 +237,7 @@ with open(record_file, encoding="utf-8") as records:
         name_fields = optional_fields[:1]
         imported_last_update = None
         normal_updates = security_updates = None
+        security_split_supported = None
         optional_offset = 1
         # Records written before the split-update schema used the second
         # optional field for last_update. Keep those records readable.
@@ -244,8 +249,13 @@ with open(record_file, encoding="utf-8") as records:
                 normal_updates = None if optional_fields[1] in ("", "null") else int(optional_fields[1])
             if len(optional_fields) > 2:
                 security_updates = None if optional_fields[2] in ("", "null") else int(optional_fields[2])
-            if len(optional_fields) > 3 and optional_fields[3]:
-                imported_last_update = json.loads(optional_fields[3])
+            if len(optional_fields) > 3:
+                if optional_fields[3] in ("true", "false"):
+                    security_split_supported = optional_fields[3] == "true"
+                    if len(optional_fields) > 4 and optional_fields[4]:
+                        imported_last_update = json.loads(optional_fields[4])
+                elif optional_fields[3]:
+                    imported_last_update = json.loads(optional_fields[3])
         name = name_fields[0] if name_fields else ""
         available = None if updates in ("", "null") else int(updates)
         reboot = None if reboot_required in ("", "null") else reboot_required == "true"
@@ -273,6 +283,10 @@ with open(record_file, encoding="utf-8") as records:
             "check_status": check_status or "not_checked",
             "error": error,
             "node": node or None,
+            "security_split_supported": security_split_supported
+            if security_split_supported is not None else (
+                updater == "apt" or normal_updates is not None or security_updates is not None
+            ),
         })
         if target_type == "host":
             # Host identity comes from the cluster resolver, never from a
@@ -385,6 +399,7 @@ record.update({
     "check_status": check_status or "not_checked",
     "error": ({"code": error_code or None, "message": error_message or None}
               if error_code or error_message else None),
+    "security_split_supported": updater == "apt",
 })
 record.setdefault("last_update", {"status": "unknown", "timestamp": None})
 
@@ -606,6 +621,12 @@ def short_error(target):
     return "check failed"
 
 def update_split(target):
+    if target.get("security_split_supported") is False or \
+       ("security_split_supported" not in target and target.get("updater") != "apt" and
+        "normal_updates" not in target and "security_updates" not in target):
+        values = target.get("updates")
+        available = values.get("available") if isinstance(values, dict) else None
+        return f"Updates: {available if isinstance(available, int) else 'Unknown'}"
     def value(name):
         candidate = target.get(name)
         if isinstance(candidate, int) and not isinstance(candidate, bool):

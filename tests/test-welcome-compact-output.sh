@@ -31,6 +31,8 @@ Security updates: Unknown
 LXC 400 : unknown
 Normal updates: Unknown
 Security updates: 1
+VM 100 : pfsense
+Updates: 5
 LXC 211 : iobroker
 Check failed: apt-get update failed
 EOF
@@ -51,6 +53,8 @@ VM 300 : partial
 S: Unknown / N: 4
 LXC 400 : unknown
 S: 1 / N: Unknown
+VM 100 : pfsense
+Updates: 5
 LXC 211 : iobroker
 Check failed: apt-get update failed
 EOF

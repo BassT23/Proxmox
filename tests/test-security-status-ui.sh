@@ -75,6 +75,7 @@ assert "Normal updates" in source and "Security updates" in source
 assert "security-warn" in source
 assert "Security updates available" in source
 assert 'id="normal-updates"' in source and 'id="security-updates"' in source
+assert 'id="other-updates"' in source
 assert "renderWithSplitSummary" in source
 assert "set('updates'," not in source
 assert "Status render failed" in source
@@ -90,8 +91,9 @@ assert "row.classList.add('lxc-row')" in source
 assert ".target-row.lxc-row" in source
 assert "reboot_required" in source
 assert "reboot-required-badge" in source
-assert "parts.push(knownNormal.length?`${knownNormal.reduce((a,v)=>a+v,0)} normal`:'normal unknown')" in source
-assert "parts.push(knownSecurity.length===items.length?`${knownSecurity.reduce((a,v)=>a+v,0)} security`:'security unknown')" in source
+assert "knownTotalOnlyUpdates" in source
+assert "securitySplitSupported" in source
+assert "knownOther" in source and "other-updates" in source
 assert "normal===0&&security===null" in source
 assert "const aggregateFieldComplete" in source
 assert "updateSummary((host?[host]:guests).filter(Boolean))" in source

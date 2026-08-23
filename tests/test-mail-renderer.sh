@@ -31,6 +31,7 @@ cat > "$WORK_DIR/status.json" <<'JSON'
   {"id":"guest:984","type":"lxc","node":"Proxmox-Test-1","name":"unifi","check_status":"updates_available","reachable":true,"updates":{"available":10},"normal_updates":0,"security_updates":10},
   {"id":"guest:985","type":"lxc","node":"Proxmox-Test-1","name":"985","check_status":"updates_available","reachable":true,"updates":{"available":55},"normal_updates":55,"security_updates":0},
   {"id":"guest:987","type":"lxc","node":"Proxmox-Test-1","name":"unknown-security","check_status":"updates_available","reachable":true,"updates":{"available":1},"normal_updates":1,"security_updates":null},
+  {"id":"guest:988","type":"vm","node":"Proxmox-Test-1","name":"pfsense","updater":"pkg","check_status":"updates_available","reachable":true,"updates":{"available":5},"security_split_supported":false},
   {"id":"guest:986","type":"lxc","node":"Proxmox-Test-2","name":"986","check_status":"ok","reachable":true,"updates":{"available":0}}
 ]}
 JSON
@@ -44,7 +45,8 @@ grep -Fqx 'S: 4 / N: 62' "$WORK_DIR/status-mail"
 grep -Fqx 'S: 10 / N: 0' "$WORK_DIR/status-mail"
 grep -Fqx 'S: 0 / N: 55' "$WORK_DIR/status-mail"
 grep -Fqx 'S: Unknown / N: 1' "$WORK_DIR/status-mail"
-grep -Fq 'Total available updates: 132' "$WORK_DIR/status-mail"
+grep -Fqx 'Updates: 5' "$WORK_DIR/status-mail"
+grep -Fq 'Total available updates: 137' "$WORK_DIR/status-mail"
 if grep -Fq '⬆️' "$WORK_DIR/status-mail"; then
   echo 'legacy total-only update lines remain in check mail' >&2
   exit 1

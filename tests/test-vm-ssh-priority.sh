@@ -63,6 +63,7 @@ GN='' BL='' CL=''
 LOG="$PWD/ssh-result"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
 PRINT_UPDATE_SPLIT() { :; }
+PRINT_UPDATE_TOTAL() { :; }
 INTERNAL_SSH_USE_IDENTITY() { :; }
 INTERNAL_SSH_RESOLVE_VM() { source "$PWD/internal-ssh.sh"; INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "$4"; }
 RUN_SSH_COMMAND() {
@@ -105,6 +106,7 @@ VM=100 NAME=pfsense INITIAL_INVENTORY=true STATUS_MODEL_NODE=test-node STATUS_MO
 LOG="$PWD/qga-result"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
 PRINT_UPDATE_SPLIT() { :; }
+PRINT_UPDATE_TOTAL() { :; }
 GN='' BL='' CL=''
 timeout() { shift; "$@"; }
 qm() {

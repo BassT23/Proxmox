@@ -135,6 +135,12 @@ PRINT_UPDATE_SPLIT() {
   printf 'Security updates: %s\n' "$security"
 }
 
+PRINT_UPDATE_TOTAL() {
+  local total="${1:-Unknown}"
+  [[ -n "$total" && "$total" != null ]] || total=Unknown
+  printf 'Updates: %s\n' "$total"
+}
+
 # Decode one structured qm guest exec response without losing the guest
 # exitcode. The qm CLI itself can return zero when only the guest command
 # failed, so transport and guest status are kept separate.
@@ -1346,11 +1352,11 @@ CHECK_VM () {
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
       UPDATES=${UPDATES:-0}
       [[ "$UPDATES" -gt 0 ]] && echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       STATUS_MODEL_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pkg "$UPDATES" false "$STATUS_MODEL_STATUS" "" "" \
-        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
+        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
       return 0
     fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
@@ -1378,7 +1384,7 @@ CHECK_VM () {
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
-      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     elif [[ "$OS" =~ Arch ]]; then
       UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "pacman -Qu | wc -l")
       UPDATES=${UPDATES//[^0-9]/}
@@ -1386,7 +1392,7 @@ CHECK_VM () {
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
-      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     elif [[ "$OS" =~ Alpine ]]; then
       UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apk list -u | wc -l")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
@@ -1394,7 +1400,7 @@ CHECK_VM () {
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
-      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     elif [[ "$OS" =~ CentOS ]]; then
       UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "yum -q check-update | wc -l")
       UPDATES=$(SANITIZE_NUMBER "$UPDATES")
@@ -1402,7 +1408,7 @@ CHECK_VM () {
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
-      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
       SSH_MODEL_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
@@ -1412,19 +1418,19 @@ CHECK_VM () {
     elif [[ ${OS,,} =~ fedora ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "${UPDATES:-0}" null
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ ${OS,,} =~ arch ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pacman "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "${UPDATES:-0}" null
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pacman "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ ${OS,,} =~ alpine ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apk "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "${UPDATES:-0}" null
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apk "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ ${OS,,} =~ centos ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "${UPDATES:-0}" null
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     else
       STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" "" "null" "null" unsupported UNSUPPORTED_OS "No supported updater detected"
     fi
@@ -1480,11 +1486,11 @@ CHECK_VM_QEMU () {
     UPDATES=$(SANITIZE_NUMBER "$UPDATES")
     UPDATES=${UPDATES:-0}
     [[ "$UPDATES" -gt 0 ]] && echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
-    [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+    [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     QEMU_PKG_STATUS=ok
     [[ "$UPDATES" -gt 0 ]] && QEMU_PKG_STATUS=updates_available
     STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" pkg "$UPDATES" false "$QEMU_PKG_STATUS" "" "" \
-      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     return 0
   fi
   # Do not guess a Linux guest from a successful QGA ping alone.  In the
@@ -1571,10 +1577,10 @@ CHECK_VM_QEMU () {
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
-      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_DNF_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_DNF_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "$UPDATES" false "$QEMU_DNF_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "$UPDATES" false "$QEMU_DNF_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ "$OS" =~ Arch ]]; then
       QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "pacman -Qu | wc -l"
       QEMU_COUNT_RESULT_OK "QEMU pacman check for VM $VM" || return 1
@@ -1584,10 +1590,10 @@ CHECK_VM_QEMU () {
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
-      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_PACMAN_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_PACMAN_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "$UPDATES" false "$QEMU_PACMAN_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "$UPDATES" false "$QEMU_PACMAN_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ "$OS" =~ Alpine ]]; then
       QEMU_GUEST_EXEC "$VM" --timeout 120 -- ash -c "apk list -u | wc -l"
       QEMU_COUNT_RESULT_OK "QEMU apk check for VM $VM" || return 1
@@ -1597,10 +1603,10 @@ CHECK_VM_QEMU () {
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
-      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_APK_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_APK_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "$UPDATES" false "$QEMU_APK_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "$UPDATES" false "$QEMU_APK_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ "$OS" =~ CentOS ]]; then
       QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "yum -q check-update | wc -l"
       QEMU_COUNT_RESULT_OK "QEMU yum check for VM $VM" || return 1
@@ -1610,10 +1616,10 @@ CHECK_VM_QEMU () {
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
-      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+      [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_YUM_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_YUM_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "$UPDATES" false "$QEMU_YUM_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "$UPDATES" false "$QEMU_YUM_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     else
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" "" "null" "null" unsupported UNSUPPORTED_OS "No supported updater detected"
     fi
