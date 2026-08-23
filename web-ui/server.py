@@ -11,6 +11,7 @@ import os
 import re
 import secrets
 import shlex
+import socket
 import stat
 import ssl
 import subprocess
@@ -381,7 +382,7 @@ PAGE = r"""<!doctype html>
     function showLogin(message=''){setLoginLoading(false);document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null}
     function showDashboard(){document.getElementById('auth-loading').classList.remove('open');document.getElementById('login-screen').classList.remove('open');document.getElementById('dashboard').hidden=false}
     async function ensureSession(){const r=await fetch('/api/session',{cache:'no-store'});const d=await r.json();if(!r.ok){showLogin(d.error?.message||'Please sign in.');throw new Error(d.error?.message||'Authentication required.')}csrfToken=d.csrf;return d}
-    async function api(path,options={}){if(!csrfToken)await ensureSession();const headers={'Content-Type':'application/json',...(options.headers||{})};if(csrfToken)headers['X-CSRF-Token']=csrfToken;const r=await fetch(path,{...options,headers});const d=await r.json();if(r.status===401){showLogin(d.error?.message||'Session expired.')}if(!r.ok){const error=new Error(d.error?.message||'Request failed');error.code=d.error?.code;throw error}return d}
+    async function api(path,options={}){if(!csrfToken)await ensureSession();const headers={'Content-Type':'application/json',...(options.headers||{})};if(csrfToken)headers['X-CSRF-Token']=csrfToken;const r=await fetch(path,{...options,headers});const d=await r.json();if(r.status===401){showLogin(d.error?.message||'Session expired.')}if(!r.ok){const error=new Error(d.error?.message||'Request failed');error.code=d.error?.code;error.diagnostics=d.diagnostics;throw error}return d}
     function notice(message,error=false){const n=document.getElementById('notice');n.hidden=false;n.textContent=message;n.className=error?'notice error':'notice'}
     function running(target){return jobs.some(j=>j.target===target&&j.state==='running')}
     function renderDetails(t){const rebootDetail=t.type==='lxc'?'':`<div><span>Reboot required</span><strong>${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong></div>`;const n=document.getElementById('details'),[label,tone]=statusLabel(t.check_status),e=t.error?`${text(t.error.code,'')}${t.error.message?': '+t.error.message:''}`:'None';n.hidden=false;n.innerHTML=`<h3>${esc(t.id)}</h3><div class="detail-grid"><div><span>Type</span><strong>${esc(t.type)}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(t.os)}</strong></div><div><span>Updater</span><strong>${esc(t.updater)}</strong></div><div><span>Check status</span><strong class="pill ${tone}">${label}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div>${rebootDetail}<div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Error</span><strong class="error-text">${esc(e)}</strong></div></div>`;n.scrollIntoView({behavior:'smooth',block:'nearest'})}
@@ -504,7 +505,7 @@ PAGE = r"""<!doctype html>
     function buildConfigForm(values){const form=document.getElementById('config-form');form.innerHTML='';form.dataset.initialConfig=JSON.stringify(values);for(const groupData of configGroups){const group=document.createElement('section');group.className='settings-group';const heading=document.createElement('div');heading.className='settings-heading';const title=document.createElement('h3');title.textContent=groupData.title;heading.appendChild(title);if(helpContent[groupData.title])heading.appendChild(createHelpControl(groupData.title,helpContent[groupData.title]));group.appendChild(heading);const hint=document.createElement('p');hint.textContent=groupData.hint;group.appendChild(hint);if(groupData.filterGroups){const scopes=document.createElement('div');scopes.className='filter-scopes';groupData.filterGroups.forEach(scopeData=>{const scope=document.createElement('section');scope.className='filter-scope';const scopeTitle=document.createElement('h4');scopeTitle.textContent=scopeData.title;scope.appendChild(scopeTitle);const fields=document.createElement('div');fields.className='config-fields';scopeData.keys.forEach(key=>fields.appendChild(configField(key,values)));scope.appendChild(fields);const preview=document.createElement('div');preview.id=`${scopeData.preview}-filter-preview`;preview.className='filter-preview';scope.appendChild(preview);scopes.appendChild(scope)});group.appendChild(scopes)}else if(groupData.matrix){group.appendChild(configMatrix(groupData,values))}else if(groupData.columns){const columns=document.createElement('div');columns.className='settings-columns';groupData.columns.forEach(keys=>{const column=document.createElement('div');column.className='settings-column';keys.forEach(key=>column.appendChild(configField(key,values)));columns.appendChild(column)});group.appendChild(columns)}else{const fields=document.createElement('div');fields.className='config-fields';groupData.keys.forEach(key=>fields.appendChild(configField(key,values)));group.appendChild(fields)}form.appendChild(group)}const actions=document.createElement('div');actions.className='config-actions';actions.innerHTML='<button type="submit" class="primary">Save settings</button><button type="button" id="config-close">Cancel</button>';form.appendChild(actions);form.querySelectorAll('[data-key="ONLY_UPDATE_CHECK"],[data-key="EXCLUDE_UPDATE_CHECK"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'check')));form.querySelectorAll('[data-key="ONLY"],[data-key="EXCLUDE"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'update')));loadFilterPreview(form,'check');loadFilterPreview(form,'update');form.onsubmit=async e=>{e.preventDefault();const initial=JSON.parse(form.dataset.initialConfig||'{}'),next={};for(const input of form.querySelectorAll('[data-key]')){const value=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value,previous=initial[input.dataset.key]??'';if(value!==previous)next[input.dataset.key]=value}if(!Object.keys(next).length){setConfigOpen(false);return}try{const d=await api('/api/config',{method:'POST',body:JSON.stringify({values:next})});buildConfigForm(d.config);setConfigOpen(false);managementMessage('config-message','Configuration saved.')}catch(error){managementMessage('config-message',error.message,true)}};document.getElementById('config-close').onclick=()=>setConfigOpen(false)}
     const buildConfigFormBase=buildConfigForm;buildConfigForm=function(values){buildConfigFormBase(values);const form=document.getElementById('config-form'),input=form?.querySelector('[data-key="EXIT_ON_ERROR"]');if(!input)return;input.checked=values.EXIT_ON_ERROR!==true;const submit=form.onsubmit;form.onsubmit=async event=>{input.checked=!input.checked;await submit.call(form,event);if(input.isConnected)input.checked=!input.checked}};
     async function loadConfig(){try{const d=await api('/api/config');buildConfigForm(d.config)}catch(error){managementMessage('config-message',error.message,true)}}
-    function renderManagedTargets(){const box=document.getElementById('managed-targets');if(!managedTargets.length){box.innerHTML='<div class="empty">No external systems configured.</div>';return}box.innerHTML=managedTargets.map(t=>`<div class="managed-target"><div><strong>${esc(t.id)}</strong><small>${esc(t.user)}@${esc(t.host)}:${esc(t.port)} · SSH</small></div><div class="managed-actions"><button data-edit="${esc(t.id)}">Edit</button><button data-test="${esc(t.id)}">Test connection</button><button data-remove="${esc(t.id)}">Remove</button></div></div>`).join('');box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openTargetModal(managedTargets.find(t=>t.id===b.dataset.edit)));box.querySelectorAll('[data-test]').forEach(b=>b.onclick=()=>testTarget(b.dataset.test));box.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>removeTarget(b.dataset.remove))}
+    function renderManagedTargets(){const box=document.getElementById('managed-targets');if(!managedTargets.length){box.innerHTML='<div class="empty">No external systems configured.</div>';return}box.innerHTML=managedTargets.map(t=>`<div class="managed-target"><div><strong>${esc(t.id)}</strong><small>${esc(t.user)}@${esc(t.host)}:${esc(t.port)} · SSH</small></div><div class="managed-actions"><button data-edit="${esc(t.id)}">Edit</button><button data-test="${esc(t.id)}">Test connection</button><button data-remove="${esc(t.id)}">Remove</button></div></div>`).join('');box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openTargetModal(managedTargets.find(t=>t.id===b.dataset.edit)));box.querySelectorAll('[data-test]').forEach(b=>b.onclick=()=>testTarget(b.dataset.test,null,b));box.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>removeTarget(b.dataset.remove))}
     async function openExternalSettings(target){const form=document.getElementById('external-settings-form');form.elements.target.value=target;managementMessage('external-settings-message','Loading external settings…');document.getElementById('external-settings-modal').classList.add('open');try{const data=await api(`/api/external-settings/${encodeURIComponent(target)}`);const values=data.values||{};for(const key of ['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE'])form.elements[key].value=values[key]??'';managementMessage('external-settings-message','These settings are stored on this external system.')}catch(error){managementMessage('external-settings-message',error.message,true)}}
     function closeExternalSettings(){document.getElementById('external-settings-modal').classList.remove('open')}
     async function saveExternalSettings(event){event.preventDefault();const form=event.currentTarget,target=form.elements.target.value,values={};for(const key of ['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE'])values[key]=form.elements[key].value;try{await api(`/api/external-settings/${encodeURIComponent(target)}`,{method:'POST',body:JSON.stringify({values})});managementMessage('external-settings-message','External settings saved.')}catch(error){managementMessage('external-settings-message',error.message,true)}}
@@ -529,9 +530,9 @@ PAGE = r"""<!doctype html>
     function closeTargetModal(){document.getElementById('target-modal').classList.remove('open');editingTarget=null}
     async function saveTarget(e){e.preventDefault();const form=e.currentTarget;const payload={id:form.elements.id.value,host:form.elements.host.value,user:form.elements.user.value,port:Number(form.elements.port.value),identity_file:form.elements.identity_file.value};try{await api(editingTarget?`/api/targets/${encodeURIComponent(editingTarget.id)}`:'/api/targets',{method:editingTarget?'PUT':'POST',body:JSON.stringify(payload)});closeTargetModal();await loadTargets();await loadStatus();managementMessage('target-message','External target saved.')}catch(error){managementMessage('target-modal-message',error.message,true)}}
     async function removeTarget(id){if(!confirm(`Remove external system "${id}"?`))return;try{await api(`/api/targets/${encodeURIComponent(id)}`,{method:'DELETE'});await loadTargets();await loadStatus();managementMessage('target-message','External target removed.')}catch(error){managementMessage('target-message',error.message,true)}}
-    async function testTarget(id,payload=null){const messageId=payload?'target-modal-message':'target-message';managementMessage(messageId,'Testing connection…');try{const d=await api(`/api/targets/${encodeURIComponent(id)}/test`,{method:'POST',body:JSON.stringify(payload||{})});const t=d.target||{};managementMessage(messageId,`Connection successful · ${t.os||'OS unknown'}`)}catch(error){managementMessage(messageId,`Connection failed: ${error.message||'The connection test failed.'}`,true)}}
+    async function testTarget(id,payload=null,button=null){const messageId=payload?'target-modal-message':'target-message';const original=button?.textContent;if(button){button.disabled=true;button.textContent='Testing…'}managementMessage(messageId,'Testing connection…');try{const d=await api(`/api/targets/${encodeURIComponent(id)}/test`,{method:'POST',body:JSON.stringify(payload||{})});const t=d.target||{};managementMessage(messageId,`Connection successful · ${t.os||'OS unknown'}`)}catch(error){managementMessage(messageId,`Connection failed: ${error.message||'The connection test failed.'}`,true)}finally{if(button){button.disabled=false;button.textContent=original||'Test connection'}}}
     function targetRow(t){const rebootField=t.type==='lxc'?'':`<div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div>`;const row=document.createElement('div');row.className=`target-row ${securitySplitSupported(t)?'split-row':'total-only-row'}`;if(t.type==='lxc')row.classList.add('lxc-row');row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div>${securitySplitSupported(t)?`<div class="target-field"><span class="target-label">Normal</span><strong>${updateValue(knownNormalUpdates(t))}</strong></div><div class="target-field"><span class="target-label">Security</span><strong>${updateValue(knownSecurityUpdates(t))}</strong></div>`:`<div class="target-field"><span class="target-label">Updates</span><strong>${updateValue(knownTotalOnlyUpdates(t))}</strong></div>`}${rebootField}<div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button></div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const update=row.querySelector('.update');update.disabled=running(t.id)||!TARGET_UPDATEABLE(t);update.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});return row}
-    document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));document.getElementById('internal-ssh-open').onclick=()=>setInternalSshView(true);document.getElementById('internal-ssh-back').onclick=()=>setInternalSshView(false);document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').onclick=()=>{const form=document.getElementById('target-modal-form');const payload={id:form.elements.id.value,host:form.elements.host.value,user:form.elements.user.value,port:Number(form.elements.port.value),identity_file:form.elements.identity_file.value};if(payload.id)testTarget(payload.id,payload)};document.getElementById('target-modal-form').onsubmit=saveTarget;document.getElementById('external-settings-close').onclick=closeExternalSettings;document.getElementById('external-settings-form').onsubmit=saveExternalSettings;
+    document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));document.getElementById('internal-ssh-open').onclick=()=>setInternalSshView(true);document.getElementById('internal-ssh-back').onclick=()=>setInternalSshView(false);document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').onclick=()=>{const form=document.getElementById('target-modal-form'),button=document.getElementById('target-modal-test');const payload={id:form.elements.id.value,host:form.elements.host.value,user:form.elements.user.value,port:Number(form.elements.port.value),identity_file:form.elements.identity_file.value};if(payload.id)testTarget(payload.id,payload,button)};document.getElementById('target-modal-form').onsubmit=saveTarget;document.getElementById('external-settings-close').onclick=closeExternalSettings;document.getElementById('external-settings-form').onsubmit=saveExternalSettings;
     async function bootstrap(){try{await ensureSession();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){if(csrfToken)notice(error.message,true)}}
     const aggregateField=field=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[],values=targets.map(t=>t?.[field]).filter(Number.isInteger);return values.length?values.reduce((sum,value)=>sum+value,0):null};
     const aggregateTotalOnly=()=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[],values=targets.map(knownTotalOnlyUpdates).filter(Number.isInteger);return values.length?values.reduce((sum,value)=>sum+value,0):null};
@@ -1764,6 +1765,55 @@ class StatusHandler(BaseHTTPRequestHandler):
             return result, ssh_failure_message(result.stderr)
         return result, None
 
+    def external_connection_diagnostics(self, target):
+        """Run read-only, staged diagnostics for an unsaved or saved SSH target."""
+        diagnostics = {
+            "host_reachable": False,
+            "ssh_port_reachable": False,
+            "ssh_authenticated": False,
+            "remote_command": False,
+            "os": None,
+        }
+        try:
+            ping = subprocess.run(
+                ["ping", "-c", "1", "-W", "1", target["host"]],
+                stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                timeout=3, check=False,
+            )
+            diagnostics["host_reachable"] = ping.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            diagnostics["host_reachable"] = False
+
+        try:
+            with socket.create_connection((target["host"], target["port"]), timeout=3):
+                diagnostics["ssh_port_reachable"] = True
+        except (OSError, TimeoutError):
+            diagnostics["ssh_port_reachable"] = False
+
+        if not diagnostics["ssh_port_reachable"]:
+            message = ("Host unreachable" if not diagnostics["host_reachable"]
+                       else "SSH port unreachable")
+            return diagnostics, f"{message}."
+
+        # A successful TCP connect is sufficient to continue even when ICMP
+        # is filtered.  Ping is diagnostic context, never the success gate.
+        _, auth_error = self.run_ssh_connection_test(target, "exit", timeout=8)
+        if auth_error:
+            diagnostics["ssh_authenticated"] = False
+            host_context = "Host reachable · " if diagnostics["host_reachable"] else ""
+            if auth_error == "Authentication failed.":
+                return diagnostics, f"{host_context}SSH authentication failed."
+            return diagnostics, f"{host_context}{auth_error}"
+        diagnostics["ssh_authenticated"] = True
+
+        result, command_error = self.run_ssh_connection_test(target, "uname -s", timeout=8)
+        if command_error:
+            host_context = "Host reachable · " if diagnostics["host_reachable"] else ""
+            return diagnostics, f"{host_context}Remote command failed."
+        diagnostics["remote_command"] = True
+        diagnostics["os"] = (result.stdout or "").strip().splitlines()[0] if result and result.stdout.strip() else None
+        return diagnostics, None
+
     def owner_node_for_guest(self, target_id):
         """Resolve a guest through the same cluster resolver as runtime jobs."""
         script = getattr(self.server, "cluster_target_script", DEFAULT_CLUSTER_TARGET_SCRIPT)
@@ -1970,16 +2020,19 @@ class StatusHandler(BaseHTTPRequestHandler):
                 candidate = dict(payload)
                 candidate["id"] = target_id
                 target = validate_target_payload(candidate, target_id)
-            result, message = self.run_ssh_connection_test(target, "uname -s", timeout=8)
+            diagnostics, message = self.external_connection_diagnostics(target)
         except (OSError, ValueError, subprocess.TimeoutExpired) as error:
             self.send_json(error_payload("CONNECTION_TEST_FAILED", str(error) or "The connection test failed."), HTTPStatus.BAD_REQUEST)
             return
         if message:
-            self.send_json(error_payload("CONNECTION_TEST_FAILED", message), HTTPStatus.BAD_GATEWAY)
+            response = error_payload("CONNECTION_TEST_FAILED", message)
+            response["diagnostics"] = diagnostics
+            self.send_json(response, HTTPStatus.BAD_GATEWAY)
             return
-        os_name = (result.stdout or "").strip().splitlines()[0] if result and result.stdout.strip() else "OS unknown"
+        os_name = diagnostics["os"] or "OS unknown"
         self.send_json({"message": "Connection successful.",
-                        "target": {"id": target_id, "os": os_name}})
+                        "target": {"id": target_id, "os": os_name},
+                        "diagnostics": diagnostics})
 
     def do_GET(self):  # noqa: N802 - stdlib handler API
         path = urlsplit(self.path).path

@@ -15,8 +15,12 @@ source = Path(__file__).parents[1].joinpath("web-ui/server.py").read_text(encodi
 assert "cluster-target.sh" in source
 assert "Testing connection…" in server.PAGE
 assert "Connection failed:" in server.PAGE
-assert "testTarget(payload.id,payload)" in server.PAGE
-assert "uname -s" in server.StatusHandler.handle_target_test.__code__.co_consts
+assert "testTarget(payload.id,payload,button)" in server.PAGE
+assert "SSH port unreachable" in source
+assert "SSH authentication failed." in source
+assert "socket.create_connection" in source
+assert "button.textContent='Testing…'" in server.PAGE
+assert "uname -s" in server.StatusHandler.external_connection_diagnostics.__doc__ or "uname -s" in source
 assert "owner_node_for_guest" in server.StatusHandler.run_owner_guest_connection_test.__code__.co_names
 
 with tempfile.NamedTemporaryFile() as identity:
@@ -36,6 +40,33 @@ with patch("server.subprocess.run", return_value=fake_result) as run:
     )
 assert message is None and result.stdout.strip() == "Linux"
 assert run.call_args.args[0][-1] == "uname -s"
+
+ping_result = SimpleNamespace(returncode=0, stdout="", stderr="")
+auth_result = SimpleNamespace(returncode=0, stdout="", stderr="")
+uname_result = SimpleNamespace(returncode=0, stdout="Linux\n", stderr="")
+with patch("server.subprocess.run", side_effect=[ping_result, auth_result, uname_result]) as run, \
+     patch("server.socket.create_connection") as connect:
+    connect.return_value.__enter__.return_value = object()
+    diagnostics, message = server.StatusHandler.external_connection_diagnostics(
+        object.__new__(server.StatusHandler), payload
+    )
+assert message is None
+assert diagnostics == {
+    "host_reachable": True, "ssh_port_reachable": True,
+    "ssh_authenticated": True, "remote_command": True, "os": "Linux",
+}
+assert run.call_args_list[0].args[0][:4] == ["ping", "-c", "1", "-W"]
+assert connect.called
+
+auth_failed = SimpleNamespace(returncode=255, stdout="", stderr="Permission denied (publickey)")
+with patch("server.subprocess.run", side_effect=[ping_result, auth_failed]), \
+     patch("server.socket.create_connection") as connect:
+    connect.return_value.__enter__.return_value = object()
+    diagnostics, message = server.StatusHandler.external_connection_diagnostics(
+        object.__new__(server.StatusHandler), payload
+    )
+assert diagnostics["ssh_port_reachable"] is True
+assert message == "Host reachable · SSH authentication failed."
 
 assert server.ssh_failure_message("ssh: connect to host x port 22: Connection refused") == "Connection refused."
 assert server.ssh_failure_message("Permission denied (publickey)") == "Authentication failed."
