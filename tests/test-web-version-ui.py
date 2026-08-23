@@ -90,10 +90,12 @@ assert 'id="login-message"' in module.PAGE
 login_markup = module.PAGE.split('<section id="login-screen"', 1)[1].split('</section>', 1)[0]
 assert login_markup.count('class="login-branding"') == 1
 assert '<h2>Ultimate Updater</h2>' not in login_markup
-assert 'Sign in to access system status and actions.' in login_markup
+assert 'Sign in to access system status and actions.' not in login_markup
+assert 'Sign in with the local Proxmox root account.' in login_markup
 assert 'name="username"' in login_markup
 assert 'name="password"' in login_markup
 assert '>Sign in</button>' in login_markup
+assert login_markup.index('login-branding') < login_markup.index('login-account-hint') < login_markup.index('name="username"')
 
 with tempfile.TemporaryDirectory() as directory:
     root_dir = Path(directory)
