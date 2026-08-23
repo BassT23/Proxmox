@@ -41,6 +41,7 @@ DEFAULT_INVENTORY_FILE = Path("/etc/ultimate-updater/targets.conf")
 DEFAULT_INVENTORY_SCRIPT = Path("/etc/ultimate-updater/target-inventory.sh")
 DEFAULT_TAG_FILTER = Path("/etc/ultimate-updater/tag-filter.sh")
 DEFAULT_EXTERNAL_SCRIPT = Path("/etc/ultimate-updater/external-apt.sh")
+DEFAULT_CLUSTER_TARGET_SCRIPT = Path("/etc/ultimate-updater/cluster-target.sh")
 DEFAULT_EXTERNAL_SETTINGS_SCRIPT = Path("/etc/ultimate-updater/external-settings.sh")
 DEFAULT_ASSET_DIR = Path("/etc/ultimate-updater/web-ui/assets")
 DEFAULT_CLI = Path("/usr/local/sbin/ultimate-updater")
@@ -408,7 +409,7 @@ PAGE = r"""<!doctype html>
     document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true')return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value})});const d=await r.json();if(!r.ok)throw new Error('Login failed');csrfToken=d.csrf;form.reset();message.className='management-message success';message.textContent='Login successful';await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent='Login failed'}};
     document.getElementById('logout').onclick=async()=>{try{await api('/api/logout',{method:'POST',body:'{}'})}catch(_error){}showLogin('You have been signed out.')};
   </script>
-  <div id="target-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="target-modal-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="target-modal-title">External system</h3><button type="button" class="modal-close" id="target-modal-cancel">Close</button></div><div class="management-form open"><label>Name<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"></label><label>Host / IP<input name="host" required pattern="[A-Za-z0-9_.:-]+"></label><label>SSH user<input name="user" required pattern="[A-Za-z_][A-Za-z0-9_.-]*"></label><label>SSH port<input name="port" type="number" min="1" max="65535" value="22" required></label><div class="form-actions"><button type="submit" class="primary">Save</button><button type="button" id="target-modal-test">Test connection</button></div><div id="target-modal-message" class="management-message form-wide"></div></div></form></div>
+  <div id="target-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="target-modal-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="target-modal-title">External system</h3><button type="button" class="modal-close" id="target-modal-cancel">Close</button></div><div class="management-form open"><label>Name<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"></label><label>Host / IP<input name="host" required pattern="[A-Za-z0-9_.:-]+"></label><label>SSH user<input name="user" required pattern="[A-Za-z_][A-Za-z0-9_.-]*"></label><label>SSH port<input name="port" type="number" min="1" max="65535" value="22" required></label><label>Identity file (optional)<input name="identity_file" placeholder="/root/.ssh/key"></label><div class="form-actions"><button type="submit" class="primary">Save</button><button type="button" id="target-modal-test">Test connection</button></div><div id="target-modal-message" class="management-message form-wide" role="status"></div></div></form></div>
   <script>
     let openNodes=new Set(), jobsExpanded=false, openDetailId=null;
     function jobSortValue(job){const parsed=Date.parse(job.started_at||job.finished_at||'');if(Number.isFinite(parsed))return parsed;const match=String(job.unit||'').match(/-(\d{8})-(\d{6})(?:-|$)/);if(match){const value=Date.parse(`${match[1].slice(0,4)}-${match[1].slice(4,6)}-${match[1].slice(6,8)}T${match[2].slice(0,2)}:${match[2].slice(2,4)}:${match[2].slice(4,6)}Z`);if(Number.isFinite(value))return value}return 0}
@@ -524,13 +525,13 @@ PAGE = r"""<!doctype html>
     document.getElementById('internal-ssh-form').onsubmit=async event=>{event.preventDefault();const f=event.currentTarget,values={host:f.elements.host.value,user:f.elements.user.value,port:Number(f.elements.port.value),enabled:f.elements.enabled.checked};if(f.elements.identity_file.value)values.identity_file=f.elements.identity_file.value;try{await api(`/api/internal-ssh/${encodeURIComponent(f.elements.kind.value)}/${encodeURIComponent(f.elements.id.value)}`,{method:'POST',body:JSON.stringify({values})});closeInternalSsh();await loadInternalSsh();managementMessage('internal-ssh-message','Internal SSH override saved.')}catch(error){managementMessage('internal-ssh-form-message',error.message,true)}};
     document.getElementById('internal-ssh-close').onclick=closeInternalSsh;document.getElementById('internal-ssh-remove').onclick=()=>removeInternalSsh(`${document.querySelector('#internal-ssh-form [name=kind]').value}:${document.querySelector('#internal-ssh-form [name=id]').value}`);document.querySelectorAll('[data-ssh-add]').forEach(b=>b.onclick=()=>openInternalSshAdd(b.dataset.sshAdd));
     async function loadTargets(){try{managedTargets=(await api('/api/targets')).targets||[];renderManagedTargets()}catch(error){managementMessage('target-message',error.message,true)}}
-    function openTargetModal(target=null){editingTarget=target;const form=document.getElementById('target-modal-form');form.reset();form.elements.id.value=target?.id||'';form.elements.host.value=target?.host||'';form.elements.user.value=target?.user||'root';form.elements.port.value=target?.port||22;form.elements.id.readOnly=Boolean(target);document.getElementById('target-modal-title').textContent=target?'Edit external system':'Add external system';managementMessage('target-modal-message','');document.getElementById('target-modal').classList.add('open')}
+    function openTargetModal(target=null){editingTarget=target;const form=document.getElementById('target-modal-form');form.reset();form.elements.id.value=target?.id||'';form.elements.host.value=target?.host||'';form.elements.user.value=target?.user||'root';form.elements.port.value=target?.port||22;form.elements.identity_file.value=target?.identity_file||'';form.elements.id.readOnly=Boolean(target);document.getElementById('target-modal-title').textContent=target?'Edit external system':'Add external system';managementMessage('target-modal-message','');document.getElementById('target-modal').classList.add('open')}
     function closeTargetModal(){document.getElementById('target-modal').classList.remove('open');editingTarget=null}
-    async function saveTarget(e){e.preventDefault();const form=e.currentTarget;const payload={id:form.elements.id.value,host:form.elements.host.value,user:form.elements.user.value,port:Number(form.elements.port.value)};try{await api(editingTarget?`/api/targets/${encodeURIComponent(editingTarget.id)}`:'/api/targets',{method:editingTarget?'PUT':'POST',body:JSON.stringify(payload)});closeTargetModal();await loadTargets();await loadStatus();managementMessage('target-message','External target saved.')}catch(error){managementMessage('target-modal-message',error.message,true)}}
+    async function saveTarget(e){e.preventDefault();const form=e.currentTarget;const payload={id:form.elements.id.value,host:form.elements.host.value,user:form.elements.user.value,port:Number(form.elements.port.value),identity_file:form.elements.identity_file.value};try{await api(editingTarget?`/api/targets/${encodeURIComponent(editingTarget.id)}`:'/api/targets',{method:editingTarget?'PUT':'POST',body:JSON.stringify(payload)});closeTargetModal();await loadTargets();await loadStatus();managementMessage('target-message','External target saved.')}catch(error){managementMessage('target-modal-message',error.message,true)}}
     async function removeTarget(id){if(!confirm(`Remove external system "${id}"?`))return;try{await api(`/api/targets/${encodeURIComponent(id)}`,{method:'DELETE'});await loadTargets();await loadStatus();managementMessage('target-message','External target removed.')}catch(error){managementMessage('target-message',error.message,true)}}
-    async function testTarget(id){try{const d=await api(`/api/targets/${encodeURIComponent(id)}/test`,{method:'POST',body:'{}'});const t=d.target||{};managementMessage('target-message',`Connection successful · ${t.os||'OS unknown'} · ${t.updater||'updater unknown'}`)}catch(error){managementMessage('target-message',error.message,true)}}
+    async function testTarget(id,payload=null){const messageId=payload?'target-modal-message':'target-message';managementMessage(messageId,'Testing connection…');try{const d=await api(`/api/targets/${encodeURIComponent(id)}/test`,{method:'POST',body:JSON.stringify(payload||{})});const t=d.target||{};managementMessage(messageId,`Connection successful · ${t.os||'OS unknown'}`)}catch(error){managementMessage(messageId,`Connection failed: ${error.message||'The connection test failed.'}`,true)}}
     function targetRow(t){const rebootField=t.type==='lxc'?'':`<div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div>`;const row=document.createElement('div');row.className=`target-row ${securitySplitSupported(t)?'split-row':'total-only-row'}`;if(t.type==='lxc')row.classList.add('lxc-row');row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div>${securitySplitSupported(t)?`<div class="target-field"><span class="target-label">Normal</span><strong>${updateValue(knownNormalUpdates(t))}</strong></div><div class="target-field"><span class="target-label">Security</span><strong>${updateValue(knownSecurityUpdates(t))}</strong></div>`:`<div class="target-field"><span class="target-label">Updates</span><strong>${updateValue(knownTotalOnlyUpdates(t))}</strong></div>`}${rebootField}<div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button></div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const update=row.querySelector('.update');update.disabled=running(t.id)||!TARGET_UPDATEABLE(t);update.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});return row}
-    document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));document.getElementById('internal-ssh-open').onclick=()=>setInternalSshView(true);document.getElementById('internal-ssh-back').onclick=()=>setInternalSshView(false);document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').onclick=()=>{const id=document.querySelector('#target-modal-form [name=id]').value;if(id)testTarget(id)};document.getElementById('target-modal-form').onsubmit=saveTarget;document.getElementById('external-settings-close').onclick=closeExternalSettings;document.getElementById('external-settings-form').onsubmit=saveExternalSettings;
+    document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));document.getElementById('internal-ssh-open').onclick=()=>setInternalSshView(true);document.getElementById('internal-ssh-back').onclick=()=>setInternalSshView(false);document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').onclick=()=>{const form=document.getElementById('target-modal-form');const payload={id:form.elements.id.value,host:form.elements.host.value,user:form.elements.user.value,port:Number(form.elements.port.value),identity_file:form.elements.identity_file.value};if(payload.id)testTarget(payload.id,payload)};document.getElementById('target-modal-form').onsubmit=saveTarget;document.getElementById('external-settings-close').onclick=closeExternalSettings;document.getElementById('external-settings-form').onsubmit=saveExternalSettings;
     async function bootstrap(){try{await ensureSession();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){if(csrfToken)notice(error.message,true)}}
     const aggregateField=field=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[],values=targets.map(t=>t?.[field]).filter(Number.isInteger);return values.length?values.reduce((sum,value)=>sum+value,0):null};
     const aggregateTotalOnly=()=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[],values=targets.map(knownTotalOnlyUpdates).filter(Number.isInteger);return values.length?values.reduce((sum,value)=>sum+value,0):null};
@@ -842,7 +843,7 @@ def parse_inventory_text(content):
             continue
         if current is not None:
             current["lines"].append(line)
-            key_match = re.match(r"^\s*(host|port|transport|user)\s*=\s*([^#\r\n]*?)\s*(?:#.*)?(?:\r?\n)?$", line)
+            key_match = re.match(r"^\s*(host|port|transport|user|identity_file)\s*=\s*([^#\r\n]*?)\s*(?:#.*)?(?:\r?\n)?$", line)
             if key_match:
                 current["values"][key_match.group(1)] = key_match.group(2).strip()
     return sections
@@ -855,7 +856,8 @@ def inventory_payload(content):
         result.append({"id": section["id"], "host": values.get("host", ""),
                        "user": values.get("user", "root"),
                        "port": int(values.get("port", "22")),
-                       "transport": values.get("transport", "ssh")})
+                       "transport": values.get("transport", "ssh"),
+                       "identity_file": values.get("identity_file", "")})
     return result
 
 
@@ -1220,7 +1222,32 @@ def validate_target_payload(payload, current_id=None):
         raise ValueError("SSH user is invalid.")
     if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
         raise ValueError("SSH port must be between 1 and 65535.")
-    return {"id": target_id, "host": host, "user": user, "port": port, "transport": "ssh"}
+    identity_file = payload.get("identity_file", "")
+    if not isinstance(identity_file, str) or "\n" in identity_file or "\r" in identity_file or len(identity_file) > 1024:
+        raise ValueError("Identity file must be a single-line path.")
+    if identity_file and (not identity_file.startswith("/") or not Path(identity_file).is_file() or not os.access(identity_file, os.R_OK)):
+        raise ValueError("Identity file must be an existing readable absolute path.")
+    return {"id": target_id, "host": host, "user": user, "port": port,
+            "transport": "ssh", "identity_file": identity_file}
+
+
+def ssh_failure_message(output):
+    """Map SSH diagnostics to a safe, useful user-facing message."""
+    text = (output or "").upper()
+    if "REMOTE HOST IDENTIFICATION HAS CHANGED" in text or "HOST KEY" in text:
+        return "Host key verification failed."
+    if "PERMISSION DENIED" in text or "AUTHENTICATION" in text:
+        return "Authentication failed."
+    if "CONNECTION REFUSED" in text:
+        return "Connection refused."
+    if "TIMED OUT" in text or "TIMEOUT" in text:
+        return "Connection timed out."
+    if ("NO ROUTE TO HOST" in text or "NETWORK IS UNREACHABLE" in text or
+            "COULD NOT RESOLVE HOST" in text):
+        return "Host unreachable."
+    if "IDENTITY FILE" in text or "NO SUCH FILE" in text:
+        return "SSH identity file is unavailable."
+    return "Connection failed."
 
 
 def update_inventory_text(content, target, current_id=None, delete=False):
@@ -1232,6 +1259,8 @@ def update_inventory_text(content, target, current_id=None, delete=False):
             content += "\n"
         content += (f"\n[{target['id']}]\n" if content else f"[{target['id']}]\n")
         content += f"host={target['host']}\ntransport=ssh\nuser={target['user']}\nport={target['port']}\n"
+        if target.get("identity_file"):
+            content += f"identity_file={target['identity_file']}\n"
         return content
     if index is None:
         raise KeyError("target not found")
@@ -1241,10 +1270,14 @@ def update_inventory_text(content, target, current_id=None, delete=False):
     if delete:
         return content[:start] + content[end:]
     replacements = {"host": target["host"], "transport": "ssh", "user": target["user"], "port": str(target["port"])}
+    if target.get("identity_file"):
+        replacements["identity_file"] = target["identity_file"]
     found = set()
     new_lines = []
     for line in section_text.splitlines(keepends=True):
-        match = re.match(r"^(\s*)(host|port|transport|user)(\s*=\s*)([^#\r\n]*?)(\s*(?:#.*)?)?(\r?\n)?$", line)
+        match = re.match(r"^(\s*)(host|port|transport|user|identity_file)(\s*=\s*)([^#\r\n]*?)(\s*(?:#.*)?)?(\r?\n)?$", line)
+        if match and match.group(2) == "identity_file" and not target.get("identity_file"):
+            continue
         if match and match.group(2) in replacements:
             key = match.group(2); found.add(key)
             new_lines.append(f"{match.group(1)}{key}{match.group(3)}{replacements[key]}{match.group(5) or ''}{match.group(6) or ''}")
@@ -1707,6 +1740,80 @@ class StatusHandler(BaseHTTPRequestHandler):
         locked_atomic_update(self.server.internal_ssh_file, update)
         self.send_json({"message": "Internal SSH override removed; automatic/default resolution restored.", "target": target_id})
 
+    @staticmethod
+    def ssh_command(target, remote_command="true"):
+        args = ["ssh", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
+        if target.get("identity_file"):
+            args += ["-o", "IdentitiesOnly=yes", "-i", target["identity_file"]]
+        args += ["-p", str(target.get("port", 22)),
+                 f"{target.get('user', 'root')}@{target['host']}", remote_command]
+        return args
+
+    def run_ssh_connection_test(self, target, remote_command="true", timeout=8):
+        if not target.get("host"):
+            raise ValueError("No SSH configuration is available for this target.")
+        try:
+            result = subprocess.run(self.ssh_command(target, remote_command),
+                                    stdin=subprocess.DEVNULL, capture_output=True,
+                                    text=True, timeout=timeout, check=False)
+        except subprocess.TimeoutExpired:
+            return None, "Connection timed out."
+        except OSError:
+            return None, "Connection test could not be started."
+        if result.returncode:
+            return result, ssh_failure_message(result.stderr)
+        return result, None
+
+    def owner_node_for_guest(self, target_id):
+        """Resolve a guest through the same cluster resolver as runtime jobs."""
+        script = getattr(self.server, "cluster_target_script", DEFAULT_CLUSTER_TARGET_SCRIPT)
+        if not script.is_file():
+            raise RuntimeError("Owner-node resolver is unavailable.")
+        result = self.run_command([str(script), "resolve", target_id], timeout=15)
+        if result.returncode:
+            raise RuntimeError("The guest owner node could not be resolved.")
+        fields = result.stdout.strip().split("\t")
+        if len(fields) != 6 or fields[0] != target_id:
+            raise RuntimeError("The guest owner node response is invalid.")
+        return {"id": fields[0], "kind": fields[1], "node": fields[2],
+                "name": fields[3], "host": fields[4], "local": fields[5] == "true"}
+
+    def owner_node_target(self, owner):
+        nodes, _ = self.internal_ssh_catalog()
+        node = next((item for item in nodes
+                     if item["kind"] == "node" and item["id"] == owner["node"]), None)
+        if node is None:
+            node = {"kind": "node", "id": owner["node"], "host": owner["host"],
+                    "user": "root", "port": 22, "identity_file": "", "enabled": True}
+        if not node.get("enabled", True):
+            raise ValueError("The owner-node SSH connection is disabled.")
+        return node
+
+    def run_owner_guest_connection_test(self, target):
+        owner = self.owner_node_for_guest(target["id"])
+        if owner["local"]:
+            return self.run_ssh_connection_test(target)
+        if not target.get("host"):
+            return None, "No SSH configuration is available for this guest."
+        owner_target = self.owner_node_target(owner)
+        if not owner_target.get("host"):
+            return None, "The owner node has no SSH configuration."
+        # The inner command runs on the owner node, matching the execution
+        # context used by check/update for guests on remote Proxmox nodes.
+        inner = shlex.join(self.ssh_command(target, "true"))
+        outer = self.ssh_command(owner_target, f"exec {inner}")
+        try:
+            result = subprocess.run(outer, stdin=subprocess.DEVNULL,
+                                    capture_output=True, text=True, timeout=12,
+                                    check=False)
+        except subprocess.TimeoutExpired:
+            return None, "Owner node connection timed out."
+        except OSError:
+            return None, "Owner-node connection test could not be started."
+        if result.returncode:
+            return result, ssh_failure_message(result.stderr)
+        return result, None
+
     def handle_internal_ssh_test(self, kind, target_id):
         _, target = self.internal_ssh_section(kind, target_id)
         if target.get("local"):
@@ -1715,32 +1822,14 @@ class StatusHandler(BaseHTTPRequestHandler):
         if not target.get("host"):
             self.send_json(error_payload("SSH_NOT_CONFIGURED", "No SSH configuration is available for this target."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
-        args = ["ssh", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
-        if target.get("identity_file"):
-            args += ["-o", "IdentitiesOnly=yes", "-i", target["identity_file"]]
-        args += ["-p", str(target["port"]), f"{target['user']}@{target['host']}", "true"]
         try:
-            result = subprocess.run(args, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                                    timeout=8, check=False)
-        except subprocess.TimeoutExpired:
-            self.send_json(error_payload("SSH_TEST_FAILED", "Connection timed out."), HTTPStatus.BAD_GATEWAY)
+            result, message = (self.run_owner_guest_connection_test(target)
+                                if kind in {"vm", "lxc"} and target_id.isdigit()
+                                else self.run_ssh_connection_test(target))
+        except (RuntimeError, ValueError) as error:
+            self.send_json(error_payload("SSH_TEST_FAILED", str(error)), HTTPStatus.BAD_GATEWAY)
             return
-        except OSError:
-            self.send_json(error_payload("SSH_TEST_FAILED", "Connection test could not be started."), HTTPStatus.BAD_GATEWAY)
-            return
-        if result.returncode:
-            error_text = result.stderr.upper()
-            message = "Connection failed."
-            if "REMOTE HOST IDENTIFICATION HAS CHANGED" in error_text or "HOST KEY" in error_text:
-                message = "Host key verification failed."
-            elif "PERMISSION DENIED" in error_text or "AUTHENTICATION" in error_text:
-                message = "Authentication failed."
-            elif "CONNECTION REFUSED" in error_text:
-                message = "Connection refused."
-            elif "TIMED OUT" in error_text or "TIMEOUT" in error_text:
-                message = "Connection timed out."
-            elif "NO ROUTE TO HOST" in error_text or "NETWORK IS UNREACHABLE" in error_text or "COULD NOT RESOLVE HOST" in error_text:
-                message = "Host unreachable."
+        if message:
             self.send_json(error_payload("SSH_TEST_FAILED", message), HTTPStatus.BAD_GATEWAY)
             return
         self.send_json({"message": "Connection successful."})
@@ -1867,27 +1956,30 @@ class StatusHandler(BaseHTTPRequestHandler):
         locked_atomic_update(self.server.inventory_file, lambda _: updated)
         self.send_json({"message": "External target removed.", "target": target_id})
 
-    def handle_target_test(self, target_id):
+    def handle_target_test(self, target_id, payload=None):
         if not self.valid_target(target_id):
             self.send_json(error_payload("INVALID_TARGET", "The target name is invalid."), HTTPStatus.BAD_REQUEST)
             return
         try:
-            if not any(item["id"] == target_id for item in self.inventory_data()):
-                self.send_json(error_payload("TARGET_NOT_FOUND", "That external target does not exist."), HTTPStatus.NOT_FOUND)
-                return
-            result = self.run_command([str(self.server.external_script), "check", target_id], timeout=150)
-            status = None
-            if self.server.status_file.exists():
-                payload = json.loads(self.server.status_file.read_text(encoding="utf-8"))
-                status = next((item for item in payload.get("targets", []) if item.get("id") == target_id), None)
-        except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
-            self.send_json(error_payload("CONNECTION_TEST_FAILED", "The connection test failed."), HTTPStatus.BAD_GATEWAY)
+            if payload is None or payload == {}:
+                target = next((item for item in self.inventory_data() if item["id"] == target_id), None)
+                if target is None:
+                    self.send_json(error_payload("TARGET_NOT_FOUND", "That external target does not exist."), HTTPStatus.NOT_FOUND)
+                    return
+            else:
+                candidate = dict(payload)
+                candidate["id"] = target_id
+                target = validate_target_payload(candidate, target_id)
+            result, message = self.run_ssh_connection_test(target, "uname -s", timeout=8)
+        except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+            self.send_json(error_payload("CONNECTION_TEST_FAILED", str(error) or "The connection test failed."), HTTPStatus.BAD_REQUEST)
             return
-        if result.returncode or not status:
-            message = (status or {}).get("error", {}).get("message") if status else "The target could not be checked."
-            self.send_json(error_payload("CONNECTION_TEST_FAILED", message or "The target could not be checked."), HTTPStatus.BAD_GATEWAY)
+        if message:
+            self.send_json(error_payload("CONNECTION_TEST_FAILED", message), HTTPStatus.BAD_GATEWAY)
             return
-        self.send_json({"message": "Connection test completed.", "target": status})
+        os_name = (result.stdout or "").strip().splitlines()[0] if result and result.stdout.strip() else "OS unknown"
+        self.send_json({"message": "Connection successful.",
+                        "target": {"id": target_id, "os": os_name}})
 
     def do_GET(self):  # noqa: N802 - stdlib handler API
         path = urlsplit(self.path).path
@@ -2142,7 +2234,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.send_json(error_payload("TARGET_NOT_SAVED", "External target was rejected and not changed."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         if len(parts) == 4 and parts[:2] == ["api", "targets"] and parts[3] == "test":
-            self.handle_target_test(parts[2])
+            self.handle_target_test(parts[2], payload)
             return
         if len(parts) == 3 and parts[:2] == ["api", "check"]:
             self.action_check(parts[2])
@@ -2389,6 +2481,7 @@ def parse_args():
     parser.add_argument("--inventory-file", type=Path, default=DEFAULT_INVENTORY_FILE)
     parser.add_argument("--inventory-script", type=Path, default=DEFAULT_INVENTORY_SCRIPT)
     parser.add_argument("--external-script", type=Path, default=DEFAULT_EXTERNAL_SCRIPT)
+    parser.add_argument("--cluster-target-script", type=Path, default=DEFAULT_CLUSTER_TARGET_SCRIPT)
     parser.add_argument("--asset-dir", type=Path, default=DEFAULT_ASSET_DIR)
     parser.add_argument("--cli", type=Path, default=DEFAULT_CLI, help="ultimate-updater CLI path")
     parser.add_argument("--job-runner", type=Path, default=DEFAULT_JOB_RUNNER)
@@ -2417,6 +2510,7 @@ def main():
     server.internal_ssh_file = args.config_file.parent / "internal-ssh.conf"
     server.backup_state_file = DEFAULT_BACKUP_STATE_FILE
     server.inventory_script, server.external_script = args.inventory_script, args.external_script
+    server.cluster_target_script = args.cluster_target_script
     server.tag_filter_script = args.config_file.parent / "tag-filter.sh"
     server.asset_dir = args.asset_dir
     server.job_runner, server.jobs_dir = args.job_runner, args.jobs_dir
