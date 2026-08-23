@@ -182,6 +182,12 @@ PY
 
 STATUS_MODEL_FINISH() {
   local status_file="$STATUS_MODEL_FILE" record_file="$STATUS_MODEL_RECORD_FILE"
+  local status_lock_file="${status_file}.lock" status_lock_fd
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
   python3 - "$record_file" "$status_file" "${STATUS_MODEL_PARTIAL:-false}" <<'PY'
 import base64
 import json
@@ -331,6 +337,7 @@ except Exception:
     raise
 PY
   local result=$?
+  exec {status_lock_fd}>&-
   if [[ $result -eq 0 ]]; then
     rm -f -- "$record_file"
   fi

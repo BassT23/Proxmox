@@ -25,6 +25,16 @@ cp "$ROOT_DIR/status-model.sh" "$LOCAL_FILES/status-model.sh"
 cat > "$WORK_DIR/check-status.json" <<'EOF'
 {"schema_version":1,"targets":[{"id":"191","type":"lxc","transport":"pct","reachable":true,"os":"ubuntu","updates":{"available":0},"reboot_required":false,"check_status":"ok","error":null}]}
 EOF
+cat > "$WORK_DIR/pre-status.json" <<'EOF'
+{"schema_version":1,"targets":[
+  {"id":"100","type":"vm","check_status":"ok","reachable":true,"updates":{"available":1}},
+  {"id":"191","type":"lxc","check_status":"error","reachable":true,"updates":{"available":9}},
+  {"id":"310","type":"vm","check_status":"ok","reachable":true,"updates":{"available":2}},
+  {"id":"340","type":"vm","check_status":"ok","reachable":true,"updates":{"available":3}},
+  {"id":"external-linux","type":"external","check_status":"ok","reachable":true,"updates":{"available":4}}
+]}
+EOF
+cp "$WORK_DIR/pre-status.json" "$LOCAL_FILES/status.json"
 cat > "$WORK_DIR/check.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$UU_REMOTE_DEFER_STATUS_FINISH" > "$WORK_DIR/defer-value"
@@ -49,7 +59,15 @@ grep -Fxq "$LOCAL_FILES/status-model.sh" "$WORK_DIR/status-script"
 grep -Fq 'UU_EXPLICIT_TARGET_CHECK=true' "$ROOT_DIR/update.sh"
 # shellcheck disable=SC2016 # literal shell fragments are assertion targets.
 grep -Fq 'STATUS_MODEL_SCRIPT="$LOCAL_FILES/status-model.sh"' "$ROOT_DIR/update.sh"
-grep -Fq 'UU_REMOTE_DEFER_STATUS_FINISH=false TAG_OUTPUT=false' "$ROOT_DIR/update.sh"
+grep -Fq 'STATUS_MODEL_PARTIAL=true UU_REMOTE_DEFER_STATUS_FINISH=false TAG_OUTPUT=false' "$ROOT_DIR/update.sh"
+python3 - "$LOCAL_FILES/status.json" <<'PY'
+import json, sys
+targets = {item["id"]: item for item in json.load(open(sys.argv[1], encoding="utf-8"))["targets"]}
+assert set(targets) == {"100", "191", "310", "340", "external-linux"}
+assert targets["191"]["check_status"] == "ok"
+assert targets["191"]["updates"]["available"] == 0
+assert targets["310"]["updates"]["available"] == 2
+PY
 
 # A successful helper with a not_checked record is not a successful capture.
 sed 's/"check_status":"ok"/"check_status":"not_checked"/' "$WORK_DIR/check-status.json" > "$WORK_DIR/check-status-not-checked.json"

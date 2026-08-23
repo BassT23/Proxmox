@@ -680,11 +680,14 @@ CAPTURE_POST_UPDATE_STATUS() {
     return 0
   fi
   if [[ -x "$CHECK_SCRIPT" && -f "$LOCAL_FILES/status-model.sh" ]]; then
+    # A post-update capture observes one target while the global status model
+    # remains authoritative for the whole inventory.  Keep the existing
+    # records and merge this fresh target observation into them.
     STATUS_MODEL_SCRIPT="$LOCAL_FILES/status-model.sh" \
     STATUS_MODEL_FILE="$LOCAL_FILES/status.json" \
     STATUS_MODEL_RECORD_FILE="$TEMP_STATE_DIR/post-update-status.records" \
     STATUS_MODEL_DIAGNOSTICS_FILE="$artifact_dir/post-update-status.diagnostics" \
-    STATUS_MODEL_PARTIAL=false UU_REMOTE_DEFER_STATUS_FINISH=false TAG_OUTPUT=false \
+    STATUS_MODEL_PARTIAL=true UU_REMOTE_DEFER_STATUS_FINISH=false TAG_OUTPUT=false \
     UU_DEFER_NOTIFICATION=true UU_EXPLICIT_TARGET_CHECK=true \
     "$CHECK_SCRIPT" "$kind" "$target" </dev/null || refresh_rc=$?
     if [[ "$refresh_rc" -eq 0 ]]; then
