@@ -94,28 +94,43 @@ HARNESS
 chmod 750 "$WORK_DIR/ssh-harness.sh"
 (cd "$WORK_DIR" && bash ssh-harness.sh)
 
-# With no SSH override, a reachable FreeBSD-shaped QGA must be neutral during
-# initial inventory and must not run the Linux /bin/true probe.
+# With no SSH override, a reachable FreeBSD-shaped QGA uses the read-only pkg
+# check and must not run the Linux /bin/true probe.
 awk '/^CHECK_VM_QEMU \(\) \{/{copy=1} /^CHECK_VM_QEMU_WINDOWS \(\) \{/{if(copy) exit} copy' \
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/check-qemu.sh"
 cat > "$WORK_DIR/qga-harness.sh" <<'HARNESS'
 #!/bin/bash
 set -euo pipefail
-VM=100 INITIAL_INVENTORY=true STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME="" CONFIG_FILE=/dev/null RDU=false
+VM=100 NAME=pfsense INITIAL_INVENTORY=true STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME="" CONFIG_FILE=/dev/null RDU=false
 LOG="$PWD/qga-result"
+SANITIZE_NUMBER() { printf '%s' "$1"; }
+PRINT_UPDATE_SPLIT() { :; }
+GN='' BL='' CL=''
 timeout() { shift; "$@"; }
 qm() {
   case "$1" in
     agent) [[ "${QGA_FAIL:-false}" != true ]] ;;
-    guest) printf 'name: FreeBSD\n' ;;
+    guest) printf 'name: FreeBSD\nkernel-version: FreeBSD pfSense\n' ;;
   esac
 }
-QEMU_GUEST_EXEC() { printf 'linux-probe-called\n' >> "$LOG"; QEMU_EXEC_TRANSPORT_RC=0; QEMU_EXEC_EXITCODE=0; }
+QEMU_GUEST_EXEC() {
+  printf 'qga-exec:%s\n' "$*" >> "$LOG"
+  QEMU_EXEC_STDERR=''
+  QEMU_EXEC_TRANSPORT_RC=0
+  QEMU_EXEC_EXITCODE=0
+  if [[ "$*" == *'pkg version -U -l <'* ]]; then
+    QEMU_EXEC_STDOUT='pfSense-pkg-test <'
+  else
+    QEMU_EXEC_STDOUT='linux-probe-called'
+  fi
+  QEMU_EXEC_OUTPUT="$QEMU_EXEC_STDOUT"
+}
 STATUS_MODEL_RECORD() { printf 'record:%s\n' "$*" >> "$LOG"; }
 source "$PWD/check-qemu.sh"
 CHECK_VM_QEMU
-grep -Fq 'record:100 vm qga true FreeBSD  null null not_checked UNSUPPORTED_GUEST_OS' "$LOG"
-if grep -Fq linux-probe-called "$LOG"; then
+grep -Fq 'qga-exec:100 --timeout 120 -- pkg version -U -l <' "$LOG"
+grep -Fq 'record:100 vm qga true pfSense pkg 1 false updates_available' "$LOG"
+if grep -Fq '/bin/true' "$LOG"; then
   echo 'FreeBSD QGA path executed Linux guest probe' >&2
   exit 1
 fi
@@ -127,8 +142,31 @@ if CHECK_VM_QEMU; then
 fi
 grep -Fq 'record:100 vm qga false' "$LOG"
 grep -Fq 'QGA_TRANSPORT' "$LOG"
+
+# A pkg guest-exec failure is reported precisely.
+: > "$LOG"
+QGA_FAIL=false
+QEMU_GUEST_EXEC() {
+  QEMU_EXEC_STDOUT=''
+  QEMU_EXEC_OUTPUT='pkg: command failed'
+  QEMU_EXEC_TRANSPORT_RC=0
+  QEMU_EXEC_EXITCODE=127
+}
+if CHECK_VM_QEMU; then
+  echo 'pkg guest-exec failure was not reported' >&2
+  exit 1
+fi
+grep -Fq 'QGA_GUEST_EXEC' "$LOG"
+
 HARNESS
 chmod 750 "$WORK_DIR/qga-harness.sh"
 (cd "$WORK_DIR" && bash qga-harness.sh)
+
+# The check path is independent from the write/update setting, while the
+# existing update path remains gated by FREEBSD_UPDATES.
+# shellcheck disable=SC2016 # this is a literal source-code assertion
+freebsd_guard='KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true'
+grep -Fq "$freebsd_guard" "$ROOT_DIR/update.sh"
+grep -Fq 'Free BSD skipped by user' "$ROOT_DIR/update.sh"
 
 echo 'VM SSH priority and FreeBSD QGA safety tests: PASS'

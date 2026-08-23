@@ -1447,19 +1447,44 @@ CHECK_VM_QEMU () {
   OS_NAME="${OS_NAME//\"/}"
   OS_NAME="${OS_NAME//\'/}"
   OS_NAME_LOWER="${OS_NAME,,}"
+  # FreeBSD/pfSense commonly exposes its identity through kernel-version
+  # rather than the optional QGA `name` field. Checks are read-only and do
+  # not depend on the FreeBSD update setting.
+  if [[ "${OS_INFO,,}" =~ freebsd|pfsense ]]; then
+    if [[ "${OS_INFO,,}" =~ pfsense ]]; then
+      OS_NAME=pfSense
+    else
+      OS_NAME=FreeBSD
+    fi
+    OS_NAME_LOWER="${OS_NAME,,}"
+  fi
   if [[ "${OS_INFO,,}" =~ windows ]]; then
     CHECK_VM_QEMU_WINDOWS
     return
   fi
   if [[ "$OS_NAME_LOWER" =~ freebsd|pfsense ]]; then
-    if [[ "${INITIAL_INVENTORY:-false}" == true ]]; then
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" "" "null" "null" \
-        not_checked UNSUPPORTED_GUEST_OS \
-        "QEMU Guest Agent is reachable, but FreeBSD/pfSense package checks are not supported" \
+    QEMU_GUEST_EXEC "$VM" --timeout 120 -- pkg version -U -l "<"
+    if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
+      STATUS_MODEL_RECORD "$VM" vm qga false "$OS_NAME" pkg "null" "null" \
+        error QGA_TRANSPORT "QEMU Guest Agent transport failed during pkg check: ${QEMU_EXEC_OUTPUT}" \
         "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-      return 0
+      return 1
     fi
-    STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" "" "null" "null" unsupported UNSUPPORTED_GUEST_OS "No supported updater detected"
+    if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" pkg "null" "null" \
+        error QGA_GUEST_EXEC "pkg version failed for VM $VM: ${QEMU_EXEC_OUTPUT}" \
+        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 1
+    fi
+    UPDATES=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | awk '$NF == "<" {count++} END {print count+0}')
+    UPDATES=$(SANITIZE_NUMBER "$UPDATES")
+    UPDATES=${UPDATES:-0}
+    [[ "$UPDATES" -gt 0 ]] && echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+    [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_SPLIT "$UPDATES" Unknown
+    QEMU_PKG_STATUS=ok
+    [[ "$UPDATES" -gt 0 ]] && QEMU_PKG_STATUS=updates_available
+    STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" pkg "$UPDATES" false "$QEMU_PKG_STATUS" "" "" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$UPDATES" null
     return 0
   fi
   # Do not guess a Linux guest from a successful QGA ping alone.  In the
