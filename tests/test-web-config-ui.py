@@ -255,6 +255,10 @@ assert "replace(/^host:/,'')" in page
 assert "target-row.split-row { grid-template-columns" in page
 assert "target-row.total-only-row { grid-template-columns" in page
 assert "row.className=`target-row ${securitySplitSupported(t)?'split-row':'total-only-row'}`" in page
+assert ".target-row .row-last-check { min-width:150px; }" in page
+assert ".target-row .row-actions { min-width:max-content; white-space:nowrap; }" in page
+assert "picker.style.setProperty('display',visible?'':'none','important')" in page
+assert "summary.style.setProperty('display',visible?'none':'grid','important')" in page
 
 # External runtime rows expose status/actions only; configuration management
 # remains in the separate management list below.
