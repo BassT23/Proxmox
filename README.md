@@ -152,12 +152,30 @@ and limitations in [Supported systems](docs/supported-systems.md) and
 
 Additional project documents: [Testing](TESTING.md), [5.1 release notes](RELEASE_NOTES_5.1_BETA.md), [5.1 upgrade notes](UPGRADE_NOTES_5.1.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
-## Support, contribution, and license
+## Q&A
 
-Report reproducible bugs through [GitHub Issues](https://github.com/BassT23/Proxmox/issues) or join the [Discussion](https://github.com/BassT23/Proxmox/discussions/60)/[Discord](https://discord.gg/nVpUg6BKn8). Keep secrets, private keys, and production credentials out of reports.
+[Discussion](https://github.com/BassT23/Proxmox/discussions/60)
+
+## Support
+
+Report reproducible bugs through [GitHub Issues](https://github.com/BassT23/Proxmox/issues) or join the [Discord](https://discord.gg/nVpUg6BKn8). Keep secrets, private keys, and production credentials out of reports.
+
+[![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
+
+## Contributors
+
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/BassT23"><img src="https://avatars.githubusercontent.com/u/30832786?v=4?s=100" width="100px;" alt="BassT23"/><br /><sub><b>BassT23</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=BassT23" title="Code">💻</a> <a href="#maintenance-BassT23" title="Maintenance">🚧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Gauvino"><img src="https://avatars.githubusercontent.com/u/68083474?v=4?s=100" width="100px;" alt="Gauvino"/><br /><sub><b>Gauvino</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=Gauvino" title="Code">💻</a> <a href="#translation-Gauvino" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/elbim"><img src="https://avatars.githubusercontent.com/u/28606318?v=4?s=100" width="100px;" alt="elbim"/><br /><sub><b>elbim</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=elbim" title="Code">💻</a> <a href="#translation-elbim" title="Documentation">📖</a></td>
+    </tr>
+  </tbody>
+</table>
 
 Ultimate Updater is free software under the GNU General Public License. See
-the repository license and [SECURITY.md](SECURITY.md) for project policies.
+the [LICENSE](LICENSE) and [SECURITY.md](SECURITY.md) for project policies.
 
 <div align="center">
 
