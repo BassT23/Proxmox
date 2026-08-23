@@ -127,8 +127,14 @@ assert "Select target<select" in page
 assert "Inventory target<select" not in page
 assert page.count("Use custom SSH settings for this system.") == 1
 assert "internalSshTargetLabel" in source
-assert "target_choice.required=false" in source
-assert "picker.required=true" in source
+assert "form.elements.target_choice.required=visible" in source
+assert "function setInternalSshTargetPicker(form,visible)" in source
+assert "setInternalSshTargetPicker(form,false)" in source
+assert "setInternalSshTargetPicker(form,true)" in source
+assert "form.elements.target_choice.disabled=!visible" in source
+assert "form.dataset.mode='edit'" in source
+assert "form.dataset.mode='add'" in source
+assert "form.elements.target_choice.required=visible" in source
 assert "key.split(':',2)" in source
 assert "form.dataset.targetKey=key" in source
 assert "t=internalSshTargets.find(item=>item.kind===kind&&item.id===id)" in source
