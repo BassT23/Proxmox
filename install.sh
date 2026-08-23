@@ -773,6 +773,12 @@ UPDATE () {
     # before CHECK_DIFF also prevents test files from being copied into /etc.
     rm -rf "$TEMP_FILES"/tests || true
     rm -rf "$TEMP_FILES"/TESTING.md || true
+    # Older self-updates could have copied development-only artifacts before
+    # the payload was narrowed. Remove only those known repository artifacts
+    # from the installed tree; user configuration and runtime files remain
+    # untouched.
+    rm -rf "$LOCAL_FILES/tests" "$LOCAL_FILES/.vscode" || true
+    rm -f "$LOCAL_FILES/.gitignore" || true
     chmod -R +x "$TEMP_FILES"/exit/*.sh
     cd "$TEMP_FILES"
     FILES="*.* **/*.*"
