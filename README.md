@@ -2,77 +2,67 @@
 
 # Ultimate Updater 5.1 Beta
 
-This `develop` branch is the **5.1 Beta** candidate. It has been validated
-against dedicated Proxmox test environments, but it remains a Beta: keep
-current backups and report unexpected behavior before using it on important
-systems.
+Central, safety-conscious updates and checks for Proxmox hosts, LXC
+containers, VMs, and selected external systems.
 
 <img src="https://github.com/user-attachments/assets/df181f9c-683b-4e9b-9234-80c158c7da98"
        style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
 
-[![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
+[![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
 [![downloads](https://img.shields.io/github/downloads/BassT23/Proxmox/total.svg)](https://github.com/BassT23/Proxmox/releases)
 [![Discord](https://img.shields.io/discord/1149671790864506882)](https://discord.gg/nVpUg6BKn8)
 
-Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
-
-I am no member of the Proxmox Server Solutions GmbH. This is not an official program from Proxmox!
-
 </div>
 
->  This is distributed in the hope that it will be useful, but
->  WITHOUT ANY WARRANTY; without even the implied warranty of
->  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
->  See the GNU General Public License for more details.
+> Ultimate Updater is distributed without warranty. Keep current backups and
+> review the safety settings before using it on important systems.
 
-<div align="center">
+Proxmox® is a registered trademark of Proxmox Server Solutions GmbH. This is
+an independent project and is not an official Proxmox program.
 
-**IN CASE OF EMERGENCY, I HOPE YOU HAVE BACKUPS FROM YOUR MACHINES!**
+## What it does
 
-**YOU HAVE BEEN WARNED!**
+Ultimate Updater is installed once on a Proxmox cluster and gives you one
+place to check and update hosts, LXC containers, VMs, and configured external
+systems. It supports interactive and headless operation, persistent jobs,
+status reporting, notifications, snapshots/backups, filters, and a central
+Web UI.
 
-</div>
+Key features include:
 
-### What does the script do:
-- The script makes system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
-- Make a snapshot before update (if your storage support it - [look here](https://pve.proxmox.com/wiki/Storage)). If not supported, you can choose to make a real backup, but this must be enabled in `update.conf` by user (take long time!)
-- After all, the updater makes a little cleaning (like `apt autoremove`) 
-- If the script detects "extra" installations, it could update this also. Look in config file, for that.
-- NEW: use your own scripts during update if you like. [Look here](https://github.com/BassT23/Proxmox/tree/develop#user-scripts)
+- A central cluster-aware CLI and Web UI.
+- Read-only checks separated from mutating updates.
+- APT, DNF/YUM, Pacman, APK, Windows, and FreeBSD/pfSense paths according to
+  the current support matrix.
+- VM access through QEMU Guest Agent or SSH, with lifecycle restoration.
+- Persistent server-side jobs that continue after a browser or SSH session
+  disconnects.
+- Separate normal/security counts where classification is supported; other
+  systems show a total count.
+- Snapshot and backup safety controls, filters, notifications, and logs.
 
-### Features:
-- Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
-- LXC distriburion upgrade (deb12 -> deb13) with `update -dist-upgrade`
-- Snapshot / Backup support (for Snapshot, your system must prepared for it)
-- Normal run is "Interactive" / Headless Mode can be run with `update -s`
-- Logging - location can be change in config file
-- Exit tracking, so you can send additional commands for finish or failure (edit files in `/etc/ultimate-updater/exit`)
-- [Config file](https://github.com/BassT23/Proxmox/tree/develop#config-file)
-- [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/tree/develop#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
-- send email after update/check
-- Trim filesystem on ext4 nodes
+## Requirements
 
-The updater is installed once per Proxmox cluster. A standalone single-node
-installation remains supported; additional cluster nodes are reached through
-the existing Proxmox/SSH cluster paths and do not need a second administrative
-Ultimate Updater installation.
+- A supported Proxmox VE host and root access for installation.
+- One installation per cluster, or one installation for a standalone node.
+- SSH host resolution/fingerprints for cluster nodes.
+- For VM access, either a working QEMU Guest Agent with `guest-exec` or
+  configured key-based SSH. See [VM and SSH requirements](docs/ssh.md).
+- Current backups before enabling updates.
 
-Info can be found with `update -h`
+## Installation
 
-Changelog: [here](https://github.com/BassT23/Proxmox/blob/master/change.log)
+Run the installer from a Proxmox host shell as root. The stable installer is:
 
-## 
-# Installation:
-In Proxmox GUI Host Shell or as root on proxmox host terminal:
-```
+```bash
 installer=$(mktemp)
 curl -4 -fSL --retry 0 https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh -o "$installer" && \
   bash -n "$installer" && bash "$installer"
 rm -f "$installer"
 ```
 
-For the published 5.1 Beta, use the `beta` branch explicitly:
+For the published 5.1 Beta, select the branch explicitly:
 
 ```bash
 installer=$(mktemp)
@@ -81,695 +71,98 @@ curl -4 -fSL --retry 0 https://raw.githubusercontent.com/BassT23/Proxmox/beta/in
 rm -f "$installer"
 ```
 
-# Usage:
- - If you want to run the updater globally for all managed nodes/lxc/vm and External targets run `update`
- - If you want to update only one specific lxc/vm run `update <ID>`
+The installer preserves existing configuration. Upgrade details are in
+[Upgrading](docs/upgrading.md); the current release history is in
+[`change.log`](change.log).
 
-##
-## Cluster-Mode preparation:
-**! For Cluster Installation, you only need to install on one Host !**
+## Quick start
 
-The nodes need to know each other. For that please edit the `/etc/hosts` file on each node. Otherwise, you can use the GUI. (NODE -> System -> Hosts)
+1. Install on the central Proxmox node.
+2. Review `/etc/ultimate-updater/update.conf` and the relevant VM/SSH or
+   external-target configuration.
+3. Open `https://<proxmox-node>:8765/` and verify the settings and target
+   inventory.
+4. Run a check first:
 
-Example add:
-```
-192.168.1.10   pve1
-192.168.1.11   pve2
-192.168.1.12   pve3
-...
-```
-IP and Name must match with node ip and its hostname.
-- IP can be found in node terminal with `hostname -I`
-- hostname can be found in node terminal with `hostname`
-
-After that make the fingerprints.
-The used sequence can be check, if you run `awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf"` from the host, on which Proxmox-Updater is installed.
-So connect from first node (on which you install the Proxmox-Updater) to node2 with `ssh pve2`. Then from node2 `ssh pve3`, and so on.
-
-## If you want to update the VMs also, you have two choices:
-1. Use the "light and easy" QEMU option
-
-     more infos here: [QEMU Guest Agent](https://pve.proxmox.com/wiki/Qemu-guest-agent)
-
-   A reachable QEMU Guest Agent alone is not sufficient for the updater. The
-   `guest-exec` capability is also required. Verify both commands from the
-   Proxmox host:
-
-   ```bash
-   qm agent <VMID> ping
-   qm guest exec <VMID> -- true
+   ```text
+   ultimate-updater check
    ```
 
-   If `qm agent <VMID> ping` works but `guest-exec` is disabled or not
-   allowed, check the guest distribution's QEMU Guest Agent policy or use the
-   SSH alternative below.
-
-2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
-
-     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/develop/ssh.md)
-
-### Kali Linux VMs
-
-Kali Linux is supported as a Debian-based guest. The VM still has to be
-prepared for one of the supported VM connection methods.
-
-For QEMU Guest Agent updates, enable the agent for the VM in Proxmox and
-install and start it inside Kali:
-
-```bash
-sudo apt update
-sudo apt install qemu-guest-agent
-sudo systemctl enable --now qemu-guest-agent
-```
-
-Then verify from the Proxmox host:
-
-```bash
-qm agent <VMID> ping
-qm guest exec <VMID> -- true
-```
-
-Both commands must work for QEMU-based guest updates. A reachable Guest Agent
-is not sufficient if the `guest-exec` capability is disabled. Alternatively,
-configure key-based SSH access as described in [SSH Connection](https://github.com/BassT23/Proxmox/blob/develop/ssh.md).
-
-Kali is handled by the Ultimate Updater as a Debian-based system and uses
-`apt` for update checks and updates.
-
-### Windows VMs (deferred / experimental)
-
-Windows VMs can use the QEMU Guest Agent and the built-in Windows PowerShell
-and Windows Update APIs. The VM must provide both a working QEMU Guest Agent
-and the `guest-exec` capability; a successful agent ping alone is not enough.
-No SSH, WinRM, additional agent, or PowerShell module is required. Updates
-are started through the node-local session-independent job runner, so the
-client connection may be closed after the job has started.
-
-Windows is currently deferred from the supported Beta baseline pending a
-dedicated live validation. Do not include Windows in automatic Beta test runs.
-
-The updater reports whether Windows requires a reboot, but never reboots the
-VM automatically. This first Windows path does not use `winget` and does not
-force Windows feature upgrades.
-
-# Update the script:
-`update -up`
-
-If update run into issue, please remove first with:
-```
-installer=$(mktemp)
-curl -4 -fSL --retry 0 https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh -o "$installer" && \
-  bash -n "$installer" && bash "$installer" uninstall
-rm -f "$installer"
-```
-and install new
-
-# Testing / Validation
-
-Development changes are validated on dedicated non-production Proxmox test
-environments before being pushed to the development branch. Validation covers
-single-node and multi-node/cluster scenarios, multiple Linux distributions in
-LXC guests, QEMU VMs through SSH and QEMU Guest Agent paths, running and stopped
-guest lifecycles, templates, controlled failure cases, normal/check-only and
-script-only paths, backup/snapshot handling, and configuration migration from
-older updater versions. Technical test-environment details are documented in
-[`TESTING.md`](TESTING.md).
-
-# Config File:
-The config file is stored under `/etc/ultimate-updater/update.conf`
-
-The active `update.conf` contains your personal settings and is preserved when
-the updater is updated. The current project template is provided separately as
-`/etc/ultimate-updater/update.conf.dist`. Compare both files to review new or
-changed options:
-
-`diff -u /etc/ultimate-updater/update.conf /etc/ultimate-updater/update.conf.dist`
-
-## Target inventory
-
-Global updater settings remain in `update.conf`. The optional
-`/etc/ultimate-updater/targets.conf` is reserved for reachability information
-about additional systems, so `update.conf` does not have to grow with every
-target. Proxmox hosts, LXC containers, and VMs continue to use their existing
-core paths. Historical SSH files under `VMs/<VMID>` remain internal VM SSH
-profiles and are never converted into External targets.
-
-The inventory uses small INI-style sections. The current external-target
-implementation detects the operating system, distribution, package manager,
-and update method automatically where possible:
-
-```ini
-[raspi]
-host=192.0.2.50
-transport=ssh
-user=operator
-port=22
-identity_file=/root/.ssh/ultimate-updater-external
-```
-
-External Debian, Ubuntu, and Raspberry Pi OS style apt-based systems, as well
-as Rocky Linux, RHEL-compatible AlmaLinux, and Fedora dnf systems, can be
-checked and updated over SSH. The operating system and package manager are
-detected from `/etc/os-release`; do not add `os` or `updater` fields to the
-inventory. Use `ultimate-updater external setup <target>` to create a
-dedicated Ed25519 key on demand and prepare the remote helper bootstrap.
-Checks use a normal SSH user and are read-only; updates use the root-owned
-`/usr/local/sbin/ultimate-updater-external` through a restricted sudoers
-entry. The setup never stores a password and never requires
-`NOPASSWD: ALL`. No Ultimate Updater agent is installed on the remote
-system. An absent or empty `targets.conf` leaves the existing Proxmox
-workflow unchanged. External targets do not receive Proxmox vzdump backups or
-snapshots. Unknown RPM-like systems remain unsupported rather than being
-treated as Rocky/RHEL automatically.
-
-For APT targets, a check runs `apt-get -s upgrade` against the existing local
-package metadata and does not run `apt-get update`; update counts can
-therefore be stale. An update runs the helper's unattended APT sequence with
-`--force-confdef` and `--force-confold`, then reports any required reboot
-without rebooting automatically. Before an External update, record a recent
-manual backup verification with `ultimate-updater external verify-backup
-<target> [reference]`. Verification is local, time-bound metadata and does
-not contact the External target; the default validity window is 24 hours.
-Without a recent verification, an External update is blocked. A single run
-may explicitly accept the risk with `ultimate-updater update <target>
---without-verified-backup`; this override is not persisted. Automatic External
-backup hooks are not implemented yet.
-
-Each External Linux system also owns its local settings at
-`/etc/ultimate-updater/external.conf` (`root:root`, mode `0644`). The local
-file is the source of truth for that External system; the central instance
-only initializes it from defaults during `external setup` or changes it when
-an owner explicitly uses External Management. It is not overwritten during
-ordinary checks or updates. The allowlisted settings currently include the
-separate `ONLY_UPDATE_CHECK`, `EXCLUDE_UPDATE_CHECK`, `ONLY`, and `EXCLUDE`
-filters. `ONLY` takes precedence over its matching `EXCLUDE` for each run
-type. The central UI reads and writes these settings through the fixed,
-validated remote helper path; it does not transfer secrets or arbitrary file
-paths. A missing, invalid, or offline local configuration is reported rather
-than silently replaced with central values. On an individual External node,
-these filters match that target's configured External identity; central
-inventory filters still decide which External systems are contacted at all.
-
-### Historical internal VM SSH profiles
-
-During installation or self-update, existing files in
-`/etc/ultimate-updater/VMs/<ID>` remain internal Proxmox VM SSH profiles.
-The VM SSH fallback reads `IP`, `USER`, and `SSH_VM_PORT`; these files are
-never appended to `targets.conf` or displayed as External systems.
-
-Early 5.1 Beta builds could incorrectly create `[legacy-<ID>]` External
-sections from these files. The self-update cleanup removes only such sections
-when migration evidence exists and host/user/port exactly match the
-corresponding VM profile. The cleanup is atomic and idempotent; real External
-targets and the original VM files are preserved. Unknown or malformed fields
-are not executed.
-
-Internally, the current Proxmox paths use small shared transport wrappers for
-local, LXC (`pct`), and SSH execution. QEMU Guest Agent execution keeps its
-existing readiness and policy handling. This prepares a Target → Transport →
-Updater split without changing the existing Proxmox target behavior.
-
-### Internal SSH connections
-
-Remote Proxmox nodes and internal Proxmox VMs can have explicit SSH overrides
-in `/etc/ultimate-updater/internal-ssh.conf`. This is a validated, data-only
-configuration (not a shell file) and is separate from `targets.conf`.
-Without an override, nodes use the Corosync address and global SSH defaults;
-VMs use their existing `VMs/<VMID>` profile or QEMU Guest Agent behavior.
-The Web UI shows the resolved values and their source under **Internal SSH
-Connections**, where an authenticated owner can save, test, edit, or remove
-an override. Removing one restores automatic/default resolution. Only the
-identity-file path is stored or displayed; private key contents and passwords
-are never handled by the UI.
-
-## Machine-readable status
-
-`check-updates.sh` additionally writes `/etc/ultimate-updater/status.json`
-after a completed check. The file uses `schema_version: 1` and contains one
-record per target that produced a result. It is written atomically, so a
-failed generation keeps the previous complete file.
-
-Each target record contains its `id`, `type`, `transport`, `reachable`,
-detected `os`, selected `updater`, update count, `reboot_required`,
-`last_check`, `check_status`, `last_update`, and `error`. Values that cannot
-be determined are `null`, rather than being reported as zero or success.
-Proxmox guest records may also contain a `node` value identifying their
-parent host; external targets are not assigned to a Proxmox node.
-Possible check states are `ok`, `updates_available`, `offline`,
-`unsupported`, `not_checked`, and `error`. The JSON is data-only; presentation
-belongs to future CLI, notification, or web interfaces.
-
-Update-check notifications use the same status data when it is available. They
-summarize Proxmox and external SSH apt/dnf targets together, distinguish available
-updates from offline, unsupported, not-checked, and error states, and show
-targets that require a reboot. Unknown update counts are not added to the
-total. Existing email settings remain in effect; security-only notifications
-continue to use the existing security classification from the check output.
-
-## Unified CLI
-
-The `ultimate-updater` command is a small frontend for the existing update and
-check scripts:
-
-```text
-ultimate-updater list
-ultimate-updater check [TARGET]
-ultimate-updater update TARGET
-ultimate-updater status
-ultimate-updater status --json
-```
-
-On a Proxmox cluster, numeric guest IDs are resolved through the cluster
-inventory before a check or update is dispatched. Therefore a guest can be
-checked or updated from any cluster node, for example:
-
-```text
-ultimate-updater check 920
-ultimate-updater update 920
-update 920
-```
-
-The owning node runs the existing check path or starts the existing
-session-independent job runner. Local guests continue through the local path;
-the legacy `update <ID>` syntax remains supported (remote targets are handed
-to the owning node's job runner). Cluster node names and transport addresses
-come from Proxmox cluster data, not from VMID heuristics.
-
-`status --json` prints the same `/etc/ultimate-updater/status.json` data used by
-the read-only web preview. Existing direct calls to `update.sh` and
-`check-updates.sh` remain supported. Local direct update/check paths remain
-synchronous; a cluster-remote numeric update is handed to the owning node's
-job runner. The
-`ultimate-updater update TARGET` command starts a transient systemd job instead. The
-command returns after the job is accepted, so the client session may disconnect.
-Use `ultimate-updater status` and `journalctl -u <unit>` to inspect the result
-and logs. Direct calls to `update.sh` remain synchronous. A job interrupted by
-reboot or shutdown is reported as `interrupted` rather than as a successful
-update. Job state is kept in `/var/lib/ultimate-updater/jobs`; `status --json`
-continues to expose the existing check-status schema while the human-readable
-`status` command includes recorded update jobs. When a cluster-remote job is
-started, the calling node stores only a small owner reference under the same
-job directory. The owner node remains the source of truth for state and
-journal output, while the calling node can continue to show the remote job and
-retrieve its log. If the owner is unavailable, the reference is retained and
-reported as unavailable rather than being treated as completed or failed.
-
-For an external apt- or dnf-based target, use the same commands:
-
-```text
-ultimate-updater check raspi
-ultimate-updater update raspi
-ultimate-updater external verify-backup raspi maintenance-window-2026-08-16
-```
-
-The global `Update all systems` job also considers External SSH targets. The
-central `ONLY`/`EXCLUDE` update filters are applied to the External inventory
-before any SSH, local-config read, backup gate, helper, or package-manager
-operation. A centrally skipped External target is reported as skipped and is
-not contacted. After central selection, the target-local
-`/etc/ultimate-updater/external.conf` filters and the recent-backup safety gate
-still apply. `ONLY` takes priority over `EXCLUDE` at each level.
-
-The central filter variables are intentionally separate by run type:
-
-```text
-CHECK ONLY:     ONLY_UPDATE_CHECK
-CHECK EXCLUDE:  EXCLUDE_UPDATE_CHECK
-UPDATE ONLY:    ONLY
-UPDATE EXCLUDE: EXCLUDE
-```
-
-For each run type, `ONLY` takes precedence over its matching `EXCLUDE`.
-Check and Update selections are independent, and the read-only previews use
-the same selection semantics as their corresponding runtime paths.
-
-The update is handed to the node-local session-independent job runner. The
-remote system only needs SSH and apt; it does not need an updater agent. A
-remote update does not create a Proxmox backup or snapshot, and it is not
-automatically rebooted when `/var/run/reboot-required` is present.
-
-### Upgrade from 5.0 to 5.1 Beta
-
-The normal update/self-update path preserves the existing
-`/etc/ultimate-updater/update.conf`, unknown keys, comments, configured Web UI
-port, and real External target configuration. Missing supported defaults are
-added without replacing existing values. Historical `VMs/<VMID>` SSH profiles
-remain internal VM data and are not migrated to External inventory.
-
-No general reinstallation is required for a supported 5.0 installation. After
-an upgrade, verify that `ultimate-updater-web.service` is enabled and active
-and open the configured Web UI port. A host reboot is not generally required
-by the 5.1 Beta updater itself; individual Proxmox kernel/update results may
-still report a reboot requirement. External systems are never rebooted
-automatically.
-
-There are no intentional breaking changes to the existing `update.conf`,
-External SSH inventory, Web UI service, or ONLY/EXCLUDE filter semantics.
-
-### Web UI preview
-
-A small browser UI is included at `web-ui/server.py`. It uses only the
-Python 3 standard library. Installed systems run it automatically as the
-`ultimate-updater-web.service` systemd service after boot and updates. It reads the generated `status.json` and delegates
-checks and updates to the existing `ultimate-updater` CLI; it does not contain
-package-manager, SSH, QGA, or Windows update logic.
-
-The UI uses the official project graphic as its branding source. The compact
-header wordmark, runtime icon, and favicon are derived local assets installed
-under `/etc/ultimate-updater/web-ui/assets/`; the large source graphic remains
-a repository asset and is not installed on nodes.
-
-The service listens on `0.0.0.0:8765` by default so it can be reached from a phone,
-desktop, or tablet in the trusted management/LAN network. HTTPS is the preferred
-protocol and the standard URL is `https://<proxmox-node>:8765/`. The UI and API are
-behind a local administrator login; setup is intentionally explicit and there
-is no default password:
-
-```text
-https://<updater-node>:8765/
-sudo /usr/local/sbin/ultimate-updater-web-auth admin
-```
-
-The Web UI selects HTTPS automatically in `auto` mode. It directly references
-the Proxmox-managed certificate pair:
-
-```text
-Certificate: /etc/pve/local/pve-ssl.pem
-Private key: /etc/pve/local/pve-ssl.key
-```
-
-If the optional Proxmox proxy certificate pair exists, the corresponding
-`/etc/pve/local/pveproxy-ssl.pem` and `.key` files may be used instead. The
-files are referenced in place: they are not copied and their private-key
-permissions are not changed. TLS accepts version 1.2 or newer, and plaintext
-HTTP is not accepted on the HTTPS port.
-
-If no usable Proxmox certificate is available, `auto` logs a warning and uses
-HTTP as a transition fallback. HTTPS remains the preferred mode. Set
-`WEB_UI_HTTPS=true` in the root-owned
-`/etc/ultimate-updater/web-ui.conf` to require HTTPS, or set
-`WEB_UI_CERT_FILE` and `WEB_UI_KEY_FILE` there for an explicit certificate
-pair. An explicitly required but unusable certificate is reported as an error
-rather than silently falling back to HTTP.
-
-HTTPS works by hostname or IP when that name/address is included in the
-certificate SANs. Otherwise the connection is still encrypted, but the
-browser can show a certificate name-mismatch warning. After Proxmox renews
-its certificate, restart the Web UI so the process loads the new files:
-
-```bash
-systemctl restart ultimate-updater-web.service
-```
-
-The service is enabled for boot and starts again after a Proxmox node reboot,
-using the configured HTTPS/certificate source.
-
-The central Web UI port is stored outside the Web UI in the root-owned local
-file `/etc/ultimate-updater/web-ui.conf` as `WEB_UI_PORT=8765`. Existing
-installations retain the default unless this file is changed. Change it
-without the browser with:
-
-```bash
-sudo /usr/local/sbin/ultimate-updater config set web-port 8876
-sudo systemctl restart ultimate-updater-web.service
-```
-
-The setter accepts only ports 1–65535, writes atomically, and checks that the
-new port is available. If the default is occupied, installation/update does
-not stop or modify the other process; it reports the conflict and gives the
-same local command for selecting another port. Updates and self-updates keep
-an existing `WEB_UI_PORT` value.
-
-On normal Proxmox installations the UI authenticates `root` through the
-existing local PAM `login` service; the password is used only for the PAM
-conversation and is never stored by the updater. For isolated development
-fixtures, the explicitly selected `UU_AUTH_BACKEND=internal` mode can use a
-salted PBKDF2-SHA256 hash in the root-owned
-`/etc/ultimate-updater/web-auth.json`. Sessions are server-side, expire after
-inactivity, use an HttpOnly/SameSite cookie, and can be ended with `Log out`.
-Browser write requests also require a session-bound CSRF token and a matching
-same-origin request. Do not expose this action-enabled service to the Internet
-or an untrusted network; use the management LAN. The direct HTTPS service on
-port 8765 is the supported standard installation; a reverse proxy is not
-required. The service runs as root because the existing CLI
-and job runner require the updater's local permissions.
-
-Service control and logs:
-
-```bash
-systemctl status ultimate-updater-web
-systemctl restart ultimate-updater-web
-systemctl stop ultimate-updater-web
-journalctl -u ultimate-updater-web
-```
-
-For development/debugging, it can still be started manually:
-
-```bash
-python3 web-ui/server.py
-```
-
-The manual command binds to `127.0.0.1:8765` by default. The service uses the
-explicit LAN bind above and serves a compact, responsive
-overview, target actions, server-side job state, and a simple log view. Use
-`--bind` and `--port` only when you intentionally want another local/LAN
-binding. Do not expose the action-enabled UI to an untrusted network without
-adding suitable access control. Missing or invalid status data is shown as a
-clear message.
-
-The web preview groups multiple Proxmox host records as nodes and shows their
-LXC/VM guests below the corresponding node. With one Proxmox host, the same
-node-first view is used in a compact form. Targets from `targets.conf` remain
-in a separate External systems section.
-
-### Current 5.1 Web UI
-
-The following screenshots were captured from the authenticated 5.1 `develop`
-Web UI on a dedicated Proxmox test node. The displayed counts, addresses, and
-target names are test-environment data and will vary by installation.
+5. Review the status and job log, then deliberately start an update for the
+   intended target:
+
+   ```text
+   ultimate-updater update <target>
+   ```
+
+Checks do not reboot VMs. Updates are mutating operations; configure and
+verify snapshot/backup behavior before using them. See
+[Checks and updates](docs/checks-and-updates.md).
+
+## Web UI
+
+The authenticated Web UI is served by `ultimate-updater-web.service` on port
+8765, preferably over HTTPS. It provides the dashboard, target details,
+checks, updates, settings, Internal SSH management, persistent jobs/logs, and
+version/build information. See [Web UI](docs/web-ui.md).
 
 ![Current 5.1 Web UI dashboard](docs/screenshots/dashboard.png)
 
-> Current 5.1 dashboard with Proxmox nodes, update counts, Check/Update
-> actions, and links to Configuration and Internal SSH Connections.
+> Current 5.1 dashboard from a dedicated test environment.
 
-![Configuration settings](docs/screenshots/settings.png)
+## Supported systems
 
-> Configuration view for host, LXC, VM, filters, lifecycle, snapshot, backup,
-> and notification settings.
+Proxmox hosts and Linux LXC/VM guests are the primary supported paths. APT
+systems provide a normal/security split. `pkg` (FreeBSD/pfSense), Pacman,
+APK, DNF/YUM, and Windows use total-only update presentation where a reliable
+security split is not available. Windows remains experimental/deferred from
+the supported Beta baseline pending dedicated validation.
 
-![Internal SSH Connections](docs/screenshots/internal-ssh.png)
+External Linux systems can be configured over SSH. Read the complete matrix
+and limitations in [Supported systems](docs/supported-systems.md) and
+[External systems](docs/external-systems.md).
 
-> Internal SSH management for Proxmox nodes and virtual machines, including
-> resolved connection sources and Test connection actions.
+## Safety essentials
 
-![Persistent server-side jobs](docs/screenshots/jobs.png)
+- Check and Update are separate operations. A check is read-only as far as
+  technically possible and never reboots a VM.
+- A check may temporarily start or resume a stopped/paused guest when enabled,
+  then restores its original lifecycle state, including after errors.
+- `REBOOT_IF_NEEDED` applies to the update path only.
+- Snapshot and backup are independent controls. An invalid or inactive backup
+  storage is rejected rather than silently ignored.
+- Jobs run server-side and retain their status/log after the client disconnects.
+- Do not expose the action-enabled Web UI to an untrusted network.
 
-> Loaded server-side job history with a completed job, retained log output,
-> and browser-independent job state.
+## Documentation
 
-The dashboard also provides typed Settings, Internal SSH Connections, External
-target management, target details, job logs, and version/build information.
-Normal and security updates are separate fields: security updates are not added
-again to the normal count, and an unknown value remains `Unknown` rather than
-being displayed as zero.
+- [Installation](docs/installation.md)
+- [Configuration](docs/configuration.md)
+- [Checks and updates](docs/checks-and-updates.md)
+- [Cluster operation](docs/cluster.md)
+- [Web UI](docs/web-ui.md)
+- [SSH and VM access](docs/ssh.md)
+- [External systems](docs/external-systems.md)
+- [Backup and snapshots](docs/backup-and-snapshots.md)
+- [Notifications](docs/notifications.md)
+- [Supported systems](docs/supported-systems.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Upgrading](docs/upgrading.md)
+- [Advanced operation](docs/advanced.md)
 
-`Check` only inspects update state and never reboots a VM. When configured to
-include stopped or paused guests, it may start or resume them temporarily and
-restores the original lifecycle state, including after a check failure. `Update`
-performs the package update and applies the configured snapshot, backup, and
-`REBOOT_IF_NEEDED` behavior.
+Additional project documents: [Testing](TESTING.md), [5.1 release notes](RELEASE_NOTES_5.1_BETA.md), [5.1 upgrade notes](UPGRADE_NOTES_5.1.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
-Checks and updates run as server-side jobs through the session-independent job
-runner. Closing the browser or losing the SSH session does not stop a started
-job; its status and log remain available. Jobs for the same target are
-serialized to prevent conflicting operations.
+## Support, contribution, and license
 
-VM checks and updates can use the QEMU Guest Agent or the existing SSH path.
-For QGA, `qm agent <VMID> ping` and the required guest-exec operations must be
-available. Remote VM/LXC results are imported into the central status model so
-the Web UI does not remain on stale remote values.
+Report reproducible bugs through [GitHub Issues](https://github.com/BassT23/Proxmox/issues) or join the [Discussion](https://github.com/BassT23/Proxmox/discussions/60)/[Discord](https://discord.gg/nVpUg6BKn8). Keep secrets, private keys, and production credentials out of reports.
 
-Settings include VM lifecycle controls, filters, DEBUG logging, snapshots,
-backups, backup mode, and `BACKUP_STORAGE`. `BACKUP_STORAGE` is a Proxmox
-storage ID such as `pbs`, not a filesystem path or PBS datastore name. Leaving
-it empty keeps automatic selection; an invalid or inactive ID is rejected.
-
-The Web UI is responsive on narrow displays. Its version/build information
-identifies the installed version, branch, commit, and exact tag when available,
-along with the available updater version.
-
-Guest status records may include the Proxmox-provided guest name. The Web UI
-shows it next to the stable guest ID when available and keeps working with
-older status files that do not contain a name. The UI is covered by the
-automated and owner-acceptance checks described in the testing documentation;
-release preparation and publication remain separate steps.
-
-The process serving action endpoints must already have the local permissions
-needed by the existing CLI (normally a controlled root-owned test/service
-context); the UI does not store passwords or add broad `sudo` rules.
-
-The dashboard includes a small, typed management area for the settings that
-are already understood by the updater. It edits selected values in
-`/etc/ultimate-updater/update.conf` in place, preserving comments, unknown
-variables, and the rest of the file; writes are validated and atomic. It is
-not a general file editor. The editable groups cover the existing check
-booleans, check filters, reboot/delay/backup settings, and currently used
-notification settings. No passwords, private keys, tokens, or sudo secrets
-are handled by the UI.
-
-External SSH systems can likewise be added, edited, tested, and removed from
-the dashboard. `/etc/ultimate-updater/targets.conf` remains the only source
-of truth and only the existing `host`, `user`, `port`, and `transport=ssh`
-fields are accepted. SSH key authentication must already be configured on
-the updater node; the UI does not upload or generate keys. OS, package
-manager, and update capability continue to be detected by the core. Target
-inventory writes preserve unrelated sections/comments, use the existing
-validator, and are atomic.
-
-`Check` calls the existing check path. `Start update` calls the existing CLI,
-which hands the update to the session-independent #316 systemd job runner.
-The browser receives the job ID and may be closed; the job and its journal
-remain available to a later browser or device, including when the job runs on
-another Proxmox cluster node. The UI polls job state every
-two seconds while a job is running and less often when idle. Updates require
-a browser confirmation. There are no reboot, backup, cancellation,
-configuration, or arbitrary-command actions. Configuration and external-target
-management are limited to the typed controls described above; there is no
-generic file or command endpoint.
-
-With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
-
-- Host / LXC / VM
-- Headless Mode
-- Extra updates
-- "stopped" or "running" LXC/VM
-- "only" or "exclude" LXC/VM - see below
-- Full backup storage: set `BACKUP_STORAGE="<storage-id>"` to select a specific active backup storage. Find valid IDs with `pvesm status -content backup`; for example, `BACKUP_STORAGE="pbs"`. This is the Proxmox storage ID, not a filesystem path or the PBS datastore name. If the storage ID is `pbs` and its datastore is `backups`, use `BACKUP_STORAGE="pbs"`. Leave it empty for the existing automatic selection. An invalid or inactive storage is rejected.
-
-# New Only/Exclude handling in config file:
-Expands ONLY/EXCLUDE into a space-separated list of numeric VMIDs.
-Supports:
-  - Plain VMIDs: 101 202
-  - Delimiters: commas / semicolons / pipes / spaces intermixed (e.g. 101,202;203|204)
-  - Ranges: 120-125 (inclusive)
-  - Mixed IDs + ranges + tags: 110 testing 111 200-202
-  - Uppercase user tag input (config tags assumed already lowercase)
-    Tag tokens are any token not matching ^[0-9]+$ or ^[0-9]+-[0-9]+$.
-  - OR matching across tag tokens.
-
-Behavior summary:
-  1. Tokenize ONLY if set/matched; else tokenized EXCLUDE.
-  2. For each token:
-       number        -> add as VMID
-       range a-b     -> expand (a..b)
-       tag           -> collect tag for later resolution
-  3. Resolve tags to IDs (any tag match) and append, de-duplicating while
-     preserving first-seen order (input order then discovery order for tags).
-  4. Assign final space-separated list back to ONLY / EXCLUDE variable.
-  5. If ONLY provided, EXCLUDE is ignored.
-
-Usage examples:
- - ONLY="backup,windows"
- - ONLY="101,102,105-107"
- - ONLY="110 testtag 111 120-121"
- - ONLY="" EXCLUDE="old 300-302"
-
-# Extra Updates:
-If updater detects installation: (disable, if you want in `/etc/ultimate-updater/update.conf`)
-- PiHole
-- ioBroker
-- Pterodactyl
-- Octoprint
-- Docker Compose (v1 and v2)
-
-# User scripts:
-How to use user scripts:
-
-In "/etc/ultimate-updater/scripts.d" create an folder for each LXC/VM who should use it like this:
-(000 is the example ID)
-
-/etc/ultimate-updater/scripts.d/000/
-
-here you can put in any script you like, which will be run during update also.
-!!! DON'T use free spaces in file name !!! ("file 1.sh" -> "file-1.sh")
-
-these files are used in the "extra update" section at the end of the LXC/VM
-
-To skip the built-in OS update for one guest and run only its own scripts,
-create an empty `.script-only` marker in the guest directory:
-
-`/etc/ultimate-updater/scripts.d/<VMID>/.script-only`
-
-Snapshots/backups and the normal guest start/stop lifecycle still apply. The
-guest's user scripts are run instead of apt, dnf, yum, pacman or apk.
-
-# Welcome Screen:
-The Welcome Screen is an extra for you. It's optional!
-
-- The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
-- The login screen reads cached version information and does not wait for GitHub. The cache is refreshed by the regular update check.
-- The update-checker also uses the config file!
-- To force the check, you can run `/etc/ultimate-updater/check-updates.sh` in Terminal.
-- You can choose, if screenfetch will be show also (if screenfetch is not installed, script will make it automatically)
-
-# Development Testing:
-
-The reusable 4–6 hour destructive-but-bounded developer test strategy is
-specified in [`tests/HARDCORE_TEST.md`](tests/HARDCORE_TEST.md). It is not run
-automatically; an owner must explicitly request `Hardcore-Test starten`.
-If anybody wants to help with failure search, please test our `develop` branch.
-
-Install the develop update with `update develop -up`
-The bare `update -up` command always targets the stable `master` branch.
-It does not follow `USED_BRANCH`; Beta and Develop users must select their
-branch explicitly:
-
-```bash
-update -up          # stable master
-update master -up   # explicit master
-update beta -up     # explicit beta
-update develop -up  # explicit develop
-```
-
-The active update branches are `master` (stable), `beta` (published
-pre-release), and `develop` (development). To switch an existing installation
-to the published Beta, use `update beta -up`; the selected branch is preserved
-in `USED_BRANCH` as installed-state metadata, but it never changes the target
-of a bare `update -up`. A lower target version requires explicit interactive
-confirmation and is blocked in noninteractive mode.
-Configuration schema migrations update the local `VERSION` marker only after
-the target defaults have been validated and merged; user settings remain in
-place.
-
-Upgrading from version 5.0 or earlier to 5.1 requires a restart of the Proxmox
-host to fully complete the Ultimate Updater migration. The host itself remains
-usable before the restart, but some Ultimate Updater components may not work
-reliably until the restart has been performed. The updater does not reboot the
-host automatically. Updates within the 5.1 line do not require this migration
-restart; individual system updates may still report `REBOOT REQUIRED` for
-unrelated package or kernel changes.
-
-# Q&A:
-[Discussion](https://github.com/BassT23/Proxmox/discussions/60)
-
-# Support:
-[![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
-
-# Contributors:
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="=https://github.com/BassT23"><img src="https://avatars.githubusercontent.com/u/30832786?v=4?s=100" width="100px;" alt="BassT23"/><br /><sub><b>BassT23</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=BassT23" title="Code">💻</a> <a href="#maintenance-BassT23" title="Maintenance">🚧</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Gauvino"><img src="https://avatars.githubusercontent.com/u/68083474?v=4?s=100" width="100px;" alt="Gauvino"/><br /><sub><b>Gauvino</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=Gauvino" title="Code">💻</a> <a href="#translation-Gauvino" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/elbim"><img src="https://avatars.githubusercontent.com/u/28606318?v=4?s=100" width="100px;" alt="elbim"/><br /><sub><b>elbim</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=elbim" title="Code">💻</a> <a href="#translation-elbim"</a></td>
-    </tr>
-  </tbody>
-</table>
+Ultimate Updater is free software under the GNU General Public License. See
+the repository license and [SECURITY.md](SECURITY.md) for project policies.
 
 <div align="center">
 
-**AI-assisted development:** OpenAI ChatGPT & Codex
-Used for code review, debugging, test planning, documentation and release preparation. Changes are reviewed and validated before being included in a release.
+**AI-assisted development:** OpenAI ChatGPT & Codex are used for code review,
+debugging, test planning, documentation, and release preparation. Changes are
+reviewed and validated before inclusion in a release.
 
 </div>
