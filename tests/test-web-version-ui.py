@@ -82,6 +82,11 @@ assert "loginVersionText" in source
 assert "version_refresh_running" in source
 assert "Schema ${text(data.schema_version)}" not in module.PAGE
 assert "schema 1" not in module.PAGE.lower()
+assert 'id="generated"' not in module.PAGE
+assert 'Generated ${date(data.generated_at)}' not in module.PAGE
+assert 'login-version-footer' in module.PAGE
+assert '<p class="login-account-hint">' not in module.PAGE
+assert 'id="login-message"' in module.PAGE
 
 with tempfile.TemporaryDirectory() as directory:
     root_dir = Path(directory)

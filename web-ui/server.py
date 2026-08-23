@@ -347,7 +347,7 @@ PAGE = r"""<!doctype html>
       .job .log-actions { grid-column:1 / -1; grid-row:4; justify-content:flex-start }
       .job .log { grid-column:1 / -1; grid-row:5 }
     }
-    .login-version { color:var(--muted); font-size:.72rem; margin:8px 0 0; overflow-wrap:anywhere }
+    .login-version { color:var(--muted); font-size:.72rem; margin:8px 0 0; overflow-wrap:anywhere } .login-version-footer { border-top:1px solid var(--line); margin-top:16px; padding-top:12px; text-align:center }
   </style>
 </head>
 <body>
@@ -583,6 +583,11 @@ PAGE = PAGE.replace("</body></html>", """<script>
     scheduleUpdaterVersionCheck=()=>{clearTimeout(versionStartupTimer);clearTimeout(versionRetryTimer);loadPublicVersion()};
     loadPublicVersion();
   </script></main></body></html>""")
+PAGE = PAGE.replace('<span id="generated">Loading status…</span>', '')
+PAGE = PAGE.replace('<p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Please use your current root account to sign in.</p>', '')
+PAGE = PAGE.replace('<div id="login-message" class="management-message" role="alert"></div></form></section>', '<div id="login-message" class="management-message" role="alert"></div><p id="login-version" class="login-version login-version-footer" aria-live="polite">Ultimate Updater · checking local version…</p></form></section>')
+PAGE = PAGE.replace('const set=(id,v)=>document.getElementById(id).textContent=v;', 'const set=(id,v)=>{const element=document.getElementById(id);if(element)element.textContent=v};')
+PAGE = PAGE.replace("set('generated',`Generated ${date(data.generated_at)}`);", '')
 
 
 def error_payload(code, message):
