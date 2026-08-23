@@ -4,10 +4,15 @@
 
 ## Requirements
 
-Install Ultimate Updater as root on one Proxmox host. A cluster uses one
-central installation; a standalone node can run it by itself. Cluster nodes
-must resolve each other by the names and addresses used by Proxmox and have
-working SSH fingerprints.
+Install Ultimate Updater as root on one supported Proxmox VE host. A cluster
+uses one central installation; a standalone node can run it by itself. Do not
+install a separate administrative instance on every cluster node.
+
+For cluster operation, nodes must resolve each other by the names and
+addresses used by Proxmox and have working SSH fingerprints. VMs included in
+checks or updates need either a working QEMU Guest Agent with `guest-exec` or
+configured key-based SSH; see [SSH and VM access](ssh.md) for the detailed
+guest requirements. Keep current backups before enabling mutating updates.
 
 ## Install
 
@@ -29,8 +34,7 @@ curl -4 -fSL --retry 0 https://raw.githubusercontent.com/BassT23/Proxmox/beta/in
 rm -f "$installer"
 ```
 
-The installer validates its inputs and keeps the existing configuration. Do
-not install a second administrative instance on every cluster node.
+The installer validates its inputs and keeps the existing configuration.
 
 ## First steps
 

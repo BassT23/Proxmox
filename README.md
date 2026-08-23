@@ -54,62 +54,16 @@ Key features include:
   systems show a total count.
 - Snapshot and backup safety controls, filters, notifications, and logs.
 
-## Requirements
+## Getting started
 
-- A supported Proxmox VE host and root access for installation.
-- One installation per cluster, or one installation for a standalone node.
-- SSH host resolution/fingerprints for cluster nodes.
-- For VM access, either a working QEMU Guest Agent with `guest-exec` or
-  configured key-based SSH. See [VM and SSH requirements](docs/ssh.md).
-- Current backups before enabling updates.
+Start with these three guides:
 
-## Installation
+1. [Install Ultimate Updater](docs/installation.md)
+2. Review [configuration and safety settings](docs/configuration.md).
+3. Learn the difference between [checks and updates](docs/checks-and-updates.md).
 
-Run the installer from a Proxmox host shell as root. The stable installer is:
-
-```bash
-installer=$(mktemp)
-curl -4 -fSL --retry 0 https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh -o "$installer" && \
-  bash -n "$installer" && bash "$installer"
-rm -f "$installer"
-```
-
-For the published 5.1 Beta, select the branch explicitly:
-
-```bash
-installer=$(mktemp)
-curl -4 -fSL --retry 0 https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh -o "$installer" && \
-  bash -n "$installer" && UU_TARGET_BRANCH=beta bash "$installer"
-rm -f "$installer"
-```
-
-The installer preserves existing configuration. Upgrade details are in
-[Upgrading](docs/upgrading.md); the current release history is in
-[`change.log`](change.log).
-
-## Quick start
-
-1. Install on the central Proxmox node.
-2. Review `/etc/ultimate-updater/update.conf` and the relevant VM/SSH or
-   external-target configuration.
-3. Open `https://<proxmox-node>:8765/` and verify the settings and target
-   inventory.
-4. Run a check first:
-
-   ```text
-   ultimate-updater check
-   ```
-
-5. Review the status and job log, then deliberately start an update for the
-   intended target:
-
-   ```text
-   ultimate-updater update <target>
-   ```
-
-Checks do not reboot VMs. Updates are mutating operations; configure and
-verify snapshot/backup behavior before using them. See
-[Checks and updates](docs/checks-and-updates.md).
+Then use the [Web UI](docs/web-ui.md) to review the inventory and run a check
+before deliberately starting an update.
 
 ## Web UI
 
