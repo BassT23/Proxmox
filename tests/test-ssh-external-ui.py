@@ -14,7 +14,12 @@ import server  # noqa: E402
 source = Path(__file__).parents[1].joinpath("web-ui/server.py").read_text(encoding="utf-8")
 assert "cluster-target.sh" in source
 assert "Testing connection…" in server.PAGE
-assert "Connection failed:" in server.PAGE
+assert "Connection failed: ${error.message" not in server.PAGE
+assert "error.message||'SSH connection failed.'" in server.PAGE
+assert "Name *<input name=\"id\"" in server.PAGE
+assert "id=\"target-modal-test\" disabled" in server.PAGE
+assert "form.checkValidity()" in server.PAGE
+assert "target-modal-form').addEventListener('input',updateExternalTestAvailability)" in server.PAGE
 assert "testTarget(payload.id,payload,button)" in server.PAGE
 assert "function testExternalForm(event){event.preventDefault()" in server.PAGE
 assert "target-modal-test').addEventListener('click',testExternalForm)" in server.PAGE
@@ -73,7 +78,7 @@ assert message == "Host reachable · SSH authentication failed."
 assert server.ssh_failure_message("ssh: connect to host x port 22: Connection refused") == "Connection refused."
 assert server.ssh_failure_message("Permission denied (publickey)") == "Authentication failed."
 assert server.ssh_failure_message("no supported authentication methods available") == "Authentication failed."
-assert server.ssh_failure_message("") == "Connection failed."
+assert server.ssh_failure_message("") == "SSH connection failed."
 
 owner = object.__new__(server.StatusHandler)
 owner.server = SimpleNamespace(cluster_target_script=Path(__file__))
