@@ -42,6 +42,7 @@ assert 'id="jobs"' in overview
 settings = page.split('id="settings-page"', 1)[1].split('id="scheduler-page"', 1)[0]
 assert 'id="config-form"' in settings
 assert 'class="management-form open"' in settings
+assert 'class="summary dashboard-kpis"' not in settings
 assert 'Open editor' not in settings
 assert 'id="internal-ssh-card"' in settings
 assert 'id="internal-ssh-view"' in settings
@@ -50,8 +51,9 @@ assert 'id="target-add"' in settings
 assert 'settings-management-title' in settings
 assert '#settings-page .connection-management-grid' in page
 assert "groupData.title==='Host'" in page
-assert 'class="summary dashboard-kpis" hidden' in page
-summary = page.split('class="summary dashboard-kpis" hidden', 1)[1].split('</section>', 1)[0]
+assert 'class="summary dashboard-kpis" hidden' not in page
+summary = page.split('id="overview-page"', 1)[1].split('id="settings-page"', 1)[0]
+assert 'class="summary dashboard-kpis"' in summary
 assert summary.count('class="metric"') == 6
 assert '.dashboard-kpis { grid-template-columns:repeat(6,minmax(0,1fr))' in page
 assert '.dashboard-kpis .metric' in page
@@ -64,6 +66,7 @@ assert 'min-width:112px' in page
 assert '.page-nav a.active' in page
 # The placeholder must not expose scheduling controls or job endpoints.
 scheduler = page.split('id="scheduler-page"', 1)[1].split('<footer', 1)[0]
+assert 'class="summary dashboard-kpis"' not in scheduler
 assert '<input' not in scheduler
 assert '<select' not in scheduler
 assert '/api/' not in scheduler
