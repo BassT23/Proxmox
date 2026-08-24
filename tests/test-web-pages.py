@@ -20,12 +20,13 @@ assert 'id="settings-page"' in page
 assert 'id="scheduler-page"' in page
 assert 'id="page-subtitle"' in page
 assert 'Scheduled checks and updates are planned for a future release.' in page
-assert 'function applyPageRoute(push=false)' in page
+assert 'function applyPageRoute(push=false,requestedPage=null)' in page
 assert "location.pathname==='/settings'" in page
 assert "location.pathname==='/scheduler'" in page
 assert "document.getElementById('settings-page').hidden=page!=='settings'" in page
 assert "document.getElementById('scheduler-page').hidden=page!=='scheduler'" in page
 assert "document.querySelector('.dashboard-kpis').hidden=page!=='overview'" in page
+assert "applyPageRoute(true,link.dataset.page)" in page
 assert 'id="config-form"' in page
 assert 'id="config-message"' in page
 # Overview does not duplicate the settings editor or a redundant settings card.
