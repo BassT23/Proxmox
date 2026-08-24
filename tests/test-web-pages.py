@@ -28,10 +28,18 @@ assert "document.getElementById('scheduler-page').hidden=page!=='scheduler'" in 
 assert "document.querySelector('.dashboard-kpis').hidden=page!=='overview'" in page
 assert 'id="config-form"' in page
 assert 'id="config-message"' in page
-# Overview contains only a link to settings, not the settings editor itself.
+# Overview does not duplicate the settings editor or a redundant settings card.
 overview = page.split('id="overview-page"', 1)[1].split('id="settings-page"', 1)[0]
-assert 'id="settings-entry"' in overview
+assert 'id="settings-entry"' not in overview
+assert 'Manage Ultimate Updater settings' not in overview
 assert 'id="config-form"' not in overview
+settings = page.split('id="settings-page"', 1)[1].split('id="scheduler-page"', 1)[0]
+assert 'id="config-form"' in settings
+assert 'class="management-form open"' in settings
+assert 'Open editor' not in settings
+assert 'background:#151d34e8' in page
+assert 'min-width:112px' in page
+assert '.page-nav a.active' in page
 # The placeholder must not expose scheduling controls or job endpoints.
 scheduler = page.split('id="scheduler-page"', 1)[1].split('<footer', 1)[0]
 assert '<input' not in scheduler
