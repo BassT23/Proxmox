@@ -521,8 +521,12 @@ run_job() {
       printf 'Post-update status capture missing for %s; no second guest lifecycle started.\n' "$target" >&2
     elif [[ "${UU_UPDATE_SCOPE:-}" == host || "$target" == host ]]; then
       if [[ -x "$CHECK_SCRIPT" ]]; then
+        # Use the explicit node entry point.  The generic `host` command is
+        # gated by CHECK_WITH_HOST and may therefore finish without a host
+        # record on a remote owner node, even though a node refresh is
+        # explicitly requested here.
         UU_DEFER_NOTIFICATION=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true \
-          "$CHECK_SCRIPT" host </dev/null || post_check_rc=$?
+          "$CHECK_SCRIPT" node-host </dev/null || post_check_rc=$?
       else
         post_check_rc=127
       fi

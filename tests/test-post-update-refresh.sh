@@ -38,6 +38,11 @@ EOF
 cat > "$WORK_DIR/check.sh" <<'EOF'
 #!/usr/bin/env bash
 printf 'CHECK_SCOPE=%s CHECK_ARGS=%s\n' "${UU_CHECK_SCOPE:-}" "$*" >> "$POST_REFRESH_LOG"
+if [[ "$*" == host ]]; then
+  # A generic host invocation is intentionally not a valid explicit node
+  # refresh when CHECK_WITH_HOST is disabled in the remote config.
+  exit 17
+fi
 exit "${POST_CHECK_RC:-0}"
 EOF
 cat > "$WORK_DIR/status-model.sh" <<'EOF'
@@ -71,9 +76,9 @@ POST_REFRESH_LOG="$WORK_DIR/log" UU_JOB_STATE_DIR="$WORK_DIR/jobs" \
   "$ROOT_DIR/job-runner.sh" run "$unit" host "$WORK_DIR/update.sh" >/dev/null
 
 grep -Fq 'UPDATE_TARGET=host' "$WORK_DIR/log"
-grep -Fq 'CHECK_SCOPE=host CHECK_ARGS=host' "$WORK_DIR/log"
+grep -Fq 'CHECK_SCOPE=host CHECK_ARGS=node-host' "$WORK_DIR/log"
 test "$(sed -n '1p' "$WORK_DIR/log")" = 'UPDATE_TARGET=host'
-test "$(sed -n '2p' "$WORK_DIR/log")" = 'CHECK_SCOPE=host CHECK_ARGS=host'
+test "$(sed -n '2p' "$WORK_DIR/log")" = 'CHECK_SCOPE=host CHECK_ARGS=node-host'
 test "$(sed -n '3p' "$WORK_DIR/log")" = 'NOTIFICATION_AFTER_REFRESH'
 grep -Eq '^state=completed$' "$WORK_DIR/jobs/$unit.state"
 grep -Eq '^exit_code=0$' "$WORK_DIR/jobs/$unit.state"
