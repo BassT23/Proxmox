@@ -461,6 +461,31 @@ PAGE = r"""<!doctype html>
       .dashboard-brand .brand-header-art { width:min(310px,82vw); }
       .dashboard-kpis .metric { min-height:65px; }
     }
+    /* Desktop navigation mirrors the dashboard reference: a compact,
+       persistent vertical rail beside the content.  It collapses back to
+       the existing horizontal tabs on narrow screens. */
+    @media (min-width:901px) {
+      .app-main { display:grid; grid-template-columns:190px minmax(0,1fr); column-gap:24px; align-items:start; }
+      .dashboard-header { display:contents; }
+      .dashboard-header-top { grid-column:2; grid-row:1; }
+      .page-nav { grid-column:1; grid-row:1 / span 20; position:sticky; top:22px; width:100%; margin:0; padding:10px; display:flex; flex-direction:column; align-items:stretch; gap:5px; border-color:#159cf088; background:linear-gradient(180deg,#071a30f2,#040e1de8); box-shadow:0 18px 50px #0008,0 0 24px #008cff12; }
+      .page-nav::before { content:"Ultimate Updater"; display:block; padding:5px 8px 12px; color:#72c8ff; font-size:.68rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+      .page-nav a { display:flex; align-items:center; min-width:0; min-height:42px; padding:10px 12px; text-align:left; font-size:.78rem; }
+      .page-nav a::before { content:""; width:7px; height:7px; margin-right:10px; border:1px solid currentColor; border-radius:50%; opacity:.7; }
+      .page-nav a.active::before { background:currentColor; box-shadow:0 0 10px currentColor; opacity:1; }
+      #notice,#overview-page,#settings-page,#scheduler-page,footer { grid-column:2; }
+      #notice { grid-row:2; }
+      #overview-page,#settings-page,#scheduler-page { grid-row:3; }
+      footer { grid-row:4; }
+    }
+    @media (min-width:901px) and (max-width:1120px) {
+      .app-main { grid-template-columns:166px minmax(0,1fr); column-gap:16px; }
+      .page-nav a { padding-left:9px; padding-right:9px; }
+    }
+    @media (max-width:900px) {
+      .app-main { display:block; }
+      .dashboard-header { display:block; }
+    }
   </style>
 </head>
 <body>
