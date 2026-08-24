@@ -524,7 +524,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
       .dashboard-header { display:block; }
       .dashboard-header-top { padding-left:64px; }
       .page-nav { position:fixed; top:24px; left:24px; z-index:20; display:flex; flex-direction:column; align-items:stretch; gap:3px; width:54px; height:54px; min-height:0; margin:0; padding:9px; overflow:hidden; border-radius:16px; background:linear-gradient(180deg,#0a2745f5,#06172bf2); border-color:#159cf0aa; box-shadow:0 18px 55px #0009,0 0 28px #008cff20; transition:width .18s ease,height .18s ease,box-shadow .18s ease; }
-      .page-nav.expanded { width:216px; height:calc(100vh - 48px); min-height:520px; overflow:hidden; box-shadow:0 22px 70px #000b,0 0 34px #008cff32; }
+      .page-nav.expanded { width:216px; height:auto; min-height:0; overflow:hidden; box-shadow:0 22px 70px #000b,0 0 34px #008cff32; }
       .page-nav::before,.page-nav:hover::before,.page-nav:focus-within::before { display:none; }
       .page-nav:not(.expanded) a { display:none; }
       .page-nav.expanded a { display:flex; min-height:36px; padding:4px 8px; font-size:.78rem; }
@@ -546,7 +546,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
       .dashboard-header { display:block; }
       .dashboard-header-top { padding-left:56px; }
       .page-nav { position:fixed; top:12px; left:12px; z-index:20; display:flex; flex-direction:column; align-items:stretch; gap:3px; width:48px; height:48px; min-height:0; margin:0; padding:7px; overflow:hidden; border-radius:13px; background:linear-gradient(180deg,#0a2745f5,#06172bf2); border-color:#159cf0aa; box-shadow:0 16px 45px #000a,0 0 24px #008cff20; }
-      .page-nav.expanded { width:min(216px,calc(100vw - 24px)); height:calc(100vh - 24px); min-height:430px; overflow:hidden; }
+      .page-nav.expanded { width:min(216px,calc(100vw - 24px)); height:auto; min-height:0; overflow:hidden; }
       .page-nav::before { display:none; }
       .page-nav:not(.expanded) a { display:none; }
       .page-nav.expanded a { display:flex; min-height:36px; padding:4px 7px; font-size:.78rem; }
