@@ -38,6 +38,11 @@ settings = page.split('id="settings-page"', 1)[1].split('id="scheduler-page"', 1
 assert 'id="config-form"' in settings
 assert 'class="management-form open"' in settings
 assert 'Open editor' not in settings
+assert 'class="summary dashboard-kpis" hidden' in page
+assert '#settings-page #config-form.management-form.open' in page
+assert 'settings-group-wide' in page
+assert 'grid-template-columns:repeat(2,minmax(0,1fr))' in page
+assert '#settings-page #config-form.management-form.open { grid-template-columns:1fr }' in page
 assert 'background:#151d34e8' in page
 assert 'min-width:112px' in page
 assert '.page-nav a.active' in page
