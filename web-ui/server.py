@@ -465,22 +465,28 @@ PAGE = r"""<!doctype html>
        persistent vertical rail beside the content.  It collapses back to
        the existing horizontal tabs on narrow screens. */
     @media (min-width:901px) {
-      .app-main { display:grid; grid-template-columns:190px minmax(0,1fr); column-gap:24px; align-items:start; }
+      .app-main { display:grid; grid-template-columns:56px minmax(0,1fr); column-gap:18px; align-items:start; }
       .dashboard-header { display:contents; }
       .dashboard-header-top { grid-column:2; grid-row:1; }
-      .page-nav { grid-column:1; grid-row:1 / span 20; position:sticky; top:22px; width:100%; margin:0; padding:10px; display:flex; flex-direction:column; align-items:stretch; gap:5px; border-color:#159cf088; background:linear-gradient(180deg,#071a30f2,#040e1de8); box-shadow:0 18px 50px #0008,0 0 24px #008cff12; }
-      .page-nav::before { content:"Ultimate Updater"; display:block; padding:5px 8px 12px; color:#72c8ff; font-size:.68rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
-      .page-nav a { display:flex; align-items:center; min-width:0; min-height:42px; padding:10px 12px; text-align:left; font-size:.78rem; }
-      .page-nav a::before { content:""; width:7px; height:7px; margin-right:10px; border:1px solid currentColor; border-radius:50%; opacity:.7; }
-      .page-nav a.active::before { background:currentColor; box-shadow:0 0 10px currentColor; opacity:1; }
+      .page-nav { grid-column:1; grid-row:1 / span 20; position:sticky; top:22px; z-index:3; width:56px; min-height:156px; margin:0; padding:8px; display:flex; flex-direction:column; align-items:stretch; gap:5px; overflow:hidden; border-color:#159cf088; background:linear-gradient(180deg,#071a30f2,#040e1de8); box-shadow:0 18px 50px #0008,0 0 24px #008cff12; transition:width .18s ease,box-shadow .18s ease; }
+      .page-nav:hover,.page-nav:focus-within { width:190px; overflow:visible; box-shadow:0 18px 50px #0009,0 0 28px #008cff25; }
+      .page-nav::before { content:"UU"; display:block; width:38px; padding:5px 0 12px; color:#72c8ff; font-size:.72rem; font-weight:850; letter-spacing:.08em; text-align:center; }
+      .page-nav:hover::before,.page-nav:focus-within::before { content:"Ultimate Updater"; width:auto; padding-left:5px; text-align:left; font-size:.68rem; letter-spacing:.1em; }
+      .page-nav a { display:flex; align-items:center; min-width:0; min-height:42px; padding:10px 8px; text-align:left; font-size:0; white-space:nowrap; }
+      .page-nav:hover a,.page-nav:focus-within a { font-size:.78rem; }
+      .page-nav a::before { display:grid; place-items:center; flex:0 0 38px; width:38px; height:30px; margin:0; border:0; border-radius:8px; color:currentColor; font-size:1.05rem; opacity:.8; }
+      .page-nav a:nth-child(1)::before { content:"⌂"; }
+      .page-nav a:nth-child(2)::before { content:"⚙"; }
+      .page-nav a:nth-child(3)::before { content:"↻"; }
+      .page-nav a.active::before { color:#fff; background:#0878c933; box-shadow:inset 0 0 0 1px #41baff66,0 0 12px #008cff22; opacity:1; }
       #notice,#overview-page,#settings-page,#scheduler-page,footer { grid-column:2; }
       #notice { grid-row:2; }
       #overview-page,#settings-page,#scheduler-page { grid-row:3; }
       footer { grid-row:4; }
     }
     @media (min-width:901px) and (max-width:1120px) {
-      .app-main { grid-template-columns:166px minmax(0,1fr); column-gap:16px; }
-      .page-nav a { padding-left:9px; padding-right:9px; }
+      .app-main { grid-template-columns:52px minmax(0,1fr); column-gap:14px; }
+      .page-nav { width:52px; }
     }
     @media (max-width:900px) {
       .app-main { display:block; }
