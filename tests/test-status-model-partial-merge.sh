@@ -47,4 +47,48 @@ if LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
 fi
 cmp -s "$WORK_DIR/before-invalid.json" "$WORK_DIR/status.json"
 
+# Single-target update writers must reject an invalid existing global state;
+# they must never publish a one-target replacement.
+printf '%s\n' '{broken-json' > "$WORK_DIR/status.json"
+if LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
+  bash -c '
+    source "$1"
+    STATUS_MODEL_UPDATE_RESULT 3 success 0
+  ' _ "$ROOT_DIR/status-model.sh" 2>/dev/null; then
+  echo 'invalid update state unexpectedly succeeded' >&2
+  exit 1
+fi
+grep -Fxq '{broken-json' "$WORK_DIR/status.json"
+
+if LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
+  bash -c '
+    source "$1"
+    STATUS_MODEL_UPSERT ext external ssh true linux "" apt 0 false ok
+  ' _ "$ROOT_DIR/status-model.sh" 2>/dev/null; then
+  echo 'invalid upsert state unexpectedly succeeded' >&2
+  exit 1
+fi
+grep -Fxq '{broken-json' "$WORK_DIR/status.json"
+
+# JSON-sensitive target values are transported through the base64 record
+# format and must remain valid after finalization.
+printf '%s\n' '{"schema_version":1,"targets":[]}' > "$WORK_DIR/status.json"
+LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
+  STATUS_MODEL_RECORD_FILE="$WORK_DIR/special.records" STATUS_MODEL_PARTIAL=true bash -c '
+    source "$1"
+    STATUS_MODEL_INIT
+    os="Debian GNU/Linux 13 (trixie)"
+    message="quotes \" and backslash \\ and unicode ✓"
+    STATUS_MODEL_RECORD 102 vm qga true "$os" apt 0 false ok "" "$message" node3 vm-102 0 0
+    STATUS_MODEL_FINISH
+  ' _ "$ROOT_DIR/status-model.sh"
+python3 - "$WORK_DIR/status.json" <<'PY'
+import json, sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+record = payload["targets"][0]
+assert record["id"] == "102"
+assert record["os"] == "Debian GNU/Linux 13 (trixie)"
+assert 'quotes " and backslash \\' in record["error"]["message"]
+PY
+
 echo 'status model partial merge regression tests: PASS'

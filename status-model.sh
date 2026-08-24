@@ -205,15 +205,22 @@ try:
     with open(status_file, encoding="utf-8") as source:
         payload = json.load(source)
     existing = payload.get("targets") if isinstance(payload, dict) else None
-    if isinstance(existing, list):
-        existing_targets = {
-            item.get("id"): item for item in existing
-            if isinstance(item, dict) and item.get("id")
-        }
-        if partial == "true":
-            targets = dict(existing_targets)
-except (FileNotFoundError, OSError, ValueError):
+    if not isinstance(existing, list):
+        raise ValueError("status file has no target list")
+    existing_targets = {
+        item.get("id"): item for item in existing
+        if isinstance(item, dict) and item.get("id")
+    }
+    if partial == "true":
+        targets = dict(existing_targets)
+except FileNotFoundError:
     pass
+except (OSError, ValueError) as exc:
+    # A partial capture must never turn an invalid global state into a
+    # one-target snapshot. Leave the existing file untouched.
+    if partial == "true":
+        print(f"STATUS_MODEL_PARTIAL_REJECTED_EXISTING_STATE: {status_file}: {exc}", file=sys.stderr)
+        raise SystemExit(94)
 
 def decode(value):
     return base64.b64decode(value.encode()).decode()
@@ -357,6 +364,13 @@ STATUS_MODEL_UPSERT() {
   local reboot_required="$9" check_status="${10}" error_code="${11:-}"
   local error_message="${12:-}"
 
+  local status_lock_file="${status_file}.lock" status_lock_fd
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
+
   python3 - "$status_file" "$target_id" "$target_type" "$transport" \
     "$reachable" "$os_name" "$os_version" "$updater" "$updates" \
     "$reboot_required" "$check_status" "$error_code" "$error_message" <<'PY'
@@ -373,10 +387,14 @@ from datetime import datetime, timezone
 try:
     with open(status_file, encoding="utf-8") as source:
         payload = json.load(source)
-except (FileNotFoundError, OSError, ValueError):
+except FileNotFoundError:
     payload = {"schema_version": 1, "generated_at": None, "targets": []}
+except (OSError, ValueError) as exc:
+    print(f"STATUS_MODEL_UPSERT_REJECTED_EXISTING_STATE: {status_file}: {exc}", file=sys.stderr)
+    raise SystemExit(94)
 if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
-    payload = {"schema_version": 1, "generated_at": None, "targets": []}
+    print(f"STATUS_MODEL_UPSERT_REJECTED_EXISTING_STATE: {status_file}: missing target list", file=sys.stderr)
+    raise SystemExit(94)
 
 generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 payload["schema_version"] = payload.get("schema_version", 1)
@@ -428,11 +446,20 @@ except Exception:
         pass
     raise
 PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
 }
 
 STATUS_MODEL_UPDATE_RESULT() {
   local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
   local target_id="$1" update_status="$2" exit_code="$3"
+  local status_lock_file="${status_file}.lock" status_lock_fd
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
   python3 - "$status_file" "$target_id" "$update_status" "$exit_code" <<'PY'
 import json
 import os
@@ -444,10 +471,14 @@ status_file, target_id, update_status, exit_code = sys.argv[1:]
 try:
     with open(status_file, encoding="utf-8") as source:
         payload = json.load(source)
-except (FileNotFoundError, OSError, ValueError):
+except FileNotFoundError:
     payload = {"schema_version": 1, "generated_at": None, "targets": []}
+except (OSError, ValueError) as exc:
+    print(f"STATUS_MODEL_UPDATE_REJECTED_EXISTING_STATE: {status_file}: {exc}", file=sys.stderr)
+    raise SystemExit(94)
 if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
-    payload = {"schema_version": 1, "generated_at": None, "targets": []}
+    print(f"STATUS_MODEL_UPDATE_REJECTED_EXISTING_STATE: {status_file}: missing target list", file=sys.stderr)
+    raise SystemExit(94)
 targets = payload.setdefault("targets", [])
 record = next((item for item in targets if isinstance(item, dict) and item.get("id") == target_id), None)
 if record is None:
@@ -474,6 +505,9 @@ except Exception:
         pass
     raise
 PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
 }
 
 # Render and optionally send one notification from the unified status model.
