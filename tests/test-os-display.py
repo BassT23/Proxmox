@@ -23,9 +23,20 @@ cases = {
 for (raw, version), expected in cases.items():
     assert server.normalize_os_display(raw, version) == expected, (raw, version)
 
+detail_cases = {
+    ("pfSense / FreeBSD 15.0-CURRENT #21 RELENG_2_8_1 root@build /var/jenkins/workspace", None): "pfSense / FreeBSD 15.0-CURRENT",
+    ("FreeBSD 14.2-RELEASE-p3", None): "FreeBSD 14.2-RELEASE",
+    ("pfSense", "FreeBSD 15.0-CURRENT"): "pfSense / FreeBSD 15.0-CURRENT",
+}
+for (raw, version), expected in detail_cases.items():
+    assert server.normalize_os_detail(raw, version) == expected, (raw, version)
+
 payload = {"targets": [{"id": "1", "os": "Debian GNU/Linux 12 (bookworm)"}]}
 projected = server.annotate_health_state(payload)
 assert projected["targets"][0]["os_display"] == "Debian 12"
+assert projected["targets"][0]["os_detail_display"] == "Debian GNU/Linux 12 (bookworm)"
 assert "os_display" not in payload["targets"][0]
+
+assert "os_detail_display" not in payload["targets"][0]
 
 print("OS display normalization tests: PASS")

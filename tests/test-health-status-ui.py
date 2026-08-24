@@ -54,5 +54,9 @@ assert "const healthState=t=>" in source
 assert "health==='unknown'" in source
 assert "class=\"pill ${tone}${securityClass}\"" in source
 assert ".pill.neutral" in source
+assert ".error-text.good" in source
+assert ".error-text.neutral" in source
+assert "const detailError=t=>" in source
+assert "os_detail_display" in source
 
 print("health status UI regression tests: PASS")
