@@ -492,6 +492,24 @@ PAGE = r"""<!doctype html>
       .app-main { display:block; }
       .dashboard-header { display:block; }
     }
+    /* Final compact navigation/login correction. */
+    #auth-loading,#login-screen { background:#020817; backdrop-filter:none; }
+    #login-screen .modal,#auth-loading .modal { background:#071426; border-color:#1b74b0aa; box-shadow:0 24px 90px #000d,0 0 0 1px #0b5c9c44; opacity:1; }
+    @media (min-width:901px) {
+      .app-main { grid-template-columns:50px minmax(0,1fr); column-gap:18px; }
+      .page-nav { width:50px; min-height:0; padding:7px; border-radius:12px; }
+      .page-nav:hover,.page-nav:focus-within { width:158px; }
+      .page-nav::before,.page-nav:hover::before,.page-nav:focus-within::before { content:"☰"; width:36px; height:28px; padding:0; color:#65bfff; font-size:1.1rem; line-height:28px; letter-spacing:0; text-align:center; }
+      .page-nav a { min-height:40px; padding:5px 6px; border-radius:8px; }
+      .page-nav a::before { flex-basis:36px; width:36px; height:30px; margin:0; color:#91b3d4; background:transparent; font-size:1rem; }
+      .page-nav a.active { background:linear-gradient(180deg,#087ecb,#075694); border-color:#35b4ff; box-shadow:0 0 16px #008cff38,inset 0 1px #ffffff25; }
+      .page-nav a.active::before { color:#fff; background:transparent; box-shadow:none; }
+      .page-nav:hover a,.page-nav:focus-within a { padding-right:10px; }
+    }
+    @media (max-width:900px) {
+      #auth-loading,#login-screen { background:#020817; }
+      #login-screen .modal { background:#071426; }
+    }
   </style>
 </head>
 <body>
