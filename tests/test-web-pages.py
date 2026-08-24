@@ -39,6 +39,10 @@ assert 'id="config-form"' in settings
 assert 'class="management-form open"' in settings
 assert 'Open editor' not in settings
 assert 'class="summary dashboard-kpis" hidden' in page
+summary = page.split('class="summary dashboard-kpis" hidden', 1)[1].split('</section>', 1)[0]
+assert summary.count('class="metric"') == 6
+assert '.dashboard-kpis { grid-template-columns:repeat(6,minmax(0,1fr))' in page
+assert '.dashboard-kpis .metric' in page
 assert '#settings-page #config-form.management-form.open' in page
 assert 'settings-group-wide' in page
 assert 'grid-template-columns:repeat(2,minmax(0,1fr))' in page
