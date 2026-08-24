@@ -29,15 +29,27 @@ assert "document.querySelector('.dashboard-kpis').hidden=page!=='overview'" in p
 assert "applyPageRoute(true,link.dataset.page)" in page
 assert 'id="config-form"' in page
 assert 'id="config-message"' in page
-# Overview does not duplicate the settings editor or a redundant settings card.
+# Overview keeps status/action content only; management is on Settings.
 overview = page.split('id="overview-page"', 1)[1].split('id="settings-page"', 1)[0]
 assert 'id="settings-entry"' not in overview
 assert 'Manage Ultimate Updater settings' not in overview
 assert 'id="config-form"' not in overview
+assert 'id="internal-ssh-card"' not in overview
+assert 'id="external-panel"' not in overview
+assert 'id="internal-ssh-view"' not in overview
+assert 'id="targets"' in overview
+assert 'id="jobs"' in overview
 settings = page.split('id="settings-page"', 1)[1].split('id="scheduler-page"', 1)[0]
 assert 'id="config-form"' in settings
 assert 'class="management-form open"' in settings
 assert 'Open editor' not in settings
+assert 'id="internal-ssh-card"' in settings
+assert 'id="internal-ssh-view"' in settings
+assert 'id="external-panel"' in settings
+assert 'id="target-add"' in settings
+assert 'settings-management-title' in settings
+assert '#settings-page .connection-management-grid' in page
+assert "groupData.title==='Host'" in page
 assert 'class="summary dashboard-kpis" hidden' in page
 summary = page.split('class="summary dashboard-kpis" hidden', 1)[1].split('</section>', 1)[0]
 assert summary.count('class="metric"') == 6
