@@ -39,6 +39,9 @@ assert 'id="external-panel"' not in overview
 assert 'id="internal-ssh-view"' not in overview
 assert 'id="targets"' in overview
 assert 'id="jobs"' in overview
+assert 'class="overview-actions-card"' in overview
+assert 'id="check-all"' in overview
+assert 'id="update-all"' in overview
 settings = page.split('id="settings-page"', 1)[1].split('id="scheduler-page"', 1)[0]
 assert 'id="config-form"' in settings
 assert 'class="management-form open"' in settings
@@ -49,8 +52,16 @@ assert 'id="internal-ssh-view"' in settings
 assert 'id="external-panel"' in settings
 assert 'id="target-add"' in settings
 assert 'settings-management-title' in settings
+assert 'Settings' not in settings.split('id="config-panel"', 1)[0]
+assert 'Configure the existing Ultimate Updater behavior.' not in settings
+assert 'class="settings-config-intro section-title"' in settings
+assert '<section class="global-actions"' not in settings
+assert '<button id="internal-ssh-back" type="button">Close</button>' in settings
 assert '#settings-page .connection-management-grid' in page
 assert "groupData.title==='Host'" in page
+assert "groupData.title==='Target filters'" in page
+assert "groupData.title==='Containers / LXC'" not in page.split('function buildConfigForm', 1)[1].split('function configField', 1)[0]
+assert "await ensureSession();showDashboard();applyPageRoute();" in page
 assert 'class="summary dashboard-kpis" hidden' not in page
 summary = page.split('id="overview-page"', 1)[1].split('id="settings-page"', 1)[0]
 assert 'class="summary dashboard-kpis"' in summary
