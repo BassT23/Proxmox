@@ -513,8 +513,10 @@ PAGE = r"""<!doctype html>
       #login-screen .modal { background:#071426; }
       .nav-toggle { display:none; }
     }
-    /* Mockup layout: full-width hero with a compact overlay drawer. */
-    .nav-scrim { position:fixed; inset:0; z-index:19; border:0; border-radius:0; background:#000a; cursor:default; }
+/* Mockup layout: full-width hero with a compact overlay drawer. */
+body:has(#login-screen.open) .page-nav,
+body:has(#login-screen.open) .nav-scrim { display:none !important; }
+.nav-scrim { position:fixed; inset:0; z-index:19; border:0; border-radius:0; background:#000a; cursor:default; }
     .nav-scrim[hidden] { display:none; }
     .nav-open { overflow:hidden; }
     @media (min-width:761px) {
