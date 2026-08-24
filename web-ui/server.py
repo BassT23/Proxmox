@@ -513,6 +513,46 @@ PAGE = r"""<!doctype html>
       #login-screen .modal { background:#071426; }
       .nav-toggle { display:none; }
     }
+    /* Mockup layout: full-width hero with a compact overlay drawer. */
+    .nav-scrim { position:fixed; inset:0; z-index:19; border:0; border-radius:0; background:#000a; cursor:default; }
+    .nav-scrim[hidden] { display:none; }
+    .nav-open { overflow:hidden; }
+    @media (min-width:761px) {
+      .app-main { display:block; width:min(1540px,100%); padding:28px clamp(18px,4vw,54px) 54px; }
+      .dashboard-header { display:block; }
+      .dashboard-header-top { padding-left:64px; }
+      .page-nav { position:fixed; top:16px; left:16px; z-index:20; width:50px; min-height:0; margin:0; padding:7px; overflow:hidden; border-radius:12px; }
+      .page-nav.expanded { width:232px; overflow:visible; }
+      .page-nav::before,.page-nav:hover::before,.page-nav:focus-within::before { display:none; }
+      .page-nav:hover { width:50px; }
+      .page-nav.expanded:hover { width:232px; }
+      .page-nav a { min-height:40px; padding:5px 6px; font-size:0; }
+      .page-nav.expanded a { font-size:.78rem; padding-right:12px; }
+      .page-nav a::before { flex-basis:36px; width:36px; height:30px; margin:0; background:transparent; box-shadow:none; }
+      .page-nav a:nth-child(2)::before { content:"⌂"; }
+      .page-nav a:nth-child(3)::before { content:"▦"; }
+      .page-nav a:nth-child(4)::before { content:"↓"; }
+      .page-nav a:nth-child(5)::before { content:"✦"; }
+      .page-nav a:nth-child(6)::before { content:"▤"; }
+      .page-nav a:nth-child(7)::before { content:"⚙"; }
+      .page-nav a:nth-child(8)::before { content:"↻"; }
+      .page-nav a.active { background:linear-gradient(180deg,#087ecb,#075694); border-color:#35b4ff; box-shadow:0 0 16px #008cff38,inset 0 1px #ffffff25; }
+      .page-nav a.active::before { color:#fff; background:transparent; box-shadow:none; }
+      .nav-toggle { display:grid; place-items:center; flex:0 0 36px; width:36px; height:32px; padding:0; border:0; color:#65bfff; background:transparent; font-size:1.1rem; line-height:1; }
+      .nav-toggle:hover,.nav-toggle:focus-visible { color:#fff; background:#0878c933; outline:2px solid #41baff66; }
+    }
+    @media (max-width:760px) {
+      .app-main { display:block; padding:20px 11px 38px; }
+      .dashboard-header { display:block; }
+      .dashboard-header-top { padding-left:56px; }
+      .page-nav { position:fixed; top:10px; left:10px; z-index:20; width:46px; min-height:0; margin:0; padding:6px; overflow:hidden; border-radius:11px; }
+      .page-nav.expanded { width:min(232px,calc(100vw - 20px)); overflow:visible; }
+      .page-nav::before { display:none; }
+      .page-nav a { min-height:40px; padding:5px 5px; font-size:0; }
+      .page-nav.expanded a { font-size:.78rem; }
+      .nav-toggle { display:grid; place-items:center; flex:0 0 34px; width:34px; height:30px; padding:0; border:0; color:#65bfff; background:transparent; font-size:1rem; }
+      .page-nav a::before { flex-basis:34px; width:34px; height:28px; background:transparent; box-shadow:none; }
+    }
   </style>
 </head>
 <body>
@@ -543,8 +583,11 @@ PAGE = r"""<!doctype html>
     function showLogin(message=''){setLoginLoading(false);document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null}
     function showDashboard(){document.getElementById('auth-loading').classList.remove('open');document.getElementById('login-screen').classList.remove('open');document.getElementById('dashboard').hidden=false}
     function applyPageRoute(push=false,requestedPage=null){let page=requestedPage|| (location.pathname==='/settings'?'settings':location.pathname==='/scheduler'?'scheduler':'overview');if(push)history.pushState({},'',page==='overview'?'/':`/${page}`);const subtitles={overview:'A clear overview of updates across your systems.',settings:'Manage configuration without leaving your authenticated session.',scheduler:'Scheduling will be available in a future release.'};document.querySelectorAll('.page-nav a').forEach(link=>{const active=link.dataset.page===page;link.classList.toggle('active',active);link.setAttribute('aria-current',active?'page':'false')});document.getElementById('page-subtitle').textContent=subtitles[page];document.querySelector('.dashboard-kpis').hidden=page!=='overview';document.getElementById('overview-page').hidden=page!=='overview';document.getElementById('settings-page').hidden=page!=='settings';document.getElementById('scheduler-page').hidden=page!=='scheduler';if(page==='settings')loadConfig()}
-    document.querySelector('.nav-toggle')?.addEventListener('click',event=>{event.stopPropagation();const nav=document.querySelector('.page-nav'),open=nav.classList.toggle('expanded');event.currentTarget.setAttribute('aria-expanded',String(open));event.currentTarget.setAttribute('aria-label',open?'Collapse navigation':'Expand navigation')});
-    document.addEventListener('click',event=>{const link=event.target.closest('.page-nav a');if(!link)return;event.preventDefault();applyPageRoute(true,link.dataset.page)});window.addEventListener('popstate',()=>applyPageRoute());
+    const nav=document.querySelector('.page-nav'),navToggle=document.querySelector('.nav-toggle');
+    const navScrim=document.createElement('button');navScrim.type='button';navScrim.className='nav-scrim';navScrim.setAttribute('aria-label','Close navigation');navScrim.hidden=true;document.body.append(navScrim);
+    const setNavOpen=open=>{nav.classList.toggle('expanded',open);navScrim.hidden=!open;document.body.classList.toggle('nav-open',open);if(navToggle){navToggle.setAttribute('aria-expanded',String(open));navToggle.setAttribute('aria-label',open?'Close navigation':'Open navigation')}};
+    navToggle?.addEventListener('click',event=>{event.stopPropagation();setNavOpen(!nav.classList.contains('expanded'))});navScrim.addEventListener('click',()=>setNavOpen(false));document.addEventListener('keydown',event=>{if(event.key==='Escape')setNavOpen(false)});
+    document.addEventListener('click',event=>{const link=event.target.closest('.page-nav a');if(!link)return;if(link.dataset.page){event.preventDefault();applyPageRoute(true,link.dataset.page);setNavOpen(false);return}if(link.dataset.anchor){event.preventDefault();applyPageRoute(false,'overview');document.getElementById(link.dataset.anchor)?.scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.page-nav a').forEach(item=>item.classList.toggle('active',item===link));setNavOpen(false)}});window.addEventListener('popstate',()=>applyPageRoute());
     async function ensureSession(){const r=await fetch('/api/session',{cache:'no-store'});const d=await r.json();if(!r.ok){showLogin(d.error?.message||'Please sign in.');throw new Error(d.error?.message||'Authentication required.')}csrfToken=d.csrf;return d}
     async function api(path,options={}){if(!csrfToken)await ensureSession();const headers={'Content-Type':'application/json',...(options.headers||{})};if(csrfToken)headers['X-CSRF-Token']=csrfToken;const r=await fetch(path,{...options,headers});const d=await r.json();if(r.status===401){showLogin(d.error?.message||'Session expired.')}if(!r.ok){const error=new Error(d.error?.message||'Request failed');error.code=d.error?.code;error.diagnostics=d.diagnostics;throw error}return d}
     function notice(message,error=false){const n=document.getElementById('notice');n.hidden=false;n.textContent=message;n.className=error?'notice error':'notice'}
@@ -762,7 +805,7 @@ PAGE = PAGE.replace('<p id="login-version" class="login-version" aria-live="poli
 PAGE = PAGE.replace('<label>Name<input name="id"', '<label>Name *<input name="id"')
 PAGE = PAGE.replace('<button type="button" id="target-modal-test">Test connection</button>', '<button type="button" id="target-modal-test" disabled>Test connection</button>')
 PAGE = PAGE.replace('<section class="management-panel" id="settings-entry"><div class="section-title"><div><h2>Configuration</h2><span class="hint">Manage Ultimate Updater settings</span></div><a class="button primary" href="/settings">Open settings</a></div></section>', '')
-PAGE = PAGE.replace('<nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav><section class="summary dashboard-kpis" hidden><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>', '<nav class="page-nav" aria-label="Primary"><button class="nav-toggle" type="button" aria-label="Expand navigation" aria-expanded="false">☰</button><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav></header>')
+PAGE = PAGE.replace('<nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav><section class="summary dashboard-kpis" hidden><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>', '<nav class="page-nav" aria-label="Primary"><button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><a href="/" data-page="overview">Dashboard</a><a href="#systems" data-anchor="systems">Systems</a><a href="#systems" data-anchor="systems">Updates</a><a href="#global-actions" data-anchor="global-actions">Actions</a><a href="#jobs" data-anchor="jobs">Logs</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav></header>')
 PAGE = PAGE.replace('<section id="overview-page" class="page-section">', '<section id="overview-page" class="page-section"><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section>')
 PAGE = PAGE.replace('<div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div><button id="config-open" type="button">Open editor</button></div><form id="config-form" class="management-form"></form>', '<div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div></div><form id="config-form" class="management-form open"></form>')
 PAGE = PAGE.replace("document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));", "const configOpen=document.getElementById('config-open');if(configOpen)configOpen.onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));")
