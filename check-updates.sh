@@ -917,6 +917,7 @@ CHECK_CONTAINER () {
     CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' $LOCAL_FILES/temp/var)
   fi
   local CONTAINER_UPDATES=0 CONTAINER_NORMAL_UPDATES=null CONTAINER_SECURITY_UPDATES=null
+  local OS_VERSION="" OS_RELEASE="" OS_RELEASE_ID="" OS_RELEASE_PRETTY="" OS_DISPLAY=""
   local CONTAINER_STATUS=ok CONTAINER_REBOOT=false pct_config_error
   STATUS_MODEL_GUEST_NAME=""
   if declare -f cluster_target_guest_name >/dev/null 2>&1; then
@@ -932,6 +933,7 @@ CHECK_CONTAINER () {
     return
   fi
   OS=$(awk '/^ostype/' $LOCAL_FILES/temp/temp | cut -d' ' -f2)
+  OS_DISPLAY="$OS"
   if ! NAME=$(RUN_PCT_COMMAND "$CONTAINER" hostname 2>"$LOCAL_FILES/temp/hostname.error"); then
     # The guest hostname is display metadata, not a prerequisite for the
     # package check.  A broken/missing hostname command must not turn an
@@ -950,6 +952,13 @@ CHECK_CONTAINER () {
       "LXC $CONTAINER has no guest internet access; package check skipped" \
       "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
     return 0
+  fi
+  if OS_RELEASE=$(RUN_PCT_COMMAND "$CONTAINER" sh -c 'cat /etc/os-release' 2>/dev/null); then
+    OS_RELEASE_ID=$(printf '%s\n' "$OS_RELEASE" | awk -F= '/^ID=/{gsub(/^"|"$/, "", $2); print tolower($2); exit}')
+    OS_VERSION=$(printf '%s\n' "$OS_RELEASE" | awk -F= '/^VERSION_ID=/{gsub(/^"|"$/, "", $2); print $2; exit}')
+    OS_RELEASE_PRETTY=$(printf '%s\n' "$OS_RELEASE" | awk -F= '/^PRETTY_NAME=/{gsub(/^"|"$/, "", $2); print $2; exit}')
+    [[ -n "$OS_RELEASE_PRETTY" ]] && OS_DISPLAY="$OS_RELEASE_PRETTY"
+    [[ -z "$OS_DISPLAY" && -n "$OS_RELEASE_ID" ]] && OS_DISPLAY="$OS_RELEASE_ID"
   fi
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
     if ! RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get update" >/dev/null 2>&1; then
@@ -1025,7 +1034,7 @@ CHECK_CONTAINER () {
     fi
   fi
   [[ "$CONTAINER_UPDATES" -gt 0 ]] && CONTAINER_STATUS=updates_available
-  STATUS_MODEL_RECORD "$CONTAINER" lxc pct true "$OS" "${OS,,}" "$CONTAINER_UPDATES" "$CONTAINER_REBOOT" "$CONTAINER_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$CONTAINER_NORMAL_UPDATES" "$CONTAINER_SECURITY_UPDATES"
+  STATUS_MODEL_RECORD "$CONTAINER" lxc pct true "$OS_DISPLAY" "${OS,,}" "$CONTAINER_UPDATES" "$CONTAINER_REBOOT" "$CONTAINER_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$CONTAINER_NORMAL_UPDATES" "$CONTAINER_SECURITY_UPDATES"
 }
 
 # Single-target checks use the same lifecycle contract as check-all.  This is
@@ -1307,6 +1316,9 @@ CHECK_VM () {
       else
         OS=FreeBSD
       fi
+      if [[ "$SSH_UNAME_VERSION" =~ [0-9] ]]; then
+        OS="${OS} / ${SSH_UNAME_VERSION}"
+      fi
       if FREEBSD_PKG_LIST=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "pkg version -U -l '<'" 2>/dev/null); then
         PKG_RC=0
       else
@@ -1407,7 +1419,7 @@ CHECK_VM () {
 }
 
 CHECK_VM_QEMU () {
-  local OS_INFO OS_NAME OS_NAME_LOWER
+  local OS_INFO OS_NAME OS_NAME_LOWER OS_VERSION=""
   # A successful agent ping proves QGA transport without assuming that the
   # guest contains a Linux executable such as /bin/true.  FreeBSD/pfSense
   # commonly has a working agent but no Linux guest-exec environment.
@@ -1431,6 +1443,8 @@ CHECK_VM_QEMU () {
     else
       OS_NAME=FreeBSD
     fi
+    OS_VERSION=$(printf '%s\n' "$OS_INFO" | sed -nE 's/.*kernel-version[^:]*:[[:space:]]*"([^"]+)".*/\1/p' | head -n 1)
+    [[ "$OS_VERSION" =~ [0-9] ]] && OS_NAME="${OS_NAME} / ${OS_VERSION}"
     OS_NAME_LOWER="${OS_NAME,,}"
   fi
   if [[ "${OS_INFO,,}" =~ windows ]]; then

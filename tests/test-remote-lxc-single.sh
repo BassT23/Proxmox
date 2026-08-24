@@ -21,12 +21,16 @@ STATUS_MODEL_GUEST_NAME=smarthome-service
 INITIAL_INVENTORY=false
 STATUS_MODEL_RECORD_FILE="$PWD/records"
 SANITIZE_NUMBER() { tr -cd '0-9' <<< "$1"; }
+READ_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; }
 cluster_target_guest_name() { printf 'smarthome-service\n'; }
 STATUS_MODEL_RECORD() { printf '%s\n' "$*" >> "$STATUS_MODEL_RECORD_FILE"; }
 RUN_PCT_COMMAND() {
   local id="$1"; shift
   [[ "$id" == 200 ]]
   [[ "${1:-}" == hostname ]] && printf 'smarthome-service\n'
+  if [[ "${1:-}" == sh && "${2:-}" == -c && "${3:-}" == "cat /etc/os-release" ]]; then
+    printf 'ID=debian\nVERSION_ID="12"\nPRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\n'
+  fi
   return 0
 }
 pct() {
@@ -36,7 +40,7 @@ pct() {
 source "$PWD/check-container.sh"
 CHECK_CONTAINER 200
 test -f "$LOCAL_FILES/temp/temp"
-grep -Fq '200 lxc pct true unsupported' "$STATUS_MODEL_RECORD_FILE"
+grep -Fq '200 lxc pct true Debian GNU/Linux 12 (bookworm)' "$STATUS_MODEL_RECORD_FILE"
 HARNESS
 chmod 750 "$WORK_DIR/harness.sh"
 (cd "$WORK_DIR" && bash harness.sh)
