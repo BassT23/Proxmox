@@ -22,6 +22,15 @@ grep -Fq 'Web UI ready on port' "$INSTALLER"
 grep -Fq 'Updating Ultimate Updater...' "$INSTALLER"
 grep -Fq "Installed: \$BRANCH" "$INSTALLER"
 grep -Fq "rm -rf \"\$TEMP_FILES\"/tests" "$INSTALLER"
+grep -Fq "rm -rf \"\$TEMP_FILES\"/docs" "$INSTALLER"
+grep -Fq '"$TEMP_FILES"/RELEASE_NOTES_5.1_BETA.md' "$INSTALLER"
+grep -Fq '"$TEMP_FILES"/UPGRADE_NOTES_5.1.md' "$INSTALLER"
+grep -Fq 'rm -rf "$LOCAL_FILES/docs"' "$INSTALLER"
+grep -Fq 'rm -f "$LOCAL_FILES/RELEASE_NOTES_5.1_BETA.md"' "$INSTALLER"
+grep -Fq '"$LOCAL_FILES/UPGRADE_NOTES_5.1.md"' "$INSTALLER"
+for repository_file in docs RELEASE_NOTES_5.1_BETA.md UPGRADE_NOTES_5.1.md; do
+  [[ -e "$ROOT_DIR/$repository_file" ]]
+done
 if grep -Fq 'For infos and warnings please check the readme' "$INSTALLER"; then
   exit 1
 fi
