@@ -19,7 +19,10 @@ assert 'id="overview-page"' in page
 assert 'id="settings-page"' in page
 assert 'id="scheduler-page"' in page
 assert 'id="page-subtitle"' in page
-assert 'Scheduled checks and updates are planned for a future release.' in page
+assert 'Automatic checks and updates using the existing Ultimate Updater safety rules.' in page
+assert '/api/schedules' in page
+assert 'Check all systems' in page
+assert 'Update all systems' in page
 assert 'function applyPageRoute(push=false,requestedPage=null)' in page
 assert "location.pathname==='/settings'" in page
 assert "location.pathname==='/scheduler'" in page
@@ -75,11 +78,13 @@ assert '#settings-page #config-form.management-form.open { grid-template-columns
 assert 'background:#151d34e8' in page
 assert 'min-width:112px' in page
 assert '.page-nav a.active' in page
-# The placeholder must not expose scheduling controls or job endpoints.
+# Scheduler exposes only the supported full check/update controls.
 scheduler = page.split('id="scheduler-page"', 1)[1].split('<footer', 1)[0]
 assert 'class="summary dashboard-kpis"' not in scheduler
-assert '<input' not in scheduler
-assert '<select' not in scheduler
-assert '/api/' not in scheduler
+assert 'name="time"' in scheduler
+assert 'name="frequency"' in scheduler
+assert 'name="type"' in scheduler
+assert '/api/schedules' in page
+assert 'single system' not in scheduler.lower()
 
 print("web page structure regression tests: PASS")
