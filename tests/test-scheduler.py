@@ -22,6 +22,9 @@ single = {**base, "days": ["Sun"], "time": "04:05"}
 assert server.scheduler_calendar(single) == "Sun *-*-* 04:05:00"
 multiple = {**base, "days": ["Mon", "Wed", "Fri"]}
 assert server.scheduler_calendar(multiple) == "Mon,Wed,Fri *-*-* 03:00:00"
+assert server.scheduler_next_run_value("1777000000000000") is not None
+assert server.scheduler_next_run_value("Tue 2026-08-25 04:00:00 CEST").startswith("2026-08-25T04:00:00")
+assert server.scheduler_next_run_value("n/a") is None
 selected = {**base, "type": "check-selected", "targets": ["host:node1", "101"]}
 assert server.scheduler_validate(selected, base["id"])["targets"] == ["host:node1", "101"]
 assert server.scheduler_commands(selected, Path("/usr/local/sbin/ultimate-updater")) == [

@@ -20,6 +20,7 @@ assert 'id="settings-page"' in page
 assert 'id="scheduler-page"' in page
 assert 'id="page-subtitle"' in page
 assert 'Automatic checks and updates using the existing Ultimate Updater safety rules.' in page
+assert 'Scheduling will be available in a future release.' not in page
 assert '/api/schedules' in page
 assert '/api/scheduler-targets' in page
 assert 'Check all systems' in page
@@ -90,6 +91,9 @@ assert 'Select all visible' in scheduler
 assert 'schedule-target-table' in scheduler
 assert 'schedule-selected' in scheduler
 assert 'name="type"' in scheduler
+assert 'id="scheduler-timezone"' not in scheduler
+assert '<span>Timezone</span>' not in scheduler
+assert '.scheduler-summary{display:grid;grid-template-columns:repeat(3' in page
 assert '/api/schedules' in page
 assert 'name="frequency"' not in scheduler
 assert 'name="day"' not in scheduler
