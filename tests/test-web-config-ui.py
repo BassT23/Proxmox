@@ -47,7 +47,7 @@ assert ".matrix-extras { display:grid; grid-template-columns:minmax(0,1fr) auto"
 assert "data-parent" not in page
 assert "updateConfigDependencies" not in page
 assert "is-dependent" not in page
-assert "update.conf remains the source of truth" in page
+assert "update.conf remains the source of truth" not in page
 assert "/api/config-preview?" in page
 assert "filter-preview" in page
 assert "Exclude is always applied afterwards" in page

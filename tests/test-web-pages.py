@@ -51,10 +51,10 @@ assert 'id="internal-ssh-card"' in settings
 assert 'id="internal-ssh-view"' in settings
 assert 'id="external-panel"' in settings
 assert 'id="target-add"' in settings
-assert 'settings-management-title' in settings
+assert '<h2 class="settings-management-title">' not in settings
 assert 'Settings' not in settings.split('id="config-panel"', 1)[0]
 assert 'Configure the existing Ultimate Updater behavior.' not in settings
-assert 'class="settings-config-intro section-title"' in settings
+assert 'class="settings-config-intro section-title"' not in settings
 assert '<section class="global-actions"' not in settings
 assert '<button id="internal-ssh-back" type="button">Close</button>' in settings
 assert '#settings-page .connection-management-grid' in page
