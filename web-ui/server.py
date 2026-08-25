@@ -553,6 +553,30 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
       .nav-toggle { display:grid; place-items:center; flex:0 0 30px; width:30px; height:28px; margin:0 auto 5px 0; padding:0; border:0; border-radius:7px; color:#65bfff; background:transparent; font-size:1rem; }
       .page-nav a::before { flex-basis:32px; width:32px; height:28px; margin-right:4px; background:transparent; box-shadow:none; }
     }
+    /* Final sidebar structure: the header spans the app, the navigation
+       starts below it, and only narrow screens use an overlay drawer. */
+    @media (min-width:761px) {
+      .app-main { display:grid; grid-template-columns:54px minmax(0,1fr); grid-auto-flow:row; column-gap:18px; align-items:start; width:min(1540px,100%); padding:28px clamp(18px,4vw,54px) 54px; }
+      .app-main:has(.page-nav.expanded) { grid-template-columns:216px minmax(0,1fr); }
+      .dashboard-header { grid-column:1 / -1; grid-row:1; display:block; margin-bottom:0; }
+      .dashboard-header-top { padding-left:22px; }
+      .page-nav { grid-column:1; grid-row:2; position:sticky; top:24px; display:flex; flex-direction:column; align-items:stretch; gap:3px; width:54px; height:auto; min-height:0; margin:0; padding:8px; overflow:hidden; border-radius:14px; background:linear-gradient(180deg,#0a2745f5,#06172bf2); border-color:#159cf0aa; box-shadow:0 18px 55px #0009,0 0 28px #008cff20; transition:width .18s ease,box-shadow .18s ease; }
+      .page-nav.expanded { width:216px; height:auto; min-height:0; }
+      .page-nav:not(.expanded) a { display:flex; min-height:34px; padding:3px 4px; font-size:0; }
+      .page-nav.expanded a { display:flex; min-height:36px; padding:4px 8px; font-size:.78rem; }
+      .page-nav a::before { flex-basis:34px; width:34px; height:28px; margin:0 4px 0 0; background:transparent; box-shadow:none; }
+      .page-nav a.active { background:linear-gradient(90deg,#087ecb,#075694cc); border-color:#35b4ff99; box-shadow:0 0 14px #008cff30,inset 0 1px #ffffff20; }
+      .page-nav a.active::before { color:#fff; background:transparent; box-shadow:none; }
+      .nav-toggle { display:grid; place-items:center; flex:0 0 30px; width:30px; height:28px; margin:0 auto 5px 0; padding:0; border:0; border-radius:8px; color:#65bfff; background:transparent; font-size:1.05rem; line-height:1; }
+      .nav-toggle:hover,.nav-toggle:focus-visible { color:#fff; background:#0878c933; outline:2px solid #41baff66; }
+      #notice,#overview-page,#settings-page,#scheduler-page,footer { grid-column:2; }
+    }
+    @media (max-width:760px) {
+      .page-nav:not(.expanded) a { display:flex; min-height:32px; padding:2px 3px; font-size:0; }
+      .page-nav.expanded a { display:flex; }
+      .page-nav { height:auto; }
+      .page-nav.expanded { height:auto; min-height:0; }
+    }
   </style>
 </head>
 <body>
@@ -805,7 +829,7 @@ PAGE = PAGE.replace('<p id="login-version" class="login-version" aria-live="poli
 PAGE = PAGE.replace('<label>Name<input name="id"', '<label>Name *<input name="id"')
 PAGE = PAGE.replace('<button type="button" id="target-modal-test">Test connection</button>', '<button type="button" id="target-modal-test" disabled>Test connection</button>')
 PAGE = PAGE.replace('<section class="management-panel" id="settings-entry"><div class="section-title"><div><h2>Configuration</h2><span class="hint">Manage Ultimate Updater settings</span></div><a class="button primary" href="/settings">Open settings</a></div></section>', '')
-PAGE = PAGE.replace('<nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav><section class="summary dashboard-kpis" hidden><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>', '<nav class="page-nav" aria-label="Primary"><button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><a href="/" data-page="overview">Dashboard</a><a href="#systems" data-anchor="systems">Systems</a><a href="#systems" data-anchor="systems">Updates</a><a href="#global-actions" data-anchor="global-actions">Actions</a><a href="#jobs" data-anchor="jobs">Logs</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav></header>')
+PAGE = PAGE.replace('<nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav><section class="summary dashboard-kpis" hidden><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>', '</header><nav class="page-nav" aria-label="Primary"><button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><a href="/" data-page="overview" class="active" aria-current="page">Dashboard</a><a href="#systems" data-anchor="systems">Systems</a><a href="#systems" data-anchor="systems">Updates</a><a href="#global-actions" data-anchor="global-actions">Actions</a><a href="#jobs" data-anchor="jobs">Logs</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav>')
 PAGE = PAGE.replace('<section id="overview-page" class="page-section">', '<section id="overview-page" class="page-section"><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section>')
 PAGE = PAGE.replace('<div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div><button id="config-open" type="button">Open editor</button></div><form id="config-form" class="management-form"></form>', '<div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div></div><form id="config-form" class="management-form open"></form>')
 PAGE = PAGE.replace("document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));", "const configOpen=document.getElementById('config-open');if(configOpen)configOpen.onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));")
