@@ -80,10 +80,12 @@ assert "/api/public-version" in source
 assert 'id="login-version"' in source
 assert 'class="modal version-dialog"' in module.PAGE
 assert 'class="version-dialog-brand"' in module.PAGE
-assert 'src="/assets/ultimate-updater-header.png" alt="" aria-hidden="true"' in module.PAGE
+version_dialog = module.PAGE.split('id="updater-version-modal"', 1)[1].split('</section></div>', 1)[0]
+assert 'src="/assets/ultimate-updater-icon.png" alt="" aria-hidden="true"' in version_dialog
+assert '/assets/ultimate-updater-header.png' not in version_dialog
 assert 'class="version-dialog-footer"' in module.PAGE
 assert 'href="https://github.com/BassT23/Proxmox" target="_blank" rel="noopener noreferrer"' in module.PAGE
-assert '.version-dialog-brand img{display:block;width:56px;height:56px' in module.PAGE
+assert '.version-dialog-brand img{display:block;width:42px;height:42px' in module.PAGE
 assert "loginVersionText" in source
 assert "version_refresh_running" in source
 assert "Schema ${text(data.schema_version)}" not in module.PAGE
