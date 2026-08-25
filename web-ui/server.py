@@ -1544,6 +1544,7 @@ def canonical_inventory(payload, inventory, proxmox_resources=None, backup_state
         cluster_online = resource.get("status") == "online"
         base = {"id": f"host:{node}", "type": "host", "transport": "local",
                 "name": node, "node": node,
+                "status": resource.get("status"),
                 "reachable": cluster_online,
                 "check_status": "unknown" if cluster_online else "offline"}
         merged = merge(base, status)
