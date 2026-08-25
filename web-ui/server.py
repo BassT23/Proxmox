@@ -577,6 +577,18 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
       .page-nav { height:auto; }
       .page-nav.expanded { height:auto; min-height:0; }
     }
+    /* The rail is integrated into the main body instead of reserving a grid
+       column.  Its expanded state overlays the unchanged content position. */
+    @media (min-width:761px) {
+      .app-main { display:block; position:relative; width:min(1540px,100%); padding:28px clamp(18px,4vw,54px) 54px; }
+      .dashboard-header { display:block; }
+      .main-body { position:relative; min-width:0; padding-left:70px; }
+      .page-nav { position:absolute; top:0; left:0; z-index:20; width:54px; height:auto; min-height:0; margin:0; }
+      .page-nav.expanded { width:216px; height:auto; min-height:0; }
+    }
+    @media (max-width:760px) {
+      .main-body { position:static; padding-left:0; }
+    }
   </style>
 </head>
 <body>
@@ -831,6 +843,8 @@ PAGE = PAGE.replace('<button type="button" id="target-modal-test">Test connectio
 PAGE = PAGE.replace('<section class="management-panel" id="settings-entry"><div class="section-title"><div><h2>Configuration</h2><span class="hint">Manage Ultimate Updater settings</span></div><a class="button primary" href="/settings">Open settings</a></div></section>', '')
 PAGE = PAGE.replace('<nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav><section class="summary dashboard-kpis" hidden><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>', '</header><nav class="page-nav" aria-label="Primary"><button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><a href="/" data-page="overview" class="active" aria-current="page">Dashboard</a><a href="#systems" data-anchor="systems">Systems</a><a href="#systems" data-anchor="systems">Updates</a><a href="#global-actions" data-anchor="global-actions">Actions</a><a href="#jobs" data-anchor="jobs">Logs</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav>')
 PAGE = re.sub(r'<nav class="page-nav" aria-label="Primary">.*?</nav><section class="summary dashboard-kpis" hidden>.*?</section></header>', '</header><nav class="page-nav" aria-label="Primary"><button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><a href="/" data-page="overview" class="active" aria-current="page">Dashboard</a><a href="#systems" data-anchor="systems">Systems</a><a href="#systems" data-anchor="systems">Updates</a><a href="#global-actions" data-anchor="global-actions">Actions</a><a href="#jobs" data-anchor="jobs">Logs</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav>', PAGE, count=1, flags=re.S)
+PAGE = PAGE.replace('</header><nav class="page-nav"', '</header><div class="main-body"><nav class="page-nav"', 1)
+PAGE = PAGE.replace('    <footer>', '    </div>\n    <footer>', 1)
 PAGE = PAGE.replace('<section id="overview-page" class="page-section">', '<section id="overview-page" class="page-section"><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section>')
 PAGE = PAGE.replace('<div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div><button id="config-open" type="button">Open editor</button></div><form id="config-form" class="management-form"></form>', '<div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div></div><form id="config-form" class="management-form open"></form>')
 PAGE = PAGE.replace("document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));", "const configOpen=document.getElementById('config-open');if(configOpen)configOpen.onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));")
