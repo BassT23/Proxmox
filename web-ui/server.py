@@ -818,6 +818,8 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
 PAGE = PAGE.replace("Update jobs", "Jobs")
 PAGE = PAGE.replace("Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}",
                     "Generated ${date(data.generated_at)}")
+PAGE = PAGE.replace('return `<span class="pill ${tone}${securityClass}">${label}</span>`};', 'const iconKind=label===\'Security updates available\'?\'shield\':label===\'Updates available\'?\'download\':label===\'Healthy\'?\'check\':label===\'Offline\'?\'offline\':label===\'Unknown\'?\'unknown\':\'attention\';return `<span class="pill ${tone}${securityClass}">${statusIcon(iconKind)}${label}</span>`};')
+PAGE = PAGE.replace('    .status-icon { display:inline-block; flex:0 0 auto; width:14px; height:14px; color:currentColor; }', '    .main-body > .page-section { margin-top:18px; } .status-icon { display:inline-block; flex:0 0 auto; width:14px; height:14px; min-width:14px; min-height:14px; color:currentColor; stroke:currentColor; stroke-width:1.8; opacity:1; visibility:visible; }')
 PAGE = PAGE.replace("</body></html>", """<script>
     let loginVersionTimer=null;
     function loginVersionText(data){
