@@ -880,6 +880,12 @@ PAGE = PAGE.replace('    bootstrap();', '''    const statusIcon=kind=>{const pat
 PAGE = PAGE.replace('    const statusIcon=kind=>', '    const decorateOverviewIcons=()=>document.querySelectorAll("[data-overview-icon]").forEach(element=>{if(!element.querySelector(".status-icon"))element.innerHTML=statusIcon(element.dataset.overviewIcon)});\n    const statusIcon=kind=>')
 PAGE = PAGE.replace("activity:'<path d=\"M4 12h3l2-5 4 10 2-5h5\"/>'};", "package:'<path d=\"m4 8 8-4 8 4-8 4-8-4Zm0 0v8l8 4 8-4V8m-8 4v8\"/>',activity:'<path d=\"M4 12h3l2-5 4 10 2-5h5\"/>'};")
 PAGE = PAGE.replace('    bootstrap();', '    decorateOverviewIcons();\n    bootstrap();')
+def reorder_overview_summary(match):
+    blocks = re.findall(r'<div class="metric">.*?</div>\s*<span>.*?</span>\s*</div>', match.group(0), flags=re.S)
+    order = ('systems', 'check', 'attention', 'shield', 'download', 'package')
+    by_icon = {re.search(r'data-overview-icon="([^"]+)"', block).group(1): block for block in blocks}
+    return '<section class="summary dashboard-kpis">' + ''.join(by_icon[key] for key in order) + '</section>'
+PAGE = re.sub(r'<section class="summary dashboard-kpis">(?:<div class="metric">.*?</div>\s*<span>.*?</span>\s*</div>){6}</section>', reorder_overview_summary, PAGE, count=1, flags=re.S)
 PAGE = PAGE.replace('<div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div><button id="config-open" type="button">Open editor</button></div><form id="config-form" class="management-form"></form>', '<div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div></div><form id="config-form" class="management-form open"></form>')
 PAGE = PAGE.replace("document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));", "const configOpen=document.getElementById('config-open');if(configOpen)configOpen.onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));")
 PAGE = PAGE.replace('<div id="login-message" class="management-message" role="alert"></div></form></section>', '<div id="login-message" class="management-message" role="alert"></div><p id="login-version" class="login-version login-version-footer" aria-live="polite">Ultimate Updater · checking local version…</p></form></section>')
