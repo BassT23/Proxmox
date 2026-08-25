@@ -589,6 +589,23 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     @media (max-width:760px) {
       .main-body { position:static; padding-left:0; }
     }
+    /* Collapsed means toggle-only: no rail, no phantom width, no hidden
+       pointer-blocking surface.  The full navigation exists only expanded. */
+    @media (min-width:761px) {
+      .main-body { padding-left:0; }
+      .page-nav { width:44px; height:44px; padding:5px; background:transparent; border-color:transparent; box-shadow:none; pointer-events:none; overflow:visible; }
+      .page-nav:not(.expanded) a { display:none !important; }
+      .page-nav:not(.expanded) .nav-toggle { pointer-events:auto; }
+      .page-nav.expanded { width:216px; height:auto; padding:8px; background:linear-gradient(180deg,#0a2745f5,#06172bf2); border-color:#159cf0aa; box-shadow:0 22px 70px #000b,0 0 34px #008cff32; pointer-events:auto; overflow:hidden; }
+      .page-nav.expanded a { display:flex; }
+    }
+    @media (max-width:760px) {
+      .page-nav { width:44px; height:44px; padding:5px; background:transparent; border-color:transparent; box-shadow:none; pointer-events:none; overflow:visible; }
+      .page-nav:not(.expanded) a { display:none !important; }
+      .page-nav:not(.expanded) .nav-toggle { pointer-events:auto; }
+      .page-nav.expanded { width:min(216px,calc(100vw - 24px)); height:auto; padding:7px; background:linear-gradient(180deg,#0a2745f5,#06172bf2); border-color:#159cf0aa; box-shadow:0 18px 55px #000a,0 0 28px #008cff28; pointer-events:auto; overflow:hidden; }
+      .page-nav.expanded a { display:flex; }
+    }
     .pill,.reboot-required-badge { display:inline-flex; align-items:center; gap:5px; }
     .status-icon { display:inline-block; flex:0 0 auto; width:14px; height:14px; color:currentColor; }
     .reboot-required-badge .status-icon { width:13px; height:13px; }
