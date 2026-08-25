@@ -78,6 +78,12 @@ assert "2500" in source and "7000" in source
 assert "self.server.version_cache = {\"at\": now, \"data\": data} if data.get(\"state\") == \"ok\" else None" in source
 assert "/api/public-version" in source
 assert 'id="login-version"' in source
+assert 'class="modal version-dialog"' in module.PAGE
+assert 'class="version-dialog-brand"' in module.PAGE
+assert 'src="/assets/ultimate-updater-header.png" alt="" aria-hidden="true"' in module.PAGE
+assert 'class="version-dialog-footer"' in module.PAGE
+assert 'href="https://github.com/BassT23/Proxmox" target="_blank" rel="noopener noreferrer"' in module.PAGE
+assert '.version-dialog-brand img{display:block;width:56px;height:56px' in module.PAGE
 assert "loginVersionText" in source
 assert "version_refresh_running" in source
 assert "Schema ${text(data.schema_version)}" not in module.PAGE
