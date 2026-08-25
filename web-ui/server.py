@@ -221,9 +221,10 @@ def scheduler_next_run_value(raw):
     if not match:
         return None
     try:
-        local_zone = datetime.now().astimezone().tzinfo
         parsed = datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S")
-        return parsed.replace(tzinfo=local_zone).isoformat()
+        # Let the system timezone database resolve DST for the parsed date,
+        # rather than attaching the offset that happens to be active now.
+        return datetime.fromtimestamp(time.mktime(parsed.timetuple())).astimezone().isoformat()
     except (ValueError, OSError, OverflowError):
         return None
 
