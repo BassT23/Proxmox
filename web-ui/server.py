@@ -124,8 +124,12 @@ INTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 SCHEDULER_ID_RE = re.compile(r"^[a-f0-9]{12}$")
 SCHEDULER_NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,80}$")
 SCHEDULER_TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
-SCHEDULER_DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-SCHEDULER_TYPES = {"check-all", "update-all"}
+SCHEDULER_DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+SCHEDULER_DAY_LABELS = dict(zip(SCHEDULER_DAYS, ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")))
+SCHEDULER_TYPES = {"check-all", "check-selected", "update-all", "update-selected"}
+SCHEDULER_SCHEMA_VERSION = 2
+SCHEDULER_TARGET_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,160}$")
+SCHEDULER_LEGACY_DAYS = dict(zip(("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), SCHEDULER_DAYS))
 
 
 def scheduler_unit_name(schedule_id):
@@ -139,26 +143,45 @@ def scheduler_validate(payload, schedule_id=None):
         raise ValueError("Schedule must be an object")
     name = payload.get("name")
     schedule_type = payload.get("type")
-    frequency = payload.get("frequency")
+    days = payload.get("days")
     time_value = payload.get("time")
-    day = payload.get("day", "")
+    legacy_frequency = payload.get("frequency")
+    legacy_day = payload.get("day", "")
     enabled = payload.get("enabled", True)
     if not isinstance(name, str) or not SCHEDULER_NAME_RE.fullmatch(name) or name.strip() != name:
         raise ValueError("Name must be 1-80 characters without control characters")
     if schedule_type not in SCHEDULER_TYPES:
         raise ValueError("Unknown scheduler action")
-    if frequency not in {"daily", "weekly"}:
-        raise ValueError("Frequency must be daily or weekly")
+    if days is None:
+        if legacy_frequency == "daily":
+            days = list(SCHEDULER_DAYS)
+        elif legacy_frequency == "weekly":
+            day = SCHEDULER_LEGACY_DAYS.get(legacy_day, SCHEDULER_LEGACY_DAYS.get(str(legacy_day).title()))
+            if day is None:
+                raise ValueError("A valid legacy weekday is required")
+            days = [day]
+        else:
+            raise ValueError("Days of week are required")
+    if not isinstance(days, list) or not days:
+        raise ValueError("Select at least one day")
+    if any(day not in SCHEDULER_DAYS for day in days) or len(set(days)) != len(days):
+        raise ValueError("Days of week are invalid")
+    days = [day for day in SCHEDULER_DAYS if day in days]
     if not isinstance(time_value, str) or not SCHEDULER_TIME_RE.fullmatch(time_value):
         raise ValueError("Time must use HH:MM")
-    if frequency == "weekly" and day not in SCHEDULER_DAYS:
-        raise ValueError("A valid weekday is required for weekly schedules")
-    if frequency == "daily":
-        day = ""
     if not isinstance(enabled, bool):
         raise ValueError("Enabled must be boolean")
-    normalized = {"name": name, "type": schedule_type, "frequency": frequency,
-                  "day": day, "time": time_value, "enabled": enabled}
+    targets = payload.get("targets", [])
+    if not isinstance(targets, list) or any(not isinstance(target, str) for target in targets):
+        raise ValueError("Targets must be a list without duplicates")
+    if len(set(targets)) != len(targets):
+        raise ValueError("Targets must be a list without duplicates")
+    if any(not isinstance(target, str) or not SCHEDULER_TARGET_RE.fullmatch(target) for target in targets):
+        raise ValueError("Target identifiers are invalid")
+    if schedule_type.endswith("-selected") and not targets:
+        raise ValueError("Select at least one target")
+    normalized = {"name": name, "type": schedule_type, "days": days,
+                  "time": time_value, "enabled": enabled, "targets": targets}
     if schedule_id is not None:
         if not SCHEDULER_ID_RE.fullmatch(schedule_id):
             raise ValueError("Invalid schedule ID")
@@ -168,9 +191,9 @@ def scheduler_validate(payload, schedule_id=None):
 
 def scheduler_calendar(schedule):
     hour, minute = schedule["time"].split(":")
-    if schedule["frequency"] == "weekly":
-        return f"{schedule['day'][:3]} *-*-* {hour}:{minute}:00"
-    return f"*-*-* {hour}:{minute}:00"
+    days = schedule["days"]
+    day_expression = "*-*-*" if set(days) == set(SCHEDULER_DAYS) else ",".join(days) + " *-*-*"
+    return f"{day_expression} {hour}:{minute}:00"
 
 
 def scheduler_load(path):
@@ -180,6 +203,8 @@ def scheduler_load(path):
         data = json.load(source)
     if not isinstance(data, dict) or not isinstance(data.get("schedules"), list):
         raise ValueError("Scheduler data is invalid")
+    if data.get("schema_version", 1) not in {1, SCHEDULER_SCHEMA_VERSION}:
+        raise ValueError("Unsupported scheduler schema")
     schedules = []
     for item in data["schedules"]:
         if not isinstance(item, dict) or not isinstance(item.get("id"), str):
@@ -200,7 +225,7 @@ def scheduler_save(path, schedules):
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent), text=True)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as target:
-            json.dump({"schema_version": 1, "schedules": schedules}, target, indent=2)
+            json.dump({"schema_version": SCHEDULER_SCHEMA_VERSION, "schedules": schedules}, target, indent=2)
             target.write("\n")
             target.flush()
             os.fsync(target.fileno())
@@ -222,15 +247,35 @@ def scheduler_unit_files(schedule, unit_dir, cli):
     unit = scheduler_unit_name(schedule["id"])
     service = unit_dir / f"{unit}.service"
     timer = unit_dir / f"{unit}.timer"
-    action = "check" if schedule["type"] == "check-all" else "update-all"
-    service_text = "\n".join(("[Unit]", f"Description=Ultimate Updater scheduled {action}", "", "[Service]",
-                                "Type=oneshot", "Environment=UU_JOB_SOURCE=scheduler",
-                                f"ExecStart={cli} {action}", ""))
+    action = schedule["type"]
+    commands = scheduler_commands(schedule, cli)
+    service_lines = ["[Unit]", f"Description=Ultimate Updater scheduled {action}", "", "[Service]",
+                     "Type=oneshot", "Environment=UU_JOB_SOURCE=scheduler"]
+    service_lines.extend(f"ExecStart={shlex.join(command)}" for command in commands)
+    service_lines.append("")
+    service_text = "\n".join(service_lines)
     unit_name = schedule["name"].replace("%", "%%")
     timer_text = "\n".join(("[Unit]", f"Description=Ultimate Updater schedule {unit_name}", "", "[Timer]",
                               f"OnCalendar={scheduler_calendar(schedule)}", "Persistent=false",
                               f"Unit={unit}.service", "", "[Install]", "WantedBy=timers.target", ""))
     return unit, service, timer, service_text, timer_text
+
+
+def scheduler_cli_target(target):
+    """Map the stable status identifier to the existing CLI target syntax."""
+    if target.startswith("host:"):
+        return target.removeprefix("host:")
+    return target
+
+
+def scheduler_commands(schedule, cli):
+    """Build existing CLI invocations; selected schedules never become all."""
+    if schedule["type"] == "check-all":
+        return [[str(cli), "check"]]
+    if schedule["type"] == "update-all":
+        return [[str(cli), "update-all"]]
+    command = "check" if schedule["type"] == "check-selected" else "update"
+    return [[str(cli), command, scheduler_cli_target(target)] for target in schedule["targets"]]
 
 
 class TLSConfigurationError(RuntimeError):
@@ -1011,7 +1056,8 @@ PAGE = PAGE.replace('<button id="internal-ssh-back" type="button">Back to settin
 PAGE = PAGE.replace('<div class="settings-config-intro section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div></div>', '')
 PAGE = PAGE.replace('<h2 class="settings-management-title">Connection management</h2>', '')
 PAGE = PAGE.replace('</head>', '<style>.pill.security-warn{display:inline-flex;width:max-content;max-width:100%;white-space:nowrap}.pill .status-icon,.reboot-required-badge .status-icon{flex:0 0 auto}.main-body>#settings-page:not([hidden]){margin-top:0;padding-top:24px}</style></head>', 1)
-scheduler_markup = '''<section id="scheduler-page" class="page-section" hidden><section class="scheduler-head"><div><h2>Scheduler</h2><p>Automatic checks and updates using the existing Ultimate Updater safety rules.</p></div><button id="schedule-add" class="primary" type="button">+ Add schedule</button></section><section class="scheduler-summary"><div><span>Scheduler</span><strong id="scheduler-state">Enabled</strong></div><div><span>Active schedules</span><strong id="scheduler-count">0</strong></div><div><span>Timezone</span><strong id="scheduler-timezone">—</strong></div><div><span>Next run</span><strong id="scheduler-next">—</strong></div></section><div id="scheduler-message" class="management-message" hidden></div><section id="scheduler-list" class="scheduler-list"></section><div id="scheduler-empty" class="scheduler-empty">No schedules configured. Add a schedule to automate a full check or update.</div><section id="schedule-modal" class="scheduler-modal" hidden><form id="schedule-form" class="management-panel"><div class="section-title"><div><h2 id="schedule-modal-title">Add schedule</h2><span class="hint">Use the existing configured filters and safety rules.</span></div><button id="schedule-cancel" type="button">Cancel</button></div><input type="hidden" name="id"><label>Name<input name="name" maxlength="80" required></label><label>Action<select name="type"><option value="check-all">Check all systems</option><option value="update-all">Update all systems</option></select></label><label>Frequency<select name="frequency"><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label><label data-schedule-day>Day<select name="day"><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option></select></label><label>Time<input name="time" type="time" required></label><label class="schedule-enabled"><input name="enabled" type="checkbox" checked> Enabled</label><p id="schedule-update-warning" class="scheduler-warning" hidden>Scheduled updates use the same configured include/exclude and safety rules as manual updates. Reboots only occur according to the existing Ultimate Updater configuration.</p><div class="scheduler-form-actions"><button class="primary" type="submit">Save schedule</button><button id="schedule-delete" type="button" hidden>Delete</button></div></form></section></section>'''
+day_toggle_markup = "".join(f'<label><input type="checkbox" name="days" value="{day}"><span>{day}</span></label>' for day in SCHEDULER_DAYS)
+scheduler_markup = f'''<section id="scheduler-page" class="page-section" hidden><section class="scheduler-head"><div><h2>Scheduler</h2><p>Automatic checks and updates using the existing Ultimate Updater safety rules.</p></div><button id="schedule-add" class="primary" type="button">+ Add schedule</button></section><section class="scheduler-summary"><div><span>Scheduler</span><strong id="scheduler-state">Disabled</strong></div><div><span>Active schedules</span><strong id="scheduler-count">0</strong></div><div><span>Timezone</span><strong id="scheduler-timezone">—</strong></div><div><span>Next run</span><strong id="scheduler-next">—</strong></div></section><div id="scheduler-message" class="management-message" hidden></div><section id="scheduler-list" class="scheduler-list"></section><div id="scheduler-empty" class="scheduler-empty">No schedules configured. Add a schedule to automate a full check or update.</div><section id="schedule-modal" class="scheduler-modal" hidden><form id="schedule-form" class="management-panel"><div class="section-title"><div><h2 id="schedule-modal-title">Add schedule</h2><span class="hint">Use the existing configured filters and safety rules.</span></div><button id="schedule-cancel" type="button">Cancel</button></div><input type="hidden" name="id"><label>Name<input name="name" maxlength="80" required></label><label>Action<select name="type"><option value="check-all">Check all systems</option><option value="check-selected">Check selected</option><option value="update-all">Update all systems</option><option value="update-selected">Update selected</option></select></label><fieldset class="schedule-days"><legend>Days of week</legend><div class="day-toggles">{day_toggle_markup}</div></fieldset><label>Time<input name="time" type="time" required></label><section id="schedule-targets" class="schedule-targets" hidden><div class="schedule-targets-head"><div><h3>Targets</h3><span class="hint">Select the concrete systems this schedule may run.</span></div><div class="schedule-target-tools"><button id="target-select-visible" type="button">Select all visible</button><button id="target-clear" type="button">Clear</button></div></div><label class="schedule-target-search">Search<input id="target-search" type="search" placeholder="Name, ID, node, type"></label><div id="schedule-missing" class="schedule-missing" hidden></div><div class="schedule-table-wrap"><table class="schedule-target-table"><thead><tr><th scope="col"><span class="visually-hidden">Select</span></th><th scope="col">ID</th><th scope="col">Node</th><th scope="col">Status</th><th scope="col">Name</th><th scope="col">Type</th></tr></thead><tbody id="schedule-target-body"></tbody></table></div><div id="schedule-selected" class="schedule-selected">Selected (0)</div></section><label class="schedule-enabled"><input name="enabled" type="checkbox" checked> Enabled</label><p id="schedule-update-warning" class="scheduler-warning" hidden>Scheduled updates use the same configured include/exclude and safety rules as manual updates. Reboots only occur according to the existing Ultimate Updater configuration.</p><div class="scheduler-form-actions"><button class="primary" type="submit">Save schedule</button><button id="schedule-delete" type="button" hidden>Delete</button></div></form></section></section>'''
 PAGE = re.sub(r'<section id="scheduler-page" class="page-section" hidden>.*?</section></section>', scheduler_markup, PAGE, count=1, flags=re.S)
 PAGE = PAGE.replace("if(page==='settings')loadConfig()}", "if(page==='settings')loadConfig();if(page==='scheduler')window.dispatchEvent(new Event('scheduler-page-open'))}")
 # The route function is assembled from the base page before the scheduler
@@ -1023,19 +1069,24 @@ PAGE = PAGE.replace('</body></html>', '''<script>
 (() => {
   const modal=document.getElementById('schedule-modal'),form=document.getElementById('schedule-form'),list=document.getElementById('scheduler-list'),empty=document.getElementById('scheduler-empty'),message=document.getElementById('scheduler-message');
   if(!modal||!form)return;
-  let schedules=[];
+  let schedules=[],schedulerTargets=[],selectedTargets=new Set();
   const scheduleApi=async(path,options={})=>{const response=await fetch(path,{...options,headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken,...(options.headers||{})}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data?.error?.message||'Scheduler request failed.');return data};
   const showScheduleMessage=(text,error=false)=>{message.hidden=!text;message.textContent=text||'';message.className=`management-message${error?' error':''}`};
   const formatScheduleTime=value=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'—';
-  const scheduleLabel=item=>item.frequency==='weekly'?`Every ${item.day} at ${item.time}`:`Daily at ${item.time}`;
+  const dayLabels={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
+  const scheduleLabel=item=>{const days=item.days||[];if(days.length===7)return`Daily · ${item.time}`;if(days.join(',')==='Mon,Tue,Wed,Thu,Fri')return`Weekdays · ${item.time}`;if(days.join(',')==='Sat,Sun')return`Weekend · ${item.time}`;if(days.length===1)return`${dayLabels[days[0]]||days[0]} · ${item.time}`;return`${days.join(', ')} · ${item.time}`};
   const resultLabel=item=>item.last_run?`${item.last_run.result||'Started'} · ${formatScheduleTime(item.last_run.timestamp)}`:'Not run yet';
-  const renderSchedules=data=>{schedules=Array.isArray(data.schedules)?data.schedules:[];const enabled=schedules.filter(item=>item.enabled);document.getElementById('scheduler-state').textContent=enabled.length?'Enabled':'Disabled';document.getElementById('scheduler-timezone').textContent=data.timezone||'system local time';document.getElementById('scheduler-count').textContent=enabled.length;const next=schedules.filter(item=>item.next_run).sort((a,b)=>a.next_run.localeCompare(b.next_run))[0];document.getElementById('scheduler-next').textContent=next?formatScheduleTime(next.next_run):'—';list.replaceChildren();empty.hidden=schedules.length>0;schedules.forEach(item=>{const card=document.createElement('article');card.className='scheduler-card';card.innerHTML=`<div class="scheduler-card-main"><div class="scheduler-card-title"><strong>${esc(item.name)}</strong><span class="schedule-state ${item.enabled?'enabled':'disabled'}">${item.enabled?'Enabled':'Disabled'}</span></div><span class="hint">${item.type==='check-all'?'Check all systems':'Update all systems'} · ${scheduleLabel(item)}</span><small>Next run: ${item.enabled?formatScheduleTime(item.next_run):'Disabled'}<br>Last run: ${esc(resultLabel(item))}</small></div><div class="scheduler-card-actions"><button type="button" data-schedule-action="edit" data-schedule-id="${item.id}">Edit</button><button type="button" data-schedule-action="run" data-schedule-id="${item.id}">Run now</button><button type="button" data-schedule-action="toggle" data-schedule-id="${item.id}">${item.enabled?'Disable':'Enable'}</button><button type="button" data-schedule-action="delete" data-schedule-id="${item.id}">Delete</button></div>`;list.appendChild(card)})};
-  const loadSchedules=async()=>{try{renderSchedules(await scheduleApi('/api/schedules'))}catch(error){showScheduleMessage(error.message,true)}};
-  const openSchedule=item=>{form.reset();form.elements.id.value=item?.id||'';form.elements.name.value=item?.name||'';form.elements.type.value=item?.type||'check-all';form.elements.frequency.value=item?.frequency||'daily';form.elements.day.value=item?.day||'Sunday';form.elements.time.value=item?.time||'03:00';form.elements.enabled.checked=item?item.enabled:true;document.getElementById('schedule-modal-title').textContent=item?'Edit schedule':'Add schedule';document.getElementById('schedule-delete').hidden=!item;modal.hidden=false;form.elements.frequency.dispatchEvent(new Event('change'))};
+  const isSelected=item=>item.type==='check-selected'||item.type==='update-selected';
+  const targetLabel=item=>`${item.name||item.id} · ${item.type_label||item.type}`;
+  const renderTargetTable=()=>{const query=document.getElementById('target-search').value.trim().toLowerCase(),body=document.getElementById('schedule-target-body');const visible=schedulerTargets.filter(item=>[item.id,item.node,item.name,item.type_label,item.status].join(' ').toLowerCase().includes(query));body.replaceChildren();visible.forEach(item=>{const row=document.createElement('tr');row.innerHTML=`<td><input type="checkbox" data-target-id="${esc(item.id)}" ${selectedTargets.has(item.id)?'checked':''} aria-label="Select ${esc(targetLabel(item))}"></td><td>${esc(item.id.replace(/^host:/,''))}</td><td>${esc(item.node)}</td><td>${esc(item.status)}</td><td>${esc(item.name)}</td><td>${esc(item.type_label)}</td>`;body.appendChild(row)});document.getElementById('schedule-selected').textContent=`Selected (${selectedTargets.size})`;const known=new Set(schedulerTargets.map(item=>item.id)),missing=[...selectedTargets].filter(id=>!known.has(id)),missingBox=document.getElementById('schedule-missing');missingBox.hidden=!missing.length;missingBox.textContent=missing.length?`Missing targets: ${missing.join(', ')}`:''};
+  const loadSchedulerTargets=async()=>{try{const data=await scheduleApi('/api/scheduler-targets');schedulerTargets=Array.isArray(data.targets)?data.targets:[];renderTargetTable()}catch(error){showScheduleMessage(error.message,true)}};
+  const renderSchedules=data=>{schedules=Array.isArray(data.schedules)?data.schedules:[];const enabled=schedules.filter(item=>item.enabled);document.getElementById('scheduler-state').textContent=enabled.length?'Enabled':'Disabled';document.getElementById('scheduler-timezone').textContent=data.timezone||'system local time';document.getElementById('scheduler-count').textContent=enabled.length;const next=schedules.filter(item=>item.next_run).sort((a,b)=>a.next_run.localeCompare(b.next_run))[0];document.getElementById('scheduler-next').textContent=next?formatScheduleTime(next.next_run):'—';list.replaceChildren();empty.hidden=schedules.length>0;schedules.forEach(item=>{const card=document.createElement('article');card.className='scheduler-card';card.innerHTML=`<div class="scheduler-card-main"><div class="scheduler-card-title"><strong>${esc(item.name)}</strong><span class="schedule-state ${item.enabled?'enabled':'disabled'}">${item.enabled?'Enabled':'Disabled'}</span></div><span class="hint">${item.type==='check-all'?'Check all systems':item.type==='check-selected'?'Check selected':item.type==='update-all'?'Update all systems':'Update selected'} · ${item.type.endsWith('selected')?`${item.targets.length} targets · `:''}${scheduleLabel(item)}</span><small>Next run: ${item.enabled?formatScheduleTime(item.next_run):'Disabled'}<br>Last run: ${esc(resultLabel(item))}</small></div><div class="scheduler-card-actions"><button type="button" data-schedule-action="edit" data-schedule-id="${item.id}">Edit</button><button type="button" data-schedule-action="run" data-schedule-id="${item.id}">Run now</button><button type="button" data-schedule-action="toggle" data-schedule-id="${item.id}">${item.enabled?'Disable':'Enable'}</button><button type="button" data-schedule-action="delete" data-schedule-id="${item.id}">Delete</button></div>`;list.appendChild(card)})};
+  const loadSchedules=async()=>{try{renderSchedules(await scheduleApi('/api/schedules'));await loadSchedulerTargets()}catch(error){showScheduleMessage(error.message,true)}};
+  const openSchedule=item=>{form.reset();form.elements.id.value=item?.id||'';form.elements.name.value=item?.name||'';form.elements.type.value=item?.type||'check-all';form.elements.time.value=item?.time||'03:00';form.elements.enabled.checked=item?item.enabled:true;selectedTargets=new Set(item?.targets||[]);form.querySelectorAll('input[name="days"]').forEach(input=>input.checked=(item?.days||['Mon','Tue','Wed','Thu','Fri','Sat','Sun']).includes(input.value));document.getElementById('schedule-modal-title').textContent=item?'Edit schedule':'Add schedule';document.getElementById('schedule-delete').hidden=!item;modal.hidden=false;form.elements.type.dispatchEvent(new Event('change'));renderTargetTable()};
   const closeSchedule=()=>{modal.hidden=true};
   document.getElementById('schedule-add').onclick=()=>openSchedule();document.getElementById('schedule-cancel').onclick=closeSchedule;document.getElementById('schedule-delete').onclick=async()=>{const id=form.elements.id.value,item=schedules.find(candidate=>candidate.id===id);if(!item||!confirm(`Delete schedule "${item.name}"?`))return;try{await scheduleApi(`/api/schedules/${id}`,{method:'DELETE'});closeSchedule();await loadSchedules()}catch(error){showScheduleMessage(error.message,true)}};
-  form.elements.frequency.onchange=()=>{document.querySelector('[data-schedule-day]').hidden=form.elements.frequency.value!=='weekly'};form.elements.type.onchange=()=>{document.getElementById('schedule-update-warning').hidden=form.elements.type.value!=='update-all'};
-  form.onsubmit=async event=>{event.preventDefault();const values={name:form.elements.name.value,type:form.elements.type.value,frequency:form.elements.frequency.value,day:form.elements.day.value,time:form.elements.time.value,enabled:form.elements.enabled.checked},id=form.elements.id.value;try{if(values.type==='update-all'&&!id&&!confirm('This schedule can automatically update systems using the configured safety rules. Continue?'))return;await scheduleApi(id?`/api/schedules/${id}`:'/api/schedules',{method:id?'PUT':'POST',body:JSON.stringify(values)});closeSchedule();await loadSchedules()}catch(error){showScheduleMessage(error.message,true)}};
+  form.elements.type.onchange=()=>{const selected=isSelected({type:form.elements.type.value});document.getElementById('schedule-targets').hidden=!selected;document.getElementById('schedule-update-warning').hidden=!form.elements.type.value.startsWith('update');renderTargetTable()};document.getElementById('target-search').oninput=renderTargetTable;document.getElementById('target-select-visible').onclick=()=>{document.querySelectorAll('#schedule-target-body [data-target-id]').forEach(input=>selectedTargets.add(input.dataset.targetId));renderTargetTable()};document.getElementById('target-clear').onclick=()=>{selectedTargets.clear();renderTargetTable()};document.getElementById('schedule-target-body').onchange=event=>{if(!event.target.matches('[data-target-id]'))return;if(event.target.checked)selectedTargets.add(event.target.dataset.targetId);else selectedTargets.delete(event.target.dataset.targetId);renderTargetTable()};
+  form.onsubmit=async event=>{event.preventDefault();const values={name:form.elements.name.value,type:form.elements.type.value,days:[...form.querySelectorAll('input[name="days"]:checked')].map(input=>input.value),time:form.elements.time.value,enabled:form.elements.enabled.checked,targets:isSelected({type:form.elements.type.value})?[...selectedTargets]:[]},id=form.elements.id.value;try{if(!values.days.length)throw new Error('Select at least one day.');if(isSelected(values)&&!values.targets.length)throw new Error('Select at least one target.');if(values.type.startsWith('update')&&!id&&!confirm('This schedule can automatically update systems using the configured safety rules. Continue?'))return;await scheduleApi(id?`/api/schedules/${id}`:'/api/schedules',{method:id?'PUT':'POST',body:JSON.stringify(values)});closeSchedule();await loadSchedules()}catch(error){showScheduleMessage(error.message,true)} };
   list.onclick=async event=>{const button=event.target.closest('[data-schedule-action]');if(!button)return;const item=schedules.find(candidate=>candidate.id===button.dataset.scheduleId);if(!item)return;try{if(button.dataset.scheduleAction==='edit')return openSchedule(item);if(button.dataset.scheduleAction==='delete'){if(!confirm(`Delete schedule "${item.name}"?`))return;await scheduleApi(`/api/schedules/${item.id}`,{method:'DELETE'})}else if(button.dataset.scheduleAction==='toggle'){await scheduleApi(`/api/schedules/${item.id}`,{method:'PUT',body:JSON.stringify({enabled:!item.enabled})})}else if(button.dataset.scheduleAction==='run'){button.disabled=true;await scheduleApi(`/api/schedules/${item.id}/run`,{method:'POST',body:'{}'})}await loadSchedules()}catch(error){showScheduleMessage(error.message,true)}finally{button.disabled=false}};
   window.addEventListener('scheduler-page-open',loadSchedules);loadSchedules();setInterval(()=>{if(!document.getElementById('scheduler-page').hidden)loadSchedules()},10000);
 })();
@@ -1047,6 +1098,7 @@ PAGE = PAGE.replace('</head>', '<style>.dashboard-header-top{position:relative}.
 PAGE = PAGE.replace('</head>', '<style>.dashboard-kpis .metric:nth-child(1) .metric-top{color:#72c8ff}.dashboard-kpis .metric:nth-child(2) .metric-top{color:var(--good)}.dashboard-kpis .metric:nth-child(3) .metric-top{color:var(--bad)}.dashboard-kpis .metric:nth-child(4) .metric-top{color:var(--security)}.dashboard-kpis .metric:nth-child(5) .metric-top{color:var(--warn)}.dashboard-kpis .metric:nth-child(6) .metric-top{color:#72c8ff}.dashboard-kpis .metric .metric-top strong{color:inherit}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.dashboard-meta .nav-toggle svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.scheduler-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.scheduler-head p{margin:5px 0 0;color:var(--muted);font-size:.78rem}.scheduler-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:18px}.scheduler-summary>div{padding:13px 14px;border:1px solid #159cf055;border-radius:12px;background:#0b172acc}.scheduler-summary span{display:block;color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em}.scheduler-summary strong{display:block;margin-top:5px;font-size:.9rem}.scheduler-list{display:grid;gap:10px}.scheduler-card{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 16px;border:1px solid var(--line);border-radius:14px;background:#0e162b99}.scheduler-card-main{min-width:0}.scheduler-card-title{display:flex;align-items:center;gap:9px}.scheduler-card-title strong{font-size:.92rem;overflow-wrap:anywhere}.scheduler-card-main>.hint{display:block;margin-top:5px}.scheduler-card-main small{display:block;margin-top:9px;color:var(--muted);line-height:1.55}.schedule-state{padding:3px 7px;border-radius:999px;font-size:.65rem;font-weight:700}.schedule-state.enabled{color:var(--good);background:#55d39a1f}.schedule-state.disabled{color:var(--muted);background:#aab7cf1f}.scheduler-card-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px;flex:0 0 auto}.scheduler-card-actions button{padding:7px 9px;font-size:.72rem}.scheduler-empty{padding:30px;border:1px dashed var(--line);border-radius:14px;text-align:center;color:var(--muted)}.scheduler-modal{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:18px;background:#00000088}.scheduler-modal[hidden]{display:none}.scheduler-modal form{width:min(520px,100%);display:grid;grid-template-columns:1fr 1fr;gap:12px}.scheduler-modal .section-title,.scheduler-modal input[type=hidden],.scheduler-modal .scheduler-warning,.scheduler-modal .scheduler-form-actions{grid-column:1 / -1}.scheduler-modal label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:.72rem}.scheduler-modal input,.scheduler-modal select{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:8px;color:var(--text);background:#081426;font:inherit}.scheduler-modal .schedule-enabled{flex-direction:row;align-items:center;gap:7px}.scheduler-modal .schedule-enabled input{width:auto}.scheduler-warning{margin:0;padding:10px 12px;border:1px solid #f0a83a66;border-radius:9px;color:var(--warn);background:#f0a83a12;font-size:.74rem;line-height:1.45}.scheduler-form-actions{display:flex;justify-content:flex-end;gap:8px}@media(max-width:720px){.scheduler-head{align-items:flex-start;flex-direction:column}.scheduler-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.scheduler-card{align-items:stretch;flex-direction:column}.scheduler-card-actions{justify-content:flex-start}.scheduler-modal form{grid-template-columns:1fr}}</style></head>', 1)
+PAGE = PAGE.replace('</head>', '<style>.scheduler-modal form{width:min(920px,100%);max-height:calc(100vh - 36px);overflow:auto}.schedule-days{grid-column:1 / -1;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px}.schedule-days legend{padding:0 5px;color:var(--muted);font-size:.72rem}.day-toggles{display:flex;flex-wrap:wrap;gap:6px}.day-toggles label{display:block}.day-toggles input{position:absolute;opacity:0;pointer-events:none}.day-toggles span{display:block;padding:7px 11px;border:1px solid var(--line);border-radius:7px;color:var(--muted);cursor:pointer;font-size:.75rem}.day-toggles input:checked+span{color:#fff;border-color:#159cf0aa;background:#087ecb66}.schedule-targets{grid-column:1 / -1;min-width:0;padding:14px;border:1px solid #159cf055;border-radius:12px;background:#08172aaa}.schedule-targets[hidden]{display:none}.schedule-targets-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.schedule-targets h3{margin:0;font-size:.88rem}.schedule-target-tools{display:flex;flex-wrap:wrap;gap:7px}.schedule-target-tools button{font-size:.72rem;padding:6px 8px}.schedule-target-search{display:block!important;margin:10px 0}.schedule-target-table{width:100%;border-collapse:collapse;font-size:.73rem}.schedule-target-table th,.schedule-target-table td{padding:8px 7px;border-bottom:1px solid #159cf033;text-align:left;white-space:nowrap}.schedule-target-table th{position:sticky;top:0;z-index:1;color:var(--muted);background:#0a1b31}.schedule-target-table td:first-child,.schedule-target-table th:first-child{width:28px;text-align:center}.schedule-target-table input{width:16px;height:16px}.schedule-table-wrap{max-height:360px;overflow:auto;border:1px solid #159cf044;border-radius:8px}.schedule-selected{margin-top:9px;color:#8fd2ff;font-size:.75rem;font-weight:700}.schedule-missing{margin:8px 0;padding:8px 10px;border:1px solid #ed6b7a88;border-radius:8px;color:#ff9aaa;background:#ed6b7a12;font-size:.73rem}.schedule-missing[hidden]{display:none}.schedule-enabled{grid-column:1 / -1;width:max-content}.scheduler-modal .scheduler-warning{grid-column:1 / -1}@media(max-width:720px){.scheduler-modal form{width:100%;grid-template-columns:1fr}.schedule-targets-head{align-items:flex-start;flex-direction:column}.schedule-table-wrap{overflow-x:auto}.schedule-target-table{min-width:650px}}</style></head>', 1)
 
 
 def error_payload(code, message):
@@ -2550,6 +2602,34 @@ class StatusHandler(BaseHTTPRequestHandler):
     def scheduler_read(self):
         return scheduler_load(self.server.scheduler_file)
 
+    def scheduler_target_catalog(self):
+        """Return the current canonical inventory for the scheduler picker."""
+        with self.server.status_file.open(encoding="utf-8") as source:
+            payload = json.load(source)
+        if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
+            raise ValueError("Status inventory is invalid")
+        inventory = self.inventory_data()
+        projected = canonical_inventory(
+            payload, inventory, proxmox_inventory_snapshot(), self.server.backup_state_file,
+        )
+        result = []
+        type_labels = {"host": "Proxmox Node", "vm": "Virtual Machine",
+                       "lxc": "LXC Container", "external": "External System"}
+        for item in projected["targets"]:
+            if not isinstance(item, dict):
+                continue
+            target_id = str(item.get("id") or "")
+            target_type = str(item.get("type") or "").lower()
+            if not target_id or target_type not in type_labels:
+                continue
+            result.append({"id": target_id, "node": item.get("node") or "-",
+                           "status": item.get("status") or item.get("check_status") or "unknown",
+                           "name": item.get("name") or target_id,
+                           "type": target_type, "type_label": type_labels[target_type]})
+        order = {"host": 0, "vm": 1, "lxc": 2, "external": 3}
+        return sorted(result, key=lambda item: (order[item["type"]], str(item["node"]),
+                                                int(item["id"]) if item["id"].isdigit() else item["id"]))
+
     def scheduler_write_units(self, schedule):
         unit, service, timer, service_text, timer_text = scheduler_unit_files(
             schedule, self.server.scheduler_unit_dir, self.server.cli,
@@ -2602,7 +2682,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         except (OSError, RuntimeError, subprocess.TimeoutExpired):
             return None
         matches = [job for job in jobs if job.get("source") == "scheduler"
-                   and job.get("type") == ("check" if schedule["type"] == "check-all" else "update")]
+                   and job.get("type") == ("check" if schedule["type"].startswith("check") else "update")]
         if not matches:
             return None
         job = sorted(matches, key=lambda item: item.get("started_at") or "", reverse=True)[0]
@@ -2618,6 +2698,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         schedules = [self.scheduler_projection(item) for item in self.scheduler_read()]
         timezone_name = datetime.now().astimezone().tzname() or "system local time"
         self.send_json({"timezone": timezone_name, "schedules": schedules})
+
+    def handle_scheduler_targets_get(self):
+        self.send_json({"targets": self.scheduler_target_catalog()})
 
     def handle_scheduler_create(self, payload):
         schedule_id = secrets.token_hex(6)
@@ -2658,16 +2741,23 @@ class StatusHandler(BaseHTTPRequestHandler):
         schedule = next((item for item in self.scheduler_read() if item["id"] == schedule_id), None)
         if schedule is None:
             raise KeyError(schedule_id)
-        action = "check-all" if schedule["type"] == "check-all" else "update-all"
-        command = [str(self.server.cli), "check" if action == "check-all" else "update-all"]
-        result = self.run_command(command, timeout=30, extra_env={"UU_JOB_SOURCE": "scheduler"})
-        output = f"{result.stdout}\n{result.stderr}"
-        job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
-        if result.returncode == 3:
-            raise RuntimeError("A conflicting job is already running.")
-        if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
-            raise RuntimeError("The scheduled job could not be started.")
-        self.send_json({"job": job_match.group(1), "state": "running"}, HTTPStatus.ACCEPTED)
+        started, errors = [], []
+        for command in scheduler_commands(schedule, self.server.cli):
+            result = self.run_command(command, timeout=30, extra_env={"UU_JOB_SOURCE": "scheduler"})
+            output = f"{result.stdout}\n{result.stderr}"
+            job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
+            if result.returncode == 3:
+                errors.append(f"{command[-1] if len(command) > 2 else command[1]} is already running")
+            elif result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
+                errors.append(command[-1] if len(command) > 2 else command[1])
+            else:
+                started.append(job_match.group(1))
+        if not started:
+            raise RuntimeError("No scheduled target job could be started: " + ", ".join(errors))
+        response = {"jobs": started, "state": "running"}
+        if errors:
+            response["skipped"] = errors
+        self.send_json(response, HTTPStatus.ACCEPTED)
 
     def do_GET(self):  # noqa: N802 - stdlib handler API
         path = urlsplit(self.path).path
@@ -2706,6 +2796,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.handle_scheduler_get()
             except (OSError, ValueError, RuntimeError):
                 self.send_json(error_payload("SCHEDULER_UNAVAILABLE", "Scheduler data is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        if path == "/api/scheduler-targets":
+            try:
+                self.handle_scheduler_targets_get()
+            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+                self.send_json(error_payload("SCHEDULER_TARGETS_UNAVAILABLE", "Scheduler targets are unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
             return
         if path == "/api/config":
             try:
