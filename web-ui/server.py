@@ -420,7 +420,6 @@ PAGE = r"""<!doctype html>
     .dashboard-brand .brand-header-art { width:min(330px,58vw); filter:drop-shadow(0 8px 20px #008cff44); }
     .dashboard-brand .subtitle { margin-top:1px; color:#73c5ff; font-size:.82rem; letter-spacing:.01em; }
     .dashboard-meta { color:#a8bfdc; }
-    .dashboard-meta::before { content:""; display:inline-block; width:8px; height:8px; margin:0 7px 1px 0; border-radius:50%; background:var(--good); box-shadow:0 0 0 4px #18d89518,0 0 14px #18d895; }
     .page-nav { margin:14px 0 18px; border-color:#159cf088; background:linear-gradient(180deg,#0a2440ee,#07182be8); box-shadow:0 12px 38px #0008,0 0 22px #008cff18; }
     .page-nav a { color:#9eb7d6; border-radius:8px; }
     .page-nav a.active { color:#fff; background:linear-gradient(180deg,#0b85d9,#075aa2); border-color:#41baff; box-shadow:0 0 18px #008cff45,inset 0 1px #ffffff35; }
