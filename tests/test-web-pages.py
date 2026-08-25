@@ -98,6 +98,10 @@ assert 'name="type"' in scheduler
 assert 'id="scheduler-timezone"' not in scheduler
 assert '<span>Timezone</span>' not in scheduler
 assert '.scheduler-summary{display:grid;grid-template-columns:repeat(3' in page
+assert "new Intl.DateTimeFormat('en-US'" in page
+assert 'formatToParts(date)' in page
+assert "part('year')" in page
+assert "return'—'" in page
 assert '/api/schedules' in page
 assert 'name="frequency"' not in scheduler
 assert 'name="day"' not in scheduler
