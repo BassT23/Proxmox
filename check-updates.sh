@@ -1125,7 +1125,7 @@ VM_CHECK_START () {
     SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "${VM_START_DELAY:-45}")
     SSH_START_DELAY_TIME=${SSH_START_DELAY_TIME:-45}
     # Check if connection is available
-    if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 ]] ||
+    if QGA_CONFIG_ENABLED "$VM" ||
       [[ -f $LOCAL_FILES/VMs/"$VM" ]] || [[ "$vm_has_internal_ssh" == true ]]; then
       # Check VM
       PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')

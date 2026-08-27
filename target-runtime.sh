@@ -4,6 +4,28 @@
 # These wrappers only select an existing transport; they do not add retries,
 # lifecycle handling, authentication, or update policy.
 
+# Return success when the Proxmox VM configuration enables the QEMU Guest
+# Agent.  Proxmox supports both the legacy shorthand (`agent: 1`) and the
+# property form (`agent: enabled=1`), with optional comma-separated settings.
+# This intentionally checks configuration only; runtime readiness is still
+# established by the existing qm agent/guest-exec probes.
+QGA_CONFIG_ENABLED() {
+  local vmid="${1:-}" agent_value primary
+  [[ "$vmid" =~ ^[0-9]+$ ]] || return 1
+  agent_value=$(qm config "$vmid" 2>/dev/null |
+    awk -F: '$1 ~ /^[[:space:]]*agent[[:space:]]*$/ {
+      value=$2
+      sub(/^[[:space:]]*/, "", value)
+      print value
+      exit
+    }') || return 1
+  primary=${agent_value%%,*}
+  case "$primary" in
+    1|enabled=1) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 RUN_LOCAL_COMMAND() {
   "$@"
 }

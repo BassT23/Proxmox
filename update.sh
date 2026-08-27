@@ -1594,7 +1594,7 @@ VM_UPDATE_START () {
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
         # Check if update is possible
-        if [[ $(qm config "$VM" | grep 'agent:' | sed 's/agent:\s*//') == 1 || -f $LOCAL_FILES/VMs/$VM ]]; then
+        if QGA_CONFIG_ENABLED "$VM" || [[ -f $LOCAL_FILES/VMs/$VM ]]; then
           # Start the VM
           WILL_STOP="true"
           echo -e " ▶${GN:-} Starting VM${BL:-} $VM ${CL:-}"

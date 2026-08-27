@@ -10,6 +10,8 @@ awk '/^CONTAINER_CHECK_START \(\) \{/{copy=1} /^# Container Check$/{if(copy) exi
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/container-functions.sh"
 awk '/^VM_CHECK_START \(\) \{/{copy=1} /^# VM Check$/{if(copy) exit} copy' \
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/vm-functions.sh"
+awk '/^QGA_CONFIG_ENABLED\(\) \{/{copy=1} copy; copy && /^\}/{exit}' \
+  "$ROOT_DIR/target-runtime.sh" > "$WORK_DIR/qga-functions.sh"
 
 cat > "$WORK_DIR/harness.sh" <<'HARNESS'
 #!/bin/bash
@@ -60,6 +62,7 @@ qm() {
 }
 
 source "$WORK_DIR/container-functions.sh"
+source "$WORK_DIR/qga-functions.sh"
 source "$WORK_DIR/vm-functions.sh"
 CONTAINER_CHECK_START
 VM_CHECK_START

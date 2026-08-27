@@ -20,6 +20,8 @@ EOF
 # internal SSH file, even when its QGA flag is absent.
 awk '/^VM_CHECK_START \(\) \{/{copy=1} /^# VM Check$/{if(copy) exit} copy' \
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/vm-start.sh"
+awk '/^QGA_CONFIG_ENABLED\(\) \{/{copy=1} copy; copy && /^\}/{exit}' \
+  "$ROOT_DIR/target-runtime.sh" > "$WORK_DIR/qga-functions.sh"
 cat > "$WORK_DIR/selector-harness.sh" <<'HARNESS'
 #!/bin/bash
 set -euo pipefail
@@ -40,6 +42,7 @@ qm() {
 CHECK_VM() { printf 'check-vm:%s\n' "$1" > "$PWD/selector-result"; }
 STATUS_MODEL_RECORD() { :; }
 source "$PWD/internal-ssh.sh"
+source "$PWD/qga-functions.sh"
 source "$PWD/vm-start.sh"
 VM_CHECK_START
 grep -Fxq 'check-vm:100' "$PWD/selector-result"
