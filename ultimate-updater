@@ -1,0 +1,1306 @@
+#!/bin/bash
+
+# Small command frontend for the existing updater and check scripts.
+# It deliberately owns dispatch and presentation only; target execution and
+# status generation remain in the existing project scripts.
+
+set -o pipefail
+
+# A collection check can finish its complete iteration while individual
+# targets need attention. The job runner maps this private code to a
+# successful systemd unit with a persisted warning state.
+CHECK_WARNING_RC=10
+
+LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+UPDATE_SCRIPT="$LOCAL_FILES/update.sh"
+CHECK_SCRIPT="$LOCAL_FILES/check-updates.sh"
+INVENTORY_SCRIPT="$LOCAL_FILES/target-inventory.sh"
+JOB_RUNNER="$LOCAL_FILES/job-runner.sh"
+STATUS_FILE="$LOCAL_FILES/status.json"
+EXTERNAL_APT_SCRIPT="$LOCAL_FILES/external-apt.sh"
+EXTERNAL_HELPER_FILE="$LOCAL_FILES/external-helper.sh"
+EXTERNAL_BOOTSTRAP_FILE="$LOCAL_FILES/external-bootstrap.sh"
+EXTERNAL_SETTINGS_FILE="$LOCAL_FILES/external-settings.sh"
+EXTERNAL_CONFIG_SCRIPT="$LOCAL_FILES/external-config.sh"
+WEB_UI_PORT_SCRIPT="$LOCAL_FILES/web-ui-port.sh"
+HARDCORE_TEST_SCRIPT="$LOCAL_FILES/hardcore-test.sh"
+EXTERNAL_SAFETY_FILE="$LOCAL_FILES/external-backup-safety.sh"
+STATUS_MODEL_SCRIPT="$LOCAL_FILES/status-model.sh"
+CLUSTER_TARGET_SCRIPT="$LOCAL_FILES/cluster-target.sh"
+INTERNAL_SSH_FILE="$LOCAL_FILES/internal-ssh.sh"
+GLOBAL_UPDATE_SCRIPT="$LOCAL_FILES/global-update.sh"
+EXTERNAL_SELECTION_SCRIPT="$LOCAL_FILES/external-selection.sh"
+
+if [[ ! -f "$UPDATE_SCRIPT" && -f "$SCRIPT_DIR/update.sh" ]]; then
+  UPDATE_SCRIPT="$SCRIPT_DIR/update.sh"
+fi
+if [[ ! -f "$CHECK_SCRIPT" && -f "$SCRIPT_DIR/check-updates.sh" ]]; then
+  CHECK_SCRIPT="$SCRIPT_DIR/check-updates.sh"
+fi
+if [[ ! -f "$INVENTORY_SCRIPT" && -f "$SCRIPT_DIR/target-inventory.sh" ]]; then
+  INVENTORY_SCRIPT="$SCRIPT_DIR/target-inventory.sh"
+fi
+if [[ ! -f "$JOB_RUNNER" && -f "$SCRIPT_DIR/job-runner.sh" ]]; then
+  JOB_RUNNER="$SCRIPT_DIR/job-runner.sh"
+fi
+if [[ ! -f "$EXTERNAL_APT_SCRIPT" && -f "$SCRIPT_DIR/external-apt.sh" ]]; then
+  EXTERNAL_APT_SCRIPT="$SCRIPT_DIR/external-apt.sh"
+fi
+if [[ ! -f "$EXTERNAL_HELPER_FILE" && -f "$SCRIPT_DIR/external-helper.sh" ]]; then
+  EXTERNAL_HELPER_FILE="$SCRIPT_DIR/external-helper.sh"
+fi
+if [[ ! -f "$EXTERNAL_BOOTSTRAP_FILE" && -f "$SCRIPT_DIR/external-bootstrap.sh" ]]; then
+  EXTERNAL_BOOTSTRAP_FILE="$SCRIPT_DIR/external-bootstrap.sh"
+fi
+if [[ ! -f "$EXTERNAL_SETTINGS_FILE" && -f "$SCRIPT_DIR/external-settings.sh" ]]; then
+  EXTERNAL_SETTINGS_FILE="$SCRIPT_DIR/external-settings.sh"
+fi
+if [[ ! -f "$EXTERNAL_CONFIG_SCRIPT" && -f "$SCRIPT_DIR/external-config.sh" ]]; then
+  EXTERNAL_CONFIG_SCRIPT="$SCRIPT_DIR/external-config.sh"
+fi
+if [[ ! -f "$WEB_UI_PORT_SCRIPT" && -f "$SCRIPT_DIR/web-ui-port.sh" ]]; then
+  WEB_UI_PORT_SCRIPT="$SCRIPT_DIR/web-ui-port.sh"
+fi
+if [[ ! -f "$HARDCORE_TEST_SCRIPT" && -f "$SCRIPT_DIR/hardcore-test.sh" ]]; then
+  HARDCORE_TEST_SCRIPT="$SCRIPT_DIR/hardcore-test.sh"
+fi
+if [[ ! -f "$EXTERNAL_SAFETY_FILE" && -f "$SCRIPT_DIR/external-backup-safety.sh" ]]; then
+  EXTERNAL_SAFETY_FILE="$SCRIPT_DIR/external-backup-safety.sh"
+fi
+if [[ ! -f "$STATUS_MODEL_SCRIPT" && -f "$SCRIPT_DIR/status-model.sh" ]]; then
+  STATUS_MODEL_SCRIPT="$SCRIPT_DIR/status-model.sh"
+fi
+if [[ ! -f "$CLUSTER_TARGET_SCRIPT" && -f "$SCRIPT_DIR/cluster-target.sh" ]]; then
+  CLUSTER_TARGET_SCRIPT="$SCRIPT_DIR/cluster-target.sh"
+fi
+if [[ ! -f "$INTERNAL_SSH_FILE" && -f "$SCRIPT_DIR/internal-ssh.sh" ]]; then
+  INTERNAL_SSH_FILE="$SCRIPT_DIR/internal-ssh.sh"
+fi
+if [[ ! -f "$GLOBAL_UPDATE_SCRIPT" && -f "$SCRIPT_DIR/global-update.sh" ]]; then
+  GLOBAL_UPDATE_SCRIPT="$SCRIPT_DIR/global-update.sh"
+fi
+if [[ ! -f "$EXTERNAL_SELECTION_SCRIPT" && -f "$SCRIPT_DIR/external-selection.sh" ]]; then
+  EXTERNAL_SELECTION_SCRIPT="$SCRIPT_DIR/external-selection.sh"
+fi
+# shellcheck disable=SC1090
+[[ -f "$STATUS_MODEL_SCRIPT" ]] && source "$STATUS_MODEL_SCRIPT"
+# shellcheck disable=SC1090
+[[ -f "$CLUSTER_TARGET_SCRIPT" ]] && source "$CLUSTER_TARGET_SCRIPT"
+# shellcheck disable=SC1090
+[[ -f "$INTERNAL_SSH_FILE" ]] && source "$INTERNAL_SSH_FILE"
+# shellcheck disable=SC1090
+[[ -f "$EXTERNAL_SELECTION_SCRIPT" ]] && source "$EXTERNAL_SELECTION_SCRIPT"
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") COMMAND [TARGET|OPTIONS]
+
+Commands:
+  list                    List known local Proxmox and inventory targets
+  check [TARGET]          Run the existing check, optionally for one target
+  update TARGET [--without-verified-backup]
+                          Start an update job; External targets require recent backup verification
+  update-all              Start the configured cluster-wide update job
+  check-node NODE         Check one Proxmox node host only
+  update-node NODE        Update one Proxmox node host only
+  external setup TARGET   Prepare an External SSH target and local settings
+  external settings-get TARGET
+                          Read target-local External settings
+  external settings-set TARGET KEY=VALUE...
+                          Explicitly update allowlisted target-local settings
+  status                  Show the latest machine-readable status summary
+  status --json           Print the existing status JSON unchanged
+  config set web-port PORT
+                          Set the local Web UI port without using the Web UI
+  hardcore-test start    Start a persistent Hardcore-Test run
+  hardcore-test status   Show the active or selected run status
+  hardcore-test stop     Request a controlled stop
+  help                    Show this help
+
+Legacy ./update.sh and ./check-updates.sh invocations remain supported.
+Proxmox and external SSH apt/dnf updates use the session-independent #316 job runner.
+EOF
+}
+
+require_file() {
+  local file="$1" description="$2"
+  if [[ ! -f "$file" ]]; then
+    printf 'ultimate-updater: %s is not available: %s\n' "$description" "$file" >&2
+    return 1
+  fi
+}
+
+list_inventory() {
+  local inventory_file="$LOCAL_FILES/targets.conf"
+  [[ -f "$inventory_file" ]] || return 0
+  if [[ ! -f "$INVENTORY_SCRIPT" ]]; then
+    printf 'Inventory parser is not available: %s\n' "$INVENTORY_SCRIPT" >&2
+    return 1
+  fi
+  if ! TARGET_INVENTORY_FILE="$inventory_file" bash -c \
+    'source "$1" && TARGET_INVENTORY_VALIDATE "$2"' _ "$INVENTORY_SCRIPT" "$inventory_file"; then
+    printf 'Target inventory is invalid: %s\n' "$inventory_file" >&2
+    return 1
+  fi
+  TARGET_INVENTORY_FILE="$inventory_file" bash -c '
+    source "$1"
+    TARGET_INVENTORY_VALIDATE "$2" || exit 1
+    for target in "${TARGET_NAMES[@]}"; do
+      printf "%-18s %-12s %-8s\n" "$target" "external" "${TARGET_TRANSPORT[$target]}"
+    done
+  ' _ "$INVENTORY_SCRIPT" "$inventory_file"
+}
+
+list_proxmox() {
+  if command -v pct >/dev/null 2>&1; then
+    pct list 2>/dev/null | awk 'NR > 1 {printf "%-18s %-12s %-8s\n", $1, "lxc", "pct"}'
+  fi
+  if command -v qm >/dev/null 2>&1; then
+    qm list 2>/dev/null | awk 'NR > 1 {printf "%-18s %-12s %-8s\n", $1, "vm", "qga/ssh"}'
+  fi
+}
+
+list_targets() {
+  printf '%-18s %-12s %-8s\n' "Target" "Type" "Transport"
+  printf '%-18s %-12s %-8s\n' "------" "----" "---------"
+  printf '%-18s %-12s %-8s\n' "local-host" "host" "local"
+  list_proxmox
+  list_inventory
+}
+
+external_setup() {
+  local target="$1" inventory_file="$LOCAL_FILES/targets.conf"
+  local key_path=/root/.ssh/ultimate-updater-external pub_path host port user identity_file
+  local ssh_rc fingerprint
+  [[ -f "$INVENTORY_SCRIPT" ]] || { printf 'Target inventory parser is not available.\n' >&2; return 1; }
+  [[ -f "$EXTERNAL_HELPER_FILE" && -f "$EXTERNAL_BOOTSTRAP_FILE" && -f "$EXTERNAL_CONFIG_SCRIPT" ]] || {
+    printf 'External setup files are not installed.\n' >&2
+    return 1
+  }
+  # shellcheck disable=SC1090
+  source "$INVENTORY_SCRIPT"
+  TARGET_INVENTORY_VALIDATE "$inventory_file" || {
+    printf 'Invalid target inventory: %s\n' "$TARGET_INVENTORY_ERROR" >&2
+    return 1
+  }
+  [[ -n "${TARGET_TRANSPORT[$target]:-}" && "${TARGET_TRANSPORT[$target]}" == ssh ]] || {
+    printf 'External SSH target not found: %s\n' "$target" >&2
+    return 3
+  }
+  host="${TARGET_HOST[$target]}"
+  port="${TARGET_PORT[$target]:-22}"
+  user="${TARGET_USER[$target]:-root}"
+  identity_file="${TARGET_IDENTITY_FILE[$target]:-}"
+  pub_path="${key_path}.pub"
+
+  install -d -m 0700 /root/.ssh
+  if [[ ! -f "$key_path" ]]; then
+    ssh-keygen -q -t ed25519 -N '' -C "ultimate-updater-external@$(hostname -s)" -f "$key_path" || return 1
+    chmod 600 "$key_path"
+    chmod 644 "$pub_path"
+    printf 'Created dedicated External key: %s\n' "$key_path"
+  fi
+  [[ -r "$key_path" && -r "$pub_path" ]] || { printf 'External key is not readable.\n' >&2; return 1; }
+
+  printf 'Target: %s (%s@%s:%s)\n' "$target" "$user" "$host" "$port"
+  printf 'Public key:\n'
+  cat "$pub_path"
+  fingerprint=$(ssh-keygen -lf "$pub_path" -E sha256 | awk '{print $2}')
+  printf 'Fingerprint: %s\n' "$fingerprint"
+  if [[ -n "$identity_file" && "$identity_file" != "$key_path" ]]; then
+    printf 'Configured identity_file differs: %s\n' "$identity_file"
+  fi
+
+  if ssh -q -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=5 \
+    -i "$key_path" -p "$port" "$user@$host" true >/dev/null 2>&1; then
+    ssh_rc=0
+  else
+    ssh_rc=$?
+  fi
+  if [[ "$ssh_rc" -ne 0 ]]; then
+    printf 'State: KEY_NOT_AUTHORIZED or SSH_UNAVAILABLE (rc=%s)\n' "$ssh_rc"
+  else
+    printf 'State: SSH_READY\n'
+  fi
+  [[ -n "$identity_file" ]] || printf 'Runtime config must contain: identity_file=%s\n' "$key_path"
+  local defaults_file
+  defaults_file=$(external_defaults_file "$target") || return 1
+  printf 'Bootstrap (administrator runs this on the External host):\n'
+  printf '  scp -i %q %q %q %q %s@%s:/tmp/\n' "$key_path" "$EXTERNAL_BOOTSTRAP_FILE" "$EXTERNAL_HELPER_FILE" "$defaults_file" "$user" "$host"
+  printf '  sudo /tmp/external-bootstrap.sh /tmp/external-helper.sh %s /tmp/%s.conf\n' "$user" "$target"
+  printf 'The bootstrap installs the root-owned helper and /etc/sudoers.d/ultimate-updater after visudo validation.\n'
+}
+
+external_target_is_configured() {
+  local target="$1"
+  [[ -f "$INVENTORY_SCRIPT" && -f "$EXTERNAL_SAFETY_FILE" ]] || return 1
+  # shellcheck disable=SC1090
+  source "$INVENTORY_SCRIPT"
+  TARGET_INVENTORY_VALIDATE "$LOCAL_FILES/targets.conf" >/dev/null 2>&1 || return 1
+  [[ "${TARGET_TRANSPORT[$target]:-}" == ssh ]]
+}
+
+external_verify_backup() {
+  local target="$1" reference="${2:-}"
+  external_target_is_configured "$target" || {
+    printf 'External SSH target not found: %s\n' "$target" >&2
+    return 3
+  }
+  "$EXTERNAL_SAFETY_FILE" verify "$target" "$reference"
+}
+
+external_backup_status() {
+  local target="$1"
+  external_target_is_configured "$target" || {
+    printf 'External SSH target not found: %s\n' "$target" >&2
+    return 3
+  }
+  "$EXTERNAL_SAFETY_FILE" status "$target"
+}
+
+external_settings() {
+  require_file "$EXTERNAL_SETTINGS_FILE" "External settings manager" || return 1
+  "$EXTERNAL_SETTINGS_FILE" "$@"
+}
+
+external_defaults_file() {
+  local target="$1" directory file key value
+  directory="${UU_EXTERNAL_DEFAULTS_DIR:-/var/lib/ultimate-updater/external-config-defaults}"
+  file="$directory/$target.conf"
+  mkdir -p "$directory" || return 1
+  {
+    printf 'schema_version="1"\n'
+    for key in ONLY_UPDATE_CHECK EXCLUDE_UPDATE_CHECK ONLY EXCLUDE; do
+      value=$(awk -F'"' -v wanted="$key" '$1 ~ "^" wanted "=" {print $2; exit}' "$LOCAL_FILES/update.conf" 2>/dev/null || true)
+      escaped=$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      printf '%s="%s"\n' "$key" "$escaped"
+    done
+  } > "$file" || return 1
+  chmod 0644 "$file"
+  printf '%s\n' "$file"
+}
+
+external_backup_gate() {
+  local target="$1" override="${2:-false}"
+  external_target_is_configured "$target" || return 0
+  if [[ "$override" == true ]]; then
+    "$EXTERNAL_SAFETY_FILE" check "$target" --override
+  else
+    "$EXTERNAL_SAFETY_FILE" check "$target"
+  fi
+}
+
+external_backup_blockers() {
+  local target blockers=""
+  [[ -f "$EXTERNAL_SAFETY_FILE" && -f "$INVENTORY_SCRIPT" ]] || return 0
+  # shellcheck disable=SC1090
+  source "$INVENTORY_SCRIPT"
+  TARGET_INVENTORY_VALIDATE "$LOCAL_FILES/targets.conf" >/dev/null 2>&1 || return 1
+  for target in "${TARGET_NAMES[@]}"; do
+    [[ "${TARGET_TRANSPORT[$target]:-}" == ssh ]] || continue
+    external_target_selected_for_update "$target" || continue
+    if ! "$EXTERNAL_SAFETY_FILE" check "$target" >/dev/null 2>&1; then
+      blockers+="${blockers:+, }$target"
+    fi
+  done
+  [[ -z "$blockers" ]] || {
+    printf 'Blocked external targets: %s\n' "$blockers" >&2
+    printf 'Reason: no verified recent backup.\n' >&2
+    return 41
+  }
+}
+
+inventory_target_exists() {
+  local target="$1" inventory_file="$LOCAL_FILES/targets.conf"
+  [[ -f "$inventory_file" && -f "$INVENTORY_SCRIPT" ]] || return 1
+  TARGET_INVENTORY_FILE="$inventory_file" bash -c '
+    source "$1"
+    TARGET_INVENTORY_VALIDATE "$2" >/dev/null 2>&1 || exit 1
+    for target in "${TARGET_NAMES[@]}"; do
+      [[ "$target" == "$3" ]] && exit 0
+    done
+    exit 1
+  ' _ "$INVENTORY_SCRIPT" "$inventory_file" "$target"
+}
+
+inventory_targets() {
+  local inventory_file="$LOCAL_FILES/targets.conf"
+  [[ -f "$inventory_file" && -f "$INVENTORY_SCRIPT" ]] || return 0
+  TARGET_INVENTORY_FILE="$inventory_file" bash -c '
+    source "$1"
+    TARGET_INVENTORY_VALIDATE "$2" || exit 1
+    printf "%s\n" "${TARGET_NAMES[@]}"
+  ' _ "$INVENTORY_SCRIPT" "$inventory_file"
+}
+
+external_target_selected_for_check() {
+  external_selection_allows check "$1"
+}
+
+external_target_selected_for_update() {
+  external_selection_allows update "$1"
+}
+
+status_json() {
+  refresh_remote_jobs
+  require_file "$STATUS_FILE" "status file" || return 4
+  if ! python3 - "$STATUS_FILE" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as status_file:
+    json.load(status_file)
+PY
+  then
+    printf 'ultimate-updater: status file is not valid JSON: %s\n' "$STATUS_FILE" >&2
+    return 4
+  fi
+  cat "$STATUS_FILE"
+}
+
+refresh_remote_jobs() {
+  # A remote VM update writes its post-update artifact on the owning node.
+  # Reading the central status must first give the job runner one opportunity
+  # to import that artifact, otherwise a completed remote job can leave the
+  # central status at its pre-update values indefinitely.
+  if [[ -x "$JOB_RUNNER" ]]; then
+    "$JOB_RUNNER" list >/dev/null 2>&1 || true
+  fi
+}
+
+status_import() {
+  [[ $# -eq 1 ]] || { printf 'Usage: %s status-import FILE\n' "$(basename "$0")" >&2; return 2; }
+  require_file "$STATUS_MODEL_SCRIPT" "status model script" || return 1
+  require_file "$1" "status artifact" || return 1
+  # shellcheck disable=SC2034 # consumed by sourced status-model functions.
+  STATUS_MODEL_RECORD_FILE="${UU_STATUS_IMPORT_RECORD_FILE:-$LOCAL_FILES/.status-import.$$}"
+  STATUS_MODEL_INIT || return 1
+  STATUS_MODEL_IMPORT_FILE "$1" || { STATUS_MODEL_CLEANUP 2>/dev/null || true; return 1; }
+  STATUS_MODEL_PARTIAL=true STATUS_MODEL_FINISH
+  local result=$?
+  STATUS_MODEL_CLEANUP 2>/dev/null || true
+  return "$result"
+}
+
+status_human() {
+  refresh_remote_jobs
+  local status_result=0
+  if [[ ! -f "$STATUS_FILE" ]]; then
+    printf 'ultimate-updater: status file is not available: %s\n' "$STATUS_FILE" >&2
+    status_result=4
+  elif ! python3 - "$STATUS_FILE" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as status_file:
+        payload = json.load(status_file)
+except (OSError, ValueError) as error:
+    print(f"ultimate-updater: cannot read status file: {error}", file=sys.stderr)
+    raise SystemExit(4)
+
+targets = payload.get("targets")
+if not isinstance(targets, list):
+    print("ultimate-updater: status file has no target list", file=sys.stderr)
+    raise SystemExit(4)
+
+print(f"Status schema {payload.get('schema_version', 'unknown')}" )
+print(f"Generated: {payload.get('generated_at') or 'unknown'}")
+def label(target):
+    identifier = str(target.get("id") or "unknown")
+    short_id = identifier.removeprefix("host:")
+    name = str(target.get("name") or "")
+    if not name or name == short_id or name == identifier:
+        return short_id
+    return f"{short_id} · {name}"
+
+def fit(value, width):
+    value = str(value)
+    return value if len(value) <= width else value[:width - 3] + "..."
+
+print(f"{'Target / friendly name':<24} {'Reachable':<9} {'Updates':<7} {'Status':<14} Last check")
+print(f"{'----------------------':<24} {'---------':<9} {'-------':<7} {'------':<14} ----------")
+for target in targets:
+    updates = target.get("updates") or {}
+    available = updates.get("available")
+    reachable = target.get("reachable")
+    reachable_text = "yes" if reachable is True else "no" if reachable is False else "unknown"
+    updates_text = str(available) if available is not None else "unknown"
+    print(f"{fit(label(target), 24):<24} {reachable_text:<9} "
+          f"{updates_text:<7} {fit(str(target.get('check_status') or 'not_checked'), 14):<14} "
+          f"{target.get('last_check') or 'unknown'}")
+PY
+  then
+    printf 'ultimate-updater: status file is not valid or readable: %s\n' "$STATUS_FILE" >&2
+    status_result=4
+  fi
+  if [[ -x "$JOB_RUNNER" ]]; then
+    local jobs
+    jobs=$("$JOB_RUNNER" list 2>/dev/null || true)
+    if [[ -n "$jobs" ]]; then
+      printf '\nJobs\n'
+      printf '%-8s %-30s %-14s %s\n' "Type" "Target / friendly name" "State" "Exit"
+      while IFS=$'\t' read -r _unit target state _ _ exit_code job_type; do
+        case "${job_type:-}" in
+          check) job_type=CHECK ;;
+          update) job_type=UPDATE ;;
+          *) job_type=JOB ;;
+        esac
+        friendly_target=$(python3 - "$STATUS_FILE" "$target" <<'PY'
+import json
+import sys
+
+status_file, wanted = sys.argv[1:]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError):
+    print(wanted.removeprefix("host:"))
+    raise SystemExit
+
+for item in payload.get("targets", []):
+    if not isinstance(item, dict):
+        continue
+    identifier = str(item.get("id") or "")
+    if identifier == wanted or identifier.removeprefix("host:") == wanted:
+        short_id = identifier.removeprefix("host:")
+        name = str(item.get("name") or "")
+        print(short_id if not name or name in (identifier, short_id) else f"{short_id} · {name}")
+        raise SystemExit
+print(wanted.removeprefix("host:"))
+PY
+        )
+        printf '%-8s %-30s %-14s %s\n' "$job_type" "$friendly_target" "$state" "${exit_code:-pending}"
+      done <<< "$jobs"
+    fi
+  fi
+  return "$status_result"
+}
+
+resolve_target_kind() {
+  local target="$1" proxmox_kind="" inventory_kind=false cluster_rc
+  RESOLVED_TARGET_KIND=""
+  RESOLVED_TARGET_NODE=""
+  RESOLVED_TARGET_HOST=""
+  RESOLVED_TARGET_LOCAL=true
+  if [[ "$target" == host || "$target" == local-host ]]; then
+    RESOLVED_TARGET_KIND=host
+    printf '%s\n' host
+    return 0
+  fi
+  if declare -f cluster_target_resolve >/dev/null 2>&1 && cluster_target_is_id "$target" &&
+    { [[ -n "${UU_CLUSTER_RESOURCES_JSON:-}" ]] || command -v pvesh >/dev/null 2>&1; }; then
+    cluster_target_resolve "$target"
+    cluster_rc=$?
+    if [[ "$cluster_rc" -eq 0 ]]; then
+      RESOLVED_TARGET_NODE="$CLUSTER_TARGET_NODE"
+      RESOLVED_TARGET_HOST="$CLUSTER_TARGET_HOST"
+      RESOLVED_TARGET_LOCAL="$CLUSTER_TARGET_LOCAL"
+      RESOLVED_TARGET_KIND="$CLUSTER_TARGET_KIND"
+      printf '%s\n' "$CLUSTER_TARGET_KIND"
+      return 0
+    fi
+    if [[ "$cluster_rc" -eq 4 ]]; then
+      printf 'ultimate-updater: target ID %s is ambiguous across the cluster.\n' "$target" >&2
+      return 4
+    fi
+    if [[ "$cluster_rc" -eq 1 ]]; then
+      return 1
+    fi
+    printf 'ultimate-updater: could not read the Proxmox cluster inventory.\n' >&2
+    return 5
+  fi
+  if command -v pct >/dev/null 2>&1 && pct config "$target" >/dev/null 2>&1; then proxmox_kind=container; fi
+  if command -v qm >/dev/null 2>&1 && qm config "$target" >/dev/null 2>&1; then proxmox_kind=vm; fi
+  if inventory_target_exists "$target"; then inventory_kind=true; fi
+  if [[ -n "$proxmox_kind" && "$inventory_kind" == true ]]; then
+    printf 'ultimate-updater: target is ambiguous in Proxmox and inventory: %s\n' "$target" >&2
+    return 4
+  fi
+  if [[ -n "$proxmox_kind" ]]; then RESOLVED_TARGET_KIND="$proxmox_kind"; printf '%s\n' "$proxmox_kind"; return 0; fi
+  if [[ "$inventory_kind" == true ]]; then RESOLVED_TARGET_KIND=external; printf '%s\n' external; return 0; fi
+  return 1
+}
+
+configured_ssh_port() {
+  local config="$LOCAL_FILES/update.conf" port
+  port=$(awk -F'"' '/^SSH_PORT=/ {print $2; exit}' "$config" 2>/dev/null || true)
+  printf '%s\n' "${port:-22}"
+}
+
+resolve_remote_node_transport() {
+  local node="$1" host="$2" default_port
+  default_port=$(configured_ssh_port)
+  if declare -f INTERNAL_SSH_RESOLVE_NODE >/dev/null 2>&1; then
+    INTERNAL_SSH_RESOLVE_NODE "$node" "$host" "$default_port" || return 1
+    [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
+    INTERNAL_SSH_USE_IDENTITY
+  else
+    INTERNAL_SSH_HOST="$host"
+    INTERNAL_SSH_USER=root
+    INTERNAL_SSH_PORT="$default_port"
+    INTERNAL_SSH_ARGS=(-o BatchMode=yes -o ConnectTimeout=5)
+  fi
+  REMOTE_NODE_HOST="${INTERNAL_SSH_HOST:-$host}"
+  REMOTE_NODE_USER="${INTERNAL_SSH_USER:-root}"
+  REMOTE_NODE_PORT="${INTERNAL_SSH_PORT:-$default_port}"
+  REMOTE_NODE_ARGS=("${INTERNAL_SSH_ARGS[@]}")
+}
+
+cluster_node_resolve() {
+  local wanted="$1" config=/etc/pve/corosync.conf result local_node local_ips
+  [[ "$wanted" =~ ^[A-Za-z0-9_.-]+$ ]] || return 2
+  [[ -f "$config" ]] || return 1
+  result=$(python3 - "$config" "$wanted" <<'PY'
+import re
+import sys
+path, wanted = sys.argv[1:]
+try:
+    text = open(path, encoding="utf-8").read()
+except OSError:
+    raise SystemExit(1)
+for block in re.findall(r"node\s*\{(.*?)\}", text, re.S):
+    name = re.search(r"\bname\s*:\s*([^\s}]+)", block)
+    address = re.search(r"\bring0_addr\s*:\s*([^\s}]+)", block)
+    if name and address and name.group(1) == wanted:
+        print(f"{name.group(1)}\t{address.group(1)}")
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+  ) || return 1
+  IFS=$'\t' read -r RESOLVED_NODE RESOLVED_NODE_HOST <<< "$result"
+  local_node=$(cluster_target_local_node)
+  local_ips=$(hostname -I 2>/dev/null || true)
+  RESOLVED_NODE_LOCAL=false
+  if [[ "${RESOLVED_NODE,,}" == "${local_node,,}" || " $local_ips " == *" $RESOLVED_NODE_HOST "* ]]; then
+    RESOLVED_NODE_LOCAL=true
+  fi
+}
+
+remote_node_check_via_cluster_transport() {
+  local node="$1" host="${REMOTE_NODE_HOST:-$2}" port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
+  local user="${REMOTE_NODE_USER:-root}" local_file remote_check_dir remote_command
+  local remote_config remote_tag_filter remote_cluster_target remote_runtime remote_status_model
+  local remote_status_file tag_filter_script target_runtime_file
+  local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
+  remote_check_dir="/tmp/ultimate-updater-check-node-$$-$RANDOM-$RANDOM"
+  remote_config="$remote_check_dir/update.conf"
+  remote_tag_filter="$remote_check_dir/tag-filter.sh"
+  remote_cluster_target="$remote_check_dir/cluster-target.sh"
+  remote_runtime="$remote_check_dir/target-runtime.sh"
+  remote_status_model="$remote_check_dir/status-model.sh"
+  remote_status_file="$remote_check_dir/status.json"
+  tag_filter_script="$LOCAL_FILES/tag-filter.sh"
+  target_runtime_file="$LOCAL_FILES/target-runtime.sh"
+  [[ -f "$tag_filter_script" ]] || tag_filter_script="$SCRIPT_DIR/tag-filter.sh"
+  [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
+  local_file=$(mktemp)
+  if ! STATUS_MODEL_INIT; then
+    rm -f -- "$local_file"
+    printf 'Could not initialize status model for node %s.\n' "$node" >&2
+    return 1
+  fi
+  if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "mkdir -p -- '$remote_check_dir'" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$LOCAL_FILES/update.conf" "$user@$host:$remote_config" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$tag_filter_script" "$user@$host:$remote_tag_filter" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$CLUSTER_TARGET_SCRIPT" "$user@$host:$remote_cluster_target" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$target_runtime_file" "$user@$host:$remote_runtime" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$STATUS_MODEL_SCRIPT" "$user@$host:$remote_status_model"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "host:$node" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Node $node is unreachable" "$node" "$node"
+    STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+    rm -f -- "$local_file"
+    printf 'Node %s is unreachable.\n' "$node" >&2
+    return 1
+  fi
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true bash -s -- node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; exit 0' \
+    "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
+    "$remote_runtime" "$node" "$remote_status_model" "$remote_status_file" \
+    "$remote_status_file.records" "$remote_status_model" "$node" "$remote_status_file" \
+    "$remote_status_file.records" "$remote_status_model" "$remote_status_file" "$node" \
+    "$remote_check_dir" "$remote_status_file" "$remote_check_dir"
+  if ! timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "$remote_command" < "$CHECK_SCRIPT" > "$local_file"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "Remote check failed for $node" "$node" "$node"
+    STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+    rm -f -- "$local_file"
+    printf 'Remote check failed for %s.\n' "$node" >&2
+    return 1
+  fi
+  if [[ ! -s "$local_file" ]]; then
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_STATUS_MISSING "Remote node status was not produced for $node" "$node" "$node"
+    STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+    rm -f -- "$local_file"
+    printf 'Remote node status was not produced for %s.\n' "$node" >&2
+    return 1
+  fi
+  if ! STATUS_MODEL_IMPORT_FILE "$local_file" 2>/dev/null; then
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "Could not import status from node $node" "$node" "$node"
+    STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+    rm -f -- "$local_file"
+    printf 'Could not import status from node %s.\n' "$node" >&2
+    return 1
+  fi
+  if ! STATUS_MODEL_FINISH; then
+    rm -f -- "$local_file"
+    printf 'Could not finalize status for node %s.\n' "$node" >&2
+    return 1
+  fi
+  rm -f -- "$local_file"
+}
+
+remote_node_check() {
+  remote_node_check_via_cluster_transport "$@"
+}
+
+run_node_check() {
+  local node="$1" result
+  cluster_node_resolve "$node" || { printf 'Unknown Proxmox node: %s\n' "$node" >&2; return 3; }
+  if [[ "$RESOLVED_NODE_LOCAL" == true ]]; then
+    require_file "$CHECK_SCRIPT" "check script" || return 1
+    UU_DEFER_NOTIFICATION=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" node-host
+    result=$?
+  else
+    if ! resolve_remote_node_transport "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"; then
+      printf 'Could not resolve the existing UU SSH transport for node %s.\n' "$RESOLVED_NODE" >&2
+      return 1
+    fi
+    STATUS_MODEL_PARTIAL=true remote_node_check "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"
+    result=$?
+  fi
+  print_check_summary "$node" "$result"
+  # check-node is a collection of the node plus its eligible guests. A
+  # failed guest is therefore a warning; a failed node runner remains hard.
+  if [[ "$result" -eq 1 ]] && status_has_target_failures "$STATUS_FILE"; then
+    return "$CHECK_WARNING_RC"
+  fi
+  return "$result"
+}
+
+remote_update_job() {
+  local remote_target="$1" target="$2" node="$3" host="${REMOTE_NODE_HOST:-$4}"
+  local port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
+  local legacy_profile="$LOCAL_FILES/VMs/$target"
+  local user="${REMOTE_NODE_USER:-root}" output job_unit command remote_update_dir source scope_env=''
+  local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
+  remote_update_dir="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
+  if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "mkdir -p -- '$remote_update_dir'"; then
+    printf 'Could not prepare remote update workspace on %s.\n' "$node" >&2
+    return 6
+  fi
+  for source in \
+    "$JOB_RUNNER" "$UPDATE_SCRIPT" "$LOCAL_FILES/update.conf" \
+    "$LOCAL_FILES/tag-filter.sh" "$LOCAL_FILES/status-model.sh" \
+    "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/ultimate-updater" \
+    "$LOCAL_FILES/qga-guest-exec.sh" \
+    "$LOCAL_FILES/target-runtime.sh" "$LOCAL_FILES/cluster-target.sh" \
+    "$LOCAL_FILES/internal-ssh.sh" "$LOCAL_FILES/update-extras.sh" \
+    "$LOCAL_FILES/windows-update.sh"; do
+    [[ -f "$source" ]] || continue
+    if ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$source" \
+      "$user@$host:$remote_update_dir/$(basename -- "$source")"; then
+      timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
+      printf 'Could not transfer remote update helper to %s.\n' "$node" >&2
+      return 6
+    fi
+  done
+  if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "mkdir -p -- '$remote_update_dir/exit'"; then
+    timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
+    printf 'Could not prepare remote update exit handlers on %s.\n' "$node" >&2
+    return 6
+  fi
+  if [[ -f "$legacy_profile" ]]; then
+    if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "mkdir -p -- '$remote_update_dir/VMs'" ||
+      ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$legacy_profile" \
+        "$user@$host:$remote_update_dir/VMs/$target"; then
+      timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
+      printf 'Could not transfer legacy SSH profile for target %s to %s.\n' "$target" "$node" >&2
+      return 6
+    fi
+  fi
+  for source in "$LOCAL_FILES/exit/error.sh" "$LOCAL_FILES/exit/passed.sh"; do
+    [[ -f "$source" ]] || continue
+    if ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$source" \
+      "$user@$host:$remote_update_dir/exit/$(basename -- "$source")"; then
+      timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
+      printf 'Could not transfer remote update exit handler to %s.\n' "$node" >&2
+      return 6
+    fi
+  done
+  if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "chmod 750 '$remote_update_dir/job-runner.sh' '$remote_update_dir/update.sh' '$remote_update_dir/check-updates.sh' '$remote_update_dir/qga-guest-exec.sh'"; then
+    timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
+    printf 'Could not prepare remote update runner on %s.\n' "$node" >&2
+    return 6
+  fi
+  if [[ "$remote_target" == host ]]; then
+    scope_env='UU_UPDATE_SCOPE=host '
+  fi
+  printf -v command 'exec /usr/bin/env %sUU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q %q start %q %q' \
+    "$scope_env" "$remote_update_dir" "$remote_update_dir" "$remote_update_dir/job-runner.sh" \
+    "$remote_update_dir/update.sh" "$remote_target"
+  if ! output=$(timeout 30 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "$command"); then
+    timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
+    printf 'Could not start update job on %s.\n' "$node" >&2
+    return 6
+  fi
+  printf '%s\n' "$output"
+  job_unit=$(printf '%s\n' "$output" | sed -n 's/^Job:[[:space:]]*//p' | head -n 1)
+  if [[ ! "$job_unit" =~ ^ultimate-updater-update-[A-Za-z0-9_.-]+$ ]] ||
+    ! "$JOB_RUNNER" record-remote "$job_unit" "$target" "$node" "$host" "$port" "$remote_update_dir"; then
+    printf 'Remote job started but could not be referenced locally.\n' >&2
+    return 7
+  fi
+}
+
+remote_node_update() {
+  remote_update_job host "node-$1" "$1" "$2"
+}
+
+
+run_node_update() {
+  local node="$1"
+  cluster_node_resolve "$node" || { printf 'Unknown Proxmox node: %s\n' "$node" >&2; return 3; }
+  require_file "$JOB_RUNNER" "job runner" || return 1
+  if [[ "$RESOLVED_NODE_LOCAL" == true ]]; then
+    require_file "$UPDATE_SCRIPT" "update script" || return 1
+    UU_UPDATE_SCOPE=host "$JOB_RUNNER" start "$UPDATE_SCRIPT" host
+  else
+    if ! resolve_remote_node_transport "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"; then
+      printf 'Could not resolve the existing UU SSH transport for node %s.\n' "$RESOLVED_NODE" >&2
+      return 1
+    fi
+    remote_node_update "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"
+  fi
+}
+
+finish_partial_status() {
+  local result=$1
+  if declare -f STATUS_MODEL_FINISH >/dev/null 2>&1; then
+    STATUS_MODEL_PARTIAL=true STATUS_MODEL_FINISH || result=$?
+  fi
+  return "$result"
+}
+
+single_check_result() {
+  local result="$1"
+  if [[ "$result" -eq 0 ]] &&
+    declare -f STATUS_MODEL_HAS_FAILURES >/dev/null 2>&1 &&
+    STATUS_MODEL_HAS_FAILURES; then
+    return 1
+  fi
+  return "$result"
+}
+
+record_remote_target_error() {
+  local target="$1" kind="$2" node="$3" code="$4" message="$5" result=${6:-1}
+  if declare -f STATUS_MODEL_INIT >/dev/null 2>&1 && STATUS_MODEL_INIT; then
+    STATUS_MODEL_RECORD "$target" "$kind" ssh false "" "" null null offline "$code" "$message" "$node"
+    finish_partial_status "$result"
+  fi
+  return "$result"
+}
+
+remote_target_check() {
+  local target="$1" kind="$2" node="$3" host="$4" mode remote_check_dir remote_config
+  local remote_tag_filter remote_cluster_target remote_runtime remote_status_model remote_internal_ssh remote_internal_conf remote_status_file
+  local tag_filter_script target_runtime_file internal_ssh_file internal_ssh_conf legacy_profile local_file transport_rc
+  local -a ssh_args=("${REMOTE_NODE_ARGS[@]:-}")
+  mode=$([[ "$kind" == container ]] && printf ccontainer || printf cvm)
+  if ! resolve_remote_node_transport "$node" "$host"; then
+    record_remote_target_error "$target" "$kind" "$node" SSH_UNREACHABLE "Could not resolve SSH transport for node $node" 1
+    return 1
+  fi
+  host="$REMOTE_NODE_HOST"; local port="$REMOTE_NODE_PORT" user="$REMOTE_NODE_USER"
+  ssh_args=("${REMOTE_NODE_ARGS[@]}")
+  remote_check_dir="/tmp/ultimate-updater-check-target-$$-$RANDOM-$RANDOM"
+  remote_config="$remote_check_dir/update.conf"
+  remote_tag_filter="$remote_check_dir/tag-filter.sh"
+  remote_cluster_target="$remote_check_dir/cluster-target.sh"
+  remote_runtime="$remote_check_dir/target-runtime.sh"
+  remote_status_model="$remote_check_dir/status-model.sh"
+  remote_internal_ssh="$remote_check_dir/internal-ssh.sh"
+  remote_internal_conf="$remote_check_dir/internal-ssh.conf"
+  remote_status_file="$remote_check_dir/status.json"
+  tag_filter_script="$LOCAL_FILES/tag-filter.sh"
+  target_runtime_file="$LOCAL_FILES/target-runtime.sh"
+  internal_ssh_file="$LOCAL_FILES/internal-ssh.sh"
+  internal_ssh_conf="$LOCAL_FILES/internal-ssh.conf"
+  legacy_profile="$LOCAL_FILES/VMs/$target"
+  [[ -f "$tag_filter_script" ]] || tag_filter_script="$SCRIPT_DIR/tag-filter.sh"
+  [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
+  [[ -f "$internal_ssh_file" ]] || internal_ssh_file="$SCRIPT_DIR/internal-ssh.sh"
+  local_file=$(mktemp)
+  if ! STATUS_MODEL_INIT; then
+    rm -f -- "$local_file"
+    printf 'Could not initialize status model for target %s.\n' "$target" >&2
+    return 1
+  fi
+  if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "mkdir -p -- '$remote_check_dir' '$remote_check_dir/VMs'" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$LOCAL_FILES/update.conf" "$user@$host:$remote_config" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$tag_filter_script" "$user@$host:$remote_tag_filter" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$CLUSTER_TARGET_SCRIPT" "$user@$host:$remote_cluster_target" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$target_runtime_file" "$user@$host:$remote_runtime" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$STATUS_MODEL_SCRIPT" "$user@$host:$remote_status_model"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "$target" "$kind" ssh false "" "" null null offline SSH_UNREACHABLE "Could not transfer current check files to node $node" "$node"
+    finish_partial_status 1 >/dev/null 2>&1 || true
+    rm -f -- "$local_file"
+    printf 'Could not prepare remote check for target %s on node %s.\n' "$target" "$node" >&2
+    return 1
+  fi
+  if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$internal_ssh_file" "$user@$host:$remote_internal_ssh" ||
+    [[ -f "$internal_ssh_conf" ]] && ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$internal_ssh_conf" "$user@$host:$remote_internal_conf"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "$target" "$kind" ssh false "" "" null null offline SSH_UNREACHABLE "Could not transfer Internal SSH files to node $node" "$node"
+    finish_partial_status 1 >/dev/null 2>&1 || true
+    rm -f -- "$local_file"
+    printf 'Could not prepare Internal SSH settings for target %s.\n' "$target" >&2
+    return 1
+  fi
+  if [[ -f "$legacy_profile" ]] && ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$legacy_profile" "$user@$host:$remote_check_dir/VMs/$target"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "$target" "$kind" ssh false "" "" null null offline SSH_UNREACHABLE "Could not transfer legacy SSH profile for target $target to node $node" "$node"
+    finish_partial_status 1 >/dev/null 2>&1 || true
+    rm -f -- "$local_file"
+    printf 'Could not transfer legacy SSH profile for target %s to node %s.\n' "$target" "$node" >&2
+    return 1
+  fi
+  # shellcheck disable=SC2016
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true STATUS_MODEL_PARTIAL=true bash -s -- %q %q >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote guest status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; if [[ "$finish_rc" -ne 0 ]]; then exit "$finish_rc"; fi; exit "$remote_rc"' \
+    "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
+    "$remote_runtime" "$remote_internal_ssh" "$remote_internal_conf" "$node" "$remote_status_model" "$remote_status_file" \
+    "$remote_status_file.records" "$mode" "$target" "$remote_status_file.records" \
+    "$node" "$remote_status_file" "$remote_status_file.records" "$remote_status_model" \
+    "$remote_status_file" "$target" "$remote_check_dir" "$remote_status_file" "$remote_check_dir"
+  timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "$remote_command" < "$CHECK_SCRIPT" > "$local_file"
+  transport_rc=$?
+  if [[ "$transport_rc" -ne 0 && ! -s "$local_file" ]]; then
+    rm -f -- "$local_file"
+    if [[ "$transport_rc" -eq 124 ]]; then
+      record_remote_target_error "$target" "$kind" "$node" REMOTE_CHECK_TIMEOUT "Remote guest check timed out on node $node" "$transport_rc"
+    else
+      record_remote_target_error "$target" "$kind" "$node" REMOTE_CHECK_FAILED "Remote guest check failed on node $node" "$transport_rc"
+    fi
+    return "$transport_rc"
+  fi
+  if [[ ! -s "$local_file" ]]; then
+    rm -f -- "$local_file"
+    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_MISSING "Remote guest status was not produced for $target" 86
+    return 86
+  fi
+  if ! python3 - "$local_file" > /dev/null 2>&1 <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
+    raise SystemExit(1)
+PY
+  then
+    rm -f -- "$local_file"
+    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_INVALID "Remote guest status is invalid for $target" 87
+    return 87
+  fi
+  if ! python3 - "$local_file" "$target" > "${local_file}.filtered" 2>/dev/null <<'PY'
+import json
+import sys
+
+source, wanted = sys.argv[1:]
+with open(source, encoding="utf-8") as handle:
+    payload = json.load(handle)
+targets = [item for item in payload.get("targets", [])
+           if isinstance(item, dict) and str(item.get("id")) == wanted]
+if len(targets) != 1:
+    raise SystemExit(1)
+json.dump({"schema_version": payload.get("schema_version", 1),
+           "targets": targets}, sys.stdout)
+PY
+  then
+    rm -f -- "$local_file" "${local_file}.filtered"
+    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_IMPORT_FAILED "Remote guest status did not contain target $target" 1
+    return 1
+  fi
+  if ! STATUS_MODEL_IMPORT_FILE "${local_file}.filtered" 2>/dev/null; then
+    rm -f -- "$local_file" "${local_file}.filtered"
+    record_remote_target_error "$target" "$kind" "$node" REMOTE_STATUS_IMPORT_FAILED "Could not import remote guest status for $target" 1
+    return 1
+  fi
+  rm -f -- "$local_file" "${local_file}.filtered"
+  single_check_result "$transport_rc"
+  transport_rc=$?
+  finish_partial_status "$transport_rc"
+}
+
+remote_target_update() {
+  local target="$1" node="$2" host="$3"
+  remote_update_job "$target" "$target" "$node" "$host"
+}
+
+run_external_checks() {
+  local target result=0 target_result targets
+  targets=$(inventory_targets) || return 1
+  [[ -n "$targets" ]] || return 0
+  require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1
+  while IFS= read -r target; do
+    [[ -n "$target" ]] || continue
+    if ! external_target_selected_for_check "$target"; then
+      printf 'CHECK external-linux: %s skipped by central check filter\n' "$target"
+      continue
+    fi
+    "$EXTERNAL_APT_SCRIPT" check "$target"
+    target_result=$?
+    if [[ "$target_result" -ne 0 ]]; then
+      if status_target_is_expected "$STATUS_FILE" "$target"; then
+        printf 'CHECK external-linux: %s skipped by target capability\n' "$target"
+        continue
+      fi
+      printf 'CHECK external-linux: %s failed (exit code %s)\n' "$target" "$target_result" >&2
+      [[ "$result" -ne 0 ]] || result="$target_result"
+    fi
+  done <<< "$targets"
+  return "$result"
+}
+
+print_check_summary() {
+  local target="$1" result="$2"
+  python3 - "$STATUS_FILE" "$target" "$result" <<'PY'
+import json
+import sys
+
+status_file, wanted, result = sys.argv[1:]
+try:
+    result = int(result)
+except ValueError:
+    result = 1
+
+def fallback_label(value):
+    return value.removeprefix("host:")
+
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError):
+    print(f"CHECK {fallback_label(wanted)} {'completed' if result == 0 else 'failed'}")
+    raise SystemExit
+
+target = None
+for item in payload.get("targets", []):
+    if not isinstance(item, dict):
+        continue
+    identifier = str(item.get("id") or "")
+    if identifier == wanted or identifier.removeprefix("host:") == wanted:
+        target = item
+        break
+
+if target is None:
+    print(f"CHECK {fallback_label(wanted)} {'completed' if result == 0 else 'failed'}")
+    raise SystemExit
+
+identifier = str(target.get("id") or wanted)
+short_id = identifier.removeprefix("host:")
+name = str(target.get("name") or "")
+label = short_id if not name or name in (identifier, short_id) else f"{short_id} · {name}"
+if result != 0 or target.get("check_status") == "error":
+    error = target.get("error") if isinstance(target.get("error"), dict) else {}
+    code = str(error.get("code") or "CHECK_FAILED")
+    message = " ".join(str(error.get("message") or "").split())
+    suffix = f": {code} - {message}" if message else f": {code}"
+    print(f"CHECK {label} failed{suffix}")
+elif target.get("reachable") is False or target.get("check_status") == "offline":
+    print(f"CHECK {label} offline")
+else:
+    updates = target.get("updates")
+    available = updates.get("available") if isinstance(updates, dict) else None
+    if isinstance(available, int) and not isinstance(available, bool):
+        print(f"CHECK {label} completed: {available} updates available")
+    else:
+        print(f"CHECK {label} completed")
+PY
+}
+
+print_global_check_summary() {
+  local check_result="$1" external_result="$2"
+  python3 - "$STATUS_FILE" "$check_result" "$external_result" <<'PY'
+import json
+import sys
+
+status_file, check_result, external_result = sys.argv[1:]
+try:
+    check_result = int(check_result)
+    external_result = int(external_result)
+except ValueError:
+    check_result = external_result = 1
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError):
+    print(f"CHECK all systems {'completed' if check_result == 0 and external_result == 0 else 'failed'}")
+    raise SystemExit
+
+if check_result != 0 or external_result != 0:
+    attention = sum(
+        1 for target in payload.get("targets", [])
+        if isinstance(target, dict) and target.get("check_status") in {"error", "offline"}
+    )
+    if check_result == 10 or external_result == 10:
+        suffix = "target" if attention == 1 else "targets"
+        print("CHECK all systems completed with warnings")
+        if attention:
+            verb = "requires" if attention == 1 else "require"
+            print(f"{attention} {suffix} {verb} attention")
+    else:
+        print("CHECK all systems failed")
+    raise SystemExit
+available = 0
+known = True
+for target in payload.get("targets", []):
+    updates = target.get("updates") if isinstance(target, dict) else None
+    value = updates.get("available") if isinstance(updates, dict) else None
+    if isinstance(value, int) and not isinstance(value, bool):
+        available += value
+    else:
+        known = False
+print(f"CHECK all systems completed: {available} updates available" if known else
+      "CHECK all systems completed")
+PY
+}
+
+status_has_target_failures() {
+  python3 - "${1:-$STATUS_FILE}" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, IndexError):
+    raise SystemExit(1)
+
+for target in payload.get("targets", []):
+    if isinstance(target, dict) and target.get("check_status") in {"error", "offline"}:
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+status_target_is_expected() {
+  python3 - "${1:-$STATUS_FILE}" "$2" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, IndexError):
+    raise SystemExit(1)
+
+wanted = sys.argv[2]
+for target in payload.get("targets", []):
+    if isinstance(target, dict) and str(target.get("id")) == wanted:
+        raise SystemExit(0 if target.get("check_status") in {"unsupported", "not_checked", "skipped", "stopped"} else 1)
+raise SystemExit(1)
+PY
+}
+
+classify_collection_result() {
+  local result="$1" status_file hard_marker
+  status_file="${2:-$STATUS_FILE}"
+  hard_marker="${status_file}.hard-failure"
+  [[ "$result" -eq 0 ]] && return 0
+  # A failed status-model lifecycle or a central offline runner is never a
+  # target warning. check-updates.sh leaves this marker for the aggregator.
+  [[ -e "$hard_marker" ]] && return "$result"
+  if [[ "$result" -eq 1 ]] && status_has_target_failures "$status_file"; then
+    return "$CHECK_WARNING_RC"
+  fi
+  return "$result"
+}
+
+run_check() {
+  local target="${1:-}" kind resolve_result check_result external_result
+  if [[ "${UU_CHECK_JOB_EXECUTION:-false}" != true ]]; then
+    require_file "$JOB_RUNNER" "job runner" || return 1
+    if [[ -n "$target" ]]; then
+      "$JOB_RUNNER" start-check "$target" "$SCRIPT_DIR/ultimate-updater" target
+    else
+      "$JOB_RUNNER" start-check all-systems "$SCRIPT_DIR/ultimate-updater" all
+    fi
+    return $?
+  fi
+  if [[ -z "$target" ]]; then
+    require_file "$CHECK_SCRIPT" "check script" || return 1
+    local check_result external_result
+    UU_DEFER_NOTIFICATION=true "$CHECK_SCRIPT"; check_result=$?
+    classify_collection_result "$check_result"; check_result=$?
+    run_external_checks; external_result=$?
+    classify_collection_result "$external_result"; external_result=$?
+    if declare -f STATUS_MODEL_SEND_NOTIFICATION >/dev/null 2>&1; then
+      STATUS_MODEL_SEND_NOTIFICATION "$STATUS_FILE" "$LOCAL_FILES/update.conf" || true
+    fi
+    print_global_check_summary "$check_result" "$external_result"
+    [[ "$check_result" -eq 0 || "$check_result" -eq "$CHECK_WARNING_RC" ]] || return "$check_result"
+    [[ "$external_result" -eq 0 || "$external_result" -eq "$CHECK_WARNING_RC" ]] || return "$external_result"
+    if [[ "$check_result" -eq "$CHECK_WARNING_RC" || "$external_result" -eq "$CHECK_WARNING_RC" ]]; then
+      return "$CHECK_WARNING_RC"
+    fi
+    return 0
+  fi
+  resolve_target_kind "$target" >/dev/null
+  resolve_result=$?
+  kind="$RESOLVED_TARGET_KIND"
+  if [[ "$resolve_result" -ne 0 ]]; then
+    case "$resolve_result" in
+      1) printf 'ultimate-updater: target not found: %s\n' "$target" >&2; return 3 ;;
+      4) return 4 ;;
+      *) return "$resolve_result" ;;
+    esac
+  fi
+  if [[ "$RESOLVED_TARGET_LOCAL" == false ]]; then
+    remote_target_check "$target" "$kind" "$RESOLVED_TARGET_NODE" "$RESOLVED_TARGET_HOST"
+    check_result=$?
+    print_check_summary "$target" "$check_result"
+    return "$check_result"
+  fi
+  case "$kind" in
+    host) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" chost; check_result=$? ;;
+    container) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" ccontainer "$target"; check_result=$? ;;
+    vm) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true UU_EXPLICIT_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" cvm "$target"; check_result=$? ;;
+    external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; "$EXTERNAL_APT_SCRIPT" check "$target"; check_result=$? ;;
+  esac
+  print_check_summary "$target" "$check_result"
+  return "$check_result"
+}
+
+run_update() {
+  require_file "$JOB_RUNNER" "job runner" || return 1
+  local target="${1:-}" kind override="${2:-false}"
+  [[ -n "$target" ]] || { usage >&2; return 2; }
+  [[ "$EUID" -eq 0 ]] || { printf 'ultimate-updater: update jobs require root\n' >&2; return 2; }
+  resolve_target_kind "$target" >/dev/null
+  local resolve_result=$?
+  kind="$RESOLVED_TARGET_KIND"
+  if [[ "$resolve_result" -ne 0 ]]; then
+    case "$resolve_result" in
+      1) printf 'ultimate-updater: target not found: %s\n' "$target" >&2; return 3 ;;
+      4) return 4 ;;
+      *) return "$resolve_result" ;;
+    esac
+  fi
+  if [[ "$kind" == external ]]; then
+    external_backup_gate "$target" "$override" || return $?
+  fi
+  if [[ "$RESOLVED_TARGET_LOCAL" == false ]]; then
+    remote_target_update "$target" "$RESOLVED_TARGET_NODE" "$RESOLVED_TARGET_HOST"
+    return $?
+  fi
+  case "$kind" in
+    host|container|vm) require_file "$UPDATE_SCRIPT" "update script" || return 1; "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")" ;;
+    external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; if [[ "$override" == true ]]; then UU_EXTERNAL_BACKUP_OVERRIDE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; else "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; fi ;;
+  esac
+}
+
+command="${1:-help}"
+case "$command" in
+  help|-h|--help)
+    [[ $# -le 1 ]] || { usage >&2; exit 2; }
+    usage
+    ;;
+  list)
+    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+    list_targets
+    ;;
+  status)
+    case "${2:-}" in
+      "") [[ $# -eq 1 ]] || { usage >&2; exit 2; }; status_human ;;
+      --json) [[ $# -eq 2 ]] || { usage >&2; exit 2; }; status_json ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    ;;
+  status-import)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    status_import "$2"
+    ;;
+  config)
+    [[ "${2:-}" == set && "${3:-}" == web-port && $# -eq 4 ]] || { usage >&2; exit 2; }
+    require_file "$WEB_UI_PORT_SCRIPT" "Web UI port helper" || exit 1
+    "$WEB_UI_PORT_SCRIPT" set "$4"
+    ;;
+  hardcore-test)
+    [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+    require_file "$HARDCORE_TEST_SCRIPT" "Hardcore-Test helper" || exit 1
+    shift
+    "$HARDCORE_TEST_SCRIPT" "$@"
+    ;;
+  check)
+    [[ $# -le 2 ]] || { usage >&2; exit 2; }
+    run_check "${2:-}"
+    ;;
+  update)
+    [[ $# -eq 2 || ( $# -eq 3 && "$3" == "--without-verified-backup" ) ]] || { usage >&2; exit 2; }
+    if [[ $# -eq 3 ]]; then run_update "$2" true; else run_update "$2" false; fi
+    ;;
+  update-all)
+    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+    external_backup_blockers || exit $?
+    require_file "$JOB_RUNNER" "job runner" || exit 1
+    require_file "$UPDATE_SCRIPT" "update script" || exit 1
+    require_file "$GLOBAL_UPDATE_SCRIPT" "global update dispatcher" || exit 1
+    "$JOB_RUNNER" start-global "$GLOBAL_UPDATE_SCRIPT"
+    ;;
+check-node)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    if [[ "${UU_CHECK_JOB_EXECUTION:-false}" == true ]]; then
+      run_node_check "$2"
+    else
+      require_file "$JOB_RUNNER" "job runner" || exit 1
+      "$JOB_RUNNER" start-check "$2" "$SCRIPT_DIR/ultimate-updater" node
+    fi
+    ;;
+  update-node)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    [[ "$EUID" -eq 0 ]] || { printf 'ultimate-updater: update jobs require root\n' >&2; exit 2; }
+    run_node_update "$2"
+    ;;
+  external)
+    case "${2:-}" in
+      setup) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; external_setup "$3" ;;
+      verify-backup) [[ $# -eq 3 || $# -eq 4 ]] || { usage >&2; exit 2; }; external_verify_backup "$3" "${4:-}" ;;
+      backup-status) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; external_backup_status "$3" ;;
+      settings-get) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; external_settings get "$3" ;;
+      settings-set) [[ $# -ge 3 ]] || { usage >&2; exit 2; }; external_settings set "$3" "${@:4}" ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    ;;
+  *)
+    printf 'ultimate-updater: unknown command: %s\n' "$command" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

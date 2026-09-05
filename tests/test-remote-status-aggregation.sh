@@ -1,0 +1,208 @@
+#!/bin/bash
+# shellcheck disable=SC1091,SC2034
+set -euo pipefail
+
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+WORK_DIR=$(mktemp -d)
+trap 'find "$WORK_DIR" -type f -delete 2>/dev/null || true; rmdir "$WORK_DIR" 2>/dev/null || true' EXIT
+
+# The remote dispatch must have an isolated artifact directory, an explicit
+# completion marker, and a bounded timeout distinct from SSH transfer setup.
+grep -Eq 'remote_check_dir="/tmp/ultimate-updater-check-.*RANDOM' "$ROOT_DIR/check-updates.sh"
+grep -Fq "remote_done_file=\"\$remote_check_dir/completed\"" "$ROOT_DIR/check-updates.sh"
+grep -Fq 'CHECK_REMOTE_JOB_TIMEOUT:-300' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'remote check completed but status result could not be retrieved' "$ROOT_DIR/check-updates.sh"
+
+# Retrieval failures must leave a correlation trail in the job log while
+# successful runs remain quiet unless DEBUG is enabled.
+grep -Fq 'REMOTE_STATUS_DIAGNOSTICS' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'completion_found=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'status_found=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'cleanup=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'classification=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'completion-marker-missing' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'status-file-missing' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'ssh-retrieval-failed' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'scp-retrieval-failed' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'permission-denied' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'invalid-json' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'remote-rc-nonzero' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'remote_node_status_ok=false' "$ROOT_DIR/check-updates.sh"
+# shellcheck disable=SC2016 # the literal condition is the assertion target.
+grep -Fq '"$remote_status" -ne 0 && "$remote_node_status_ok" != true' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'timeout' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'remote_status_validation=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'remote_rc=86' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'remote_rc=87' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'status_finish_rc=0' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'CHECK_FAILURE=1' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'status-file-missing-after-finalization' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'invalid-json-after-finalization' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'STATUS_MODEL_INIT node=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'STATUS_MODEL_FINISH node=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'STATUS_MODEL_DIAGNOSTICS_FILE' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'Remote status model: node=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'Remote status model diagnostics unavailable:' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'REMOTE_STATUS_FAILURE_SUMMARY' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'Remote check target' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'status-diagnostics' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'UU_REMOTE_DEFER_STATUS_FINISH=true' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'TAG_OUTPUT=false STATUS_MODEL_NODE=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'REMOTE_CHECK_RETURN node=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'STATUS_MODEL_FINISH_START node=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'STATUS_MODEL_FINISH_END node=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'COMPLETION_WRITE node=' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'UU_REMOTE_DEFER_STATUS_FINISH:-false' "$ROOT_DIR/check-updates.sh"
+# shellcheck disable=SC2016
+grep -Fq 'UU_CHECK_REMOTE_WRAPPER_TIMEOUT:-$((job_timeout + 60))' "$ROOT_DIR/check-updates.sh"
+for marker in \
+  'CENTRAL_REMOTE_START node=' \
+  'CENTRAL_REMOTE_SSH_RETURN node=' \
+  'CENTRAL_COMPLETION_FETCH_START node=' \
+  'CENTRAL_COMPLETION_FETCH_END node=' \
+  'CENTRAL_STATUS_FETCH_START node=' \
+  'CENTRAL_STATUS_FETCH_END node=' \
+  'CENTRAL_DIAGNOSTICS_FETCH_START node=' \
+  'CENTRAL_DIAGNOSTICS_FETCH_END node=' \
+  'CENTRAL_CLEANUP_START node=' \
+  'CENTRAL_CLEANUP_END node=' \
+  'CENTRAL_REMOTE_END node='; do
+  grep -Fq "$marker" "$ROOT_DIR/check-updates.sh"
+done
+grep -Fq 'bash -s -- host' "$ROOT_DIR/check-updates.sh"
+# shellcheck disable=SC2016 # the literal shell fragment is the assertion target.
+grep -Fq '"$LOCAL_FILES/update.conf" "$HOST:$LOCAL_FILES/update.conf"' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'DEBUG:-false' "$ROOT_DIR/check-updates.sh"
+
+# Internal remote correlation diagnostics are debug-only.  Target failures
+# still have a separate user-facing summary, so DEBUG=false must not expose
+# artifact paths, RCs, or transport metadata.
+awk '/^REMOTE_STATUS_DIAGNOSTICS \(\) \{/{copy=1} copy{print} copy && /^}/{exit}' \
+  "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/remote-diagnostics.sh"
+source "$WORK_DIR/remote-diagnostics.sh"
+if DEBUG=false output=$(REMOTE_STATUS_DIAGNOSTICS failure node1 host /tmp/run /tmp/run/completed /tmp/run/status.json \
+  true 1 true 12 0 0 valid pending remote-rc-nonzero true 20 0); then
+  [[ -z "$output" ]]
+else
+  exit 1
+fi
+DEBUG=true output=$(REMOTE_STATUS_DIAGNOSTICS failure node1 host /tmp/run /tmp/run/completed /tmp/run/status.json \
+  true 1 true 12 0 0 valid pending remote-rc-nonzero true 20 0)
+grep -Fq 'Remote status diagnostics:' <<< "$output"
+
+# Central remote job visibility must not depend on an installed UU runner on
+# the owner node.  The persistent remote state file is authoritative, with a
+# timestamped fallback so fast/unavailable jobs remain in the UI retention set.
+grep -Fq 'REMOTE_JOB_STATE_DIR=' "$ROOT_DIR/job-runner.sh"
+# shellcheck disable=SC2016 # literal shell fragment is the assertion target.
+grep -Fq 'remote_state_file="$REMOTE_JOB_STATE_DIR/$unit.state"' "$ROOT_DIR/job-runner.sh"
+grep -Fq 'registered_at=' "$ROOT_DIR/job-runner.sh"
+grep -Fq 'remote_unavailable' "$ROOT_DIR/job-runner.sh"
+if grep -Fq '/etc/ultimate-updater/job-runner.sh list' "$ROOT_DIR/job-runner.sh"; then
+  exit 1
+fi
+
+# The remote wrapper owns finalization.  An inner check that exits before its
+# own epilogue must still produce a final status and completion result.
+cat > "$WORK_DIR/status-model.sh" <<'EOF'
+STATUS_MODEL_INIT() { : > "$STATUS_MODEL_RECORD_FILE"; }
+STATUS_MODEL_FINISH() {
+  printf '{"targets":[]}' > "$STATUS_MODEL_FILE"
+}
+EOF
+cat > "$WORK_DIR/inner-check.sh" <<'EOF'
+#!/bin/bash
+source "$STATUS_MODEL_SCRIPT"
+STATUS_MODEL_INIT
+case "$1" in
+  exit-zero) exit 0 ;;
+  exit-failure) exit 17 ;;
+  return-zero) return 0 2>/dev/null || true ;;
+  return-failure) return 19 2>/dev/null || true ;;
+esac
+EOF
+chmod +x "$WORK_DIR/inner-check.sh"
+for mode in normal exit-zero exit-failure return-zero return-failure; do
+  rm -f "$WORK_DIR/status.json" "$WORK_DIR/status.records" "$WORK_DIR/completed"
+  STATUS_MODEL_SCRIPT="$WORK_DIR/status-model.sh" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
+    STATUS_MODEL_RECORD_FILE="$WORK_DIR/status.records" bash -c '
+      source "$STATUS_MODEL_SCRIPT"
+      STATUS_MODEL_INIT
+      bash "$1" "$2"
+      remote_rc=$?
+      STATUS_MODEL_FINISH
+      printf "%s\n" "$remote_rc" > "$3"
+      exit "$remote_rc"
+    ' _ "$WORK_DIR/inner-check.sh" "$mode" "$WORK_DIR/completed" || true
+  [[ -s "$WORK_DIR/status.json" ]]
+  [[ -s "$WORK_DIR/completed" ]]
+done
+
+# An inner timeout must return control to the wrapper, which then completes
+# finalization and writes a deterministic completion RC.
+cat > "$WORK_DIR/slow-check.sh" <<'EOF'
+#!/bin/bash
+sleep 2
+EOF
+rm -f "$WORK_DIR/status.json" "$WORK_DIR/completed" "$WORK_DIR/diagnostics"
+(
+  set +e
+  timeout 1 bash "$WORK_DIR/slow-check.sh"
+  remote_rc=$?
+  printf '%s\n' 'REMOTE_CHECK_RETURN rc='"$remote_rc" >> "$WORK_DIR/diagnostics"
+  printf '%s\n' 'STATUS_MODEL_FINISH_START' >> "$WORK_DIR/diagnostics"
+  printf '{"targets":[]}' > "$WORK_DIR/status.json"
+  printf '%s\n' 'STATUS_MODEL_FINISH_END rc=0 exists=true' >> "$WORK_DIR/diagnostics"
+  printf '%s\n' "$remote_rc" > "$WORK_DIR/completed"
+  printf '%s\n' 'COMPLETION_WRITE rc='"$remote_rc" >> "$WORK_DIR/diagnostics"
+)
+grep -Fq 'REMOTE_CHECK_RETURN rc=124' "$WORK_DIR/diagnostics"
+grep -Fq 'STATUS_MODEL_FINISH_END rc=0 exists=true' "$WORK_DIR/diagnostics"
+grep -Fq 'COMPLETION_WRITE rc=124' "$WORK_DIR/diagnostics"
+[[ -s "$WORK_DIR/status.json" && "$(cat "$WORK_DIR/completed")" == 124 ]]
+
+# An absent completion marker must not be relabelled as a remote RC failure;
+# the marker is the only authoritative source for the remote RC.
+grep -Fq "if [[ \"\$remote_done_found\" == true && \"\$remote_status\" -ne 0 ]]" "$ROOT_DIR/check-updates.sh"
+
+# A failed remote node must not discard successful records from other nodes.
+LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
+STATUS_MODEL_RECORD_FILE="$WORK_DIR/status.records" bash -c '
+  source "$1"
+  STATUS_MODEL_INIT
+  STATUS_MODEL_RECORD "host:node1" host ssh true "" "" null null ok
+  STATUS_MODEL_RECORD "host:node3" host ssh true "" "" null null error REMOTE_STATUS_IMPORT_FAILED "node3 status missing" node3
+  STATUS_MODEL_FINISH
+' _ "$ROOT_DIR/status-model.sh"
+grep -Fq '"id": "host:node1"' "$WORK_DIR/status.json"
+grep -Fq '"id": "host:node3"' "$WORK_DIR/status.json"
+grep -Fq 'REMOTE_STATUS_IMPORT_FAILED' "$WORK_DIR/status.json"
+
+# A successful remote node record must survive a failed child record.  The
+# aggregate job still has an error, but the parent is not rewritten as one.
+cat > "$WORK_DIR/remote-child-error.json" <<'JSON'
+{"targets":[
+  {"id":"host:node2","type":"host","node":"node2","name":"node2","check_status":"updates_available","reachable":true,"os":"Ubuntu","updates":{"available":66},"normal_updates":62,"security_updates":4},
+  {"id":"guest:211","type":"lxc","node":"node2","name":"iobroker","check_status":"error","reachable":true,"updates":{"available":null},"error":{"code":"CHECK_COMMAND_FAILED","message":"apt-get update failed for LXC 211"}}
+]}
+JSON
+LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/child-error-status.json" \
+STATUS_MODEL_RECORD_FILE="$WORK_DIR/child-error.records" bash -c '
+  source "$1"
+  STATUS_MODEL_INIT
+  STATUS_MODEL_IMPORT_FILE "$2"
+  STATUS_MODEL_FINISH
+' _ "$ROOT_DIR/status-model.sh" "$WORK_DIR/remote-child-error.json"
+python3 - "$WORK_DIR/child-error-status.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    targets = {target["id"]: target for target in json.load(source)["targets"]}
+assert targets["host:node2"]["check_status"] == "updates_available"
+assert targets["host:node2"]["error"] is None
+assert targets["guest:211"]["check_status"] == "error"
+assert targets["guest:211"]["error"]["code"] == "CHECK_COMMAND_FAILED"
+PY
+
+printf '%s\n' 'remote status aggregation regression tests: PASS'

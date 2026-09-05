@@ -1,25 +1,29 @@
 <div align="center">
 
+# Ultimate Updater 5.1
+
+Central, safety-conscious updates and checks for Proxmox hosts, LXC
+containers, VMs, and selected external systems.
+
 <img src="https://github.com/user-attachments/assets/df181f9c-683b-4e9b-9234-80c158c7da98"
        style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
 
-![Screenshot_20240109_113501](https://github.com/BassT23/Proxmox/assets/30832786/640cefd9-0659-4265-b34a-cb5b9905046b)
-
-[![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://GitHub.com/BassT23/Proxmox/releases/)
+[![GitHub release](https://img.shields.io/github/release/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/releases/)
 [![GitHub stars](https://img.shields.io/github/stars/BassT23/Proxmox.svg)](https://github.com/BassT23/Proxmox/stargazers)
 [![downloads](https://img.shields.io/github/downloads/BassT23/Proxmox/total.svg)](https://github.com/BassT23/Proxmox/releases)
 [![Discord](https://img.shields.io/discord/1149671790864506882)](https://discord.gg/nVpUg6BKn8)
 
 Proxmox® is a registered trademark of Proxmox Server Solutions GmbH.
 
-I am no member of the Proxmox Server Solutions GmbH. This is not an official program from Proxmox!
+Ultimate Updater is an independent project and is not an official program
+from Proxmox Server Solutions GmbH.
 
 </div>
 
->  This is distributed in the hope that it will be useful, but
->  WITHOUT ANY WARRANTY; without even the implied warranty of
->  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
->  See the GNU General Public License for more details.
+> This software is distributed in the hope that it will be useful, but
+> **WITHOUT ANY WARRANTY**. See the [GNU General Public License](LICENSE) for
+> more details. You are responsible for validating the configuration and
+> maintaining suitable backups before using it on important systems.
 
 <div align="center">
 
@@ -29,173 +33,121 @@ I am no member of the Proxmox Server Solutions GmbH. This is not an official pro
 
 </div>
 
-### What does the script do:
-- The script makes system updates with apt/dnf/pacman/apk or yum on all nodes/LXCs and VMs (if VMs prepared for that)
-- Make a snapshot before update (if your storage support it - [look here](https://pve.proxmox.com/wiki/Storage)). If not supported, you can choose to make a real backup, but this must be enabled in `update.conf` by user (take long time!)
-- After all, the updater makes a little cleaning (like `apt autoremove`) 
-- If the script detects "extra" installations, it could update this also. Look in config file, for that.
-- NEW: use your own scripts during update if you like. [Look here](https://github.com/BassT23/Proxmox/tree/develop#user-scripts)
+## What it does
 
-### Features:
-- Update Proxmox VE (the host / all cluster nodes / all included LXCs and VMs)
-- LXC distriburion upgrade (deb12 -> deb13) with `update -dist-upgrade`
-- Snapshot / Backup support (for Snapshot, your system must prepared for it)
-- Normal run is "Interactive" / Headless Mode can be run with `update -s`
-- Logging - location can be change in config file
-- Exit tracking, so you can send additional commands for finish or failure (edit files in `/etc/ultimate-updater/exit`)
-- [Config file](https://github.com/BassT23/Proxmox/tree/master#config-file)
-- [Use TAG/ID/Range](https://github.com/BassT23/Proxmox/tree/beta#new-onlyexclude-handling-in-config-file) for "Only" / "Exclude" LXC/VM
-- send email after update/check
-- Trim filesystem on ext4 nodes
+Ultimate Updater is installed once on a Proxmox cluster and gives you one
+place to check and update hosts, LXC containers, VMs, and configured external
+systems. It supports interactive and headless operation, persistent jobs,
+status reporting, notifications, snapshots/backups, filters, and a central
+Web UI.
 
-Info can be found with `update -h`
+Key features include:
 
-Changelog: [here](https://github.com/BassT23/Proxmox/blob/master/change.log)
+- A central cluster-aware CLI and Web UI.
+- Read-only checks separated from mutating updates.
+- APT, DNF/YUM, Pacman, APK, Windows, and FreeBSD/pfSense paths according to
+  the current support matrix.
+- VM access through QEMU Guest Agent or SSH, with lifecycle restoration.
+- Persistent server-side jobs that continue after a browser or SSH session
+  disconnects.
+- Separate normal/security counts where classification is supported; other
+  systems show a total count.
+- Snapshot and backup safety controls, filters, notifications, and logs.
 
-## 
-# Installation:
-In Proxmox GUI Host Shell or as root on proxmox host terminal:
-```
-bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh)
-```
+## Getting started
 
-# Usage:
- - If you want to run the updater globally for all nodes/lxc/vm only run `update`
- - If you want to update only one specific lxc/vm run `update <ID>`
+Start with these three guides:
 
-##
-## Cluster-Mode preparation:
-**! For Cluster Installation, you only need to install on one Host !**
+1. [Install Ultimate Updater](docs/installation.md)
+2. Review [configuration and safety settings](docs/configuration.md).
+3. Learn the difference between [checks and updates](docs/checks-and-updates.md).
 
-The nodes need to know each other. For that please edit the `/etc/hosts` file on each node. Otherwise, you can use the GUI. (NODE -> System -> Hosts)
+Then use the [Web UI](docs/web-ui.md) to review the inventory and run a check
+before deliberately starting an update.
 
-Example add:
-```
-192.168.1.10   pve1
-192.168.1.11   pve2
-192.168.1.12   pve3
-...
-```
-IP and Name must match with node ip and its hostname.
-- IP can be found in node terminal with `hostname -I`
-- hostname can be found in node terminal with `hostname`
+## Web UI
 
-After that make the fingerprints.
-The used sequence can be check, if you run `awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf"` from the host, on which Proxmox-Updater is installed.
-So connect from first node (on which you install the Proxmox-Updater) to node2 with `ssh pve2`. Then from node2 `ssh pve3`, and so on.
+The authenticated Web UI is served by `ultimate-updater-web.service` on port
+8765, preferably over HTTPS. It provides the dashboard, target details,
+checks, updates, settings, Internal SSH management, persistent jobs/logs, and
+version/build information. See [Web UI](docs/web-ui.md).
 
-## If you want to update the VMs also, you have two choices:
-1. Use the "light and easy" QEMU option
+![Ultimate Updater 5.1 dashboard](docs/images/web-ui/dashboard.png)
 
-     more infos here: [QEMU Guest Agent](https://pve.proxmox.com/wiki/Qemu-guest-agent)
+> Current 5.1 dashboard from a dedicated test environment. More Web UI views
+> are shown in the [Web UI guide](docs/web-ui.md).
 
-2. Use ssh connection with Key-Based Authentication (a little more work, but nicer output and "extra" support)
+## Supported systems
 
-     more infos here: [SSH Connection](https://github.com/BassT23/Proxmox/blob/master/ssh.md)
+Proxmox hosts and Linux LXC/VM guests are the primary supported paths. APT
+systems provide a normal/security split. `pkg` (FreeBSD/pfSense), Pacman,
+APK, DNF/YUM, and Windows use total-only update presentation where a reliable
+security split is not available. Windows remains experimental/deferred from
+the supported 5.1 baseline pending dedicated validation.
 
-# Update the script:
-`update -up`
+External Linux systems can be configured over SSH. Read the complete matrix
+and limitations in [Supported systems](docs/supported-systems.md) and
+[External systems](docs/external-systems.md).
 
-If update run into issue, please remove first with:
-```
-bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) uninstall
-```
-and install new
+## Safety essentials
 
-# Config File:
-The config file is stored under `/etc/ultimate-updater/update.conf`
+- Check and Update are separate operations. A check is read-only as far as
+  technically possible and never reboots a VM.
+- A check may temporarily start or resume a stopped/paused guest when enabled,
+  then restores its original lifecycle state, including after errors.
+- `REBOOT_IF_NEEDED` applies to the update path only.
+- Snapshot and backup are independent controls. An invalid or inactive backup
+  storage is rejected rather than silently ignored.
+- Jobs run server-side and retain their status/log after the client disconnects.
+- Do not expose the action-enabled Web UI to an untrusted network.
 
-With this file, you can manage the updater. For example; if you don't want to update PiHole, comment the line out with #, or change `true` to `false`.
+## Documentation
 
-- Host / LXC / VM
-- Headless Mode
-- Extra updates
-- "stopped" or "running" LXC/VM
-- "only" or "exclude" LXC/VM - see below
+- [Installation](docs/installation.md)
+- [Configuration](docs/configuration.md)
+- [Checks and updates](docs/checks-and-updates.md)
+- [Cluster operation](docs/cluster.md)
+- [Web UI](docs/web-ui.md)
+- [SSH and VM access](docs/ssh.md)
+- [External systems](docs/external-systems.md)
+- [Backup and snapshots](docs/backup-and-snapshots.md)
+- [Notifications](docs/notifications.md)
+- [Supported systems](docs/supported-systems.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Upgrading](docs/upgrading.md)
+- [Advanced operation](docs/advanced.md)
 
-# New Only/Exclude handling in config file:
-Expands ONLY/EXCLUDE into a space-separated list of numeric VMIDs.
-Supports:
-  - Plain VMIDs: 101 202
-  - Delimiters: commas / semicolons / pipes / spaces intermixed (e.g. 101,202;203|204)
-  - Ranges: 120-125 (inclusive)
-  - Mixed IDs + ranges + tags: 110 testing 111 200-202
-  - Uppercase user tag input (config tags assumed already lowercase)
-    Tag tokens are any token not matching ^[0-9]+$ or ^[0-9]+-[0-9]+$.
-  - OR matching across tag tokens.
+Additional project documents: [Testing](TESTING.md), [5.1 release notes](RELEASE_NOTES_5.1.md), [5.1 upgrade notes](UPGRADE_NOTES_5.1.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
-Behavior summary:
-  1. Tokenize ONLY if set/matched; else tokenized EXCLUDE.
-  2. For each token:
-       number        -> add as VMID
-       range a-b     -> expand (a..b)
-       tag           -> collect tag for later resolution
-  3. Resolve tags to IDs (any tag match) and append, de-duplicating while
-     preserving first-seen order (input order then discovery order for tags).
-  4. Assign final space-separated list back to ONLY / EXCLUDE variable.
-  5. If ONLY provided, EXCLUDE is ignored.
+## Q&A
 
-Usage examples:
- - ONLY="backup,windows"
- - ONLY="101,102,105-107"
- - ONLY="110 testtag 111 120-121"
- - ONLY="" EXCLUDE="old 300-302"
-
-# Extra Updates:
-If updater detects installation: (disable, if you want in `/etc/ultimate-updater/update.conf`)
-- PiHole
-- ioBroker
-- Pterodactyl
-- Octoprint
-- Docker Compose (v1 and v2)
-
-# User scripts:
-How to use user scripts:
-
-In "/etc/ultimate-updater/scripts.d" create an folder for each LXC/VM who should use it like this:
-(000 is the example ID)
-
-/etc/ultimate-updater/scripts.d/000/
-
-here you can put in any script you like, which will be run during update also.
-!!! DON'T use free spaces in file name !!! ("file 1.sh" -> "file-1.sh")
-
-these files are used in the "extra update" section at the end of the LXC/VM
-
-# Welcome Screen:
-The Welcome Screen is an extra for you. It's optional!
-
-- The Welcome-Screen brings an update-checker with it. It check on 07am and 07pm for updates via crontab. The result will show up in Welcome-Screen (Only if updates are available).
-- The update-checker also uses the config file!
-- To force the check, you can run `/etc/ultimate-updater/check-updates.sh` in Terminal.
-- You can choose, if screenfetch will be show also (if screenfetch is not installed, script will make it automatically)
-
-# Beta Testing:
-If anybody wants to help with failure search, please test our beta (if available).
-
-Install beta update with `update beta -up`
-To go back to master, choose `update -up`
-
-# Q&A:
 [Discussion](https://github.com/BassT23/Proxmox/discussions/60)
 
-# Support:
+## Support
+
+Report reproducible bugs through [GitHub Issues](https://github.com/BassT23/Proxmox/issues) or join the [Discord](https://discord.gg/nVpUg6BKn8). Keep secrets, private keys, and production credentials out of reports.
+
 [![grafik](https://user-images.githubusercontent.com/30832786/227482640-e7800e89-32a6-44fc-ad3b-43eef5cdc4d4.png)](https://ko-fi.com/basst)
 
-# Contributors:
+## Contributors
+
 <table>
   <tbody>
     <tr>
-      <td align="center" valign="top" width="14.28%"><a href="=https://github.com/BassT23"><img src="https://avatars.githubusercontent.com/u/30832786?v=4?s=100" width="100px;" alt="BassT23"/><br /><sub><b>BassT23</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=BassT23" title="Code">💻</a> <a href="#maintenance-BassT23" title="Maintenance">🚧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/BassT23"><img src="https://avatars.githubusercontent.com/u/30832786?v=4?s=100" width="100px;" alt="BassT23"/><br /><sub><b>BassT23</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=BassT23" title="Code">💻</a> <a href="#maintenance-BassT23" title="Maintenance">🚧</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/Gauvino"><img src="https://avatars.githubusercontent.com/u/68083474?v=4?s=100" width="100px;" alt="Gauvino"/><br /><sub><b>Gauvino</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=Gauvino" title="Code">💻</a> <a href="#translation-Gauvino" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/elbim"><img src="https://avatars.githubusercontent.com/u/28606318?v=4?s=100" width="100px;" alt="elbim"/><br /><sub><b>elbim</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=elbim" title="Code">💻</a> <a href="#translation-elbim"</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/elbim"><img src="https://avatars.githubusercontent.com/u/28606318?v=4?s=100" width="100px;" alt="elbim"/><br /><sub><b>elbim</b></sub></a><br /><a href="https://github.com/BassT23/Proxmox/commits?author=elbim" title="Code">💻</a> <a href="#translation-elbim" title="Documentation">📖</a></td>
     </tr>
   </tbody>
 </table>
 
+Ultimate Updater is free software under the GNU General Public License. See
+the [LICENSE](LICENSE) and [SECURITY.md](SECURITY.md) for project policies.
+
 <div align="center">
 
-**AI-assisted development:** OpenAI ChatGPT & Codex
-Used for code review, debugging, test planning, documentation and release preparation. Changes are reviewed and validated before being included in a release.
+**AI-assisted development:** OpenAI ChatGPT & Codex are used for code review,
+debugging, test planning, documentation, and release preparation. Changes are
+reviewed and validated before inclusion in a release.
 
 </div>

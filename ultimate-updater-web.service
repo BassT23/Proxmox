@@ -1,0 +1,19 @@
+[Unit]
+Description=Ultimate Updater web UI
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/etc/ultimate-updater
+EnvironmentFile=-/etc/ultimate-updater/web-ui.conf
+ExecStart=/usr/bin/python3 /etc/ultimate-updater/web-ui/server.py --bind 0.0.0.0 --port ${WEB_UI_PORT}
+Restart=on-failure
+RestartSec=5s
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

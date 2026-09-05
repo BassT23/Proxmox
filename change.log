@@ -1,6 +1,52 @@
 Changelog:
 ==========
 
+**v5.1 Beta 3** (public beta / release candidate for final validation)
+New:
+- central Web UI with PAM login, responsive configuration, filter previews, External management, Jobs, Logs, and running-job visibility
+- session-independent systemd-run jobs for checks and updates, including shared history, locking, reload persistence, and remote-node dispatch
+- QEMU Guest Agent and SSH transport support for VM checks and updates, including remote VM lifecycle handling
+- configurable Proxmox backup storage selection through `BACKUP_STORAGE`; an empty value keeps automatic storage selection
+- HTTPS-first Web UI operation on port 8765 with automatic Proxmox certificate use when available and HTTP fallback in auto mode
+- External Linux APT and DNF support with dedicated SSH identity, non-root checks, restricted helper/sudo, local settings, and global Check/Update integration
+- target-local External settings with independent `ONLY_UPDATE_CHECK`, `EXCLUDE_UPDATE_CHECK`, `ONLY`, and `EXCLUDE` filters
+- deterministic golden-output regression tests and a reusable multi-hour Hardcore-Test specification, journal, and controlled stop workflow
+
+Improved:
+- cluster-wide installation and remote execution across Proxmox nodes, including offline/recovery handling and friendly target names
+- separate Check/Update filters and read-only previews with `ONLY` precedence over `EXCLUDE`
+- Global Update selection now includes managed External targets while applying central filters before any remote contact
+- checks and updates now preserve running, stopped, and paused VM/LXC lifecycle state, including restore after failures
+- concurrent jobs for the same target, and conflicting Check-All/Update-All work, are rejected safely
+- normal and security update counts are calculated as separate fields; unknown values remain `Unknown` instead of becoming false zeroes
+- DEBUG logging is configurable: normal output hides internal Proxmox/remote diagnostics while DEBUG mode keeps technical details available
+- generic filter output consistently uses Target IDs, with clearer remote failures and one central filter summary per job
+- configurable Web UI port with local CLI administration, conflict detection, atomic writes, and update/self-update preservation
+- Systems inventory, node-card layout, configuration matrices, job output, zero-update summaries, and mobile presentation
+- configuration migration and preservation of comments, unknown keys, user values, External legacy entries, and custom ports
+
+Fixed:
+- final non-zero status aggregation after continuing past target failures
+- bounded remote cluster checks, SSH/SCP, QGA readiness, package-manager paths, and lifecycle restoration
+- remote VM/LXC post-update status is imported centrally so successful refreshes do not remain stale or permanently pending
+- Check never reboots a VM; reboot handling remains confined to the Update path and `REBOOT_IF_NEEDED`
+- interrupted/transient job state handling and duplicate notification paths
+- QEMU guest-exec exit/output handling and remote guest-ID resolution across the cluster
+- stale/duplicate inventory projections, node ordering, target-preview markers, orphaned zero-update lines, repeated remote filter banners, and node-card/checkbox hit-area overlap
+
+Security/Safety:
+- recent manual External backup verification or explicit one-time owner approval is required before External updates
+- Proxmox snapshot and backup are independent protections; an unsupported snapshot does not silently enable a backup fallback, and configured backup modes/storage are validated
+- Check operations are read-only with respect to rebooting: a Check never reboots a VM, while `REBOOT_IF_NEEDED` is evaluated only during Update operations
+- TLS 1.2 or newer is required for HTTPS Web UI connections; the HTTPS port does not accept plaintext HTTP
+- authenticated, CSRF- and same-origin-protected Web UI writes with no arbitrary command/file endpoint
+- External helper access remains restricted; no `NOPASSWD: ALL`, unrestricted sudo, or secret transfer
+
+Known limitations:
+- Upgrading from older installations can require a host restart because of the changed job/service infrastructure; the updater does not reboot the host automatically.
+- Windows support remains prepared/experimental and deferred from the supported Beta baseline pending dedicated live validation
+- automatic External backup integrations are not implemented; manual time-bound verification remains the safety mechanism
+
 **v5.0** (11.08.2026)
 - change Logo
 - respect start delay from config also in check-updates
