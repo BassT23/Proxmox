@@ -782,7 +782,7 @@ UPDATE () {
     remove_non_runtime_payload() {
       local payload_root="$1"
       rm -rf -- "$payload_root/docs" || true
-      rm -f -- "$payload_root/RELEASE_NOTES_5.1_BETA.md" \
+      rm -f -- "$payload_root/RELEASE_NOTES_5.1.md" \
         "$payload_root/UPGRADE_NOTES_5.1.md" || true
     }
     # Project documentation remains in the repository, but is not part of
@@ -802,7 +802,7 @@ UPDATE () {
     do
      [[ "$FILE" == targets.conf ]] && continue
      case "$FILE" in
-       docs|docs/*|RELEASE_NOTES_5.1_BETA.md|UPGRADE_NOTES_5.1.md) continue ;;
+       docs|docs/*|RELEASE_NOTES_5.1.md|UPGRADE_NOTES_5.1.md) continue ;;
      esac
      CHECK_DIFF
     done

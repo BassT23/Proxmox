@@ -24,8 +24,8 @@ grep -Fq "Installed: \$BRANCH" "$INSTALLER"
 grep -Fq "rm -rf \"\$TEMP_FILES\"/tests" "$INSTALLER"
 grep -Fq "remove_non_runtime_payload \"\$TEMP_FILES\"" "$INSTALLER"
 grep -Fq "remove_non_runtime_payload \"\$LOCAL_FILES\"" "$INSTALLER"
-grep -Fq 'docs|docs/*|RELEASE_NOTES_5.1_BETA.md|UPGRADE_NOTES_5.1.md' "$INSTALLER"
-for repository_file in docs RELEASE_NOTES_5.1_BETA.md UPGRADE_NOTES_5.1.md; do
+grep -Fq 'docs|docs/*|RELEASE_NOTES_5.1.md|UPGRADE_NOTES_5.1.md' "$INSTALLER"
+for repository_file in docs RELEASE_NOTES_5.1.md UPGRADE_NOTES_5.1.md; do
   [[ -e "$ROOT_DIR/$repository_file" ]]
 done
 if grep -Fq 'For infos and warnings please check the readme' "$INSTALLER"; then
