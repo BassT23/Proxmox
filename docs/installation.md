@@ -25,15 +25,6 @@ curl -4 -fSL --retry 0 https://raw.githubusercontent.com/BassT23/Proxmox/master/
 rm -f "$installer"
 ```
 
-Published Beta:
-
-```bash
-installer=$(mktemp)
-curl -4 -fSL --retry 0 https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh -o "$installer" && \
-  bash -n "$installer" && UU_TARGET_BRANCH=beta bash "$installer"
-rm -f "$installer"
-```
-
 The installer validates its inputs and keeps the existing configuration.
 
 ## First steps

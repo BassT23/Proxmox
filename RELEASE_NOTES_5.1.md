@@ -1,6 +1,6 @@
-# Ultimate Updater 5.1 Beta
+# Ultimate Updater 5.1
 
-Status: Published 5.1 Beta release.
+Status: Stable release.
 
 ## Highlights
 
@@ -9,6 +9,8 @@ Status: Published 5.1 Beta release.
 - Cluster-wide operation across Proxmox nodes with persistent status and locking.
 - Separate CHECK and UPDATE filters with `ONLY` taking precedence over `EXCLUDE`.
 - Read-only Check and Update previews using the corresponding runtime selection.
+- A systemd-backed Scheduler for daily and selected-weekday Check/Update jobs,
+  including selected target schedules.
 
 ## External systems
 
@@ -35,14 +37,27 @@ Status: Published 5.1 Beta release.
 - Responsive desktop/mobile configuration, filter previews, External settings,
   job history, logs, and running-job visibility.
 
+## Compatibility and fixes
+
+- Existing VM SSH profiles under `/etc/ultimate-updater/VMs/<VMID>` remain
+  supported for local and remote cluster paths. They do not need to be entered
+  again in the Web UI. Internal SSH overrides are an additional, optional
+  configuration path.
+- QEMU Guest Agent detection accepts both legacy and current Proxmox agent
+  property formats, including additional agent options.
+- Guest lifecycle, QEMU guest-exec, remote-node refresh, target filtering,
+  snapshot protection, and Community-Scripts execution paths received bounded
+  failure handling and regression hardening.
+
 ## Upgrade notes
 
 - Upgrade from 5.0 through the normal installer/self-update path.
-- Existing installations can select the published Beta with `update beta -up`.
+- Existing installations can upgrade through the normal installer/self-update
+  path using the stable `master` branch.
 - Existing configuration, unknown keys, comments, External settings, and a
   custom Web UI port are preserved.
 - Historical internal VM SSH profiles remain internal and are not exposed as
-  External systems. Affected early-Beta `[legacy-<VMID>]` artifacts are
+  External systems. Affected pre-release `[legacy-<VMID>]` artifacts are
   cleaned up safely during self-update without touching real External targets.
 - Verify `ultimate-updater-web.service` is enabled and active after upgrade.
 - Upgrading from version 5.0 or earlier to 5.1 requires a restart of the
@@ -55,10 +70,10 @@ Status: Published 5.1 Beta release.
 ## Known limitations
 
 - Windows support is prepared but remains experimental/deferred from the
-  supported Beta baseline pending dedicated live validation.
+  supported 5.1 baseline pending dedicated live validation.
 - Automatic External backup integrations such as restic, borg, PBS workflows,
   or custom hooks are not implemented. Manual time-bound verification remains
   the current safety mechanism.
 
-Beta software should be used with current backups. Feedback and reproducible
-test information are welcome.
+Stable software should still be used with current backups. Feedback and
+reproducible test information are welcome.

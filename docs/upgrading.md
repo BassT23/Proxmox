@@ -3,11 +3,9 @@
 [← Back to README](../README.md)
 
 Use the normal installer/self-update path on the existing central Proxmox
-installation. Branch selection is explicit:
+installation. For a stable installation, use the master branch:
 
 ```bash
-update beta -up
-update develop -up
 update master -up
 ```
 
@@ -30,6 +28,6 @@ their own reboot requirement.
 
 For the detailed release-specific notes, see
 [`UPGRADE_NOTES_5.1.md`](../UPGRADE_NOTES_5.1.md) and
-[`RELEASE_NOTES_5.1_BETA.md`](../RELEASE_NOTES_5.1_BETA.md).
+[`RELEASE_NOTES_5.1.md`](../RELEASE_NOTES_5.1.md).
 
 Related: [Installation](installation.md), [Troubleshooting](troubleshooting.md).

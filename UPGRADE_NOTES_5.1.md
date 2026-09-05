@@ -1,17 +1,17 @@
-# Upgrade notes: 5.0 → 5.1 Beta
+# Upgrade notes: 5.0 → 5.1
 
 Use the normal installer/self-update path on the existing central Proxmox
 cluster installation. Ultimate Updater is installed once per cluster; do not
 install a second administrative instance on every node.
 
-To move an existing installation to the published 5.1 Beta, run:
+To move an existing installation to the published 5.1 release, run:
 
 ```bash
-update beta -up
+update master -up
 ```
 
-Beta maintenance remains explicit: use `update beta -up`. The bare
-`update -up` and `update master -up` target the stable master branch;
+Stable maintenance uses `update master -up`. The bare `update -up` also
+targets the stable master branch;
 `USED_BRANCH` records the installed branch but does not select the target of a
 bare update. A target version lower than the installed version requires an
 interactive downgrade confirmation and is blocked in noninteractive mode.
@@ -28,8 +28,8 @@ host automatically. Updates within the 5.1 line do not require this migration
 restart; individual system updates may still report `REBOOT REQUIRED` for
 unrelated package or kernel changes.
 Missing supported defaults are added without overwriting user values.
-Historical `/etc/ultimate-updater/VMs/<VMID>` files remain internal Proxmox VM
-SSH profiles and are not migrated into External inventory. If an older Beta
+Existing `/etc/ultimate-updater/VMs/<VMID>` files remain internal Proxmox VM
+SSH profiles and are not migrated into External inventory. If an older
 build created matching `[legacy-<VMID>]` sections, the next self-update removes
 only those proven bug-generated sections atomically; real External targets are
 preserved.
@@ -42,7 +42,7 @@ After the upgrade:
 4. If an External target has no helper yet, run its explicit External setup
    procedure before attempting an update.
 
-The 5.1 Beta updater does not require a general Proxmox host reboot. A
+The 5.1 updater does not require a general Proxmox host reboot. A
 particular update may still report that a reboot is required. External targets
 are not rebooted automatically.
 

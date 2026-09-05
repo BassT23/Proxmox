@@ -1,6 +1,6 @@
 <div align="center">
 
-# Ultimate Updater 5.1 Beta
+# Ultimate Updater 5.1
 
 Central, safety-conscious updates and checks for Proxmox hosts, LXC
 containers, VMs, and selected external systems.
@@ -82,7 +82,7 @@ Proxmox hosts and Linux LXC/VM guests are the primary supported paths. APT
 systems provide a normal/security split. `pkg` (FreeBSD/pfSense), Pacman,
 APK, DNF/YUM, and Windows use total-only update presentation where a reliable
 security split is not available. Windows remains experimental/deferred from
-the supported Beta baseline pending dedicated validation.
+the supported 5.1 baseline pending dedicated validation.
 
 External Linux systems can be configured over SSH. Read the complete matrix
 and limitations in [Supported systems](docs/supported-systems.md) and
@@ -116,7 +116,7 @@ and limitations in [Supported systems](docs/supported-systems.md) and
 - [Upgrading](docs/upgrading.md)
 - [Advanced operation](docs/advanced.md)
 
-Additional project documents: [Testing](TESTING.md), [5.1 release notes](RELEASE_NOTES_5.1_BETA.md), [5.1 upgrade notes](UPGRADE_NOTES_5.1.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
+Additional project documents: [Testing](TESTING.md), [5.1 release notes](RELEASE_NOTES_5.1.md), [5.1 upgrade notes](UPGRADE_NOTES_5.1.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Q&A
 

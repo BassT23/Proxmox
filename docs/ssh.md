@@ -34,6 +34,8 @@ resolution.
 Older installations may have `/etc/ultimate-updater/VMs/<VMID>` files with
 `IP`, `USER`, `SSH_VM_PORT`, and `SSH_START_DELAY_TIME`. These are internal VM
 profiles, not External targets, and are not copied into `targets.conf`.
+They remain supported for local and remote VM paths in a Proxmox cluster, so an
+existing working SSH profile does not need to be entered again in the Web UI.
 
 ## External systems
 
