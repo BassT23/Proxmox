@@ -6,6 +6,8 @@ ROOT_DIR=$(cd -- "$ROOT_DIR" && pwd)
 WORK_DIR=$(mktemp -d)
 trap 'find "$WORK_DIR" -type f -delete 2>/dev/null || true; rmdir "$WORK_DIR" 2>/dev/null || true' EXIT
 
+# The helper path is constructed from the test location at runtime.
+# shellcheck disable=SC1091
 source "$ROOT_DIR/target-runtime.sh"
 
 QGA_VALUE=""
