@@ -19,6 +19,8 @@ grep -Fq 'scp -q "${ssh_args[@]}"' "$ROOT_DIR/ultimate-updater"
 grep -Fq 'remote_update_job host "node-$1" "$1" "$2"' "$ROOT_DIR/ultimate-updater"
 grep -Fq 'LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"' "$ROOT_DIR/update.sh"
 grep -Fq 'CHECK_SCRIPT="${UU_CHECK_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/check-updates.sh}"' "$ROOT_DIR/job-runner.sh"
+grep -Fq '"$LOCAL_FILES/check-updates.sh"' "$ROOT_DIR/update.sh"
+grep -Fq 'exit $?' "$ROOT_DIR/update.sh"
 
 if [[ "$EUID" -eq 0 ]]; then
   # Verify that the job boundary exports the scope to systemd rather than

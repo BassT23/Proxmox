@@ -92,7 +92,12 @@ FETCH_REMOTE_VERSION() {
     http_code=$(curl -4 -sS -fSL --retry 0 --connect-timeout 3 --max-time "$max_time" \
       -D "$headers" -o "$body" -w '%{http_code}' \
       "https://raw.githubusercontent.com/BassT23/Proxmox/$branch/$component" 2>/dev/null) || true
-    [[ -s "$body" ]] && break
+    if [[ -s "$body" ]]; then
+      break
+    fi
+    if (( attempt < 3 )); then
+      printf 'Version check failed (attempt %s/3), retrying...\n' "$attempt" >&2
+    fi
   done
   if [[ ! -s "$body" ]]; then
     if [[ "$http_code" == 429 ]]; then

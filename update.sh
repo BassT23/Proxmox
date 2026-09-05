@@ -339,8 +339,8 @@ ARGUMENTS () {
         exit 2
         ;;
       -check)
-        $LOCAL_FILES/check-updates.sh
-        exit 2
+        "$LOCAL_FILES/check-updates.sh"
+        exit $?
         ;;
       inventory)
         COMMAND=true
