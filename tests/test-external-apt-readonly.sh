@@ -81,6 +81,8 @@ run_check() {
   local target=$1 mode=$2 expected_rc=$3 expected_state=$4
   local status_file="$WORK_DIR/$target-status.json"
   APT_MODE="$mode" MUTATION_MARKER="$WORK_DIR/mutation" \
+    UU_REBOOT_REQUIRED_FILE="$WORK_DIR/no-reboot-required" \
+    UU_REBOOT_REQUIRED_PACKAGES_FILE="$WORK_DIR/no-reboot-required.pkgs" \
     REMOTE_CONFIG="$WORK_DIR/external.conf" \
     PATH="$WORK_DIR/fake-bin:$PATH" UU_LOCAL_FILES="$WORK_DIR" \
     TARGET_INVENTORY_FILE="$WORK_DIR/targets.conf" \

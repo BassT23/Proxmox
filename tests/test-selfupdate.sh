@@ -42,4 +42,8 @@ if grep -Fq '.bak' "$WORK_DIR/no-tty-output"; then
   exit 1
 fi
 
+grep -Fq 'target_commit=$(FETCH_REMOTE_COMMIT "$BRANCH" || true)' "$ROOT_DIR/update.sh"
+grep -Fq 'The Ultimate Updater is UpToDate' "$ROOT_DIR/update.sh"
+grep -Fq 'for attempt in 1 2 3' "$ROOT_DIR/tag-filter.sh"
+
 echo 'self-update unattended tests: PASS'

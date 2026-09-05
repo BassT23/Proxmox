@@ -149,7 +149,8 @@ if [ "$updater" = apt ]; then
   }
   updates=$(printf '%s\n' "$apt_output" | grep -ci '^inst ' || true)
   reboot=false
-  if [ -e /var/run/reboot-required ] || [ -e /var/run/reboot-required.pkgs ]; then reboot=true; fi
+  if [ -e "${UU_REBOOT_REQUIRED_FILE:-/var/run/reboot-required}" ] ||
+    [ -e "${UU_REBOOT_REQUIRED_PACKAGES_FILE:-/var/run/reboot-required.pkgs}" ]; then reboot=true; fi
 else
   dnf_output=$(dnf -q check-update 2>&1)
   dnf_status=$?

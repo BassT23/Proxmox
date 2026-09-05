@@ -470,12 +470,19 @@ VERSION_CHECK () {
 # Update The Ultimate Updater
 UPDATE () {
   SELF_UPDATE_RUN=true
-  local installed_version target_version cache_buster
+  local installed_version target_version target_commit installed_commit cache_buster
   cache_buster=$(date +%s)
   installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
   if ! target_version=$(FETCH_REMOTE_VERSION "$BRANCH" update.sh); then
     echo -e "${RD:-}Unable to determine the target version for branch $BRANCH; update aborted before mutation.${CL:-}" >&2
     return 2
+  fi
+  installed_commit=$(awk -F'"' '/^commit=/ {print $2; exit}' "$BUILD_METADATA_FILE" 2>/dev/null || true)
+  target_commit=$(FETCH_REMOTE_COMMIT "$BRANCH" || true)
+  if [[ "$installed_commit" =~ ^[0-9a-f]{40}$ && "$target_commit" == "$installed_commit" ]]; then
+    echo -e "${GN:-}       The Ultimate Updater is UpToDate${CL:-}"
+    echo -e "                 Version: $installed_version"
+    return 0
   fi
   if version_is_less "$target_version" "$installed_version"; then
     echo -e "\n${OR:-}⚠ Downgrade notice${CL:-}\n"

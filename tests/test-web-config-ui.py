@@ -255,6 +255,7 @@ assert "replace(/^host:/,'')" in page
 assert "target-row.split-row { grid-template-columns" in page
 assert "target-row.total-only-row { grid-template-columns" in page
 assert "row.className=`target-row ${securitySplitSupported(t)?'split-row':'total-only-row'}`" in page
+assert ".target-row.total-only-row:not(.lxc-row) > :nth-child(3) { grid-column:span 2; }" in page
 assert "minmax(132px,max-content)" in page
 assert "target-row.lxc-row.split-row" in page
 assert "grid-template-rows:auto auto" in page

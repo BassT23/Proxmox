@@ -82,13 +82,19 @@ VERSION_CACHE_FILE=${VERSION_CACHE_FILE:-/var/cache/ultimate-updater/versions}
 VERSION_CACHE_TTL=${VERSION_CACHE_TTL:-21600}
 
 FETCH_REMOTE_VERSION() {
-  local branch=$1 component=$2 max_time=${3:-10} content version headers body http_code retry_after
+  local branch=$1 component=$2 max_time=${3:-10} content version headers body http_code retry_after attempt
 
   headers=$(mktemp "${TMPDIR:-/tmp}/ultimate-updater-version.headers.XXXXXX") || return 1
   body=$(mktemp "${TMPDIR:-/tmp}/ultimate-updater-version.body.XXXXXX") || { rm -f -- "$headers"; return 1; }
-  http_code=$(curl -4 -sS -fSL --retry 0 --connect-timeout 3 --max-time "$max_time" \
-    -D "$headers" -o "$body" -w '%{http_code}' \
-    "https://raw.githubusercontent.com/BassT23/Proxmox/$branch/$component" 2>/dev/null) || {
+  for attempt in 1 2 3; do
+    : > "$headers"
+    : > "$body"
+    http_code=$(curl -4 -sS -fSL --retry 0 --connect-timeout 3 --max-time "$max_time" \
+      -D "$headers" -o "$body" -w '%{http_code}' \
+      "https://raw.githubusercontent.com/BassT23/Proxmox/$branch/$component" 2>/dev/null) || true
+    [[ -s "$body" ]] && break
+  done
+  if [[ ! -s "$body" ]]; then
     if [[ "$http_code" == 429 ]]; then
       retry_after=$(awk 'BEGIN{IGNORECASE=1} /^Retry-After:/ {sub(/^[^:]*:[[:space:]]*/, ""); print; exit}' "$headers")
       if [[ -n "$retry_after" ]]; then
@@ -97,10 +103,6 @@ FETCH_REMOTE_VERSION() {
         printf 'GitHub temporarily rate-limited the version check. Please retry later.\n' >&2
       fi
     fi
-    rm -f -- "$headers" "$body"
-    return 1
-  }
-  if [[ ! -s "$body" ]]; then
     rm -f -- "$headers" "$body"
     return 1
   fi
