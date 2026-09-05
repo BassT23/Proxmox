@@ -72,9 +72,10 @@ The authenticated Web UI is served by `ultimate-updater-web.service` on port
 checks, updates, settings, Internal SSH management, persistent jobs/logs, and
 version/build information. See [Web UI](docs/web-ui.md).
 
-![Current 5.1 Web UI dashboard](docs/screenshots/dashboard.png)
+![Ultimate Updater 5.1 dashboard](docs/images/web-ui/dashboard.png)
 
-> Current 5.1 dashboard from a dedicated test environment.
+> Current 5.1 dashboard from a dedicated test environment. More Web UI views
+> are shown in the [Web UI guide](docs/web-ui.md).
 
 ## Supported systems
 

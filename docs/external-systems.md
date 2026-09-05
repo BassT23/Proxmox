@@ -38,6 +38,11 @@ UPDATE: ONLY / EXCLUDE
 applied before any remote contact; local settings then apply on the target.
 The UI preserves unrelated inventory sections and does not transfer secrets.
 
+The dashboard can expand the External systems section to show the configured
+target, transport, status, update information, reboot state, and last check.
+
+![Expanded external systems in the dashboard](images/web-ui/dashboard-expanded.png)
+
 Automatic external backup hooks such as restic, borg, PBS workflows, or
 custom hooks are not part of the current implementation.
 
