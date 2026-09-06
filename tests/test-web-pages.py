@@ -15,10 +15,13 @@ assert 'data-page="settings"' in page
 assert 'data-page="scheduler"' in page
 assert 'href="/settings"' in page
 assert 'href="/scheduler"' in page
-assert page.count('class="nav-icon"') == 3
+assert page.count('class="nav-icon"') == 5
 assert 'class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"' in page
 assert '.dashboard-meta .page-nav a .nav-icon' in page
 assert 'display:flex!important;align-items:center;gap:8px;min-width:0' in page
+assert 'id="logout-menu"' in page
+assert 'href="https://ko-fi.com/basst"' in page
+assert 'target="_blank" rel="noopener noreferrer"' in page
 assert 'id="overview-page"' in page
 assert 'id="settings-page"' in page
 assert 'id="scheduler-page"' in page
