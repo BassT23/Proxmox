@@ -1,7 +1,13 @@
 Changelog:
 ==========
 
-**v5.1 Beta 3** (public beta / release candidate for final validation)
+**Unreleased**
+Improved:
+- Community-Scripts update output is streamed while the helper runs, preserving the real exit status and avoiding a misleading silent wait (#294)
+- Local Proxmox node actions use the stable internal `local-host` target ID while retaining the real hostname for display (#325)
+- mobile Web UI header layout and navigation received a small responsive polish
+
+**v5.1** (05.09.2026)
 New:
 - central Web UI with PAM login, responsive configuration, filter previews, External management, Jobs, Logs, and running-job visibility
 - session-independent systemd-run jobs for checks and updates, including shared history, locking, reload persistence, and remote-node dispatch
@@ -46,6 +52,25 @@ Known limitations:
 - Upgrading from older installations can require a host restart because of the changed job/service infrastructure; the updater does not reboot the host automatically.
 - Windows support remains prepared/experimental and deferred from the supported Beta baseline pending dedicated live validation
 - automatic External backup integrations are not implemented; manual time-bound verification remains the safety mechanism
+
+**v5.1.2** (06.09.2026)
+Fixed:
+- self-update now handles GitHub release archives with a top-level directory and locates `config-merge.sh` correctly
+- archive validation no longer produces a misleading tar write error when checking the release contents
+
+Improved:
+- added regression coverage for flat and nested release archive layouts
+
+**v5.1.1** (06.09.2026)
+Fixed:
+- QEMU Guest Agent updates now survive an agent restart during package upgrades by using a detached guest job (#321; `264f85b6`, `566f8f68`)
+- remote cluster VMs receive the required QGA guest-exec helper (`173e15e9`)
+- the post-update welcome/status check preserves the VM ID and rejects an empty one (#322; `bbb3326`)
+- job listings tolerate state files removed concurrently by retention (`0ae622a3`)
+- the stable master installer no longer defaults to the develop branch when no override is supplied (`152131d1`)
+
+Improved:
+- guest overview columns remain aligned across the supported row types (`9d893471`)
 
 **v5.0** (11.08.2026)
 - change Logo
