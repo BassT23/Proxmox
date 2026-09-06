@@ -552,6 +552,10 @@ cluster_node_resolve() {
   local wanted="$1" config=/etc/pve/corosync.conf result local_node local_ips
   [[ "$wanted" =~ ^[A-Za-z0-9_.-]+$ ]] || return 2
   [[ -f "$config" ]] || return 1
+  local_node=$(cluster_target_local_node)
+  if [[ "$wanted" == local-host ]]; then
+    wanted="$local_node"
+  fi
   result=$(python3 - "$config" "$wanted" <<'PY'
 import re
 import sys
@@ -570,7 +574,6 @@ raise SystemExit(1)
 PY
   ) || return 1
   IFS=$'\t' read -r RESOLVED_NODE RESOLVED_NODE_HOST <<< "$result"
-  local_node=$(cluster_target_local_node)
   local_ips=$(hostname -I 2>/dev/null || true)
   RESOLVED_NODE_LOCAL=false
   if [[ "${RESOLVED_NODE,,}" == "${local_node,,}" || " $local_ips " == *" $RESOLVED_NODE_HOST "* ]]; then

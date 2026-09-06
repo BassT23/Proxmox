@@ -3168,6 +3168,7 @@ class StatusHandler(BaseHTTPRequestHandler):
     def known_node(self, node):
         if not isinstance(node, str) or not HOST_RE.fullmatch(node):
             return False
+        node = self.node_action_target(node)
         try:
             status = json.loads(self.server.status_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -3175,6 +3176,22 @@ class StatusHandler(BaseHTTPRequestHandler):
         return any(isinstance(item, dict) and item.get("type") == "host" and
                    str(item.get("id", "")).removeprefix("host:") == node
                    for item in status.get("targets", []))
+
+    def node_action_target(self, node):
+        """Use the stable local-host target ID for local node actions."""
+        if node == "local-host":
+            return node
+        try:
+            status = json.loads(self.server.status_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return node
+        for item in status.get("targets", []):
+            if not isinstance(item, dict) or item.get("type") != "host":
+                continue
+            identifier = str(item.get("id", ""))
+            if identifier.removeprefix("host:") == node and item.get("transport") == "local":
+                return "local-host"
+        return node
 
     def action_check_all(self):
         try:
@@ -3237,7 +3254,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("INVALID_NODE", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
             return
         try:
-            result = self.run_command([str(self.server.job_runner), "start-check", node,
+            action_target = self.node_action_target(node)
+            result = self.run_command([str(self.server.job_runner), "start-check", action_target,
                                        str(self.server.cli), "node"], timeout=15)
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("CHECK_START_FAILED", "The node check job could not be started."), HTTPStatus.BAD_GATEWAY)
@@ -3258,7 +3276,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("INVALID_NODE", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
             return
         try:
-            result = self.run_command([str(self.server.cli), "update-node", node], timeout=30)
+            action_target = self.node_action_target(node)
+            result = self.run_command([str(self.server.cli), "update-node", action_target], timeout=30)
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("UPDATE_START_FAILED", "The node update job could not be started."), HTTPStatus.BAD_GATEWAY)
             return

@@ -38,7 +38,7 @@ source = (ROOT / "web-ui/server.py").read_text(encoding="utf-8")
 assert '"start-check", target' in source
 assert '"start-check", "all-systems"' in source
 assert 'str(self.server.cli), "update-all"' in source
-assert 'str(self.server.cli), "update-node", node' in source
+assert 'str(self.server.cli), "update-node", action_target' in source
 assert '"start-selfupdate"' in source
 
 cli = (ROOT / "ultimate-updater").read_text(encoding="utf-8")
