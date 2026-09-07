@@ -667,13 +667,16 @@ def update_split(target):
         "normal_updates" not in target and "security_updates" not in target):
         values = target.get("updates")
         available = values.get("available") if isinstance(values, dict) else None
-        return f"Updates: {available if isinstance(available, int) else 'Unknown'}"
+        return [f"Updates: {available if isinstance(available, int) else 'Unknown'}"]
     def value(name):
         candidate = target.get(name)
         if isinstance(candidate, int) and not isinstance(candidate, bool):
             return str(candidate)
         return "Unknown"
-    return f"S: {value('security_updates')} / N: {value('normal_updates')}"
+    return [
+        f"Security Updates: {value('security_updates')}",
+        f"Normal Updates: {value('normal_updates')}",
+    ]
 
 def update_result(target):
     result = target.get("last_update")
@@ -833,18 +836,19 @@ if updates:
         node_target = next((target for target, _ in node_targets if target.get("type") == "host"), None)
         lines.extend(["", f"🖥️ {node}"])
         if node_target is not None:
-            lines.append(update_split(node_target))
+            lines.extend(update_split(node_target))
         else:
             lines.append(f"⬆️ {sum(count for _, count in node_targets)} Updates")
-        for target, _ in node_targets:
+        guest_targets = [(target, count) for target, count in node_targets if target.get("type") != "host"]
+        for index, (target, _) in enumerate(guest_targets):
             # The node heading already represents a host target. Do not
             # render the same host a second time as a guest-like row.
-            if target.get("type") == "host":
-                continue
             lines.append(f"{target_icon(target)} {target_name(target)}")
-            lines.append(update_split(target))
+            lines.extend(update_split(target))
             if target.get("reboot_required") is True:
                 lines.append("🔄 Neustart erforderlich")
+            if index < len(guest_targets) - 1:
+                lines.append("")
 else:
     lines.append("Available updates: none")
 if has_known_count:
