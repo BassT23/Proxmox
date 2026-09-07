@@ -32,8 +32,12 @@ INTERNAL_SSH_FILE="$LOCAL_FILES/internal-ssh.sh"
 GLOBAL_UPDATE_SCRIPT="$LOCAL_FILES/global-update.sh"
 EXTERNAL_SELECTION_SCRIPT="$LOCAL_FILES/external-selection.sh"
 
+configured_headless() {
+  [[ "$(awk -F'\"' '/^IN_HEADLESS_MODE=/ {print $2; exit}' "$LOCAL_FILES/update.conf" 2>/dev/null)" == true ]]
+}
+
 interactive_requested() {
-  [[ "${UU_JOB_INTERACTIVE:-false}" == true || -t 0 ]]
+  ! configured_headless && [[ "${UU_JOB_INTERACTIVE:-false}" == true || -t 0 ]]
 }
 
 if [[ ! -f "$UPDATE_SCRIPT" && -f "$SCRIPT_DIR/update.sh" ]]; then

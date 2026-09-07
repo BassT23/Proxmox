@@ -14,6 +14,8 @@ RUNTIME_SCRIPT="${TARGET_RUNTIME_SCRIPT:-$LOCAL_FILES/target-runtime.sh}"
 EXTERNAL_HELPER_PATH="${EXTERNAL_HELPER_PATH:-/usr/local/sbin/ultimate-updater-external}"
 EXTERNAL_HELPER_VERSION="1"
 EXTERNAL_SAFETY_SCRIPT="${EXTERNAL_SAFETY_SCRIPT:-$LOCAL_FILES/external-backup-safety.sh}"
+UU_EFFECTIVE_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2; exit}' "$LOCAL_FILES/update.conf" 2>/dev/null || true)
+[[ "$UU_EFFECTIVE_HEADLESS" == true ]] || UU_EFFECTIVE_HEADLESS=false
 [[ -f "$INVENTORY_SCRIPT" ]] || INVENTORY_SCRIPT="$SCRIPT_DIR/target-inventory.sh"
 [[ -f "$STATUS_MODEL_SCRIPT" ]] || STATUS_MODEL_SCRIPT="$SCRIPT_DIR/status-model.sh"
 [[ -f "$RUNTIME_SCRIPT" ]] || RUNTIME_SCRIPT="$SCRIPT_DIR/target-runtime.sh"
@@ -228,6 +230,7 @@ set -u
 helper="__EXTERNAL_HELPER_PATH__"
 expected_version="__EXTERNAL_HELPER_VERSION__"
 target_name="__EXTERNAL_TARGET_NAME__"
+effective_headless="__UU_EFFECTIVE_HEADLESS__"
 config=/etc/ultimate-updater/external.conf
 if [ ! -r "$config" ] || ! awk -F= '
   /^[[:space:]]*($|#)/ { next }
@@ -274,16 +277,17 @@ version=$($helper version 2>/dev/null) || { printf 'EXTERNAL_HELPER_UNAVAILABLE\
   exit 33
 }
 if [ "$(id -u)" -eq 0 ]; then
-  "$helper" update
+  UU_EFFECTIVE_HEADLESS="$effective_headless" "$helper" update
 else
   command -v sudo >/dev/null 2>&1 || { printf 'EXTERNAL_SUDO_UNAVAILABLE\n' >&2; exit 23; }
-  sudo -n "$helper" update
+  sudo -n env UU_EFFECTIVE_HEADLESS="$effective_headless" "$helper" update
 fi
 REMOTE_UPDATE
   )
   remote_script=${remote_script//__EXTERNAL_HELPER_PATH__/$EXTERNAL_HELPER_PATH}
   remote_script=${remote_script//__EXTERNAL_HELPER_VERSION__/$EXTERNAL_HELPER_VERSION}
   remote_script=${remote_script//__EXTERNAL_TARGET_NAME__/$EXTERNAL_TARGET}
+  remote_script=${remote_script//__UU_EFFECTIVE_HEADLESS__/$UU_EFFECTIVE_HEADLESS}
   RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" 'bash -s' <<< "$remote_script"
 }
 

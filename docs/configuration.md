@@ -27,8 +27,14 @@ ranges, and configured tags; check and update selections are independent.
 `REBOOT_IF_NEEDED` controls reboot handling for updates, not checks. Guest
 start/resume behavior is controlled separately for LXC and VM targets.
 `FREEBSD_UPDATES` enables or disables the writing FreeBSD/pfSense update path;
-it does not disable read-only checks. `IN_HEADLESS_MODE` selects unattended
-operation.
+it does not disable read-only checks. `IN_HEADLESS_MODE` is the persistent
+unattended policy. When it is `true`, scheduled and manually started update
+jobs use non-interactive APT/dpkg handling and do not create an input channel.
+When it is `false` (the default), interactive local host/LXC/SSH jobs may be
+attached through the existing job channel. `-s`/`--silent` remains a
+per-invocation headless override. QEMU Guest Agent updates remain
+non-interactive because `qm guest exec` does not provide a guest stdin
+channel.
 
 ## Snapshots and backups
 

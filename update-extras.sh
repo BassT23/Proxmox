@@ -18,7 +18,12 @@ OCTOPRINT=$(awk -F'"' '/^OCTOPRINT=/ {print $2}' $CONFIG_FILE)
 DOCKER_COMPOSE=$(awk -F'"' '/^DOCKER_COMPOSE=/ {print $2}' $CONFIG_FILE)
 COMPOSE_PATH=$(awk -F'"' '/^COMPOSE_PATH=/ {print $2}' $CONFIG_FILE)
 INCLUDE_HELPER_SCRIPTS=$(awk -F'"' '/^INCLUDE_HELPER_SCRIPTS=/ {print $2}' $CONFIG_FILE)
+IN_HEADLESS_MODE=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' $CONFIG_FILE)
 COMMUNITY_UPDATE_COMMAND="${UU_COMMUNITY_UPDATE_COMMAND:-update}"
+
+if [[ "$IN_HEADLESS_MODE" == true ]]; then
+  export DEBIAN_FRONTEND=noninteractive
+fi
 
 # PiHole
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then

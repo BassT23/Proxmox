@@ -84,13 +84,23 @@ dnf_status() {
 }
 
 update_apt() {
-  DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get update
-  DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get \
-    -o Dpkg::Options::=--force-confdef \
-    -o Dpkg::Options::=--force-confold \
-    dist-upgrade -y
-  DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get --purge autoremove -y
-  DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get autoclean -y
+  if [ "${UU_EFFECTIVE_HEADLESS:-false}" = true ]; then
+    DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get update
+    DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get \
+      -o Dpkg::Options::=--force-confdef \
+      -o Dpkg::Options::=--force-confold \
+      dist-upgrade -y
+    DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get --purge autoremove -y
+    DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get autoclean -y
+  else
+    /usr/bin/apt-get update
+    /usr/bin/apt-get \
+      -o Dpkg::Options::=--force-confdef \
+      -o Dpkg::Options::=--force-confold \
+      dist-upgrade -y
+    /usr/bin/apt-get --purge autoremove -y
+    /usr/bin/apt-get autoclean -y
+  fi
 }
 
 update_dnf() {

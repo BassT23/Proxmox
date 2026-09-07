@@ -284,7 +284,8 @@ def scheduler_unit_files(schedule, unit_dir, cli):
     action = schedule["type"]
     commands = scheduler_commands(schedule, cli)
     service_lines = ["[Unit]", f"Description=Ultimate Updater scheduled {action}", "", "[Service]",
-                     "Type=oneshot", "Environment=UU_JOB_SOURCE=scheduler"]
+                     "Type=oneshot", "Environment=UU_JOB_SOURCE=scheduler",
+                     "Environment=UU_JOB_INTERACTIVE=true"]
     service_lines.extend(f"ExecStart={shlex.join(command)}" for command in commands)
     service_lines.append("")
     service_text = "\n".join(service_lines)
@@ -3020,7 +3021,9 @@ class StatusHandler(BaseHTTPRequestHandler):
             raise KeyError(schedule_id)
         started, errors = [], []
         for command in scheduler_commands(schedule, self.server.cli):
-            result = self.run_command(command, timeout=30, extra_env={"UU_JOB_SOURCE": "scheduler"})
+            result = self.run_command(command, timeout=30, extra_env={
+                "UU_JOB_SOURCE": "scheduler", "UU_JOB_INTERACTIVE": "true",
+            })
             output = f"{result.stdout}\n{result.stderr}"
             job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
             if result.returncode == 3:

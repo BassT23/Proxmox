@@ -81,6 +81,27 @@ BRANCH=master
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$INSTALLED_BRANCH"
 DPKG_OPTIONS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 DPKG_OPTIONS_STRING="${DPKG_OPTIONS[*]}"
+HEADLESS=false
+IN_HEADLESS_MODE=false
+
+# A configured headless mode is the persistent policy; -s/--silent remains
+# the per-invocation override.  Keep this decision in one predicate so all
+# update paths use the same effective semantics.
+EFFECTIVE_HEADLESS() {
+  [[ "${HEADLESS:-false}" == true || "${IN_HEADLESS_MODE:-false}" == true ]]
+}
+
+APT_FRONTEND_PREFIX() {
+  EFFECTIVE_HEADLESS && printf 'DEBIAN_FRONTEND=noninteractive '
+}
+
+APT_COMMAND() {
+  if EFFECTIVE_HEADLESS; then
+    DEBIAN_FRONTEND=noninteractive apt-get "$@"
+  else
+    apt-get "$@"
+  fi
+}
 
 # Tag filter
 # shellcheck disable=SC1091
@@ -162,7 +183,7 @@ EOF
   if [[ "$INFO" != false ]]; then
     echo -e "\n \
           ***  Mode: $MODE***"
-    if [[ "$HEADLESS" == true ]]; then
+    if EFFECTIVE_HEADLESS; then
       echo -e "           ***    Headless    ***"
     else
       echo -e "           ***   Interactive  ***"
@@ -366,7 +387,7 @@ ARGUMENTS () {
 
 # Usage
 USAGE () {
-  if [[ "$HEADLESS" != true ]]; then
+  if ! EFFECTIVE_HEADLESS; then
     echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
     echo -e "[OPTIONS] Manages the Ultimate Updater:"
     echo -e "======================================"
@@ -413,7 +434,7 @@ SHOW_UPDATE_NOTICE () {
 
   echo -e "${OR:-}*** A newer version is available ***${CL:-}\n\
        Installed: $LOCAL_VERSION / $target_branch: $remote_version"
-  if [[ "$HEADLESS" != true ]]; then
+  if ! EFFECTIVE_HEADLESS; then
     echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
     read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
     if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
@@ -628,7 +649,9 @@ READ_CONFIG () {
   LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   LXC_START_DELAY="${LXC_START_DELAY:-5}"
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
-  EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
+  IN_HEADLESS_MODE=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
+  [[ "$IN_HEADLESS_MODE" == true ]] || IN_HEADLESS_MODE=false
+  EXTRA_IN_HEADLESS="$IN_HEADLESS_MODE"
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
@@ -1009,7 +1032,7 @@ SCRIPT_ONLY_VM () {
 EXTRAS () {
   if [[ "$EXTRA_GLOBAL" != true ]]; then
     echo -e "\n${OR:-}--- Skip Extra Updates because of the user settings ---${CL:-}\n"
-  elif [[ "$HEADLESS" == true && "$EXTRA_IN_HEADLESS" == false ]]; then
+  elif EFFECTIVE_HEADLESS && [[ "$EXTRA_IN_HEADLESS" == false ]]; then
     echo -e "\n${OR:-}--- Skip Extra Updates because of Headless Mode or user settings ---${CL:-}\n"
   else
     echo -e "\n${OR:-}--- Searching for extra updates ---${CL:-}"
@@ -1332,7 +1355,7 @@ UPDATE_HOST () {
       scp "$LOCAL_FILES/qga-guest-exec.sh" "$HOST":$LOCAL_FILES/qga-guest-exec.sh
     fi
   fi
-  if [[ "$HEADLESS" == true ]]; then
+  if EFFECTIVE_HEADLESS; then
     ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
     REMOTE_UPDATE_STATUS=$?
   elif [[ "$WELCOME_SCREEN" == true ]]; then
@@ -1351,23 +1374,23 @@ UPDATE_HOST () {
 # shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
   echo -e "${OR:-}--- PVE UPDATE ---${CL:-}" && pveupdate || true
-  if [[ "$HEADLESS" == true ]]; then
+  if EFFECTIVE_HEADLESS; then
     echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}" && \
-    DEBIAN_FRONTEND=noninteractive apt-get "${DPKG_OPTIONS[@]}" dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(DEBIAN_FRONTEND=noninteractive apt-get "${DPKG_OPTIONS[@]}" dist-upgrade -y 2>&1); ERROR; }
+    APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y 2>&1); ERROR; }
     if [[ $ERROR_CODE != "" ]]; then return; fi
   else
     if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}" && \
-      apt-get "${DPKG_OPTIONS[@]}" dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(apt-get "${DPKG_OPTIONS[@]}" dist-upgrade -y 2>&1); ERROR; }
+      APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y 2>&1); ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
     else
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}" && \
-      apt-get "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(apt-get "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y 2>&1); ERROR; }
+      APT_COMMAND "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(APT_COMMAND "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y 2>&1); ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
     fi
   fi
   echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}" && \
-  apt-get --purge autoremove -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(apt-get --purge autoremove -y 2>&1); ERROR; }
+  APT_COMMAND --purge autoremove -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(APT_COMMAND --purge autoremove -y 2>&1); ERROR; }
   if [[ $ERROR_CODE != "" ]]; then return; fi
   echo
   CHOST="true"
@@ -1512,15 +1535,15 @@ UPDATE_CONTAINER () {
     if pct exec "$CONTAINER" -- bash -c "grep -rnw /etc/apt -e unifi >/dev/null 2>&1"; then
       UNIFI="true"
       # --allow-releaseinfo-change needed because Unifi regularly changes repository metadata between versions
-      pct exec "$CONTAINER" -- bash -c "apt-get update --allow-releaseinfo-change" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update --allow-releaseinfo-change" 2>&1); ERROR; }
+      pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update --allow-releaseinfo-change" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update --allow-releaseinfo-change" 2>&1); ERROR; }
     else
-      pct exec "$CONTAINER" -- bash -c "apt-get update" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update" 2>&1); ERROR; }
+      pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update" 2>&1); ERROR; }
     fi
     if [[ $ERROR_CODE != "" ]]; then return; fi
     # Check END
-    if [[ "$HEADLESS" == true ]]; then
+    if EFFECTIVE_HEADLESS; then
       echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}"
-      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" 2>&1); ERROR; }
+      pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" 2>&1); ERROR; }
       UNIFI=""
       if [[ $ERROR_CODE != "" ]]; then return; fi
     elif [[ "$UNIFI" == true ]]; then
@@ -1532,17 +1555,17 @@ UPDATE_CONTAINER () {
     else
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-        pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" 2>&1); ERROR; }
+        pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" 2>&1); ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
       else
-        pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" 2>&1); ERROR; }
+        pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" 2>&1); ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
       fi
     fi
       echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
-      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y" 2>&1); ERROR; }
+      pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get --purge autoremove -y" 2>&1); ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
-      pct exec "$CONTAINER" -- bash -c "apt-get autoclean -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get autoclean -y" 2>&1); ERROR; }
+      pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get autoclean -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get autoclean -y" 2>&1); ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
       EXTRAS
       TRIM_FILESYSTEM
@@ -1731,21 +1754,29 @@ UPDATE_VM () {
         if [[ "$USER" != root ]]; then
           UPDATE_USER="sudo "
         fi
+        local apt_prefix="$UPDATE_USER"
+        if EFFECTIVE_HEADLESS; then
+          if [[ -n "$UPDATE_USER" ]]; then
+            apt_prefix="${UPDATE_USER}env DEBIAN_FRONTEND=noninteractive "
+          else
+            apt_prefix="env DEBIAN_FRONTEND=noninteractive "
+          fi
+        fi
         echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y 2>&1); ERROR; }
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get update -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get update -y" 2>&1); ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
         if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-          ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$UPDATE_USER" apt-get "${DPKG_OPTIONS[@]}" upgrade -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$UPDATE_USER" apt-get "${DPKG_OPTIONS[@]}" upgrade -y 2>&1); ERROR; }
+          ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} upgrade -y" 2>&1); ERROR; }
           if [[ $ERROR_CODE != "" ]]; then return; fi
         else
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true upgrade -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true upgrade -y 2>&1); ERROR; }
+          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" 2>&1); ERROR; }
           if [[ $ERROR_CODE != "" ]]; then return; fi
         fi
         echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" "apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get --purge autoremove -y 2>&1); ERROR; }
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get --purge autoremove -y" 2>&1); ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" "apt-get autoclean -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get autoclean -y 2>&1); ERROR; }
+        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get autoclean -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get autoclean -y" 2>&1); ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
         EXTRAS
         UPDATE_CHECK

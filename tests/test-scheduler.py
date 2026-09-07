@@ -65,9 +65,14 @@ with tempfile.TemporaryDirectory() as directory:
     assert path.with_name("schedules.json.bak").exists()
     service = server.scheduler_unit_files(selected, Path(directory), Path("/usr/local/sbin/ultimate-updater"))[3]
     timer = server.scheduler_unit_files(multiple, Path(directory), Path("/usr/local/sbin/ultimate-updater"))[4]
+    assert "Environment=UU_JOB_SOURCE=scheduler" in service
+    assert "Environment=UU_JOB_INTERACTIVE=true" in service
     assert "ExecStart=/usr/local/sbin/ultimate-updater check node1" in service
     assert "ExecStart=/usr/local/sbin/ultimate-updater check 101" in service
     assert "OnCalendar=Mon,Wed,Fri *-*-* 03:00:00" in timer
     assert ";" not in service
+
+source = (root / "web-ui" / "server.py").read_text(encoding="utf-8")
+assert '"UU_JOB_SOURCE": "scheduler", "UU_JOB_INTERACTIVE": "true"' in source
 
 print("scheduler tests: PASS")
