@@ -528,7 +528,7 @@ INSTALL () {
     echo -e "${OR:-}Also want to install the Welcome-Screen?${CL:-}"
     read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-      WELCOME_SCREEN_INSTALL
+      WELCOME_SCREEN_INSTALL "$TEMP_FILES/welcome-screen.sh" || exit 1
     fi
     rm -rf $TEMP_FOLDER || true
   fi
@@ -917,7 +917,9 @@ WELCOME_SCREEN () {
       echo -e "${OR:-} Welcome-Screen is not installed${CL:-}\n"
       read -p "Would you like to install it also? Type [Y/y] or Enter for yes - anything else will skip: " -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        WELCOME_SCREEN_INSTALL
+        if ! WELCOME_SCREEN_INSTALL "$TEMP_FOLDER/welcome-screen.sh"; then
+          return 1
+        fi
       fi
     else
       echo -e "${OR:-}  Welcome-Screen is already installed${CL:-}\n"
@@ -937,10 +939,18 @@ ${BL:-} crontab file restored (old one backed up as crontab.bak)${CL:-}\n"
 }
 
 WELCOME_SCREEN_INSTALL () {
+  local welcome_source="${1:-$TEMP_FOLDER/welcome-screen.sh}"
+  if [[ ! -r "$welcome_source" ]]; then
+    echo "Welcome-Screen asset is missing: $welcome_source" >&2
+    return 1
+  fi
   if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
   touch /etc/motd
   cp /etc/crontab /etc/crontab.bak
-  cp $TEMP_FOLDER/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
+  if ! cp "$welcome_source" /etc/update-motd.d/01-welcome-screen; then
+    echo "Could not install Welcome-Screen asset: $welcome_source" >&2
+    return 1
+  fi
   chmod +x /etc/update-motd.d/01-welcome-screen
   if ! [[ -f $LOCAL_FILES/check-output ]]; then touch $LOCAL_FILES/check-output; fi
   if ! grep -Eq "check-updates\.sh|update -check" /etc/crontab; then
