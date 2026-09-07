@@ -17,12 +17,14 @@ CHECK_CLI="${UU_CHECK_CLI:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/ultimate-upd
 STATUS_MODEL_SCRIPT="${UU_STATUS_MODEL_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/status-model.sh}"
 STATUS_MODEL_FILE="${UU_STATUS_MODEL_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/status.json}"
 UPDATE_CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
+INTERACTIVE_RUNTIME_DIR="${UU_INTERACTIVE_RUNTIME_DIR:-/run/ultimate-updater/jobs}"
+PTY_BRIDGE="${UU_PTY_BRIDGE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/job-pty-bridge.py}"
 REMOTE_JOB_STATE_DIR="${UU_REMOTE_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 SYSTEMD_LOG_FILTER_ARGS=()
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | list\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | attach UNIT | list\n' "$0"
 }
 
 valid_target() {
@@ -79,6 +81,38 @@ state_file() {
   printf '%s/%s.state' "$JOB_STATE_DIR" "$1"
 }
 
+interactive_job_dir() {
+  local key
+  key=$(printf '%s' "$1" | sha256sum | cut -c1-16)
+  printf '%s/%s' "$INTERACTIVE_RUNTIME_DIR" "$key"
+}
+
+interactive_socket() {
+  printf '%s/control.sock' "$(interactive_job_dir "$1")"
+}
+
+prepare_interactive_runtime() {
+  local unit="$1" directory
+  [[ "$unit" =~ ^ultimate-updater-(update|check)-[A-Za-z0-9_.-]+$ ]] || return 2
+  mkdir -p "$INTERACTIVE_RUNTIME_DIR" || return 1
+  chmod 0700 "$INTERACTIVE_RUNTIME_DIR" || return 1
+  directory=$(interactive_job_dir "$unit")
+  mkdir -p "$directory" || return 1
+  chmod 0700 "$directory" || return 1
+  printf '%s\n' "$unit" > "$directory/unit" || return 1
+  chmod 0600 "$directory/unit" || return 1
+}
+
+cleanup_interactive_runtime() {
+  local unit="$1" directory
+  [[ "$unit" =~ ^ultimate-updater-(update|check)-[A-Za-z0-9_.-]+$ ]] || return 2
+  directory=$(interactive_job_dir "$unit")
+  [[ -d "$directory" ]] || return 0
+  rm -f -- "$directory/control.sock" 2>/dev/null || true
+  rm -f -- "$directory/unit" 2>/dev/null || true
+  rmdir -- "$directory" 2>/dev/null || true
+}
+
 remote_ref_file() {
   printf '%s/%s.ref' "$REMOTE_REF_DIR" "$1"
 }
@@ -116,6 +150,10 @@ write_state() {
     printf 'type=%s\n' "$type"
     printf 'message=%s\n' "$message"
     printf 'source=%s\n' "$source"
+    printf 'interactive=%s\n' "${UU_JOB_INTERACTIVE:-false}"
+    if [[ "${UU_JOB_INTERACTIVE:-false}" == true ]]; then
+      printf 'socket_path=%s\n' "$(interactive_socket "$unit")"
+    fi
   } > "$temp" || return 1
   chmod 0644 "$temp" || return 1
   mv -f -- "$temp" "$file"
@@ -380,7 +418,9 @@ cleanup_completed_jobs() {
   for file in "$JOB_STATE_DIR"/*.state; do
     state=$(state_value "$file" state)
     case "$state" in
-      completed|completed_with_warnings|failed|interrupted) ;;
+      completed|completed_with_warnings|failed|interrupted)
+        cleanup_interactive_runtime "$(state_value "$file" unit)" || true
+        ;;
       *) continue ;;
     esac
     unit=$(state_value "$file" unit)
@@ -406,7 +446,7 @@ cleanup_completed_jobs() {
 
 start_job() {
   local update_script="$1" target="$2" unit timestamp
-  local conflict conflict_target conflict_unit
+  local conflict conflict_target conflict_unit interactive=false socket_path
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_target "$target" || { printf 'Unsupported target: %s\n' "$target" >&2; return 2; }
@@ -436,13 +476,25 @@ start_job() {
 
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
-  write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  if [[ "${UU_JOB_INTERACTIVE:-false}" == true ]]; then
+    [[ -x "$PTY_BRIDGE" ]] || { printf 'Interactive job bridge is not available: %s\n' "$PTY_BRIDGE" >&2; return 1; }
+    interactive=true
+    socket_path=$(interactive_socket "$unit")
+    prepare_interactive_runtime "$unit" || return 1
+  fi
+  UU_JOB_INTERACTIVE="$interactive" write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  [[ "$interactive" == true ]] && systemd_env+=("--setenv=UU_JOB_INTERACTIVE=true")
+  local -a job_command=("$RUNNER_PATH" run "$unit" "$target" "$update_script")
+  if [[ "$interactive" == true ]]; then
+    job_command=("$PTY_BRIDGE" --socket "$socket_path" -- "${job_command[@]}")
+  fi
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for $target" \
     "${systemd_env[@]}" \
     "${SYSTEMD_LOG_FILTER_ARGS[@]}" \
     --property=Type=oneshot --property=StandardOutput=journal \
-    --property=StandardError=journal "$RUNNER_PATH" run "$unit" "$target" "$update_script"; then
+    --property=StandardError=journal "${job_command[@]}"; then
     write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
+    cleanup_interactive_runtime "$unit" || true
     return 1
   fi
   printf 'Update job started\nTarget: %s\nJob: %s\nStatus: ultimate-updater status\nLogs: journalctl -u %s\n' \
@@ -451,6 +503,7 @@ start_job() {
 
 start_global_job() {
   local update_script="$1" unit timestamp target=all-systems
+  local socket_path interactive=false
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_global_target "$target" || return 2
@@ -469,13 +522,25 @@ start_global_job() {
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}all-systems-$timestamp-$BASHPID"
   prepare_systemd_log_filters
-  write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  if [[ "${UU_JOB_INTERACTIVE:-false}" == true ]]; then
+    [[ -x "$PTY_BRIDGE" ]] || { printf 'Interactive job bridge is not available: %s\n' "$PTY_BRIDGE" >&2; return 1; }
+    interactive=true
+    socket_path=$(interactive_socket "$unit")
+    prepare_interactive_runtime "$unit" || return 1
+  fi
+  UU_JOB_INTERACTIVE="$interactive" write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  [[ "$interactive" == true ]] && systemd_env+=("--setenv=UU_JOB_INTERACTIVE=true")
+  local -a job_command=("$RUNNER_PATH" run-global "$unit" "$update_script")
+  if [[ "$interactive" == true ]]; then
+    job_command=("$PTY_BRIDGE" --socket "$socket_path" -- "${job_command[@]}")
+  fi
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for all systems" \
     "${systemd_env[@]}" \
     "${SYSTEMD_LOG_FILTER_ARGS[@]}" \
     --property=Type=oneshot --property=StandardOutput=journal \
-    --property=StandardError=journal "$RUNNER_PATH" run-global "$unit" "$update_script"; then
+    --property=StandardError=journal "${job_command[@]}"; then
     write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
+    cleanup_interactive_runtime "$unit" || true
     return 1
   fi
   printf 'Update job started\nTarget: %s\nJob: %s\nStatus: ultimate-updater status\nLogs: journalctl -u %s\n' \
@@ -501,7 +566,11 @@ run_job() {
     write_state "$unit" "$target" failed "$started" "$(now)" 75 "target update already locked"
     return 75
   fi
-  UU_DEFER_UPDATE_MAIL=true "$update_script" "$target" </dev/null
+  if [[ "${UU_JOB_INTERACTIVE:-false}" == true ]]; then
+    UU_DEFER_UPDATE_MAIL=true "$update_script" "$target"
+  else
+    UU_DEFER_UPDATE_MAIL=true "$update_script" "$target" </dev/null
+  fi
   exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then
     captured_status_file="${UU_REMOTE_WORK_DIR:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/temp}/post-update-status.rc"
@@ -566,6 +635,7 @@ run_job() {
   if [[ -n "${UU_REMOTE_WORK_DIR:-}" && ( ! "$target" =~ ^[0-9]+$ || ! -f "$UU_REMOTE_WORK_DIR/post-update-status.rc" ) ]]; then
     rm -rf -- "$UU_REMOTE_WORK_DIR"
   fi
+  cleanup_interactive_runtime "$unit" || true
   return "$exit_code"
 }
 
@@ -609,6 +679,7 @@ run_global_job() {
   else
     send_update_notification "$STATUS_MODEL_FILE"
   fi
+  cleanup_interactive_runtime "$unit" || true
   if [[ "$exit_code" -eq 0 ]]; then
     write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
   else
@@ -756,6 +827,7 @@ refresh_running_jobs() {
             if (( age_seconds >= 30 )); then
               type=$(state_value "$file" type)
               write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit is $active_state" "${type:-update}" || true
+              cleanup_interactive_runtime "$unit" || true
             fi
           fi
           ;;
@@ -766,6 +838,7 @@ refresh_running_jobs() {
             if (( age_seconds >= 30 )); then
               type=$(state_value "$file" type)
               write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit no longer active" "${type:-update}" || true
+              cleanup_interactive_runtime "$unit" || true
             fi
           fi
           ;;
@@ -823,6 +896,21 @@ remote_log_full() {
   ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
 }
 
+attach_job() {
+  local unit="$1" file state interactive socket_path
+  valid_unit "$unit" || { printf 'Invalid job ID: %s\n' "$unit" >&2; return 2; }
+  file=$(state_file "$unit")
+  [[ -f "$file" ]] || { printf 'Job not found: %s\n' "$unit" >&2; return 1; }
+  state=$(state_value "$file" state)
+  [[ "$state" == running ]] || { printf 'Job is not running: %s (%s)\n' "$unit" "$state" >&2; return 1; }
+  interactive=$(state_value "$file" interactive 2>/dev/null || printf 'false')
+  [[ "$interactive" == true ]] || { printf 'Job is not interactive: %s\n' "$unit" >&2; return 1; }
+  socket_path=$(state_value "$file" socket_path 2>/dev/null || interactive_socket "$unit")
+  [[ -S "$socket_path" ]] || { printf 'Interactive job socket not found: %s\n' "$socket_path" >&2; return 1; }
+  [[ -x "$PTY_BRIDGE" ]] || { printf 'Interactive attach helper is not available: %s\n' "$PTY_BRIDGE" >&2; return 1; }
+  exec python3 "$PTY_BRIDGE" --socket "$socket_path" attach "$socket_path"
+}
+
 case "${1:-}" in
   start)
     [[ $# -eq 3 ]] || { usage >&2; exit 2; }
@@ -855,6 +943,10 @@ case "${1:-}" in
   run-selfupdate)
     [[ $# -eq 4 ]] || { usage >&2; exit 2; }
     run_selfupdate_job "$2" "$3" "$4"
+    ;;
+  attach)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    attach_job "$2"
     ;;
   list)
     [[ $# -eq 1 ]] || { usage >&2; exit 2; }

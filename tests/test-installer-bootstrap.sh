@@ -35,6 +35,8 @@ if grep -Fq 'old file saved as' "$INSTALLER"; then
   exit 1
 fi
 grep -Fq 'UU_UPGRADE_INTERACTIVE=true' "$ROOT_DIR/update.sh"
+grep -Fq 'mv "$TEMP_FILES"/job-pty-bridge.py $LOCAL_FILES/job-pty-bridge.py' "$INSTALLER"
+grep -Fq 'cp "$TEMP_FILES"/job-pty-bridge.py $LOCAL_FILES/job-pty-bridge.py' "$INSTALLER"
 
 work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT

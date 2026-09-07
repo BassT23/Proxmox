@@ -492,6 +492,10 @@ INSTALL () {
     fi
     cp "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
     chmod 750 $LOCAL_FILES/job-runner.sh
+    if [[ -f "$TEMP_FILES"/job-pty-bridge.py ]]; then
+      cp "$TEMP_FILES"/job-pty-bridge.py $LOCAL_FILES/job-pty-bridge.py
+      chmod 750 $LOCAL_FILES/job-pty-bridge.py
+    fi
     if [[ -f "$TEMP_FILES"/global-update.sh ]]; then
       cp "$TEMP_FILES"/global-update.sh $LOCAL_FILES/global-update.sh
       chmod 750 $LOCAL_FILES/global-update.sh
@@ -695,6 +699,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/job-runner.sh ]]; then
       mv "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
       chmod 750 $LOCAL_FILES/job-runner.sh
+    fi
+    if [[ -f "$TEMP_FILES"/job-pty-bridge.py ]]; then
+      mv "$TEMP_FILES"/job-pty-bridge.py $LOCAL_FILES/job-pty-bridge.py
+      chmod 750 $LOCAL_FILES/job-pty-bridge.py
     fi
     if [[ -f "$TEMP_FILES"/global-update.sh ]]; then
       mv "$TEMP_FILES"/global-update.sh $LOCAL_FILES/global-update.sh
