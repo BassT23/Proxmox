@@ -64,6 +64,16 @@ def write_pty_data(master_fd, data):
         os.write(master_fd, data)
 
 
+def client_disconnected(client):
+    """Detect a peer that vanished while the bridge was not reading input."""
+    try:
+        return client.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT) == b""
+    except BlockingIOError:
+        return False
+    except OSError:
+        return True
+
+
 def run_bridge(socket_path, command):
     if not command:
         print("PTY bridge: missing child command", file=sys.stderr)
@@ -82,11 +92,21 @@ def run_bridge(socket_path, command):
     max_backlog = 1024 * 1024
     try:
         while True:
+            if client is not None and client_disconnected(client):
+                selector.unregister(client)
+                client.close()
+                client = None
             try:
                 connection, _ = server.accept()
                 connection.setblocking(False)
                 if client is not None:
-                    connection.sendall(b"BUSY: another input client is attached\n")
+                    try:
+                        connection.sendall(b"BUSY: another input client is attached\n")
+                    except OSError:
+                        # A rejected short-lived client may disconnect before
+                        # it reads the diagnostic.  It must never terminate
+                        # the detached job or its primary input bridge.
+                        pass
                     connection.close()
                 else:
                     client = connection
