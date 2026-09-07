@@ -772,7 +772,10 @@ CHECK_HOST_ITSELF () {
   STATUS_MODEL_GUEST_NAME=""
   REBOOT_REQUIRED=false
   local STATUS_HOST_NAME="${STATUS_MODEL_NODE:-$HOSTNAME}"
-  apt-get update >/dev/null 2>&1
+  # Keep apt's diagnostics in the server-side check log.  The exit status is
+  # still taken directly from apt-get, so a failed refresh remains a failed
+  # check instead of being hidden behind a logging pipeline.
+  apt-get update
   local APT_OUTPUT
   APT_OUTPUT=$(apt-get -s upgrade)
   # Keep the log and status model on the same package-manager snapshot.  The
@@ -961,7 +964,7 @@ CHECK_CONTAINER () {
     [[ -z "$OS_DISPLAY" && -n "$OS_RELEASE_ID" ]] && OS_DISPLAY="$OS_RELEASE_ID"
   fi
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
-    if ! RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get update" >/dev/null 2>&1; then
+    if ! RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get update"; then
       CHECK_CONTAINER_FAILURE "apt-get update failed for LXC $CONTAINER"
       return
     fi
@@ -1005,7 +1008,7 @@ CHECK_CONTAINER () {
       echo -e "$UPDATES"
     fi
   elif [[ "$OS" =~ alpine ]]; then
-    if ! RUN_PCT_COMMAND "$CONTAINER" ash -c "apk update" >/dev/null 2>&1; then
+    if ! RUN_PCT_COMMAND "$CONTAINER" ash -c "apk update"; then
       CHECK_CONTAINER_FAILURE "apk update failed for LXC $CONTAINER"
       return
     fi
@@ -1345,7 +1348,7 @@ CHECK_VM () {
       return 0
     fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
-      RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apt-get update" >/dev/null 2>&1
+      RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apt-get update"
       APT_OUTPUT=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apt-get -s upgrade")
       READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
       if RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" stat /var/run/reboot-required.pkgs >/dev/null 2>&1; then
