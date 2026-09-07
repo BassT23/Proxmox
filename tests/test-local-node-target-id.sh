@@ -12,10 +12,15 @@ grep -Fq "wanted=\"\$local_node\"" "$CLI"
 grep -Fq 'run_node_check()' "$CLI"
 grep -Fq 'run_node_update()' "$CLI"
 
-# The API keeps the displayed hostname for presentation but normalizes local
-# node actions to the stable target ID before starting either action.
+# The WebUI sends the canonical status key while keeping the hostname as the
+# display label. The API accepts that key and maps only the actual local node
+# to the CLI's stable local-host alias.
+grep -Fq 'const actionNode=host?.id||node' "$SERVER"
+grep -Fq 'data-node-action="check:${esc(actionNode)}"' "$SERVER"
 grep -Fq 'def node_action_target(self, node):' "$SERVER"
-grep -Fq 'node = self.node_action_target(node)' "$SERVER"
+grep -Fq 'node = node.removeprefix("host:")' "$SERVER"
+grep -Fq 'socket.gethostname().split(".", 1)[0]' "$SERVER"
+grep -Fq 'return "local-host"' "$SERVER"
 grep -Fq 'action_target = self.node_action_target(node)' "$SERVER"
 grep -Fq '"start-check", action_target' "$SERVER"
 grep -Fq '"update-node", action_target' "$SERVER"
