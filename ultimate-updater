@@ -101,6 +101,7 @@ Commands:
   check [TARGET]          Run the existing check, optionally for one target
   update TARGET [--without-verified-backup]
                           Start an update job; External targets require recent backup verification
+  job attach JOB_ID       Attach to a running interactive CLI job
   update-all              Start the configured cluster-wide update job
   check-node NODE         Check one Proxmox node host only
   update-node NODE        Update one Proxmox node host only
@@ -779,7 +780,11 @@ run_node_update() {
   require_file "$JOB_RUNNER" "job runner" || return 1
   if [[ "$RESOLVED_NODE_LOCAL" == true ]]; then
     require_file "$UPDATE_SCRIPT" "update script" || return 1
-    UU_UPDATE_SCOPE=host "$JOB_RUNNER" start "$UPDATE_SCRIPT" host
+    if [[ -t 0 ]]; then
+      UU_JOB_INTERACTIVE=true UU_UPDATE_SCOPE=host "$JOB_RUNNER" start "$UPDATE_SCRIPT" host
+    else
+      UU_UPDATE_SCOPE=host "$JOB_RUNNER" start "$UPDATE_SCRIPT" host
+    fi
   else
     if ! resolve_remote_node_transport "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"; then
       printf 'Could not resolve the existing UU SSH transport for node %s.\n' "$RESOLVED_NODE" >&2
@@ -1229,8 +1234,24 @@ run_update() {
     return $?
   fi
   case "$kind" in
-    host|container|vm) require_file "$UPDATE_SCRIPT" "update script" || return 1; "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")" ;;
-    external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; if [[ "$override" == true ]]; then UU_EXTERNAL_BACKUP_OVERRIDE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; else "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; fi ;;
+    host|container|vm)
+      require_file "$UPDATE_SCRIPT" "update script" || return 1
+      if [[ -t 0 ]]; then
+        UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")"
+      else
+        "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")"
+      fi
+      ;;
+    external)
+      require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1
+      if [[ -t 0 ]]; then
+        if [[ "$override" == true ]]; then UU_JOB_INTERACTIVE=true UU_EXTERNAL_BACKUP_OVERRIDE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; else UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; fi
+      elif [[ "$override" == true ]]; then
+        UU_EXTERNAL_BACKUP_OVERRIDE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"
+      else
+        "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"
+      fi
+      ;;
   esac
 }
 
@@ -1266,6 +1287,11 @@ case "$command" in
     shift
     "$HARDCORE_TEST_SCRIPT" "$@"
     ;;
+  job)
+    [[ "${2:-}" == attach && $# -eq 3 ]] || { usage >&2; exit 2; }
+    require_file "$JOB_RUNNER" "job runner" || exit 1
+    "$JOB_RUNNER" attach "$3"
+    ;;
   check)
     [[ $# -le 2 ]] || { usage >&2; exit 2; }
     run_check "${2:-}"
@@ -1280,7 +1306,11 @@ case "$command" in
     require_file "$JOB_RUNNER" "job runner" || exit 1
     require_file "$UPDATE_SCRIPT" "update script" || exit 1
     require_file "$GLOBAL_UPDATE_SCRIPT" "global update dispatcher" || exit 1
-    "$JOB_RUNNER" start-global "$GLOBAL_UPDATE_SCRIPT"
+    if [[ -t 0 ]]; then
+      UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start-global "$GLOBAL_UPDATE_SCRIPT"
+    else
+      "$JOB_RUNNER" start-global "$GLOBAL_UPDATE_SCRIPT"
+    fi
     ;;
 check-node)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
