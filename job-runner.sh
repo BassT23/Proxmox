@@ -851,7 +851,7 @@ list_jobs() {
   [[ -d "$JOB_STATE_DIR" ]] || return 0
   refresh_running_jobs
   cleanup_completed_jobs || true
-  local file unit target state started finished exit_code owner_node owner_host port
+  local file unit target state started finished exit_code owner_node owner_host port interactive socket_available socket_path
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
     unit=$(state_value "$file" unit)
@@ -860,7 +860,15 @@ list_jobs() {
     started=$(state_value "$file" started_at)
     finished=$(state_value "$file" finished_at)
     exit_code=$(state_value "$file" exit_code)
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t%s\n' "$unit" "$target" "$state" "$started" "$finished" "$exit_code" "$(state_value "$file" type)" "$(state_value "$file" source)"
+    interactive=$(state_value "$file" interactive 2>/dev/null || printf 'false')
+    socket_available=false
+    if [[ "$interactive" == true ]]; then
+      socket_path=$(state_value "$file" socket_path 2>/dev/null || interactive_socket "$unit")
+      [[ -S "$socket_path" ]] && socket_available=true
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t%s\t%s\t%s\n' \
+      "$unit" "$target" "$state" "$started" "$finished" "$exit_code" \
+      "$(state_value "$file" type)" "$(state_value "$file" source)" "$interactive" "$socket_available"
   done
   shopt -s nullglob
   for file in "$REMOTE_REF_DIR"/*.ref; do

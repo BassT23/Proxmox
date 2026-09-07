@@ -32,6 +32,10 @@ INTERNAL_SSH_FILE="$LOCAL_FILES/internal-ssh.sh"
 GLOBAL_UPDATE_SCRIPT="$LOCAL_FILES/global-update.sh"
 EXTERNAL_SELECTION_SCRIPT="$LOCAL_FILES/external-selection.sh"
 
+interactive_requested() {
+  [[ "${UU_JOB_INTERACTIVE:-false}" == true || -t 0 ]]
+}
+
 if [[ ! -f "$UPDATE_SCRIPT" && -f "$SCRIPT_DIR/update.sh" ]]; then
   UPDATE_SCRIPT="$SCRIPT_DIR/update.sh"
 fi
@@ -780,7 +784,7 @@ run_node_update() {
   require_file "$JOB_RUNNER" "job runner" || return 1
   if [[ "$RESOLVED_NODE_LOCAL" == true ]]; then
     require_file "$UPDATE_SCRIPT" "update script" || return 1
-    if [[ -t 0 ]]; then
+    if interactive_requested; then
       UU_JOB_INTERACTIVE=true UU_UPDATE_SCOPE=host "$JOB_RUNNER" start "$UPDATE_SCRIPT" host
     else
       UU_UPDATE_SCOPE=host "$JOB_RUNNER" start "$UPDATE_SCRIPT" host
@@ -1236,7 +1240,7 @@ run_update() {
   case "$kind" in
     host|container|vm)
       require_file "$UPDATE_SCRIPT" "update script" || return 1
-      if [[ -t 0 ]]; then
+      if interactive_requested; then
         UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")"
       else
         "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")"
@@ -1244,7 +1248,7 @@ run_update() {
       ;;
     external)
       require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1
-      if [[ -t 0 ]]; then
+      if interactive_requested; then
         if [[ "$override" == true ]]; then UU_JOB_INTERACTIVE=true UU_EXTERNAL_BACKUP_OVERRIDE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; else UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; fi
       elif [[ "$override" == true ]]; then
         UU_EXTERNAL_BACKUP_OVERRIDE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"
@@ -1306,7 +1310,7 @@ case "$command" in
     require_file "$JOB_RUNNER" "job runner" || exit 1
     require_file "$UPDATE_SCRIPT" "update script" || exit 1
     require_file "$GLOBAL_UPDATE_SCRIPT" "global update dispatcher" || exit 1
-    if [[ -t 0 ]]; then
+    if interactive_requested; then
       UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start-global "$GLOBAL_UPDATE_SCRIPT"
     else
       "$JOB_RUNNER" start-global "$GLOBAL_UPDATE_SCRIPT"

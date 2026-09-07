@@ -104,6 +104,7 @@ DEFAULT_CLI = Path("/usr/local/sbin/ultimate-updater")
 DEFAULT_UPDATE_SCRIPT = Path("/etc/ultimate-updater/update.sh")
 DEFAULT_JOB_RUNNER = Path("/etc/ultimate-updater/job-runner.sh")
 DEFAULT_JOBS_DIR = Path("/var/lib/ultimate-updater/jobs")
+DEFAULT_INTERACTIVE_RUNTIME_DIR = Path("/run/ultimate-updater/jobs")
 VISIBLE_JOB_LIMIT = 20
 DEFAULT_BACKUP_STATE_FILE = Path("/var/lib/ultimate-updater/external-backup-verification.json")
 DEFAULT_AUTH_FILE = Path("/etc/ultimate-updater/web-auth.json")
@@ -879,7 +880,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function openUpdaterVersion(){document.getElementById('updater-version-modal').classList.add('open')}
     document.getElementById('updater-version-indicator').onclick=openUpdaterVersion;document.getElementById('updater-version-footer').onclick=openUpdaterVersion;document.getElementById('updater-version-close').onclick=()=>document.getElementById('updater-version-modal').classList.remove('open');document.getElementById('updater-version-check').onclick=()=>loadUpdaterVersion(true);document.getElementById('updater-version-update').onclick=async()=>{if(!updaterVersion?.branch||updaterVersion.update_available!==true)return;const button=document.getElementById('updater-version-update');button.disabled=true;try{const data=await api('/api/updater-update',{method:'POST',body:JSON.stringify({branch:updaterVersion.branch})});document.getElementById('updater-version-message').textContent=data.message||'Updater self-update job started.';await loadJobs()}catch(error){document.getElementById('updater-version-message').textContent=error.message;document.getElementById('updater-version-message').className='management-message error';button.disabled=false}};
     document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true')return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value})});const d=await r.json();if(!r.ok)throw new Error('Login failed');csrfToken=d.csrf;form.reset();message.className='management-message success';message.textContent='Login successful';await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent='Login failed'}};
-    document.getElementById('logout').onclick=async()=>{try{await api('/api/logout',{method:'POST',body:'{}'})}catch(_error){}showLogin('You have been signed out.')};
+    const logout=async()=>{try{await api('/api/logout',{method:'POST',body:'{}'})}catch(_error){}showLogin('You have been signed out.')};document.getElementById('logout').onclick=logout;document.getElementById('logout-menu')?.addEventListener('click',logout);
   </script>
   <div id="target-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="target-modal-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="target-modal-title">External system</h3><button type="button" class="modal-close" id="target-modal-cancel">Close</button></div><div class="management-form open"><label>Name<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"></label><label>Host / IP<input name="host" required pattern="[A-Za-z0-9_.:-]+"></label><label>SSH user<input name="user" required pattern="[A-Za-z_][A-Za-z0-9_.-]*"></label><label>SSH port<input name="port" type="number" min="1" max="65535" value="22" required></label><label>Identity file (optional)<input name="identity_file" placeholder="/root/.ssh/key"></label><div class="form-actions"><button type="submit" class="primary">Save</button><button type="button" id="target-modal-test">Test connection</button></div><div id="target-modal-message" class="management-message form-wide" role="status"></div></div></form></div>
   <script>
@@ -925,7 +926,15 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     renderJobs=renderJobsStable;window.renderJobs=renderJobsStable;
     function normalizeJobsHeading(){const toggle=document.querySelector('#jobs .job-toggle'),label=toggle?.querySelector('span:not(.chevron)');if(!label)return;const count=label.querySelector('.job-count');label.textContent='Jobs ';if(count)label.appendChild(count)}
     function decorateJobRows(){normalizeJobsHeading();const list=document.querySelector('#jobs .job-list');if(!list)return;for(const item of list.querySelectorAll('.job')){const job=jobs.find(candidate=>candidate.unit===item.dataset.unit);if(!job)continue;item.dataset.running=String(job.state==='running');const target=item.querySelector('span');if(target){const label=job.source==='initial-inventory'?'INITIAL INVENTORY':String(job.type||'update').toUpperCase();target.textContent=`${label} · ${job.owner_node?`${friendlyJobTarget(job.target)} · ${job.owner_node}`:friendlyJobTarget(job.target)}`}let meta=item.querySelector('.job-meta');if(!meta){meta=document.createElement('small');meta.className='job-meta';item.appendChild(meta)}const started=job.started_at?date(job.started_at):'Unknown';let duration='';if(job.started_at){const end=job.finished_at?Date.parse(job.finished_at):Date.now(),start=Date.parse(job.started_at);if(Number.isFinite(start)&&Number.isFinite(end))duration=` · ${Math.max(0,Math.round((end-start)/1000))}s`};meta.textContent=`Started ${started}${duration} · Exit ${job.exit_code===null||job.exit_code===undefined?'—':job.exit_code}`}}
-    const renderJobsBase=renderJobs;renderJobs=function(){renderJobsBase();renderRunningIndicator();decorateJobRows()};window.renderJobs=renderJobs;
+    const interactiveAttached=new Set(),interactiveQueues=new Map();
+    const interactiveEncode=value=>{const bytes=new TextEncoder().encode(value);let binary='';bytes.forEach(byte=>binary+=String.fromCharCode(byte));return btoa(binary)};
+    const interactiveKey=event=>{if(event.ctrlKey&&event.key.length===1){const code=event.key.toUpperCase().charCodeAt(0);if(code>=64&&code<=95)return String.fromCharCode(code-64)}const keys={Enter:'\r',Tab:'\t',Escape:'\x1b',Backspace:'\x7f','ArrowUp':'\x1b[A','ArrowDown':'\x1b[B','ArrowRight':'\x1b[C','ArrowLeft':'\x1b[D',Home:'\x1b[H',End:'\x1b[F',Delete:'\x1b[3~'};return keys[event.key]??(event.key.length===1?event.key:null)};
+    const sendInteractive=async(unit,data)=>{if(!data)return;const previous=interactiveQueues.get(unit)||Promise.resolve(),next=previous.catch(()=>{}).then(()=>api(`/api/jobs/${encodeURIComponent(unit)}/input`,{method:'POST',body:JSON.stringify({data:interactiveEncode(data)})}));interactiveQueues.set(unit,next);try{await next}catch(error){interactiveAttached.delete(unit);notice(error.message,true);decorateInteractiveJobs()}};
+    const detachInteractive=async unit=>{try{await api(`/api/jobs/${encodeURIComponent(unit)}/detach`,{method:'POST',body:'{}'})}catch(_error){}interactiveAttached.delete(unit);decorateInteractiveJobs()};
+    const attachInteractive=async unit=>{try{await api(`/api/jobs/${encodeURIComponent(unit)}/attach`,{method:'POST',body:'{}'});interactiveAttached.add(unit);notice('Interactive input attached.');decorateInteractiveJobs();document.querySelector(`[data-interactive-input="${CSS.escape(unit)}"]`)?.focus()}catch(error){notice(error.message,true)}};
+    const decorateInteractiveJob=item=>{const unit=item.dataset.unit,job=jobs.find(candidate=>candidate.unit===unit),available=job?.interactive&&job?.socket_available&&job?.state==='running';let controls=item.querySelector('.interactive-controls');if(!available){if(controls)controls.remove();interactiveAttached.delete(unit);return}if(!controls){controls=document.createElement('div');controls.className='interactive-controls';controls.innerHTML='<span class="interactive-status"></span><button type="button" data-interactive-attach>Attach input</button><button type="button" data-interactive-detach hidden>Detach</button><textarea rows="1" spellcheck="false" autocomplete="off" hidden></textarea><span class="interactive-help">Keyboard input is sent to the running job; Enter, Tab, Escape and arrow keys are supported.</span>';item.appendChild(controls);controls.querySelector('[data-interactive-attach]').onclick=()=>attachInteractive(unit);controls.querySelector('[data-interactive-detach]').onclick=()=>detachInteractive(unit);const input=controls.querySelector('textarea');input.dataset.interactiveInput=unit;input.addEventListener('keydown',event=>{const data=interactiveKey(event);if(data===null)return;event.preventDefault();sendInteractive(unit,data)});input.addEventListener('paste',event=>{event.preventDefault();sendInteractive(unit,event.clipboardData?.getData('text')||'')})}const attached=interactiveAttached.has(unit),status=controls.querySelector('.interactive-status'),attach=controls.querySelector('[data-interactive-attach]'),detach=controls.querySelector('[data-interactive-detach]'),input=controls.querySelector('textarea');status.textContent=attached?'Interactive input attached':'Interactive input available';attach.hidden=attached;detach.hidden=!attached;input.hidden=!attached;input.disabled=!attached};
+    const decorateInteractiveJobs=()=>document.querySelectorAll('#jobs .job').forEach(decorateInteractiveJob);
+    const renderJobsBase=renderJobs;renderJobs=function(){renderJobsBase();renderRunningIndicator();decorateJobRows();decorateInteractiveJobs()};window.renderJobs=renderJobs;
     document.getElementById('check-all').onclick=()=>globalAction(false);
     document.getElementById('update-all').onclick=()=>globalAction(true);
     clearTimeout(pollTimer);
@@ -1083,6 +1092,8 @@ PAGE = PAGE.replace('    bootstrap();', '''    const statusIcon=kind=>{const pat
     const renderWithStatusIcons=render;render=function(data){renderWithStatusIcons(data);decorateStatusIcons(document)};
     new MutationObserver(()=>{decorateStatusIcons(document.getElementById('details'));decorateStatusIcons(document.getElementById('jobs'))}).observe(document.getElementById('details'),{childList:true,subtree:true});
     new MutationObserver(()=>decorateStatusIcons(document.getElementById('jobs'))).observe(document.getElementById('jobs'),{childList:true,subtree:true});
+    new MutationObserver(()=>decorateInteractiveJobs()).observe(document.getElementById('jobs'),{childList:true,subtree:true});
+    window.addEventListener('pagehide',()=>{for(const unit of interactiveAttached){fetch(`/api/jobs/${encodeURIComponent(unit)}/detach`,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:'{}'}).catch(()=>{})}});
     bootstrap();''')
 PAGE = PAGE.replace('    const statusIcon=kind=>', '    const decorateOverviewIcons=()=>document.querySelectorAll("[data-overview-icon]").forEach(element=>{if(!element.querySelector(".status-icon"))element.innerHTML=statusIcon(element.dataset.overviewIcon)});\n    const statusIcon=kind=>')
 PAGE = PAGE.replace("activity:'<path d=\"M4 12h3l2-5 4 10 2-5h5\"/>'};", "package:'<path d=\"m4 8 8-4 8 4-8 4-8-4Zm0 0v8l8 4 8-4V8m-8 4v8\"/>',activity:'<path d=\"M4 12h3l2-5 4 10 2-5h5\"/>'};")
@@ -1150,6 +1161,7 @@ PAGE = PAGE.replace('</head>', '<style>.dashboard-meta .nav-separator{display:bl
 PAGE = PAGE.replace('</head>', '<style>.version-dialog{width:min(720px,calc(100vw - 32px))}.version-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:16px}.version-dialog-brand{display:flex;align-items:center;gap:12px;min-width:0}.version-dialog-brand img{display:block;width:42px;height:42px;flex:0 0 42px;object-fit:contain}.version-dialog-brand h3{margin:0;min-width:0}.version-dialog-footer{margin-top:16px;padding-top:10px;border-top:1px solid var(--line);text-align:center;font-size:.72rem}.version-dialog-footer a{color:#79bde8;text-decoration:none}.version-dialog-footer a:hover,.version-dialog-footer a:focus-visible{color:#fff;text-decoration:underline}@media(max-width:520px){.version-dialog{width:min(100vw - 20px,720px)}.version-dialog-header{align-items:flex-start;gap:10px}.version-dialog-brand{align-items:center;gap:10px}.version-dialog-brand img{width:36px;height:36px;flex-basis:36px}.version-dialog-brand h3{font-size:1rem}}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.dashboard-kpis .metric:nth-child(1) .metric-top{color:#72c8ff}.dashboard-kpis .metric:nth-child(2) .metric-top{color:var(--good)}.dashboard-kpis .metric:nth-child(3) .metric-top{color:var(--bad)}.dashboard-kpis .metric:nth-child(4) .metric-top{color:var(--security)}.dashboard-kpis .metric:nth-child(5) .metric-top{color:var(--warn)}.dashboard-kpis .metric:nth-child(6) .metric-top{color:#72c8ff}.dashboard-kpis .metric .metric-top strong{color:inherit}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.dashboard-meta .nav-toggle svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}</style></head>', 1)
+PAGE = PAGE.replace('</head>', '<style>.interactive-controls{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid #159cf033}.interactive-status{color:var(--muted);font-size:.72rem}.interactive-controls textarea{flex:1 1 260px;min-width:180px;min-height:38px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--text);background:#050d1b;font:inherit;font-size:.75rem}.interactive-controls textarea:focus{border-color:var(--accent);outline:2px solid #73a7ff55}.interactive-controls button{padding:7px 9px;font-size:.72rem}.interactive-help{width:100%;color:var(--muted);font-size:.68rem}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.scheduler-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.scheduler-head p{margin:5px 0 0;color:var(--muted);font-size:.78rem}.scheduler-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}.scheduler-summary>div{padding:13px 14px;border:1px solid #159cf055;border-radius:12px;background:#0b172acc}.scheduler-summary span{display:block;color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em}.scheduler-summary strong{display:block;margin-top:5px;font-size:.9rem}.scheduler-list{display:grid;gap:10px}.scheduler-card{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 16px;border:1px solid var(--line);border-radius:14px;background:#0e162b99}.scheduler-card-main{min-width:0}.scheduler-card-title{display:flex;align-items:center;gap:9px}.scheduler-card-title strong{font-size:.92rem;overflow-wrap:anywhere}.scheduler-card-main>.hint{display:block;margin-top:5px}.scheduler-card-main small{display:block;margin-top:9px;color:var(--muted);line-height:1.55}.schedule-state{padding:3px 7px;border-radius:999px;font-size:.65rem;font-weight:700}.schedule-state.enabled{color:var(--good);background:#55d39a1f}.schedule-state.disabled{color:var(--muted);background:#aab7cf1f}.scheduler-card-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px;flex:0 0 auto}.scheduler-card-actions button{padding:7px 9px;font-size:.72rem}.scheduler-empty{padding:30px;border:1px dashed var(--line);border-radius:14px;text-align:center;color:var(--muted)}.scheduler-modal{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:18px;background:#00000088}.scheduler-modal[hidden]{display:none}.scheduler-modal form{width:min(520px,100%);display:grid;grid-template-columns:1fr 1fr;gap:12px}.scheduler-modal .section-title,.scheduler-modal input[type=hidden],.scheduler-modal .scheduler-warning,.scheduler-modal .scheduler-form-actions{grid-column:1 / -1}.scheduler-modal label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:.72rem}.scheduler-modal input,.scheduler-modal select{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:8px;color:var(--text);background:#081426;font:inherit}.scheduler-modal .schedule-enabled{flex-direction:row;align-items:center;gap:7px}.scheduler-modal .schedule-enabled input{width:auto}.scheduler-warning{margin:0;padding:10px 12px;border:1px solid #f0a83a66;border-radius:9px;color:var(--warn);background:#f0a83a12;font-size:.74rem;line-height:1.45}.scheduler-form-actions{display:flex;justify-content:flex-end;gap:8px}@media(max-width:720px){.scheduler-head{align-items:flex-start;flex-direction:column}.scheduler-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.scheduler-card{align-items:stretch;flex-direction:column}.scheduler-card-actions{justify-content:flex-start}.scheduler-modal form{grid-template-columns:1fr}}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.scheduler-modal form{width:min(920px,100%);max-height:calc(100vh - 36px);overflow:auto}.schedule-days{grid-column:1 / -1;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px}.schedule-days legend{padding:0 5px;color:var(--muted);font-size:.72rem}.day-toggles{display:flex;flex-wrap:wrap;gap:6px}.day-toggles label{display:block}.day-toggles input{position:absolute;opacity:0;pointer-events:none}.day-toggles span{display:block;padding:7px 11px;border:1px solid var(--line);border-radius:7px;color:var(--muted);cursor:pointer;font-size:.75rem}.day-toggles input:checked+span{color:#fff;border-color:#159cf0aa;background:#087ecb66}.schedule-targets{grid-column:1 / -1;min-width:0;padding:14px;border:1px solid #159cf055;border-radius:12px;background:#08172aaa}.schedule-targets[hidden]{display:none}.schedule-targets-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.schedule-targets h3{margin:0;font-size:.88rem}.schedule-target-tools{display:flex;flex-wrap:wrap;gap:7px}.schedule-target-tools button{font-size:.72rem;padding:6px 8px}.schedule-target-search{display:block!important;margin:10px 0}.schedule-target-table{width:100%;border-collapse:collapse;font-size:.73rem}.schedule-target-table th,.schedule-target-table td{padding:8px 7px;border-bottom:1px solid #159cf033;text-align:left;white-space:nowrap}.schedule-target-table th{position:sticky;top:0;z-index:1;color:var(--muted);background:#0a1b31}.schedule-target-table td:first-child,.schedule-target-table th:first-child{width:28px;text-align:center}.schedule-target-table input{width:16px;height:16px}.schedule-table-wrap{max-height:360px;overflow:auto;border:1px solid #159cf044;border-radius:8px}.schedule-selected{margin-top:9px;color:#8fd2ff;font-size:.75rem;font-weight:700}.schedule-missing{margin:8px 0;padding:8px 10px;border:1px solid #ed6b7a88;border-radius:8px;color:#ff9aaa;background:#ed6b7a12;font-size:.73rem}.schedule-missing[hidden]{display:none}.schedule-enabled{grid-column:1 / -1;width:max-content}.scheduler-modal .scheduler-warning{grid-column:1 / -1}@media(max-width:720px){.scheduler-modal form{width:100%;grid-template-columns:1fr}.schedule-targets-head{align-items:flex-start;flex-direction:column}.schedule-table-wrap{overflow-x:auto}.schedule-target-table{min-width:650px}}</style></head>', 1)
 
@@ -1166,6 +1178,8 @@ def parse_state_line(line):
     source = None
     if len(fields) > 8:
         source = fields[8] or None
+    interactive = len(fields) > 9 and fields[9].lower() == "true"
+    socket_available = len(fields) > 10 and fields[10].lower() == "true"
     if len(fields) > 7:
         job_type = fields[6] or "update"
         owner_node = fields[7] or None
@@ -1183,7 +1197,134 @@ def parse_state_line(line):
             "started_at": started or None, "finished_at": finished or None,
             "exit_code": int(exit_code) if exit_code.lstrip("-").isdigit() else None,
             "type": job_type if job_type in {"check", "update", "selfupdate"} else "update",
-            "source": source, "owner_node": owner_node, "remote": owner_node is not None}
+            "source": source, "owner_node": owner_node, "remote": owner_node is not None,
+            "interactive": interactive, "socket_available": socket_available}
+
+
+class InteractiveJobBroker:
+    """Keep one authenticated WebUI connection to a job's PTY socket.
+
+    The broker is deliberately only a byte bridge.  The job-pty-bridge remains
+    the authority for the PTY and for the single-writer rule; this process only
+    holds a socket open between short HTTP requests.  Journald remains the
+    durable output source used by the existing job-log endpoint.
+    """
+
+    def __init__(self, runtime_dir):
+        self.runtime_dir = Path(runtime_dir)
+        self.lock = threading.RLock()
+        self.clients = {}
+
+    def socket_path(self, unit):
+        digest = hashlib.sha256(unit.encode("utf-8")).hexdigest()[:16]
+        return self.runtime_dir / digest / "control.sock"
+
+    def _remove(self, unit, item):
+        with self.lock:
+            if self.clients.get(unit) is item:
+                self.clients.pop(unit, None)
+        try:
+            item["socket"].shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            item["socket"].close()
+        except OSError:
+            pass
+
+    def _reader(self, unit, item):
+        connection = item["socket"]
+        try:
+            while True:
+                data = connection.recv(8192)
+                if not data:
+                    break
+                if not item["ready"].is_set():
+                    if data.startswith(b"BUSY:"):
+                        item["busy"] = True
+                    item["ready"].set()
+        except OSError:
+            pass
+        finally:
+            item["ready"].set()
+            self._remove(unit, item)
+
+    def attach(self, unit, owner, socket_path):
+        with self.lock:
+            existing = self.clients.get(unit)
+            if existing is not None:
+                if existing["owner"] == owner:
+                    return "attached"
+                raise RuntimeError("Another WebUI input client is already attached.")
+        # A detached WebUI socket may take a short scheduling interval to be
+        # observed by the bridge.  Retry that transient BUSY state briefly;
+        # a genuinely attached CLI still receives a bounded BUSY response.
+        for attempt in range(10):
+            connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                connection.settimeout(1.0)
+                connection.connect(str(socket_path))
+                connection.settimeout(None)
+                # The compact input panel is not a full terminal emulator.
+                # Give dialog/whiptail a stable usable size instead of the
+                # PTY default until a future terminal UI can resize it.
+                connection.sendall(b"\x00UU_RESIZE 24 80\n")
+            except OSError as error:
+                connection.close()
+                raise RuntimeError("The interactive job socket is unavailable.") from error
+            item = {"socket": connection, "owner": owner, "ready": threading.Event(), "busy": False}
+            with self.lock:
+                if unit in self.clients:
+                    connection.close()
+                    raise RuntimeError("Another WebUI input client is already attached.")
+                self.clients[unit] = item
+            threading.Thread(target=self._reader, args=(unit, item), daemon=True,
+                             name=f"uu-web-attach-{unit[-12:]}").start()
+            item["ready"].wait(0.5)
+            if not item["busy"]:
+                return "attached"
+            self._remove(unit, item)
+            if attempt < 9:
+                time.sleep(0.25)
+        raise RuntimeError("Another input client is already attached.")
+
+    def send(self, unit, owner, data):
+        with self.lock:
+            item = self.clients.get(unit)
+            if item is None or item["owner"] != owner:
+                raise RuntimeError("This WebUI session is not attached to the job.")
+            connection = item["socket"]
+            try:
+                connection.sendall(data)
+            except OSError as error:
+                self._remove(unit, item)
+                raise RuntimeError("The interactive job connection was lost.") from error
+
+    def detach(self, unit, owner):
+        with self.lock:
+            item = self.clients.get(unit)
+            if item is None:
+                return False
+            if item["owner"] != owner:
+                raise RuntimeError("This WebUI session does not own the attachment.")
+        self._remove(unit, item)
+        return True
+
+    def attached(self, unit):
+        with self.lock:
+            return unit in self.clients
+
+    def close_all(self):
+        with self.lock:
+            items = list(self.clients.items())
+        for unit, item in items:
+            self._remove(unit, item)
+
+    def detach_owner(self, owner):
+        with self.lock:
+            items = [(unit, item) for unit, item in self.clients.items() if item["owner"] == owner]
+        for unit, item in items:
+            self._remove(unit, item)
 
 
 def parse_updater_version_output(output):
@@ -2112,6 +2253,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         finished = [row for row in rows if row.get("state") not in {"running", "pending", "starting"}]
         selected = running + finished[:max(0, VISIBLE_JOB_LIMIT - len(running))]
         selected.sort(key=sort_key, reverse=True)
+        for row in selected:
+            if row.get("interactive"):
+                row["attached"] = self.server.interactive_broker.attached(row["unit"])
         return selected
 
     def local_version(self):
@@ -2215,6 +2359,88 @@ class StatusHandler(BaseHTTPRequestHandler):
         if not JOB_RE.fullmatch(unit):
             return None
         return next((row for row in self.jobs() if row["unit"] == unit), None)
+
+    def session_owner(self):
+        cookie = self.headers.get("Cookie", "")
+        return next((part.strip().split("=", 1)[1] for part in cookie.split(";")
+                     if part.strip().startswith("UU_SESSION=")), "")
+
+    def interactive_job_context(self, unit):
+        if not JOB_RE.fullmatch(unit):
+            raise ValueError("Invalid job ID.")
+        job = self.job_record(unit)
+        if not job:
+            raise KeyError("Job not found.")
+        if job.get("state") != "running":
+            raise RuntimeError("The job is no longer running.")
+        if not job.get("interactive"):
+            raise RuntimeError("The job does not accept interactive input.")
+        socket_path = self.server.interactive_broker.socket_path(unit)
+        state_file = self.server.jobs_dir / f"{unit}.state"
+        try:
+            state_values = {}
+            for line in state_file.read_text(encoding="utf-8").splitlines():
+                key, separator, value = line.partition("=")
+                if separator:
+                    state_values[key] = value
+        except OSError as error:
+            raise RuntimeError("The interactive job state is unavailable.") from error
+        # Never accept a socket path supplied by the request.  The state file
+        # must agree with the deterministic path derived from the validated ID.
+        if state_values.get("socket_path") != str(socket_path) or not socket_path.is_socket():
+            raise RuntimeError("The interactive job socket is unavailable.")
+        return job, socket_path
+
+    def handle_interactive_attach(self, unit):
+        try:
+            job, socket_path = self.interactive_job_context(unit)
+            self.server.interactive_broker.attach(unit, self.session_owner(), socket_path)
+        except KeyError:
+            self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        except ValueError as error:
+            self.send_json(error_payload("INVALID_JOB_ID", str(error)), HTTPStatus.BAD_REQUEST)
+            return
+        except RuntimeError as error:
+            message = str(error)
+            code = "JOB_INPUT_BUSY" if "already attached" in message else "JOB_INPUT_UNAVAILABLE"
+            status = HTTPStatus.CONFLICT if code == "JOB_INPUT_BUSY" else HTTPStatus.UNPROCESSABLE_ENTITY
+            self.send_json(error_payload(code, message), status)
+            return
+        self.send_json({"unit": unit, "attached": True, "interactive": True,
+                        "message": "Interactive input attached."}, HTTPStatus.OK)
+
+    def handle_interactive_input(self, unit, payload):
+        encoded = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(encoded, str) or not encoded or len(encoded) > 8192:
+            self.send_json(error_payload("INVALID_JOB_INPUT", "Input data is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            data = base64.b64decode(encoded.encode("ascii"), validate=True)
+        except (ValueError, UnicodeEncodeError):
+            self.send_json(error_payload("INVALID_JOB_INPUT", "Input data is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        if not data or len(data) > 4096:
+            self.send_json(error_payload("INVALID_JOB_INPUT", "Input data is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            self.interactive_job_context(unit)
+            self.server.interactive_broker.send(unit, self.session_owner(), data)
+        except (KeyError, ValueError):
+            self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        except RuntimeError as error:
+            self.send_json(error_payload("JOB_INPUT_UNAVAILABLE", str(error)), HTTPStatus.CONFLICT)
+            return
+        self.send_json({"unit": unit, "accepted": len(data)})
+
+    def handle_interactive_detach(self, unit):
+        try:
+            self.server.interactive_broker.detach(unit, self.session_owner())
+        except RuntimeError as error:
+            self.send_json(error_payload("JOB_INPUT_UNAVAILABLE", str(error)), HTTPStatus.CONFLICT)
+            return
+        self.send_json({"unit": unit, "attached": False})
 
     def config_content(self):
         return self.server.config_file.read_text(encoding="utf-8") if self.server.config_file.exists() else ""
@@ -3016,10 +3242,20 @@ class StatusHandler(BaseHTTPRequestHandler):
             cookie = self.headers.get("Cookie", "")
             token = next((part.strip().split("=", 1)[1] for part in cookie.split(";")
                           if part.strip().startswith("UU_SESSION=")), "")
+            self.server.interactive_broker.detach_owner(token)
             self.server.auth.logout(token)
             self.send_json_with_cookie({"authenticated": False}, "UU_SESSION=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
             return
         if not self.write_allowed():
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "attach":
+            self.handle_interactive_attach(parts[2])
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "input":
+            self.handle_interactive_input(parts[2], payload)
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "detach":
+            self.handle_interactive_detach(parts[2])
             return
         if parts == ["api", "schedules"]:
             try:
@@ -3145,7 +3381,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         if is_external and allow_without_backup:
             command.append("--without-verified-backup")
         try:
-            result = self.run_command(command, timeout=30)
+            result = self.run_command(command, timeout=30, extra_env={"UU_JOB_INTERACTIVE": "true"})
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("UPDATE_START_FAILED", "The update job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
@@ -3215,7 +3451,8 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def action_update_all(self):
         try:
-            result = self.run_command([str(self.server.cli), "update-all"], timeout=30)
+            result = self.run_command([str(self.server.cli), "update-all"], timeout=30,
+                                      extra_env={"UU_JOB_INTERACTIVE": "true"})
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("UPDATE_START_FAILED", "The full update job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
@@ -3279,7 +3516,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         try:
             action_target = self.node_action_target(node)
-            result = self.run_command([str(self.server.cli), "update-node", action_target], timeout=30)
+            result = self.run_command([str(self.server.cli), "update-node", action_target], timeout=30,
+                                      extra_env={"UU_JOB_INTERACTIVE": "true"})
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("UPDATE_START_FAILED", "The node update job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
@@ -3419,6 +3657,9 @@ def main():
     server.tag_filter_script = args.config_file.parent / "tag-filter.sh"
     server.asset_dir = args.asset_dir
     server.job_runner, server.jobs_dir = args.job_runner, args.jobs_dir
+    server.interactive_broker = InteractiveJobBroker(
+        Path(os.environ.get("UU_INTERACTIVE_RUNTIME_DIR", DEFAULT_INTERACTIVE_RUNTIME_DIR))
+    )
     server.scheduler_file, server.scheduler_unit_dir = args.scheduler_file, args.scheduler_unit_dir
     server.update_script = args.config_file.parent / "update.sh"
     server.version_cache = None
@@ -3438,6 +3679,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        server.interactive_broker.close_all()
         server.server_close()
 
 
