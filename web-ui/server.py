@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+from collections import deque
 import fcntl
 import hashlib
 import hmac
@@ -1234,6 +1235,7 @@ class InteractiveJobBroker:
         self.runtime_dir = Path(runtime_dir)
         self.lock = threading.RLock()
         self.clients = {}
+        self.max_replay_bytes = 1024 * 1024
 
     def socket_path(self, unit):
         digest = hashlib.sha256(unit.encode("utf-8")).hexdigest()[:16]
@@ -1241,6 +1243,8 @@ class InteractiveJobBroker:
 
     def _remove(self, unit, item):
         with self.lock:
+            item["closed"] = True
+            item["condition"].notify_all()
             if self.clients.get(unit) is item:
                 self.clients.pop(unit, None)
         try:
@@ -1259,15 +1263,61 @@ class InteractiveJobBroker:
                 data = connection.recv(8192)
                 if not data:
                     break
-                if not item["ready"].is_set():
-                    if data.startswith(b"BUSY:"):
-                        item["busy"] = True
-                    item["ready"].set()
+                with self.lock:
+                    if not item["ready"].is_set():
+                        if data.startswith(b"BUSY:"):
+                            item["busy"] = True
+                        item["ready"].set()
+                    if not item["busy"]:
+                        item["next_seq"] += 1
+                        item["output"].append((item["next_seq"], bytes(data)))
+                        item["output_bytes"] += len(data)
+                        while item["output_bytes"] > self.max_replay_bytes and item["output"]:
+                            old_seq, old_data = item["output"].popleft()
+                            item["output_bytes"] -= len(old_data)
+                            item["truncated_before"] = old_seq
+                        item["condition"].notify_all()
         except OSError:
             pass
         finally:
             item["ready"].set()
             self._remove(unit, item)
+
+    def _owned_item(self, unit, owner):
+        item = self.clients.get(unit)
+        if item is None or item["owner"] != owner:
+            raise RuntimeError("This WebUI session is not attached to the job.")
+        return item
+
+    def _output_snapshot_locked(self, item, after_seq):
+        chunks = [(seq, data) for seq, data in item["output"] if seq > after_seq]
+        first_seq = item["output"][0][0] if item["output"] else item["next_seq"] + 1
+        return {
+            "chunks": chunks,
+            "next_seq": item["next_seq"],
+            "truncated": after_seq < item["truncated_before"] or after_seq < first_seq - 1,
+            "closed": item["closed"],
+        }
+
+    def output_since(self, unit, owner, after_seq=0):
+        if not isinstance(after_seq, int) or isinstance(after_seq, bool) or after_seq < 0:
+            raise ValueError("Output sequence is invalid.")
+        with self.lock:
+            item = self._owned_item(unit, owner)
+            return self._output_snapshot_locked(item, after_seq)
+
+    def wait_for_output(self, unit, owner, after_seq=0, timeout=30):
+        if not isinstance(after_seq, int) or isinstance(after_seq, bool) or after_seq < 0:
+            raise ValueError("Output sequence is invalid.")
+        deadline = time.monotonic() + max(0, min(float(timeout), 60.0))
+        with self.lock:
+            item = self._owned_item(unit, owner)
+            while item["next_seq"] <= after_seq and not item["closed"]:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                item["condition"].wait(remaining)
+            return self._output_snapshot_locked(item, after_seq)
 
     def attach(self, unit, owner, socket_path):
         with self.lock:
@@ -1292,7 +1342,12 @@ class InteractiveJobBroker:
             except OSError as error:
                 connection.close()
                 raise RuntimeError("The interactive job socket is unavailable.") from error
-            item = {"socket": connection, "owner": owner, "ready": threading.Event(), "busy": False}
+            item = {
+                "socket": connection, "owner": owner, "ready": threading.Event(), "busy": False,
+                "output": deque(), "output_bytes": 0, "next_seq": 0,
+                "truncated_before": 0, "closed": False,
+                "condition": threading.Condition(self.lock),
+            }
             with self.lock:
                 if unit in self.clients:
                     connection.close()

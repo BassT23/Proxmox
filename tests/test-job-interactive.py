@@ -62,6 +62,7 @@ def main():
             "printf READY; read -r value; printf 'GOT:%s\\n' \"$value\"; printf READY2; read -r second; printf 'DONE:%s\\n' \"$second\"",
         ]
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        backlog_server = None
         try:
             wait_for_socket(socket_path)
             assert directory.stat().st_mode & 0o777 == 0o700
@@ -112,10 +113,35 @@ def main():
             attach.stdin.close()
             assert attach.wait(timeout=5) == 0
             assert attach_server.wait(timeout=5) == 0
+
+            backlog_socket = directory / "backlog.sock"
+            backlog_size = 1024 * 1024
+            backlog_server = subprocess.Popen([
+                str(BRIDGE), "--socket", str(backlog_socket), "--", "python3", "-c",
+                f"import sys,time;sys.stdout.buffer.write(b'X'*{backlog_size});sys.stdout.flush();time.sleep(1)",
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            wait_for_socket(backlog_socket)
+            time.sleep(0.25)
+            backlog_client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            backlog_client.settimeout(5)
+            backlog_client.connect(str(backlog_socket))
+            backlog = bytearray()
+            while len(backlog) < backlog_size:
+                chunk = backlog_client.recv(65536)
+                if not chunk:
+                    break
+                backlog.extend(chunk)
+            backlog_client.close()
+            assert len(backlog) == backlog_size
+            assert backlog == b"X" * backlog_size
+            assert backlog_server.wait(timeout=5) == 0
         finally:
             if process.poll() is None:
                 process.terminate()
                 process.wait(timeout=5)
+            if backlog_server is not None and backlog_server.poll() is None:
+                backlog_server.terminate()
+                backlog_server.wait(timeout=5)
             if process.stdout:
                 process.stdout.close()
             if process.stderr:

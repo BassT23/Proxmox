@@ -18,6 +18,7 @@ import socket
 import sys
 import struct
 import termios
+import time
 import tty
 
 
@@ -74,6 +75,35 @@ def client_disconnected(client):
         return True
 
 
+def client_events(selector, client, writable):
+    events = selectors.EVENT_READ | (selectors.EVENT_WRITE if writable else 0)
+    selector.modify(client, events, "client")
+
+
+def flush_pending(client, pending):
+    if not pending:
+        return True
+    try:
+        sent = client.send(pending)
+    except BlockingIOError:
+        return False
+    except OSError:
+        return None
+    del pending[:sent]
+    return True
+
+
+def flush_client_before_exit(selector, client, pending, timeout=1.0):
+    deadline = time.monotonic() + timeout
+    while pending and time.monotonic() < deadline:
+        result = flush_pending(client, pending)
+        if result is None:
+            return False
+        if pending:
+            selector.select(timeout=min(0.05, max(0, deadline - time.monotonic())))
+    return not pending
+
+
 def run_bridge(socket_path, command):
     if not command:
         print("PTY bridge: missing child command", file=sys.stderr)
@@ -88,6 +118,7 @@ def run_bridge(socket_path, command):
     selector = selectors.DefaultSelector()
     selector.register(master_fd, selectors.EVENT_READ, "pty")
     client = None
+    client_pending = bytearray()
     backlog = bytearray()
     max_backlog = 1024 * 1024
     try:
@@ -96,6 +127,7 @@ def run_bridge(socket_path, command):
                 selector.unregister(client)
                 client.close()
                 client = None
+                client_pending.clear()
             try:
                 connection, _ = server.accept()
                 connection.setblocking(False)
@@ -110,13 +142,14 @@ def run_bridge(socket_path, command):
                     connection.close()
                 else:
                     client = connection
+                    client_pending = bytearray(backlog)
                     selector.register(client, selectors.EVENT_READ, "client")
-                    if backlog:
-                        client.sendall(backlog)
+                    if client_pending:
+                        client_events(selector, client, True)
             except BlockingIOError:
                 pass
 
-            for key, _ in selector.select(timeout=0.2):
+            for key, mask in selector.select(timeout=0.2):
                 if key.data == "pty":
                     try:
                         data = os.read(master_fd, 8192)
@@ -126,6 +159,8 @@ def run_bridge(socket_path, command):
                         else:
                             raise
                     if not data:
+                        if client is not None:
+                            flush_client_before_exit(selector, client, client_pending)
                         _, status = os.waitpid(child_pid, 0)
                         return os.waitstatus_to_exitcode(status)
                     backlog.extend(data)
@@ -134,23 +169,33 @@ def run_bridge(socket_path, command):
                     sys.stdout.buffer.write(data)
                     sys.stdout.buffer.flush()
                     if client is not None:
-                        try:
-                            client.sendall(data)
-                        except OSError:
+                        client_pending.extend(data)
+                        if len(client_pending) > max_backlog:
+                            del client_pending[:-max_backlog]
+                        client_events(selector, client, True)
+                else:
+                    if mask & selectors.EVENT_WRITE:
+                        result = flush_pending(client, client_pending)
+                        if result is None:
                             selector.unregister(client)
                             client.close()
                             client = None
-                else:
-                    try:
-                        data = client.recv(8192)
-                    except OSError:
-                        data = b""
-                    if not data:
-                        selector.unregister(client)
-                        client.close()
-                        client = None
-                    else:
-                        write_pty_data(master_fd, data)
+                            client_pending.clear()
+                            continue
+                        if not client_pending:
+                            client_events(selector, client, False)
+                    if client is not None and mask & selectors.EVENT_READ:
+                        try:
+                            data = client.recv(8192)
+                        except OSError:
+                            data = b""
+                        if not data:
+                            selector.unregister(client)
+                            client.close()
+                            client = None
+                            client_pending.clear()
+                        else:
+                            write_pty_data(master_fd, data)
     finally:
         try:
             selector.unregister(master_fd)
