@@ -5,7 +5,7 @@
 # Update #
 ##########
 
-VERSION="5.1.2"
+VERSION="5.1.3"
 
 # A protection failure must make the overall update job fail, even when the
 # configured continue-on-error mode allows other guests to be processed.

@@ -2,10 +2,22 @@ Changelog:
 ==========
 
 **Unreleased**
+
+**v5.1.3 Beta 1** (beta / release candidate for validation)
 Improved:
-- Community-Scripts update output is streamed while the helper runs, preserving the real exit status and avoiding a misleading silent wait (#294)
-- Local Proxmox node actions use the stable internal `local-host` target ID while retaining the real hostname for display (#325)
-- mobile Web UI header layout and navigation received a small responsive polish
+- interactive update jobs can remain attached to a server-side PTY across CLI/WebUI disconnects and reconnects
+- headless/non-interactive policy is applied consistently across the supported update paths
+- check and Community-Scripts output is streamed while commands run, preserving the real exit status
+- local Proxmox node actions use the stable internal `local-host` target ID while retaining the real hostname for display (#325)
+- summary notification mail uses compact per-system blocks with explicit Security/Normal update labels
+- mobile Web UI header and navigation received a small responsive polish
+
+Fixed:
+- installer Welcome-Screen lookup now uses the extracted archive payload root
+- explicit single-target checks no longer show the unrelated global filter summary
+- failed or missing checks no longer hard-block WebUI updates; continuing requires explicit confirmation
+- interactive WebUI jobs no longer enter a recursive render loop or resolve Attach/Input through the slow global job list
+- QEMU Guest Agent `guest-exec` disabled by guest policy is reported separately from QGA transport/readiness failures (#256)
 
 **v5.1** (05.09.2026)
 New:
