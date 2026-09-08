@@ -814,6 +814,7 @@ else:
 lines = ["Ultimate Updater status", "=======================", ""]
 if updates:
     lines.append("Available updates:")
+    separator = "----------------------------"
     nodes_with_updates = {str(target.get("node") or "Unassigned") for target, _ in updates}
     rendered_ids = {str(target.get("id") or "") for target, _ in updates}
     for target in targets:
@@ -831,24 +832,26 @@ if updates:
             grouped[node] = []
             node_order.append(node)
         grouped[node].append((target, count))
-    for node in node_order:
+    for node_index, node in enumerate(node_order):
         node_targets = grouped[node]
         node_target = next((target for target, _ in node_targets if target.get("type") == "host"), None)
-        lines.extend(["", f"🖥️ {node}"])
+        if node_index == 0:
+            lines.append("")
         if node_target is not None:
+            lines.append(f"🖥️ {node}")
             lines.extend(update_split(node_target))
+            lines.append(separator)
         else:
-            lines.append(f"⬆️ {sum(count for _, count in node_targets)} Updates")
+            lines.extend([f"🖥️ {node}", f"⬆️ {sum(count for _, count in node_targets)} Updates", separator])
         guest_targets = [(target, count) for target, count in node_targets if target.get("type") != "host"]
-        for index, (target, _) in enumerate(guest_targets):
+        for target, _ in guest_targets:
             # The node heading already represents a host target. Do not
             # render the same host a second time as a guest-like row.
             lines.append(f"{target_icon(target)} {target_name(target)}")
             lines.extend(update_split(target))
             if target.get("reboot_required") is True:
                 lines.append("🔄 Neustart erforderlich")
-            if index < len(guest_targets) - 1:
-                lines.append("")
+            lines.append(separator)
 else:
     lines.append("Available updates: none")
 if has_known_count:

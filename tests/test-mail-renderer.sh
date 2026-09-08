@@ -51,6 +51,20 @@ grep -Fqx 'Security Updates: Unknown' "$WORK_DIR/status-mail"
 grep -Fqx 'Normal Updates: 1' "$WORK_DIR/status-mail"
 grep -Fqx 'Updates: 5' "$WORK_DIR/status-mail"
 grep -Fq 'Total available updates: 137' "$WORK_DIR/status-mail"
+[[ $(grep -Fc -- '----------------------------' "$WORK_DIR/status-mail") -eq 5 ]]
+python3 - "$WORK_DIR/status-mail" <<'PY'
+import sys
+
+lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+separator = "----------------------------"
+positions = [index for index, line in enumerate(lines) if line == separator]
+assert positions, "no system separators found"
+for index in positions[:-1]:
+    assert lines[index + 1] != "", "blank line between system blocks"
+assert lines[positions[-1] + 1] == ""
+total_index = lines.index("Total available updates: 137")
+assert total_index == positions[-1] + 2
+PY
 if grep -Fq '⬆️' "$WORK_DIR/status-mail"; then
   echo 'legacy total-only update lines remain in check mail' >&2
   exit 1
