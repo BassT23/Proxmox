@@ -2363,6 +2363,37 @@ class StatusHandler(BaseHTTPRequestHandler):
             return None
         return next((row for row in self.jobs() if row["unit"] == unit), None)
 
+    def direct_job_record(self, unit):
+        """Read one local job state without refreshing the complete job list."""
+        if not JOB_RE.fullmatch(unit):
+            return None
+        state_file = self.server.jobs_dir / f"{unit}.state"
+        try:
+            values = {}
+            for line in state_file.read_text(encoding="utf-8").splitlines():
+                key, separator, value = line.partition("=")
+                if separator:
+                    values[key] = value
+        except OSError:
+            return None
+        if values.get("unit") != unit:
+            return None
+        exit_code = values.get("exit_code", "")
+        return {
+            "unit": unit,
+            "target": values.get("target", ""),
+            "state": values.get("state", ""),
+            "started_at": values.get("started_at") or None,
+            "finished_at": values.get("finished_at") or None,
+            "exit_code": int(exit_code) if exit_code.lstrip("-").isdigit() else None,
+            "type": values.get("type") if values.get("type") in {"check", "update", "selfupdate"} else "update",
+            "source": values.get("source") or None,
+            "owner_node": values.get("owner_node") or None,
+            "remote": bool(values.get("owner_node")),
+            "interactive": values.get("interactive", "false").lower() == "true",
+            "socket_available": False,
+        }
+
     def session_owner(self):
         cookie = self.headers.get("Cookie", "")
         return next((part.strip().split("=", 1)[1] for part in cookie.split(";")
@@ -2371,7 +2402,11 @@ class StatusHandler(BaseHTTPRequestHandler):
     def interactive_job_context(self, unit):
         if not JOB_RE.fullmatch(unit):
             raise ValueError("Invalid job ID.")
-        job = self.job_record(unit)
+        # Attach/input requests already carry the complete unit ID.  Avoid the
+        # global runner list here: it refreshes every state file and performs
+        # one systemctl query per job, which can exceed the HTTP timeout while
+        # the requested local job is otherwise healthy.
+        job = self.direct_job_record(unit)
         if not job:
             raise KeyError("Job not found.")
         if job.get("state") != "running":

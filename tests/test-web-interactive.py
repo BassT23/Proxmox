@@ -6,6 +6,7 @@ import socket
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
 from pathlib import Path
 
 
@@ -70,7 +71,35 @@ def test_webui_exposes_only_authenticated_input_actions():
     assert "new MutationObserver(()=>decorateInteractiveJobs())" not in WEB.PAGE
 
 
+def test_interactive_lookup_reads_requested_state_directly():
+    with tempfile.TemporaryDirectory() as temporary:
+        jobs_dir = Path(temporary)
+        unit = "ultimate-updater-update-test-1"
+        (jobs_dir / f"{unit}.state").write_text(
+            "\n".join([
+                "schema_version=1",
+                f"unit={unit}",
+                "target=1",
+                "state=running",
+                "started_at=2026-09-08T00:00:00Z",
+                "finished_at=",
+                "exit_code=",
+                "type=update",
+                "interactive=true",
+            ]) + "\n",
+            encoding="utf-8",
+        )
+        handler = WEB.StatusHandler.__new__(WEB.StatusHandler)
+        handler.server = SimpleNamespace(jobs_dir=jobs_dir)
+        handler.jobs = lambda: (_ for _ in ()).throw(AssertionError("global job list was queried"))
+        record = handler.direct_job_record(unit)
+        assert record["unit"] == unit
+        assert record["state"] == "running"
+        assert record["interactive"] is True
+
+
 test_state_metadata_is_backward_compatible()
 test_broker_forwards_input_and_releases_attachment()
 test_webui_exposes_only_authenticated_input_actions()
+test_interactive_lookup_reads_requested_state_directly()
 print("web interactive UI tests: PASS")
