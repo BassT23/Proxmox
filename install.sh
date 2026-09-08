@@ -516,6 +516,12 @@ INSTALL () {
         install -m 0644 "$TEMP_FILES/web-ui/assets/$UI_ASSET" "$LOCAL_FILES/web-ui/assets/$UI_ASSET"
       fi
     done
+    if [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.js" && -f "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.css" ]]; then
+      mkdir -p "$LOCAL_FILES/web-ui/assets/vendor/xterm"
+      install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.js" "$LOCAL_FILES/web-ui/assets/vendor/xterm/xterm.js"
+      install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.css" "$LOCAL_FILES/web-ui/assets/vendor/xterm/xterm.css"
+      [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/LICENSE" ]] && install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/LICENSE" "$LOCAL_FILES/web-ui/assets/vendor/xterm/LICENSE"
+    fi
     install -m 0644 "$TEMP_FILES/$WEB_SERVICE_NAME" "$WEB_SERVICE_PATH"
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
     if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
@@ -735,6 +741,12 @@ UPDATE () {
           install -m 0644 "$TEMP_FILES/web-ui/assets/$UI_ASSET" "$LOCAL_FILES/web-ui/assets/$UI_ASSET"
         fi
       done
+    fi
+    if [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.js" && -f "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.css" ]]; then
+      mkdir -p "$LOCAL_FILES/web-ui/assets/vendor/xterm"
+      install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.js" "$LOCAL_FILES/web-ui/assets/vendor/xterm/xterm.js"
+      install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.css" "$LOCAL_FILES/web-ui/assets/vendor/xterm/xterm.css"
+      [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/LICENSE" ]] && install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/LICENSE" "$LOCAL_FILES/web-ui/assets/vendor/xterm/LICENSE"
     fi
     if [[ -f "$TEMP_FILES/$WEB_SERVICE_NAME" ]]; then
       install -m 0644 "$TEMP_FILES/$WEB_SERVICE_NAME" "$WEB_SERVICE_PATH"

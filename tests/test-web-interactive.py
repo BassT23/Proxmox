@@ -305,6 +305,28 @@ def test_webui_exposes_only_authenticated_input_actions():
     assert "new MutationObserver(()=>decorateInteractiveJobs())" not in WEB.PAGE
 
 
+def test_local_xterm_terminal_assets_and_stable_panel():
+    assets = ROOT / "web-ui" / "assets" / "vendor" / "xterm"
+    assert (assets / "xterm.js").is_file()
+    assert (assets / "xterm.css").is_file()
+    assert (assets / "LICENSE").is_file()
+    assert "/assets/vendor/xterm/xterm.js" in WEB.PAGE
+    assert "/assets/vendor/xterm/xterm.css" in WEB.PAGE
+    assert "https://" not in WEB.PAGE.split("/assets/vendor/xterm/xterm.js", 1)[0]
+    assert "new Terminal({cols:80,rows:24,disableStdin:true" in WEB.PAGE
+    assert "new EventSource(`/api/jobs/${encodeURIComponent(unit)}/stream" in WEB.PAGE
+    assert "terminal.write(terminalBytes(event.data))" in WEB.PAGE
+    assert "new Uint8Array(binary.length)" in WEB.PAGE
+    jobs_position = WEB.PAGE.index('<section id="jobs"')
+    terminal_position = WEB.PAGE.index('<section id="interactive-terminal-panel"')
+    assert terminal_position > jobs_position
+    assert "data-interactive-terminal" in WEB.PAGE
+    assert "window.addEventListener('pagehide'" not in WEB.PAGE
+    installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+    assert "assets/vendor/xterm/xterm.js" in installer
+    assert "assets/vendor/xterm/xterm.css" in installer
+
+
 def test_interactive_lookup_reads_requested_state_directly():
     with tempfile.TemporaryDirectory() as temporary:
         jobs_dir = Path(temporary)
@@ -337,6 +359,7 @@ test_broker_forwards_input_and_releases_attachment()
 test_broker_replays_exact_bytes_with_sequences_and_wakes_waiter()
 test_attachment_lifecycle_and_stream_grace()
 test_authenticated_sse_stream_uses_existing_attachment()
+test_local_xterm_terminal_assets_and_stable_panel()
 test_webui_exposes_only_authenticated_input_actions()
 test_interactive_lookup_reads_requested_state_directly()
 print("web interactive UI tests: PASS")
