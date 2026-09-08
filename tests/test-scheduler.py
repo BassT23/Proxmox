@@ -14,7 +14,7 @@ spec.loader.exec_module(server)
 base = {
     "id": "0123456789ab", "name": "Nightly check", "type": "check-all",
     "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    "time": "03:00", "enabled": True, "targets": [],
+    "month_days": [], "time": "03:00", "enabled": True, "targets": [],
 }
 assert server.scheduler_validate(base, base["id"]) == base
 assert server.scheduler_calendar(base) == "*-*-* 03:00:00"
@@ -22,6 +22,13 @@ single = {**base, "days": ["Sun"], "time": "04:05"}
 assert server.scheduler_calendar(single) == "Sun *-*-* 04:05:00"
 multiple = {**base, "days": ["Mon", "Wed", "Fri"]}
 assert server.scheduler_calendar(multiple) == "Mon,Wed,Fri *-*-* 03:00:00"
+monthly = {**base, "month_days": [15, 1], "time": "06:00"}
+monthly = server.scheduler_validate(monthly, base["id"])
+assert monthly["month_days"] == [1, 15]
+assert server.scheduler_calendar(monthly) == "*-*-01,15 06:00:00"
+assert server.scheduler_calendar({**base, "month_days": [31]}) == "*-*-31 03:00:00"
+assert server.scheduler_validate({**base, "month_days": [1, 1, 15]}, base["id"])["month_days"] == [1, 15]
+assert server.scheduler_validate({**base, "days": [], "month_days": [1]}, base["id"])["days"] == []
 assert server.scheduler_next_run_value("1777000000000000") is not None
 assert server.scheduler_next_run_value("Tue 2026-08-25 04:00:00 CEST").startswith("2026-08-25T04:00:00")
 assert server.scheduler_next_run_value("n/a") is None
@@ -44,6 +51,11 @@ for invalid in (
     {**base, "type": "check-one"},
     {**base, "days": []},
     {**base, "days": ["Someday"]},
+    {**base, "month_days": [0]},
+    {**base, "month_days": [32]},
+    {**base, "month_days": ["1"]},
+    {**base, "month_days": "1,15"},
+    {**base, "days": [], "month_days": []},
     {**base, "name": "bad\nname"},
     {**base, "type": "check-selected", "targets": []},
     {**base, "targets": ["bad target"]},

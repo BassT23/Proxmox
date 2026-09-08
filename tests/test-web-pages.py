@@ -94,6 +94,9 @@ scheduler = page.split('id="scheduler-page"', 1)[1].split('<footer', 1)[0]
 assert 'class="summary dashboard-kpis"' not in scheduler
 assert 'name="time"' in scheduler
 assert 'name="days"' in scheduler
+assert scheduler.count('name="month_days"') == 31
+assert 'Days of month' in scheduler
+assert 'month days take precedence over weekdays' in scheduler
 assert 'Select all visible' in scheduler
 assert 'schedule-target-table' in scheduler
 assert 'schedule-selected' in scheduler
