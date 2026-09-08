@@ -912,7 +912,7 @@ remote_target_check() {
     return 1
   fi
   # shellcheck disable=SC2016
-  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q QGA_EXEC_SCRIPT=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true STATUS_MODEL_PARTIAL=true bash -s -- %q %q >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote guest status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; if [[ "$finish_rc" -ne 0 ]]; then exit "$finish_rc"; fi; exit "$remote_rc"' \
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q QGA_EXEC_SCRIPT=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_SINGLE_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true bash -s -- %q %q >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote guest status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; if [[ "$finish_rc" -ne 0 ]]; then exit "$finish_rc"; fi; exit "$remote_rc"' \
     "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
     "$remote_runtime" "$remote_qga" "$remote_internal_ssh" "$remote_internal_conf" "$node" "$remote_status_model" "$remote_status_file" \
     "$remote_status_file.records" "$mode" "$target" "$remote_status_file.records" \
@@ -1210,9 +1210,9 @@ run_check() {
     return "$check_result"
   fi
   case "$kind" in
-    host) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" chost; check_result=$? ;;
-    container) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" ccontainer "$target"; check_result=$? ;;
-    vm) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true UU_EXPLICIT_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" cvm "$target"; check_result=$? ;;
+    host) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_SINGLE_TARGET_CHECK=true UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" chost; check_result=$? ;;
+    container) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_SINGLE_TARGET_CHECK=true UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" ccontainer "$target"; check_result=$? ;;
+    vm) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_SINGLE_TARGET_CHECK=true UU_DEFER_NOTIFICATION=true UU_EXPLICIT_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" cvm "$target"; check_result=$? ;;
     external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; "$EXTERNAL_APT_SCRIPT" check "$target"; check_result=$? ;;
   esac
   print_check_summary "$target" "$check_result"

@@ -1738,7 +1738,7 @@ fi
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   ARGUMENTS "$@"
   # Print any tag selection summary captured during config parse
-  if [[ "$RDU" != true && "$RICM" != true && "$TAG_OUTPUT" != false ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
+  if [[ "$RDU" != true && "$RICM" != true && "$TAG_OUTPUT" != false && "${UU_SINGLE_TARGET_CHECK:-false}" != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
 else
   echo -e "${OR} You are offline${CL}"
   mark_check_hard_failure
