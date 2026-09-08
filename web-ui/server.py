@@ -940,13 +940,13 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     renderJobs=renderJobsStable;window.renderJobs=renderJobsStable;
     function normalizeJobsHeading(){const toggle=document.querySelector('#jobs .job-toggle'),label=toggle?.querySelector('span:not(.chevron)');if(!label)return;const count=label.querySelector('.job-count');label.textContent='Jobs ';if(count)label.appendChild(count)}
     function decorateJobRows(){normalizeJobsHeading();const list=document.querySelector('#jobs .job-list');if(!list)return;for(const item of list.querySelectorAll('.job')){const job=jobs.find(candidate=>candidate.unit===item.dataset.unit);if(!job)continue;item.dataset.running=String(job.state==='running');const target=item.querySelector('span');if(target){const label=job.source==='initial-inventory'?'INITIAL INVENTORY':String(job.type||'update').toUpperCase();target.textContent=`${label} · ${job.owner_node?`${friendlyJobTarget(job.target)} · ${job.owner_node}`:friendlyJobTarget(job.target)}`}let meta=item.querySelector('.job-meta');if(!meta){meta=document.createElement('small');meta.className='job-meta';item.appendChild(meta)}const started=job.started_at?date(job.started_at):'Unknown';let duration='';if(job.started_at){const end=job.finished_at?Date.parse(job.finished_at):Date.now(),start=Date.parse(job.started_at);if(Number.isFinite(start)&&Number.isFinite(end))duration=` · ${Math.max(0,Math.round((end-start)/1000))}s`};meta.textContent=`Started ${started}${duration} · Exit ${job.exit_code===null||job.exit_code===undefined?'—':job.exit_code}`}}
-    const interactiveAttached=new Set(),interactiveQueues=new Map();
+    const interactiveAttached=new Set(),interactiveAttachments=new Map(),interactiveQueues=new Map();
     const interactiveEncode=value=>{const bytes=new TextEncoder().encode(value);let binary='';bytes.forEach(byte=>binary+=String.fromCharCode(byte));return btoa(binary)};
     const interactiveKey=event=>{if(event.ctrlKey&&event.key.length===1){const code=event.key.toUpperCase().charCodeAt(0);if(code>=64&&code<=95)return String.fromCharCode(code-64)}const keys={Enter:'\r',Tab:'\t',Escape:'\x1b',Backspace:'\x7f','ArrowUp':'\x1b[A','ArrowDown':'\x1b[B','ArrowRight':'\x1b[C','ArrowLeft':'\x1b[D',Home:'\x1b[H',End:'\x1b[F',Delete:'\x1b[3~'};return keys[event.key]??(event.key.length===1?event.key:null)};
-    const sendInteractive=async(unit,data)=>{if(!data)return;const previous=interactiveQueues.get(unit)||Promise.resolve(),next=previous.catch(()=>{}).then(()=>api(`/api/jobs/${encodeURIComponent(unit)}/input`,{method:'POST',body:JSON.stringify({data:interactiveEncode(data)})}));interactiveQueues.set(unit,next);try{await next}catch(error){interactiveAttached.delete(unit);notice(error.message,true);decorateInteractiveJobs()}};
-    const detachInteractive=async unit=>{try{await api(`/api/jobs/${encodeURIComponent(unit)}/detach`,{method:'POST',body:'{}'})}catch(_error){}interactiveAttached.delete(unit);decorateInteractiveJobs()};
-    const attachInteractive=async unit=>{try{await api(`/api/jobs/${encodeURIComponent(unit)}/attach`,{method:'POST',body:'{}'});interactiveAttached.add(unit);notice('Interactive input attached.');decorateInteractiveJobs();document.querySelector(`[data-interactive-input="${CSS.escape(unit)}"]`)?.focus()}catch(error){notice(error.message,true)}};
-    const decorateInteractiveJob=item=>{const unit=item.dataset.unit,job=jobs.find(candidate=>candidate.unit===unit),available=job?.interactive&&job?.socket_available&&job?.state==='running';let controls=item.querySelector('.interactive-controls');if(!available){if(controls)controls.remove();interactiveAttached.delete(unit);return}if(!controls){controls=document.createElement('div');controls.className='interactive-controls';controls.innerHTML='<span class="interactive-status"></span><button type="button" data-interactive-attach>Attach input</button><button type="button" data-interactive-detach hidden>Detach</button><textarea rows="1" spellcheck="false" autocomplete="off" hidden></textarea><span class="interactive-help">Keyboard input is sent to the running job; Enter, Tab, Escape and arrow keys are supported.</span>';item.appendChild(controls);controls.querySelector('[data-interactive-attach]').onclick=()=>attachInteractive(unit);controls.querySelector('[data-interactive-detach]').onclick=()=>detachInteractive(unit);const input=controls.querySelector('textarea');input.dataset.interactiveInput=unit;input.addEventListener('keydown',event=>{const data=interactiveKey(event);if(data===null)return;event.preventDefault();sendInteractive(unit,data)});input.addEventListener('paste',event=>{event.preventDefault();sendInteractive(unit,event.clipboardData?.getData('text')||'')})}const attached=interactiveAttached.has(unit),status=controls.querySelector('.interactive-status'),attach=controls.querySelector('[data-interactive-attach]'),detach=controls.querySelector('[data-interactive-detach]'),input=controls.querySelector('textarea');status.textContent=attached?'Interactive input attached':'Interactive input available';attach.hidden=attached;detach.hidden=!attached;input.hidden=!attached;input.disabled=!attached};
+    const sendInteractive=async(unit,data)=>{if(!data)return;const attachment_id=interactiveAttachments.get(unit);if(!attachment_id)return;const previous=interactiveQueues.get(unit)||Promise.resolve(),next=previous.catch(()=>{}).then(()=>api(`/api/jobs/${encodeURIComponent(unit)}/input`,{method:'POST',body:JSON.stringify({attachment_id,data:interactiveEncode(data)})}));interactiveQueues.set(unit,next);try{await next}catch(error){interactiveAttached.delete(unit);interactiveAttachments.delete(unit);notice(error.message,true);decorateInteractiveJobs()}};
+    const detachInteractive=async unit=>{const attachment_id=interactiveAttachments.get(unit);try{if(attachment_id)await api(`/api/jobs/${encodeURIComponent(unit)}/detach`,{method:'POST',body:JSON.stringify({attachment_id})})}catch(_error){}interactiveAttached.delete(unit);interactiveAttachments.delete(unit);decorateInteractiveJobs()};
+    const attachInteractive=async unit=>{try{const result=await api(`/api/jobs/${encodeURIComponent(unit)}/attach`,{method:'POST',body:'{}'});if(!result.attachment_id)throw new Error('The interactive attachment is unavailable.');interactiveAttachments.set(unit,result.attachment_id);interactiveAttached.add(unit);notice('Interactive input attached.');decorateInteractiveJobs();document.querySelector(`[data-interactive-input="${CSS.escape(unit)}"]`)?.focus()}catch(error){notice(error.message,true)}};
+    const decorateInteractiveJob=item=>{const unit=item.dataset.unit,job=jobs.find(candidate=>candidate.unit===unit),available=job?.interactive&&job?.socket_available&&job?.state==='running';let controls=item.querySelector('.interactive-controls');if(!available){if(controls)controls.remove();interactiveAttached.delete(unit);interactiveAttachments.delete(unit);return}if(!controls){controls=document.createElement('div');controls.className='interactive-controls';controls.innerHTML='<span class="interactive-status"></span><button type="button" data-interactive-attach>Attach input</button><button type="button" data-interactive-detach hidden>Detach</button><textarea rows="1" spellcheck="false" autocomplete="off" hidden></textarea><span class="interactive-help">Keyboard input is sent to the running job; Enter, Tab, Escape and arrow keys are supported.</span>';item.appendChild(controls);controls.querySelector('[data-interactive-attach]').onclick=()=>attachInteractive(unit);controls.querySelector('[data-interactive-detach]').onclick=()=>detachInteractive(unit);const input=controls.querySelector('textarea');input.dataset.interactiveInput=unit;input.addEventListener('keydown',event=>{const data=interactiveKey(event);if(data===null)return;event.preventDefault();sendInteractive(unit,data)});input.addEventListener('paste',event=>{event.preventDefault();sendInteractive(unit,event.clipboardData?.getData('text')||'')})}const attached=interactiveAttached.has(unit),status=controls.querySelector('.interactive-status'),attach=controls.querySelector('[data-interactive-attach]'),detach=controls.querySelector('[data-interactive-detach]'),input=controls.querySelector('textarea');status.textContent=attached?'Interactive input attached':'Interactive input available';attach.hidden=attached;detach.hidden=!attached;input.hidden=!attached;input.disabled=!attached};
     const decorateInteractiveJobs=()=>document.querySelectorAll('#jobs .job').forEach(decorateInteractiveJob);
     const renderJobsBase=renderJobs;renderJobs=function(){renderJobsBase();renderRunningIndicator();decorateJobRows();decorateInteractiveJobs()};window.renderJobs=renderJobs;
     document.getElementById('check-all').onclick=()=>globalAction(false);
@@ -1106,7 +1106,6 @@ PAGE = PAGE.replace('    bootstrap();', '''    const statusIcon=kind=>{const pat
     const renderWithStatusIcons=render;render=function(data){renderWithStatusIcons(data);decorateStatusIcons(document)};
     new MutationObserver(()=>{decorateStatusIcons(document.getElementById('details'));decorateStatusIcons(document.getElementById('jobs'))}).observe(document.getElementById('details'),{childList:true,subtree:true});
     new MutationObserver(()=>decorateStatusIcons(document.getElementById('jobs'))).observe(document.getElementById('jobs'),{childList:true,subtree:true});
-    window.addEventListener('pagehide',()=>{for(const unit of interactiveAttached){fetch(`/api/jobs/${encodeURIComponent(unit)}/detach`,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:'{}'}).catch(()=>{})}});
     bootstrap();''')
 PAGE = PAGE.replace('    const statusIcon=kind=>', '    const decorateOverviewIcons=()=>document.querySelectorAll("[data-overview-icon]").forEach(element=>{if(!element.querySelector(".status-icon"))element.innerHTML=statusIcon(element.dataset.overviewIcon)});\n    const statusIcon=kind=>')
 PAGE = PAGE.replace("activity:'<path d=\"M4 12h3l2-5 4 10 2-5h5\"/>'};", "package:'<path d=\"m4 8 8-4 8 4-8 4-8-4Zm0 0v8l8 4 8-4V8m-8 4v8\"/>',activity:'<path d=\"M4 12h3l2-5 4 10 2-5h5\"/>'};")
@@ -1231,6 +1230,10 @@ class InteractiveJobBroker:
     durable output source used by the existing job-log endpoint.
     """
 
+    STREAM_GRACE_SECONDS = 15
+    ATTACHMENT_ID_BYTES = 24
+    ATTACHMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{32,}$")
+
     def __init__(self, runtime_dir):
         self.runtime_dir = Path(runtime_dir)
         self.lock = threading.RLock()
@@ -1243,7 +1246,12 @@ class InteractiveJobBroker:
 
     def _remove(self, unit, item):
         with self.lock:
+            timer = item.get("grace_timer")
+            if timer is not None:
+                timer.cancel()
+                item["grace_timer"] = None
             item["closed"] = True
+            item["stream_id"] = None
             item["condition"].notify_all()
             if self.clients.get(unit) is item:
                 self.clients.pop(unit, None)
@@ -1295,6 +1303,7 @@ class InteractiveJobBroker:
         return {
             "chunks": chunks,
             "next_seq": item["next_seq"],
+            "first_seq": first_seq,
             "truncated": after_seq < item["truncated_before"] or after_seq < first_seq - 1,
             "closed": item["closed"],
         }
@@ -1318,6 +1327,16 @@ class InteractiveJobBroker:
                     break
                 item["condition"].wait(remaining)
             return self._output_snapshot_locked(item, after_seq)
+
+    @classmethod
+    def valid_attachment_id(cls, attachment_id):
+        return isinstance(attachment_id, str) and bool(cls.ATTACHMENT_ID_RE.fullmatch(attachment_id))
+
+    def _attachment_item(self, unit, owner, attachment_id=None):
+        item = self._owned_item(unit, owner)
+        if attachment_id is not None and item["attachment_id"] != attachment_id:
+            raise RuntimeError("This WebUI attachment is no longer valid.")
+        return item
 
     def attach(self, unit, owner, socket_path):
         with self.lock:
@@ -1346,6 +1365,8 @@ class InteractiveJobBroker:
                 "socket": connection, "owner": owner, "ready": threading.Event(), "busy": False,
                 "output": deque(), "output_bytes": 0, "next_seq": 0,
                 "truncated_before": 0, "closed": False,
+                "attachment_id": secrets.token_urlsafe(self.ATTACHMENT_ID_BYTES),
+                "stream_id": None, "grace_timer": None,
                 "condition": threading.Condition(self.lock),
             }
             with self.lock:
@@ -1357,17 +1378,15 @@ class InteractiveJobBroker:
                              name=f"uu-web-attach-{unit[-12:]}").start()
             item["ready"].wait(0.5)
             if not item["busy"]:
-                return "attached"
+                return item["attachment_id"]
             self._remove(unit, item)
             if attempt < 9:
                 time.sleep(0.25)
         raise RuntimeError("Another input client is already attached.")
 
-    def send(self, unit, owner, data):
+    def send(self, unit, owner, data, attachment_id=None):
         with self.lock:
-            item = self.clients.get(unit)
-            if item is None or item["owner"] != owner:
-                raise RuntimeError("This WebUI session is not attached to the job.")
+            item = self._attachment_item(unit, owner, attachment_id)
             connection = item["socket"]
             try:
                 connection.sendall(data)
@@ -1375,15 +1394,78 @@ class InteractiveJobBroker:
                 self._remove(unit, item)
                 raise RuntimeError("The interactive job connection was lost.") from error
 
-    def detach(self, unit, owner):
+    def detach(self, unit, owner, attachment_id=None):
         with self.lock:
             item = self.clients.get(unit)
             if item is None:
                 return False
-            if item["owner"] != owner:
-                raise RuntimeError("This WebUI session does not own the attachment.")
+            self._attachment_item(unit, owner, attachment_id)
         self._remove(unit, item)
         return True
+
+    def stream_claim(self, unit, owner, attachment_id):
+        with self.lock:
+            item = self._attachment_item(unit, owner, attachment_id)
+            if item["closed"]:
+                raise RuntimeError("This WebUI attachment is closed.")
+            timer = item.get("grace_timer")
+            if timer is not None:
+                timer.cancel()
+                item["grace_timer"] = None
+            stream_id = secrets.token_urlsafe(18)
+            item["stream_id"] = stream_id
+            return stream_id
+
+    def stream_current(self, unit, owner, attachment_id, stream_id):
+        with self.lock:
+            try:
+                item = self._attachment_item(unit, owner, attachment_id)
+            except RuntimeError:
+                return False
+            return not item["closed"] and item.get("stream_id") == stream_id
+
+    def _expire_stream_grace(self, unit, item, stream_id):
+        with self.lock:
+            if self.clients.get(unit) is not item or item.get("stream_id") is not None:
+                return
+            item["grace_timer"] = None
+        self._remove(unit, item)
+
+    def stream_release(self, unit, owner, attachment_id, stream_id):
+        with self.lock:
+            try:
+                item = self._attachment_item(unit, owner, attachment_id)
+            except RuntimeError:
+                return
+            if item.get("stream_id") != stream_id:
+                return
+            item["stream_id"] = None
+            timer = threading.Timer(
+                self.STREAM_GRACE_SECONDS,
+                self._expire_stream_grace,
+                args=(unit, item, stream_id),
+            )
+            timer.daemon = True
+            item["grace_timer"] = timer
+            timer.start()
+
+    def stream_snapshot(self, unit, owner, attachment_id, after_seq=0):
+        with self.lock:
+            item = self._attachment_item(unit, owner, attachment_id)
+            return self._output_snapshot_locked(item, after_seq)
+
+    def stream_wait(self, unit, owner, attachment_id, after_seq=0, timeout=30):
+        if not isinstance(after_seq, int) or isinstance(after_seq, bool) or after_seq < 0:
+            raise ValueError("Output sequence is invalid.")
+        deadline = time.monotonic() + max(0, min(float(timeout), 60.0))
+        with self.lock:
+            item = self._attachment_item(unit, owner, attachment_id)
+            while item["next_seq"] <= after_seq and not item["closed"]:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                item["condition"].wait(remaining)
+            return self._output_snapshot_locked(item, after_seq)
 
     def attached(self, unit):
         with self.lock:
@@ -2504,7 +2586,7 @@ class StatusHandler(BaseHTTPRequestHandler):
     def handle_interactive_attach(self, unit):
         try:
             job, socket_path = self.interactive_job_context(unit)
-            self.server.interactive_broker.attach(unit, self.session_owner(), socket_path)
+            attachment_id = self.server.interactive_broker.attach(unit, self.session_owner(), socket_path)
         except KeyError:
             self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
             return
@@ -2518,9 +2600,14 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload(code, message), status)
             return
         self.send_json({"unit": unit, "attached": True, "interactive": True,
+                        "attachment_id": attachment_id,
                         "message": "Interactive input attached."}, HTTPStatus.OK)
 
     def handle_interactive_input(self, unit, payload):
+        attachment_id = payload.get("attachment_id") if isinstance(payload, dict) else None
+        if not self.server.interactive_broker.valid_attachment_id(attachment_id):
+            self.send_json(error_payload("INVALID_ATTACHMENT", "A valid attachment ID is required."), HTTPStatus.BAD_REQUEST)
+            return
         encoded = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(encoded, str) or not encoded or len(encoded) > 8192:
             self.send_json(error_payload("INVALID_JOB_INPUT", "Input data is invalid."), HTTPStatus.BAD_REQUEST)
@@ -2535,7 +2622,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         try:
             self.interactive_job_context(unit)
-            self.server.interactive_broker.send(unit, self.session_owner(), data)
+            self.server.interactive_broker.send(unit, self.session_owner(), data, attachment_id)
         except (KeyError, ValueError):
             self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
             return
@@ -2544,13 +2631,92 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         self.send_json({"unit": unit, "accepted": len(data)})
 
-    def handle_interactive_detach(self, unit):
+    def handle_interactive_detach(self, unit, payload):
+        attachment_id = payload.get("attachment_id") if isinstance(payload, dict) else None
+        if not self.server.interactive_broker.valid_attachment_id(attachment_id):
+            self.send_json(error_payload("INVALID_ATTACHMENT", "A valid attachment ID is required."), HTTPStatus.BAD_REQUEST)
+            return
         try:
-            self.server.interactive_broker.detach(unit, self.session_owner())
+            self.server.interactive_broker.detach(unit, self.session_owner(), attachment_id)
         except RuntimeError as error:
             self.send_json(error_payload("JOB_INPUT_UNAVAILABLE", str(error)), HTTPStatus.CONFLICT)
             return
         self.send_json({"unit": unit, "attached": False})
+
+    def send_sse(self, event, data="", event_id=None):
+        if event_id is not None:
+            self.wfile.write(f"id: {event_id}\n".encode("ascii"))
+        self.wfile.write(f"event: {event}\n".encode("ascii"))
+        for line in str(data).splitlines() or [""]:
+            self.wfile.write(f"data: {line}\n".encode("utf-8"))
+        self.wfile.write(b"\n")
+        self.wfile.flush()
+
+    def handle_interactive_stream(self, unit):
+        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+        attachment_id = query.get("attachment_id", [""])[0]
+        last_event = self.headers.get("Last-Event-ID", "")
+        try:
+            after_seq = int(last_event) if last_event else int(query.get("from", ["0"])[0])
+        except (TypeError, ValueError):
+            self.send_json(error_payload("INVALID_OUTPUT_SEQUENCE", "The output sequence is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        if after_seq < 0:
+            self.send_json(error_payload("INVALID_OUTPUT_SEQUENCE", "The output sequence is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        if not self.server.interactive_broker.valid_attachment_id(attachment_id):
+            self.send_json(error_payload("INVALID_ATTACHMENT", "A valid attachment ID is required."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            self.interactive_job_context(unit)
+            stream_id = self.server.interactive_broker.stream_claim(unit, self.session_owner(), attachment_id)
+        except (KeyError, ValueError):
+            self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        except RuntimeError as error:
+            self.send_json(error_payload("JOB_STREAM_UNAVAILABLE", str(error)), HTTPStatus.CONFLICT)
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-store")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        try:
+            snapshot = self.server.interactive_broker.stream_snapshot(
+                unit, self.session_owner(), attachment_id, after_seq,
+            )
+            self.send_sse("attached", json.dumps({"unit": unit, "next_seq": snapshot["next_seq"]}, separators=(",", ":")))
+            if snapshot["truncated"]:
+                self.send_sse("truncated", json.dumps({
+                    "after": after_seq, "first_available": snapshot["first_seq"],
+                }, separators=(",", ":")))
+            for sequence, data in snapshot["chunks"]:
+                self.send_sse("output", base64.b64encode(data).decode("ascii"), sequence)
+                after_seq = sequence
+            while True:
+                try:
+                    snapshot = self.server.interactive_broker.stream_wait(
+                        unit, self.session_owner(), attachment_id, after_seq, timeout=15,
+                    )
+                except RuntimeError:
+                    break
+                if snapshot["closed"]:
+                    self.send_sse("closed", json.dumps({"unit": unit}, separators=(",", ":")))
+                    break
+                if not self.server.interactive_broker.stream_current(unit, self.session_owner(), attachment_id, stream_id):
+                    break
+                for sequence, data in snapshot["chunks"]:
+                    self.send_sse("output", base64.b64encode(data).decode("ascii"), sequence)
+                    after_seq = sequence
+                self.wfile.write(b": heartbeat\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            self.server.interactive_broker.stream_release(
+                unit, self.session_owner(), attachment_id, stream_id,
+            )
 
     def config_content(self):
         return self.server.config_file.read_text(encoding="utf-8") if self.server.config_file.exists() else ""
@@ -3283,6 +3449,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                                 "tag": None, "update_available": False, "components": []})
             return
         parts = [unquote(part) for part in path.split("/") if part]
+        if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "stream":
+            if not self.same_origin():
+                self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+                return
+            self.handle_interactive_stream(parts[2])
+            return
         if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "log":
             unit = parts[2]
             try:
@@ -3367,7 +3539,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.handle_interactive_input(parts[2], payload)
             return
         if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "detach":
-            self.handle_interactive_detach(parts[2])
+            self.handle_interactive_detach(parts[2], payload)
             return
         if parts == ["api", "schedules"]:
             try:
