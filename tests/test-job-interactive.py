@@ -63,6 +63,7 @@ def main():
         ]
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         backlog_server = None
+        slow_server = None
         try:
             wait_for_socket(socket_path)
             assert directory.stat().st_mode & 0o777 == 0o700
@@ -135,6 +136,50 @@ def main():
             assert len(backlog) == backlog_size
             assert backlog == b"X" * backlog_size
             assert backlog_server.wait(timeout=5) == 0
+
+            slow_socket = directory / "slow.sock"
+            slow_server = subprocess.Popen([
+                str(BRIDGE), "--socket", str(slow_socket), "--", "python3", "-c",
+                "import os,time;[os.write(1,b'Z'*8192) for _ in range(2048)];os.write(1,b'SLOW_CLIENT_DONE\\n');time.sleep(5)",
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            wait_for_socket(slow_socket)
+            slow_client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            slow_client.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+            slow_client.settimeout(1)
+            slow_client.connect(str(slow_socket))
+            # Do not read from the primary client.  The bridge must disconnect
+            # it once its bounded pending queue is full, rather than dropping
+            # bytes while keeping the connection alive.
+            replacement = None
+            replacement_data = bytearray()
+            deadline = time.time() + 5
+            while time.time() < deadline and replacement is None:
+                candidate = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                candidate.settimeout(1)
+                try:
+                    candidate.connect(str(slow_socket))
+                    first = candidate.recv(8192)
+                    if first.startswith(b"BUSY:"):
+                        candidate.close()
+                        time.sleep(0.05)
+                        continue
+                    if not first:
+                        candidate.close()
+                        time.sleep(0.05)
+                        continue
+                    replacement = candidate
+                    replacement_data.extend(first)
+                except (ConnectionError, socket.timeout):
+                    candidate.close()
+                    time.sleep(0.05)
+            assert replacement is not None, "slow client was not disconnected"
+            while b"SLOW_CLIENT_DONE" not in replacement_data:
+                chunk = replacement.recv(65536)
+                assert chunk
+                replacement_data.extend(chunk)
+            replacement.close()
+            slow_client.close()
+            assert slow_server.wait(timeout=10) == 0
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -142,6 +187,9 @@ def main():
             if backlog_server is not None and backlog_server.poll() is None:
                 backlog_server.terminate()
                 backlog_server.wait(timeout=5)
+            if slow_server is not None and slow_server.poll() is None:
+                slow_server.terminate()
+                slow_server.wait(timeout=5)
             if process.stdout:
                 process.stdout.close()
             if process.stderr:

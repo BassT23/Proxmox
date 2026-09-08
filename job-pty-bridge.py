@@ -80,6 +80,19 @@ def client_events(selector, client, writable):
     selector.modify(client, events, "client")
 
 
+def close_client(selector, client):
+    if client is None:
+        return
+    try:
+        selector.unregister(client)
+    except Exception:
+        pass
+    try:
+        client.close()
+    except OSError:
+        pass
+
+
 def flush_pending(client, pending):
     if not pending:
         return True
@@ -124,8 +137,7 @@ def run_bridge(socket_path, command):
     try:
         while True:
             if client is not None and client_disconnected(client):
-                selector.unregister(client)
-                client.close()
+                close_client(selector, client)
                 client = None
                 client_pending.clear()
             try:
@@ -169,20 +181,26 @@ def run_bridge(socket_path, command):
                     sys.stdout.buffer.write(data)
                     sys.stdout.buffer.flush()
                     if client is not None:
-                        client_pending.extend(data)
-                        if len(client_pending) > max_backlog:
-                            del client_pending[:-max_backlog]
-                        client_events(selector, client, True)
+                        if len(client_pending) + len(data) > max_backlog:
+                            # Never silently drop bytes from an attached
+                            # terminal stream.  The PTY keeps running and the
+                            # bounded bridge backlog remains available for a
+                            # later reconnect.
+                            close_client(selector, client)
+                            client = None
+                            client_pending.clear()
+                        else:
+                            client_pending.extend(data)
+                            client_events(selector, client, True)
                 else:
                     if mask & selectors.EVENT_WRITE:
                         result = flush_pending(client, client_pending)
                         if result is None:
-                            selector.unregister(client)
-                            client.close()
+                            close_client(selector, client)
                             client = None
                             client_pending.clear()
                             continue
-                        if not client_pending:
+                        if client is not None and not client_pending:
                             client_events(selector, client, False)
                     if client is not None and mask & selectors.EVENT_READ:
                         try:
@@ -190,8 +208,7 @@ def run_bridge(socket_path, command):
                         except OSError:
                             data = b""
                         if not data:
-                            selector.unregister(client)
-                            client.close()
+                            close_client(selector, client)
                             client = None
                             client_pending.clear()
                         else:

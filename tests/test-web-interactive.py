@@ -172,6 +172,7 @@ def test_interactive_lookup_reads_requested_state_directly():
 
 test_state_metadata_is_backward_compatible()
 test_broker_forwards_input_and_releases_attachment()
+test_broker_replays_exact_bytes_with_sequences_and_wakes_waiter()
 test_webui_exposes_only_authenticated_input_actions()
 test_interactive_lookup_reads_requested_state_directly()
 print("web interactive UI tests: PASS")
