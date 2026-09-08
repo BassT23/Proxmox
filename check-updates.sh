@@ -1502,7 +1502,12 @@ CHECK_VM_QEMU () {
     return 1
   fi
   if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
-    STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error QGA_GUEST_EXEC "${QEMU_EXEC_OUTPUT}"
+    if QGA_GUEST_EXEC_DISABLED; then
+      STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error QGA_GUEST_EXEC_DISABLED \
+        "QEMU Guest Agent is reachable, but guest-exec is disabled or not allowed: ${QEMU_EXEC_OUTPUT}"
+    else
+      STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error QGA_GUEST_EXEC "${QEMU_EXEC_OUTPUT}"
+    fi
     return 1
   fi
   if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then

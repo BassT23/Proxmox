@@ -28,6 +28,18 @@ source "$ROOT_DIR/qga-guest-exec.sh"
 export PATH="$WORK_DIR:$PATH"
 export QGA_CALLS="$WORK_DIR/calls"
 
+# A reachable agent can reject only guest-exec.  Keep that capability error
+# distinct from a transport/readiness failure for both check and update paths.
+QEMU_EXEC_OUTPUT='Agent error: Command guest-exec has been disabled: the command is not allowed'
+QGA_GUEST_EXEC_DISABLED
+QEMU_EXEC_OUTPUT='Agent error: guest command failed'
+if QGA_GUEST_EXEC_DISABLED; then
+  echo 'generic guest-exec failure was classified as disabled' >&2
+  exit 1
+fi
+grep -Fq 'error QGA_GUEST_EXEC_DISABLED' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'QGA_GUEST_EXEC_DISABLED' "$ROOT_DIR/update.sh"
+
 run_case() {
   : > "$QGA_CALLS"
   local status_response="${2:-'{"exited":true,"exitcode":0}'}"

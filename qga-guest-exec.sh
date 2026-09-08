@@ -5,6 +5,10 @@
 # guest-exec/guest-exec-status contract.  Keeping this in one helper avoids
 # subtly different PID handling between checks and updates.
 
+QGA_GUEST_EXEC_DISABLED() {
+  grep -Eqi 'not allowed|disabled|not permitted|permission denied' <<< "${QEMU_EXEC_OUTPUT:-}"
+}
+
 QEMU_GUEST_EXEC () {
   QEMU_EXEC_STDOUT=""
   QEMU_EXEC_STDERR=""

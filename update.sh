@@ -1286,7 +1286,7 @@ CHECK_QGA_EXEC () {
   if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
     return 0
   fi
-  if grep -Eqi 'not allowed|disabled|not permitted|permission denied' <<< "$QEMU_EXEC_OUTPUT"; then
+  if QGA_GUEST_EXEC_DISABLED; then
     QGA_ERROR="QEMU Guest Agent is reachable on VM $VM, but guest-exec is disabled or not allowed: $QEMU_EXEC_OUTPUT"
   elif [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 ]]; then
     QGA_ERROR="QEMU Guest Agent command failed on VM $VM (guest exit code $QEMU_EXEC_EXITCODE): $QEMU_EXEC_OUTPUT"
