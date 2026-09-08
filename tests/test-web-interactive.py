@@ -320,7 +320,12 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     jobs_position = WEB.PAGE.index('<section id="jobs"')
     terminal_position = WEB.PAGE.index('<section id="interactive-terminal-panel"')
     assert terminal_position > jobs_position
+    assert ".interactive-terminal-panel { position:fixed;" in WEB.PAGE
+    assert 'class="interactive-terminal-dialog" role="dialog"' in WEB.PAGE
     assert "data-interactive-terminal" in WEB.PAGE
+    assert "Live terminal" in WEB.PAGE
+    assert "const jobTitle=job=>" in WEB.PAGE
+    assert "friendlyTarget({id:job.target})" not in WEB.PAGE
     assert "window.addEventListener('pagehide'" not in WEB.PAGE
     installer = (ROOT / "install.sh").read_text(encoding="utf-8")
     assert "assets/vendor/xterm/xterm.js" in installer
