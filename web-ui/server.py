@@ -1094,7 +1094,6 @@ PAGE = PAGE.replace('    bootstrap();', '''    const statusIcon=kind=>{const pat
     const renderWithStatusIcons=render;render=function(data){renderWithStatusIcons(data);decorateStatusIcons(document)};
     new MutationObserver(()=>{decorateStatusIcons(document.getElementById('details'));decorateStatusIcons(document.getElementById('jobs'))}).observe(document.getElementById('details'),{childList:true,subtree:true});
     new MutationObserver(()=>decorateStatusIcons(document.getElementById('jobs'))).observe(document.getElementById('jobs'),{childList:true,subtree:true});
-    new MutationObserver(()=>decorateInteractiveJobs()).observe(document.getElementById('jobs'),{childList:true,subtree:true});
     window.addEventListener('pagehide',()=>{for(const unit of interactiveAttached){fetch(`/api/jobs/${encodeURIComponent(unit)}/detach`,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:'{}'}).catch(()=>{})}});
     bootstrap();''')
 PAGE = PAGE.replace('    const statusIcon=kind=>', '    const decorateOverviewIcons=()=>document.querySelectorAll("[data-overview-icon]").forEach(element=>{if(!element.querySelector(".status-icon"))element.innerHTML=statusIcon(element.dataset.overviewIcon)});\n    const statusIcon=kind=>')

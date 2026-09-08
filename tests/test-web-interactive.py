@@ -67,6 +67,7 @@ def test_webui_exposes_only_authenticated_input_actions():
     assert "Interactive input available" in WEB.PAGE
     assert "/api/jobs/${encodeURIComponent(unit)}/input" in WEB.PAGE
     assert "X-CSRF-Token" in WEB.PAGE
+    assert "new MutationObserver(()=>decorateInteractiveJobs())" not in WEB.PAGE
 
 
 test_state_metadata_is_backward_compatible()
