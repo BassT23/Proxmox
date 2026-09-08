@@ -358,6 +358,33 @@ def test_webui_exposes_only_authenticated_input_actions():
     assert "self.write_allowed()" in source
     assert "The interactive job socket is unavailable." in source
     assert "Interactive terminal available" in WEB.PAGE
+
+
+def test_journal_output_records_preserve_cursor_ansi_and_line_bytes():
+    record = json.dumps({"__CURSOR": "s=cursor-1", "MESSAGE": "\u001b[31mfailed"}).encode()
+    cursor, data = WEB.StatusHandler.journal_output_record(record)
+    assert cursor == "s=cursor-1"
+    assert data == b"\x1b[31mfailed\n"
+    assert WEB.StatusHandler.journal_output_record(b"not-json") is None
+
+
+def test_live_output_uses_job_bound_read_only_journal_stream():
+    source = (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
+    assert 'parts[3] == "output-stream"' in source
+    assert "journalctl" in source
+    assert '"--follow"' in source
+    assert '"--output=json"' in source
+    assert '"--after-cursor"' in source
+    assert '"--lines", "200"' in source
+    assert "direct_job_record(unit)" in source
+    assert "JOB_STREAM_UNAVAILABLE" in source
+    assert "Interactive jobs use the terminal stream." in source
+    assert "disableStdin:true" in WEB.PAGE
+    assert "output-stream`" in WEB.PAGE
+    assert "openLiveOutput" in WEB.PAGE
+    assert "data-live-job" in WEB.PAGE
+    assert "Live output" in WEB.PAGE
+    assert "interactiveKeybarVisibility(false)" in WEB.PAGE
     assert "/api/jobs/${encodeURIComponent(unit)}/input" in WEB.PAGE
     assert "X-CSRF-Token" in WEB.PAGE
     assert "new MutationObserver(()=>decorateInteractiveJobs())" not in WEB.PAGE
@@ -376,7 +403,7 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "new Terminal({scrollback:2000,convertEol:false,fontSize})" in WEB.PAGE
     assert "new FitAddon.FitAddon()" in WEB.PAGE
     assert "terminal.onData(queueInteractiveInput)" in WEB.PAGE
-    assert "disableStdin" not in WEB.PAGE
+    assert "disableStdin:true" in WEB.PAGE
     assert "/api/jobs/${encodeURIComponent(state.unit)}/resize" in WEB.PAGE
     assert "UU_RESIZE" in (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
     assert "Ctrl-C detaches from the terminal" in WEB.PAGE
@@ -454,5 +481,7 @@ test_attachment_lifecycle_and_stream_grace()
 test_authenticated_sse_stream_uses_existing_attachment()
 test_local_xterm_terminal_assets_and_stable_panel()
 test_webui_exposes_only_authenticated_input_actions()
+test_journal_output_records_preserve_cursor_ansi_and_line_bytes()
+test_live_output_uses_job_bound_read_only_journal_stream()
 test_interactive_lookup_reads_requested_state_directly()
 print("web interactive UI tests: PASS")
