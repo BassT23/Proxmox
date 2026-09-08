@@ -385,6 +385,14 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "new EventSource(`/api/jobs/${encodeURIComponent(unit)}/stream" in WEB.PAGE
     assert "terminal.write(terminalBytes(event.data))" in WEB.PAGE
     assert "new Uint8Array(binary.length)" in WEB.PAGE
+    assert "interactiveKeyData" in WEB.PAGE
+    assert "data-interactive-key=\"Escape\"" in WEB.PAGE
+    assert "data-interactive-key=\"Enter\"" in WEB.PAGE
+    assert "window.visualViewport?.addEventListener('resize'" in WEB.PAGE
+    assert "window.visualViewport?.removeEventListener('resize'" in WEB.PAGE
+    assert "height:100dvh" in WEB.PAGE
+    assert "font-size:11px" in WEB.PAGE
+    assert "@media(max-width:720px)" in WEB.PAGE
     jobs_position = WEB.PAGE.index('<section id="jobs"')
     terminal_position = WEB.PAGE.index('<section id="interactive-terminal-panel"')
     assert terminal_position > jobs_position
