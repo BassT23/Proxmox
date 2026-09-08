@@ -11,6 +11,7 @@ Improved:
 - local Proxmox node actions use the stable internal `local-host` target ID while retaining the real hostname for display (#325)
 - summary notification mail uses compact per-system blocks with explicit Security/Normal update labels
 - mobile Web UI header and navigation received a small responsive polish
+- schedules can run on selected calendar days of the month
 
 Fixed:
 - installer Welcome-Screen lookup now uses the extracted archive payload root
