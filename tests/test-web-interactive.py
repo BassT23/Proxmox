@@ -373,7 +373,7 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "/assets/vendor/xterm/xterm.css" in WEB.PAGE
     assert "/assets/vendor/xterm/addon-fit.js" in WEB.PAGE
     assert "https://" not in WEB.PAGE.split("/assets/vendor/xterm/xterm.js", 1)[0]
-    assert "new Terminal({scrollback:2000,convertEol:false})" in WEB.PAGE
+    assert "new Terminal({scrollback:2000,convertEol:false,fontSize})" in WEB.PAGE
     assert "new FitAddon.FitAddon()" in WEB.PAGE
     assert "terminal.onData(queueInteractiveInput)" in WEB.PAGE
     assert "disableStdin" not in WEB.PAGE
@@ -393,6 +393,15 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "height:100dvh" in WEB.PAGE
     assert "font-size:11px" in WEB.PAGE
     assert "@media(max-width:720px)" in WEB.PAGE
+    assert "TERMINAL_FONT_MIN=8" in WEB.PAGE
+    assert "TERMINAL_FONT_MAX=16" in WEB.PAGE
+    assert "ultimate-updater-terminal-font-size" in WEB.PAGE
+    assert "localStorage" in WEB.PAGE
+    assert "interactive-terminal-font-decrease" in WEB.PAGE
+    assert "interactive-terminal-font-increase" in WEB.PAGE
+    assert 'aria-label="Close terminal"' in WEB.PAGE
+    assert "interactive-terminal-close-icon" in WEB.PAGE
+    assert "interactive-terminal-keybar" in WEB.PAGE
     jobs_position = WEB.PAGE.index('<section id="jobs"')
     terminal_position = WEB.PAGE.index('<section id="interactive-terminal-panel"')
     assert terminal_position > jobs_position
