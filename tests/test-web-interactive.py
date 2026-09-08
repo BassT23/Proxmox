@@ -61,6 +61,43 @@ def test_broker_forwards_input_and_releases_attachment():
         listener.close()
 
 
+def test_broker_resize_uses_existing_attachment_socket_and_validates():
+    with tempfile.TemporaryDirectory() as temporary:
+        socket_path = Path(temporary) / "control.sock"
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(socket_path))
+        listener.listen(1)
+        received = []
+
+        def accept_client():
+            client, _ = listener.accept()
+            buffer = b""
+            while buffer.count(b"\n") < 2:
+                buffer += client.recv(64)
+            received.extend(buffer.splitlines(keepends=True))
+            client.close()
+
+        threading.Thread(target=accept_client, daemon=True).start()
+        broker = WEB.InteractiveJobBroker(Path(temporary))
+        unit = "ultimate-updater-update-resize-1"
+        broker.attach(unit, "session", socket_path)
+        attachment_id = broker.clients[unit]["attachment_id"]
+        broker.resize(unit, "session", attachment_id, 34, 118)
+        for _ in range(200):
+            if len(received) >= 2:
+                break
+            time.sleep(0.01)
+        assert received[0].startswith(b"\x00UU_RESIZE 24 80\n")
+        assert received[1] == b"\x00UU_RESIZE 34 118\n"
+        for rows, cols in [(1, 80), (501, 80), (24, 1), (24, 501), ("24", 80)]:
+            try:
+                broker.resize(unit, "session", attachment_id, rows, cols)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("invalid terminal size was accepted")
+        broker.detach(unit, "session", attachment_id)
+        listener.close()
 def test_broker_replays_exact_bytes_with_sequences_and_wakes_waiter():
     with tempfile.TemporaryDirectory() as temporary:
         socket_path = Path(temporary) / "control.sock"
@@ -241,6 +278,26 @@ def test_authenticated_sse_stream_uses_existing_attachment():
             assert server.interactive_broker.valid_attachment_id(attachment_id)
 
             connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+            connection.request("POST", f"/api/jobs/{unit}/resize", body=json.dumps({
+                "attachment_id": attachment_id, "rows": 34, "cols": 118,
+            }), headers={
+                "Content-Type": "application/json", "Cookie": cookie, "Origin": origin,
+                "X-CSRF-Token": "csrf-token",
+            })
+            assert connection.getresponse().status == 200
+            connection.close()
+
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+            connection.request("POST", f"/api/jobs/{unit}/resize", body=json.dumps({
+                "attachment_id": attachment_id, "rows": 1, "cols": 118,
+            }), headers={
+                "Content-Type": "application/json", "Cookie": cookie, "Origin": origin,
+                "X-CSRF-Token": "csrf-token",
+            })
+            assert connection.getresponse().status == 400
+            connection.close()
+
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3)
             connection.request("POST", f"/api/jobs/{unit}/input", body=json.dumps({
                 "attachment_id": "A" * 32, "data": base64.b64encode(b"x").decode("ascii"),
             }), headers={
@@ -291,6 +348,7 @@ def test_webui_exposes_only_authenticated_input_actions():
     source = (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
     assert 'parts[3] == "attach"' in source
     assert 'parts[3] == "input"' in source
+    assert 'parts[3] == "resize"' in source
     assert 'parts[3] == "detach"' in source
     assert 'parts[3] == "stream"' in source
     assert "text/event-stream" in source
@@ -299,7 +357,7 @@ def test_webui_exposes_only_authenticated_input_actions():
     assert "window.addEventListener('pagehide'" not in source
     assert "self.write_allowed()" in source
     assert "The interactive job socket is unavailable." in source
-    assert "Interactive input available" in WEB.PAGE
+    assert "Interactive terminal available" in WEB.PAGE
     assert "/api/jobs/${encodeURIComponent(unit)}/input" in WEB.PAGE
     assert "X-CSRF-Token" in WEB.PAGE
     assert "new MutationObserver(()=>decorateInteractiveJobs())" not in WEB.PAGE
@@ -310,10 +368,20 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert (assets / "xterm.js").is_file()
     assert (assets / "xterm.css").is_file()
     assert (assets / "LICENSE").is_file()
+    assert (assets / "addon-fit.LICENSE").is_file()
     assert "/assets/vendor/xterm/xterm.js" in WEB.PAGE
     assert "/assets/vendor/xterm/xterm.css" in WEB.PAGE
+    assert "/assets/vendor/xterm/addon-fit.js" in WEB.PAGE
     assert "https://" not in WEB.PAGE.split("/assets/vendor/xterm/xterm.js", 1)[0]
-    assert "new Terminal({cols:80,rows:24,disableStdin:true" in WEB.PAGE
+    assert "new Terminal({scrollback:2000,convertEol:false})" in WEB.PAGE
+    assert "new FitAddon.FitAddon()" in WEB.PAGE
+    assert "terminal.onData(queueInteractiveInput)" in WEB.PAGE
+    assert "disableStdin" not in WEB.PAGE
+    assert "/api/jobs/${encodeURIComponent(state.unit)}/resize" in WEB.PAGE
+    assert "UU_RESIZE" in (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
+    assert "Ctrl-C detaches from the terminal" in WEB.PAGE
+    assert "Attach input" not in WEB.PAGE
+    assert "data-interactive-input" not in WEB.PAGE
     assert "new EventSource(`/api/jobs/${encodeURIComponent(unit)}/stream" in WEB.PAGE
     assert "terminal.write(terminalBytes(event.data))" in WEB.PAGE
     assert "new Uint8Array(binary.length)" in WEB.PAGE
@@ -330,6 +398,8 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     installer = (ROOT / "install.sh").read_text(encoding="utf-8")
     assert "assets/vendor/xterm/xterm.js" in installer
     assert "assets/vendor/xterm/xterm.css" in installer
+    assert "assets/vendor/xterm/addon-fit.js" in installer
+    assert "assets/vendor/xterm/addon-fit.LICENSE" in installer
 
 
 def test_interactive_lookup_reads_requested_state_directly():
@@ -361,6 +431,7 @@ def test_interactive_lookup_reads_requested_state_directly():
 
 test_state_metadata_is_backward_compatible()
 test_broker_forwards_input_and_releases_attachment()
+test_broker_resize_uses_existing_attachment_socket_and_validates()
 test_broker_replays_exact_bytes_with_sequences_and_wakes_waiter()
 test_attachment_lifecycle_and_stream_grace()
 test_authenticated_sse_stream_uses_existing_attachment()
