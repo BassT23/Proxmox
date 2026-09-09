@@ -983,6 +983,14 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     clearTimeout(pollTimer);
   </script>
   <script>
+    // Job polling is the authoritative source for the final interactive
+    // status.  The stream's closed event only says that output ended; it does
+    // not distinguish a successful update from a failed one.
+    const renderJobsWithInteractiveResult=renderJobs;
+    renderJobs=function(){renderJobsWithInteractiveResult();const state=interactiveTerminal;if(!state)return;const job=jobs.find(item=>item.unit===state.unit);if(job?.state==='failed'||(Number.isInteger(job?.exit_code)&&job.exit_code!==0)){terminalStatus('Job failed',true);terminalMessage('Update failed. See the terminal output and full job log for the detailed cause.',true)}};
+    window.renderJobs=renderJobs;
+  </script>
+  <script>
     const configBooleanKeys=['CHECK_WITH_HOST','CHECK_WITH_LXC','CHECK_WITH_VM','CHECK_RUNNING_CONTAINER','CHECK_STOPPED_CONTAINER','CHECK_RUNNING_VM','CHECK_STOPPED_VM','CHECK_PAUSED_VM','WITH_HOST','WITH_LXC','WITH_VM','RUNNING_CONTAINER','STOPPED_CONTAINER','RUNNING_VM','STOPPED_VM','REBOOT_IF_NEEDED','EXIT_ON_ERROR','DEBUG','SNAPSHOT','BACKUP','BACKUP_LXC_MP','EMAIL_DAILY_CHECK','EMAIL_SINGLE_RUNS','EMAIL_NO_UPDATES','EMAIL_ONLY_SECURITY','EMAIL_ONLY_ERROR','VERSION_CHECK','FREEBSD_UPDATES','INCLUDE_PHASED_UPDATES','INCLUDE_FSTRIM','FSTRIM_WITH_MOUNTPOINT','INCLUDE_HELPER_SCRIPTS','EXTRA_GLOBAL','IN_HEADLESS_MODE','PIHOLE','IOBROKER','PTERODACTYL','OCTOPRINT','DOCKER_COMPOSE','UNIFI'];
     const configNumberKeys=['SSH_PORT','LXC_START_DELAY','VM_START_DELAY','KEEP_SNAPSHOTS'];
     const configStringKeys=['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE','BACKUP_MODE','BACKUP_STORAGE','EMAIL_USER','EMAIL_SENDER','EXE_FOR_INTERNET_CHECK','URL_FOR_INTERNET_CHECK','PACMAN_ENVIRONMENT','COMPOSE_PATH'];
