@@ -629,6 +629,7 @@ offline = []
 unsupported = []
 errors = []
 not_checked = []
+skipped = []
 reboots = []
 total = 0
 has_known_count = False
@@ -660,6 +661,19 @@ def short_error(target):
         if message:
             return str(message).replace("\n", " ").strip()
     return "check failed"
+
+def check_skip_message(target):
+    """Return neutral wording for checks intentionally not executed."""
+    status = str(target.get("check_status") or "not_checked")
+    error = target.get("error")
+    code = str(error.get("code") or "") if isinstance(error, dict) else ""
+    if status not in ("not_checked", "skipped", "stopped"):
+        return None
+    if code in {"RUNNING_DISABLED", "CHECK_WITH_HOST_DISABLED", "CHECK_DISABLED"}:
+        return "Check disabled"
+    if code in {"STOPPED_READ_ONLY", "PAUSED_READ_ONLY", "UNSUPPORTED_GUEST_OS"}:
+        return "Skipped by configuration"
+    return None
 
 def update_split(target):
     if target.get("security_split_supported") is False or \
@@ -695,6 +709,9 @@ def update_line(target):
     result = update_result(target)
     if target.get("check_status") == "offline" or target.get("reachable") is False:
         return "⚠️", "Nicht erreichbar"
+    skipped = check_skip_message(target)
+    if skipped is not None:
+        return "💤", skipped
     status = update_status(target)
     if status == "failed":
         return "❌", "Update fehlgeschlagen"
@@ -718,6 +735,7 @@ if run_type == "update":
     guest_failed = []
     guest_offline = []
     guest_reboot = []
+    guest_skipped = []
     for target in targets:
         if not isinstance(target, dict):
             continue
@@ -729,6 +747,9 @@ if run_type == "update":
             continue
         if status == "offline" or reachable is False:
             guest_offline.append(target)
+            continue
+        if check_skip_message(target) is not None:
+            guest_skipped.append(target)
             continue
         result_status = update_status(target)
         if result_status == "failed":
@@ -765,6 +786,10 @@ if run_type == "update":
         lines.extend(["", "Unreachable guests:"])
         for target in guest_offline:
             lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", "   Nicht erreichbar"])
+    if guest_skipped:
+        lines.extend(["", "Skipped checks:"])
+        for target in guest_skipped:
+            lines.extend([f"💤 {target_icon(target)} {target_name(target)}", f"   {check_skip_message(target)}"])
     if guest_current:
         lines.extend(["", f"✅ {guest_current} weitere Systeme – alles aktuell"])
     print("STATE=issues" if any(update_status(target) == "failed" for target in hosts + guest_failed) or guest_offline else "STATE=updates")
@@ -798,8 +823,11 @@ for target in targets:
         unsupported.append(target)
     elif status == "error":
         errors.append((target, short_error(target)))
-    elif status == "not_checked":
-        not_checked.append(target)
+    elif status in ("not_checked", "skipped", "stopped"):
+        if check_skip_message(target) is not None:
+            skipped.append(target)
+        else:
+            not_checked.append(target)
 
 has_issues = bool(offline or unsupported or errors or not_checked)
 if updates or reboots:
@@ -876,6 +904,10 @@ if unsupported:
 if not_checked:
     lines.extend(["", "Not checked:"])
     lines.extend(f"⚠️ {target_name(target)}" for target in not_checked)
+if skipped:
+    lines.extend(["", "Skipped:"])
+    for target in skipped:
+        lines.extend([f"💤 {target_name(target)}", f"   {check_skip_message(target)}"])
 
 print(f"STATE={state}")
 print("\n".join(lines))

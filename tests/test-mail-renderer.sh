@@ -100,6 +100,27 @@ grep -Fqx '⚠️ 🐧 987 · needs-reboot' "$WORK_DIR/update-status-mail"
 grep -Fqx '   Aktualisiert – Neustart erforderlich' "$WORK_DIR/update-status-mail"
 [[ $(grep -Fc '✅ 2 weitere Systeme – alles aktuell' "$WORK_DIR/update-status-mail") -eq 1 ]]
 
+cat > "$WORK_DIR/disabled-status.json" <<'JSON'
+{"targets":[
+  {"id":"host:proxmox1","type":"host","node":"proxmox1","name":"proxmox1","check_status":"not_checked","reachable":true,"updates":{"available":null},"error":{"code":"CHECK_WITH_HOST_DISABLED","message":"configured off"}},
+  {"id":"guest:210","type":"lxc","node":"proxmox1","name":"iobroker","check_status":"not_checked","reachable":true,"updates":{"available":null},"error":{"code":"RUNNING_DISABLED","message":"configured off"}},
+  {"id":"guest:211","type":"lxc","node":"proxmox1","name":"broken","check_status":"error","reachable":true,"updates":{"available":null},"error":{"code":"CHECK_COMMAND_FAILED","message":"apt-get update failed"}}
+]}
+JSON
+STATUS_MODEL_RENDER_NOTIFICATION "$WORK_DIR/disabled-status.json" update > "$WORK_DIR/disabled-update-mail"
+grep -Fqx '💤 proxmox1' "$WORK_DIR/disabled-update-mail"
+grep -Fqx '   Check disabled' "$WORK_DIR/disabled-update-mail"
+grep -Fqx '💤 🐧 210 · iobroker' "$WORK_DIR/disabled-update-mail"
+if grep -Fq 'Ergebnis nicht verfügbar' "$WORK_DIR/disabled-update-mail" ||
+  grep -Fq '⚠️ proxmox1' "$WORK_DIR/disabled-update-mail"; then
+  echo 'disabled checks must not be rendered as unavailable warnings' >&2
+  exit 1
+fi
+STATUS_MODEL_RENDER_NOTIFICATION "$WORK_DIR/disabled-status.json" > "$WORK_DIR/disabled-check-mail"
+grep -Fqx '💤 proxmox1' "$WORK_DIR/disabled-check-mail"
+grep -Fqx '💤 210 · iobroker' "$WORK_DIR/disabled-check-mail"
+grep -Fq '⚠️ 🐧 211 · broken: apt-get update failed' "$WORK_DIR/disabled-check-mail"
+
 cp "$WORK_DIR/update-status.json" "$WORK_DIR/status.json"
 LOCAL_FILES="$WORK_DIR" LOG_FILE="$WORK_DIR/log" ERROR_LOG_FILE="$WORK_DIR/errors" EXIT_CODE=0 \
   bash -c 'source "$1"; source "$2"; UPDATE_MAIL_BODY' _ \
