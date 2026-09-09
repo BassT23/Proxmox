@@ -115,6 +115,15 @@ TIME_CALCULTION () {
 
 COMPACT_WELCOME_OUTPUT () {
   awk '
+    # The check stream is also retained for Web UI/live diagnostics.  Keep
+    # those diagnostics intact, but do not replay apt progress chatter in the
+    # compact login/MOTD summary.
+    function is_apt_noise(line) {
+      return line ~ /^[[:space:]]*(Get|Hit|Ign|Err|Holen|OK|Fehl):[[:space:]]*/ ||
+        line ~ /^[[:space:]]*(Fetched|Reading package lists|Building dependency tree|Reading state information|Paketlisten werden gelesen|Abhängigkeitsbaum wird aufgebaut|Statusinformationen werden eingelesen|Alle Pakete sind aktuell|All packages are up to date|W:|E:|N:)/ ||
+        line ~ /^[[:space:]]*(Temporary failure resolving|Temporärer Fehlschlag beim Auflösen|Could not resolve|Konnte .* nicht auflösen)/
+    }
+    is_apt_noise($0) { next }
     /^Normal updates: / {
       normal = $0
       sub(/^Normal updates: /, "", normal)

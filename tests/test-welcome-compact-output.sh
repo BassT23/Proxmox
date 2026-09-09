@@ -35,6 +35,13 @@ VM 100 : pfsense
 Updates: 5
 LXC 211 : iobroker
 Check failed: apt-get update failed
+Get:1 http://deb.debian.org/debian trixie InRelease [140 kB]
+Holen:2 http://security.debian.org trixie-security InRelease [55 kB]
+Paketlisten werden gelesen…
+Err:3 http://deb.nodesource.com/node_22.x nodistro InRelease
+  Temporärer Fehlschlag beim Auflösen von deb.nodesource.com
+E: Das Depot »http://deb.nodesource.com/node_22.x nodistro InRelease« ist nicht signiert.
+W: Einige Indexdateien konnten nicht heruntergeladen werden.
 EOF
 
 actual=$(COMPACT_WELCOME_OUTPUT "$WORK_DIR/check-output")
