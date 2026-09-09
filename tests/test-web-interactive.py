@@ -28,16 +28,6 @@ def test_state_metadata_is_backward_compatible():
     assert new["socket_available"] is True
 
 
-def test_interactive_dom_diagnostic_instrumentation_is_present():
-    source = WEB.PAGE
-    assert "interactive-dom-diagnostic" in source
-    assert "window.addEventListener('error'" in source
-    assert "window.addEventListener('unhandledrejection'" in source
-    assert "diagnosticTextWrite" in source
-    assert "decorateInteractiveJob status" in source
-    assert "decorateAllLiveJobs status" in source
-
-
 def test_broker_forwards_input_and_releases_attachment():
     with tempfile.TemporaryDirectory() as temporary:
         socket_path = Path(temporary) / "control.sock"
@@ -465,6 +455,8 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert ".interactive-terminal-panel { position:fixed;" in WEB.PAGE
     assert 'class="interactive-terminal-dialog" role="dialog"' in WEB.PAGE
     assert "data-interactive-terminal" in WEB.PAGE
+    assert "controls.querySelector('[data-live-job],[data-interactive-terminal]')" in WEB.PAGE
+    assert "interactive-dom-diagnostic" not in WEB.PAGE
     assert "Live terminal" in WEB.PAGE
     assert "const jobTitle=job=>" in WEB.PAGE
     assert "friendlyTarget({id:job.target})" not in WEB.PAGE
