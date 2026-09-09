@@ -401,6 +401,23 @@ send_update_notification() {
       _ "$STATUS_MODEL_SCRIPT" "$status_file" "$UPDATE_CONFIG_FILE" || true
 }
 
+send_check_notification() {
+  local status_file="${1:-$STATUS_MODEL_FILE}"
+  [[ -f "$STATUS_MODEL_SCRIPT" && -f "$status_file" ]] || return 0
+  LOCAL_FILES=$(dirname -- "$status_file") \
+    STATUS_MODEL_FILE="$status_file" \
+    bash -c 'source "$1" && STATUS_MODEL_SEND_NOTIFICATION "$2" "$3"' \
+      _ "$STATUS_MODEL_SCRIPT" "$status_file" "$UPDATE_CONFIG_FILE" || true
+}
+
+notification_scope_kind() {
+  if [[ "${UU_UPDATE_SCOPE:-}" == host || "$1" == host || "$1" == node-* ]]; then
+    printf 'node'
+  else
+    printf 'target'
+  fi
+}
+
 validate_status_target() {
   local status_file="$1" target="$2"
   [[ -f "$STATUS_MODEL_SCRIPT" ]] || return 87
@@ -461,6 +478,9 @@ start_job() {
     return 3
   fi
   systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
+  systemd_env+=("--setenv=UU_SINGLE_TARGET=true" \
+    "--setenv=UU_SINGLE_TARGET_ID=$target" \
+    "--setenv=UU_SINGLE_TARGET_KIND=$(notification_scope_kind "$target")")
   if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
     systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
   fi
@@ -706,6 +726,11 @@ start_check_job() {
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${CHECK_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
+  if [[ "$mode" == target || "$mode" == node ]]; then
+    systemd_env+=("--setenv=UU_SINGLE_TARGET=true" \
+      "--setenv=UU_SINGLE_TARGET_ID=$target" \
+      "--setenv=UU_SINGLE_TARGET_KIND=$mode")
+  fi
   prepare_systemd_log_filters
   UU_JOB_TYPE=check write_state "$unit" "$target" running "$(now)" '' '' || return 1
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater check for $target" \
@@ -865,6 +890,9 @@ run_check_job() {
     all) UU_CHECK_JOB_EXECUTION=true "$cli" check </dev/null ;;
   esac
   exit_code=$?
+  if [[ "$mode" == target || "$mode" == node ]]; then
+    send_check_notification "$STATUS_MODEL_FILE"
+  fi
   if [[ "$mode" != target && "$exit_code" -eq "$CHECK_WARNING_RC" ]]; then
     UU_JOB_TYPE=check write_state "$unit" "$target" completed_with_warnings "$started" "$(now)" 0 "Check completed with warnings" || return 1
     return 0

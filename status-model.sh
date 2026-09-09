@@ -516,20 +516,29 @@ PY
 STATUS_MODEL_SEND_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
   local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
-  local email_user email_sender email_no_updates email_only_security
+  local email_user email_sender email_no_updates email_only_security email_single_runs
 
   email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
   email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
   email_no_updates=$(awk -F'"' '/^EMAIL_NO_UPDATES=/ {print $2}' "$config_file" 2>/dev/null)
   email_only_security=$(awk -F'"' '/^EMAIL_ONLY_SECURITY=/ {print $2}' "$config_file" 2>/dev/null)
+  email_single_runs=$(awk -F'"' '/^EMAIL_SINGLE_RUNS=/ {print $2}' "$config_file" 2>/dev/null)
   email_user="${email_user:-root}"
   email_sender="${email_sender:-$USER}"
   email_sender=$(STATUS_MODEL_EXPAND_SENDER "$email_sender")
   email_no_updates="${email_no_updates:-false}"
   email_only_security="${email_only_security:-false}"
+  email_single_runs="${email_single_runs:-false}"
+
+  local render_target="" render_kind=""
+  if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
+    [[ "$email_single_runs" == true ]] || return 0
+    render_target="${UU_SINGLE_TARGET_ID:-}"
+    render_kind="${UU_SINGLE_TARGET_KIND:-target}"
+  fi
 
   local notification state body
-  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file") || return 1
+  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file" check "$render_target" "$render_kind") || return 1
   state=${notification%%$'\n'*}
   state=${state#STATE=}
   body=${notification#*$'\n'}
@@ -569,17 +578,26 @@ STATUS_MODEL_SEND_NOTIFICATION() {
 STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-${LOCAL_FILES:-/etc/ultimate-updater}/status.json}}"
   local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
-  local email_user email_sender email_only_error notification state body
+  local email_user email_sender email_only_error email_single_runs notification state body
 
   email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
   email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
   email_only_error=$(awk -F'"' '/^EMAIL_ONLY_ERROR=/ {print $2}' "$config_file" 2>/dev/null)
+  email_single_runs=$(awk -F'"' '/^EMAIL_SINGLE_RUNS=/ {print $2}' "$config_file" 2>/dev/null)
   email_user="${email_user:-root}"
   email_sender="${email_sender:-${USER:-root}}"
   email_sender=$(STATUS_MODEL_EXPAND_SENDER "$email_sender")
   email_only_error="${email_only_error:-false}"
+  email_single_runs="${email_single_runs:-false}"
 
-  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file" update) || return 1
+  local render_target="" render_kind=""
+  if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
+    [[ "$email_single_runs" == true ]] || return 0
+    render_target="${UU_SINGLE_TARGET_ID:-}"
+    render_kind="${UU_SINGLE_TARGET_KIND:-target}"
+  fi
+
+  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file" update "$render_target" "$render_kind") || return 1
   state=${notification%%$'\n'*}
   state=${state#STATE=}
   body=${notification#*$'\n'}
@@ -604,15 +622,17 @@ STATUS_MODEL_EXPAND_SENDER() {
 STATUS_MODEL_RENDER_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
   local run_type="${2:-check}"
+  local scope_target="${3:-}"
+  local scope_kind="${4:-}"
   case "$run_type" in
     check|update) ;;
     *) return 2 ;;
   esac
-  python3 - "$status_file" "$run_type" <<'PY'
+  python3 - "$status_file" "$run_type" "$scope_target" "$scope_kind" <<'PY'
 import json
 import sys
 
-status_file, run_type = sys.argv[1:]
+status_file, run_type, scope_target, scope_kind = sys.argv[1:]
 try:
     with open(status_file, encoding="utf-8") as source:
         payload = json.load(source)
@@ -621,6 +641,44 @@ except (OSError, ValueError):
 
 targets = payload.get("targets")
 if not isinstance(targets, list):
+    raise SystemExit(1)
+
+def target_matches_scope(target):
+    if not scope_target:
+        return True
+    target_id = str(target.get("id") or "")
+    wanted = str(scope_target)
+    if scope_kind == "node":
+        if target.get("type") != "host":
+            return False
+        candidates = {
+            wanted,
+            wanted.removeprefix("host:"),
+            wanted.removeprefix("node-"),
+        }
+        values = {
+            target_id,
+            target_id.removeprefix("host:"),
+            str(target.get("node") or ""),
+            str(target.get("name") or ""),
+        }
+        # A local node action uses the sentinel "host".  The status model
+        # contains one host record for that scoped check/update.
+        return bool(candidates & values) or wanted == "host"
+    candidates = {
+        wanted,
+        wanted.removeprefix("guest:"),
+        wanted.removeprefix("host:"),
+    }
+    values = {
+        target_id,
+        target_id.removeprefix("guest:"),
+        target_id.removeprefix("host:"),
+    }
+    return bool(candidates & values)
+
+targets = [target for target in targets if isinstance(target, dict) and target_matches_scope(target)]
+if scope_target and not targets:
     raise SystemExit(1)
 
 updates = []
@@ -731,6 +789,7 @@ def update_line(target):
 if run_type == "update":
     hosts = []
     guest_current = 0
+    guest_current_targets = []
     guest_success = []
     guest_failed = []
     guest_offline = []
@@ -761,6 +820,7 @@ if run_type == "update":
                 guest_reboot.append(target)
             elif isinstance(available, int) and not isinstance(available, bool) and available == 0:
                 guest_current += 1
+                guest_current_targets.append(target)
             else:
                 guest_success.append(target)
 
@@ -791,7 +851,12 @@ if run_type == "update":
         for target in guest_skipped:
             lines.extend([f"💤 {target_icon(target)} {target_name(target)}", f"   {check_skip_message(target)}"])
     if guest_current:
-        lines.extend(["", f"✅ {guest_current} weitere Systeme – alles aktuell"])
+        if scope_target:
+            lines.extend(["", "Guests:"])
+            for target in guest_current_targets:
+                lines.extend([f"✅ {target_icon(target)} {target_name(target)}", "   Alles aktuell"])
+        else:
+            lines.extend(["", f"✅ {guest_current} weitere Systeme – alles aktuell"])
     print("STATE=issues" if any(update_status(target) == "failed" for target in hosts + guest_failed) or guest_offline else "STATE=updates")
     print("\n".join(lines))
     raise SystemExit(0)

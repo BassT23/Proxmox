@@ -179,6 +179,22 @@ for node in Proxmox-Test-1 Proxmox-Test-2 Proxmox-Test-3; do
 done
 [[ $(grep -Fc '✅ Proxmox-Test-' "$WORK_DIR/all-current-mail") -eq 3 ]]
 
+# A scoped single-target render must never fall back to unrelated status
+# records. This is the core protection for opt-in single-run mail.
+STATUS_MODEL_RENDER_NOTIFICATION "$WORK_DIR/update-status.json" update 984 target > "$WORK_DIR/scoped-guest-mail"
+grep -Fq '🐧 984 · unifi' "$WORK_DIR/scoped-guest-mail"
+if grep -Eq 'Proxmox-Test-[23]|🐧 985|🐧 986|🐧 987|weitere Systeme|Total available updates|Current:' "$WORK_DIR/scoped-guest-mail"; then
+  echo 'single-target update mail leaked unrelated status records' >&2
+  exit 1
+fi
+
+STATUS_MODEL_RENDER_NOTIFICATION "$WORK_DIR/node-groups.json" update node2 node > "$WORK_DIR/scoped-node-mail"
+grep -Fq 'node2' "$WORK_DIR/scoped-node-mail"
+if grep -Eq 'node1|node3|guest-a|guest-c' "$WORK_DIR/scoped-node-mail"; then
+  echo 'single-node mail leaked unrelated status records' >&2
+  exit 1
+fi
+
 if STATUS_MODEL_RENDER_NOTIFICATION "$WORK_DIR/status.json" invalid >/dev/null 2>&1; then
   exit 1
 fi

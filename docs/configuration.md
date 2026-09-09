@@ -46,8 +46,10 @@ invalid or inactive ID is rejected. See [Backup and snapshots](backup-and-snapsh
 
 ## Notifications and logging
 
-`EMAIL_USER`, `EMAIL_SENDER`, `EMAIL_DAILY_CHECK`, `EMAIL_NO_UPDATES`,
+`EMAIL_USER`, `EMAIL_SENDER`, `EMAIL_DAILY_CHECK`, `EMAIL_SINGLE_RUNS`, `EMAIL_NO_UPDATES`,
 `EMAIL_ONLY_SECURITY`, and `EMAIL_ONLY_ERROR` control email behavior.
+`EMAIL_SINGLE_RUNS` is false by default; when enabled, explicitly selected
+single-target jobs may send a summary limited to that job's target.
 `DEBUG` enables technical diagnostics and detailed job output. Keep it false
 for normal user-facing output and enable it temporarily for troubleshooting.
 `LOG_FILE` and `ERROR_LOG_FILE` select the local log files.

@@ -1687,6 +1687,12 @@ EXIT () {
         STATUS_MODEL_SEND_NOTIFICATION "$LOCAL_FILES/status.json" "$CONFIG_FILE"; then
         status_notification_sent=true
       fi
+      # A scoped job owns its notification decision.  Never fall back to the
+      # legacy global renderer, which would mix unrelated status records into
+      # a single-target mail.
+      if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
+        status_notification_sent=true
+      fi
       if [[ "$status_notification_sent" != true ]]; then
         {
           echo -e "Available Updates:"
