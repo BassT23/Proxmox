@@ -17,6 +17,10 @@ assert '"start-reboot"' in server
 assert "rebootTargetSupported(t)" in server
 assert "t.reboot_required===true" in server
 assert "Reboot now" in server
+assert 'class="reboot-detail-action"' in server
+assert "${rebootAction?`<div class=\"reboot-detail-action\">" in server
+assert ".details-heading" in server and "padding:6px 2px 10px" in server
+assert ".reboot-detail-action .danger" in server
 assert "Running guests on this node may be affected." in server
 assert "Confirm node reboot" in server
 assert "The system will be restarted." in server
