@@ -7,13 +7,18 @@ Added:
 - running interactive update jobs can be opened as a live browser terminal with ANSI, cursor, and Whiptail/Dialog support
 - interactive terminal input, terminal resizing, reconnects, and a mobile touch keybar are available without making the job depend on the browser
 - running non-interactive jobs, including checks, provide a read-only live output view while the existing log and download views remain available
+- detail views offer a guarded `Reboot now` action for supported nodes, LXC containers, and VMs that require a reboot
 
 Improved:
 - interactive terminal output is streamed with bounded replay support so disconnects do not stop the server-side job
 - mobile terminal layout, viewport fitting, terminal font controls, and persistent per-browser font size improve small-screen use
+- check failures distinguish connectivity problems from APT/repository failures, while disabled checks are reported neutrally
+- single-target notifications can be enabled independently and are limited to the executed job scope; scheduled check notifications have their own setting
+- summary notifications keep node groups visually separated and the Welcome Screen remains compact while full job output stays available
 
 Fixed:
 - live journal output records now use terminal-correct line endings so successive records start at column zero
+- interactive job failures retain their final status and output, and supported reboot actions use explicit confirmation and job-state handling
 
 **v5.1.3 Beta 1** (beta / release candidate for validation)
 Improved:
