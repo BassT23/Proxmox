@@ -473,7 +473,7 @@ PAGE = r"""<!doctype html>
     .metric { border-radius:16px; padding:18px } .metric strong { display:block; font-size:1.8rem; letter-spacing:-.04em } .metric span { color:var(--muted); font-size:.82rem }
     .dashboard-kpis { grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; margin:16px 0 0; padding:9px; border:1px solid var(--line); border-radius:16px; background:#151d34aa; box-shadow:0 18px 50px #00000029 } .dashboard-kpis .metric { border-color:#94a3b82e; border-radius:10px; padding:13px 12px; background:#0b122433; box-shadow:none } .dashboard-kpis .metric strong { font-size:1.55rem }
     @media (max-width:1100px) { .dashboard-kpis { grid-template-columns:repeat(3,minmax(0,1fr)) } }
-    .notice { border-radius:14px; padding:15px 18px; color:var(--warn); margin-bottom:18px } .notice.error { color:var(--bad) }
+    .notice { border-radius:14px; padding:15px 18px; color:var(--warn); margin:12px 0 18px } .notice.error { color:var(--bad) }
     .section-title { display:flex; justify-content:space-between; align-items:baseline; margin:0 0 12px } h2 { font-size:1rem; margin:0 }
     .targets { display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:14px } .target-card { border-radius:18px; padding:18px; transition:transform .16s,border-color .16s,background .16s }
     .target-card:hover,.target-card:focus-within { transform:translateY(-2px); border-color:var(--accent); background:var(--strong) } .target-top { display:flex; justify-content:space-between; gap:12px; align-items:start }
@@ -2327,6 +2327,7 @@ class AuthStore:
 
 class StatusHandler(BaseHTTPRequestHandler):
     server_version = "UltimateUpdaterUI/1"
+    protocol_version = "HTTP/1.1"
 
     def current_session(self):
         cookie = self.headers.get("Cookie", "")
@@ -2773,7 +2774,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache, no-store")
-        self.send_header("Connection", "close")
+        self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
 
@@ -2849,7 +2850,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache, no-store")
-        self.send_header("Connection", "close")
+        self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
         try:

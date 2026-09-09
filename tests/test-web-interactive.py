@@ -421,6 +421,9 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "new EventSource(`/api/jobs/${encodeURIComponent(unit)}/stream" in WEB.PAGE
     assert "terminal.write(terminalBytes(event.data))" in WEB.PAGE
     assert "panel.hidden=false;interactiveKeybarState(true);terminalMessage(message,true);terminalStatus('Stream unavailable',true)" in WEB.PAGE
+    assert 'protocol_version = "HTTP/1.1"' in (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
+    assert 'self.send_header("Connection", "keep-alive")' in (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
+    assert "panel.hidden=false;interactiveKeybarState(true);terminalMessage(message,true);terminalStatus('Stream unavailable',true)" in WEB.PAGE
     assert "catch(error){await disposeInteractiveTerminal(true);notice(error.message||'The interactive terminal could not be opened.',true)}" not in WEB.PAGE
     assert "new Uint8Array(binary.length)" in WEB.PAGE
     assert "interactiveKeyData" in WEB.PAGE
