@@ -86,5 +86,6 @@ with tempfile.TemporaryDirectory() as directory:
 
 source = (root / "web-ui" / "server.py").read_text(encoding="utf-8")
 assert '"UU_JOB_SOURCE": "scheduler", "UU_JOB_INTERACTIVE": "true"' in source
+assert "EMAIL_DAILY_CHECK:'Email for scheduled checks'" in source
 
 print("scheduler tests: PASS")

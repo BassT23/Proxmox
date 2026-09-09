@@ -3,13 +3,15 @@
 [← Back to README](../README.md)
 
 Email notifications use the status produced by checks and updates. Configure
-the recipient and sender with `EMAIL_USER` and `EMAIL_SENDER`; the schedule
+the recipient and sender with `EMAIL_USER` and `EMAIL_SENDER`; the notification
 and filtering options include `EMAIL_DAILY_CHECK`, `EMAIL_SINGLE_RUNS`, `EMAIL_NO_UPDATES`,
 `EMAIL_ONLY_SECURITY`, and `EMAIL_ONLY_ERROR`.
 
 `EMAIL_SINGLE_RUNS` defaults to false. If enabled, a manually selected
 single-target check or update can send one summary containing only that job's
 target; global and scheduled summaries are unaffected.
+`EMAIL_DAILY_CHECK` defaults to true and controls notifications for scheduled
+checks only. Manual global runs and update notifications are unaffected.
 
 Notifications distinguish available updates from healthy/no-update,
 offline, unsupported, not-checked, and error states. A target error remains

@@ -516,23 +516,35 @@ PY
 STATUS_MODEL_SEND_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
   local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
-  local email_user email_sender email_no_updates email_only_security email_single_runs
+  local email_user email_sender email_no_updates email_only_security email_daily_check email_single_runs
 
   email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
   email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
   email_no_updates=$(awk -F'"' '/^EMAIL_NO_UPDATES=/ {print $2}' "$config_file" 2>/dev/null)
+  email_daily_check=$(awk -F'"' '/^EMAIL_DAILY_CHECK=/ {print $2}' "$config_file" 2>/dev/null)
   email_only_security=$(awk -F'"' '/^EMAIL_ONLY_SECURITY=/ {print $2}' "$config_file" 2>/dev/null)
   email_single_runs=$(awk -F'"' '/^EMAIL_SINGLE_RUNS=/ {print $2}' "$config_file" 2>/dev/null)
   email_user="${email_user:-root}"
   email_sender="${email_sender:-$USER}"
   email_sender=$(STATUS_MODEL_EXPAND_SENDER "$email_sender")
   email_no_updates="${email_no_updates:-false}"
+  email_daily_check="${email_daily_check:-true}"
   email_only_security="${email_only_security:-false}"
   email_single_runs="${email_single_runs:-false}"
 
+  # Scheduler units mark their invocation explicitly.  This gate applies only
+  # to scheduled checks; manual global checks and updates remain independent.
+  # Keep it before the single-target policy so a scheduled selected-target
+  # check is governed by EMAIL_DAILY_CHECK rather than the manual-run switch.
+  if [[ "${UU_JOB_SOURCE:-}" == scheduler && "$email_daily_check" != true ]]; then
+    return 0
+  fi
+
   local render_target="" render_kind=""
   if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
-    [[ "$email_single_runs" == true ]] || return 0
+    if [[ "${UU_JOB_SOURCE:-}" != scheduler ]]; then
+      [[ "$email_single_runs" == true ]] || return 0
+    fi
     render_target="${UU_SINGLE_TARGET_ID:-}"
     render_kind="${UU_SINGLE_TARGET_KIND:-target}"
   fi

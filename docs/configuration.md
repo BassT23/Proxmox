@@ -50,6 +50,8 @@ invalid or inactive ID is rejected. See [Backup and snapshots](backup-and-snapsh
 `EMAIL_ONLY_SECURITY`, and `EMAIL_ONLY_ERROR` control email behavior.
 `EMAIL_SINGLE_RUNS` is false by default; when enabled, explicitly selected
 single-target jobs may send a summary limited to that job's target.
+`EMAIL_DAILY_CHECK` is true by default and enables email notifications for
+scheduled checks. Manual global runs and update notifications are unaffected.
 `DEBUG` enables technical diagnostics and detailed job output. Keep it false
 for normal user-facing output and enable it temporarily for troubleshooting.
 `LOG_FILE` and `ERROR_LOG_FILE` select the local log files.
