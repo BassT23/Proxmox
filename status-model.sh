@@ -863,8 +863,10 @@ if updates:
     for node_index, node in enumerate(node_order):
         node_targets = grouped[node]
         node_target = next((target for target, _ in node_targets if target.get("type") == "host"), None)
-        if node_index == 0:
-            lines.append("")
+        # Keep the existing section spacing before the first node and add one
+        # blank line only when moving to the next node group. Targets within
+        # one node remain a compact block separated by their existing rules.
+        lines.append("")
         if node_target is not None:
             lines.append(f"🖥️ {node}")
             lines.extend(update_split(node_target))

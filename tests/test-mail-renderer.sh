@@ -75,6 +75,35 @@ if grep -Fq 'host:Proxmox-Test-2' "$WORK_DIR/status-mail"; then
   exit 1
 fi
 
+cat > "$WORK_DIR/node-groups.json" <<'JSON'
+{"targets":[
+  {"id":"host:node1","type":"host","node":"node1","name":"node1","check_status":"updates_available","reachable":true,"updates":{"available":4},"normal_updates":4,"security_updates":0},
+  {"id":"guest:101","type":"lxc","node":"node1","name":"guest-a","check_status":"updates_available","reachable":true,"updates":{"available":2},"normal_updates":2,"security_updates":0},
+  {"id":"guest:102","type":"lxc","node":"node1","name":"guest-b","check_status":"updates_available","reachable":true,"updates":{"available":1},"normal_updates":1,"security_updates":0},
+  {"id":"host:node2","type":"host","node":"node2","name":"node2","check_status":"updates_available","reachable":true,"updates":{"available":3},"normal_updates":1,"security_updates":2},
+  {"id":"guest:201","type":"vm","node":"node2","name":"guest-c","check_status":"updates_available","reachable":true,"updates":{"available":5},"security_split_supported":false},
+  {"id":"host:node3","type":"host","node":"node3","name":"node3","check_status":"updates_available","reachable":true,"updates":{"available":1},"normal_updates":1,"security_updates":0}
+]}
+JSON
+STATUS_MODEL_RENDER_NOTIFICATION "$WORK_DIR/node-groups.json" > "$WORK_DIR/node-groups-mail"
+python3 - "$WORK_DIR/node-groups-mail" <<'PY'
+import sys
+
+lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+headings = ["🖥️ node1", "🖥️ node2", "🖥️ node3"]
+positions = [lines.index(heading) for heading in headings]
+assert lines[positions[0] - 1] == "", "first node must retain only section spacing"
+for position in positions[1:]:
+    assert lines[position - 1] == "", "node groups need one blank line"
+for left, right in zip(positions, positions[1:]):
+    between = lines[left:right]
+    assert between.count("") == 1, "node transition must contain exactly one blank line"
+guest_a = next(index for index, line in enumerate(lines) if "guest-a" in line)
+guest_b = next(index for index, line in enumerate(lines) if "guest-b" in line)
+assert lines[guest_a + 3] == "----------------------------"
+assert lines[guest_b - 1] == "----------------------------"
+PY
+
 cat > "$WORK_DIR/update-status.json" <<'JSON'
 {"targets":[
   {"id":"host:Proxmox-Test-1","type":"host","node":"Proxmox-Test-1","name":"Proxmox-Test-1","check_status":"updates_available","reachable":true,"updates":{"available":12},"last_update":{"status":"success","exit_code":0,"updated_packages":12}},
