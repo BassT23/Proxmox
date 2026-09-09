@@ -913,6 +913,23 @@ CHECK_CONTAINER_FAILURE() {
   return 1
 }
 
+GUEST_CONNECTIVITY_FAILURE() {
+  local kind="$1" target="$2"
+  local message="${3:-Internet connectivity check failed for $kind $target}"
+  local transport="${4:-pct}"
+  if [[ "${INITIAL_INVENTORY:-false}" == true ]]; then
+    STATUS_MODEL_RECORD "$target" "${kind,,}" "$transport" false "${OS:-unknown}" "" "null" "null" \
+      not_checked NETWORK_UNAVAILABLE "$message; package check skipped" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "${STATUS_MODEL_GUEST_NAME:-}"
+    return 0
+  fi
+  STATUS_MODEL_RECORD "$target" "${kind,,}" "$transport" false "${OS:-unknown}" "" "null" "null" \
+    error CONNECTIVITY_FAILED "$message; package check skipped" \
+    "${STATUS_MODEL_NODE:-$HOSTNAME}" "${STATUS_MODEL_GUEST_NAME:-}"
+  CHECK_FAILURE=1
+  return 1
+}
+
 CHECK_CONTAINER () {
   if [[ "$RDU" != true ]]; then
     CONTAINER=$1
@@ -948,13 +965,9 @@ CHECK_CONTAINER () {
     echo -e "${YL}Could not read hostname for LXC $CONTAINER; using ${NAME} as display name and continuing${CL}"
   fi
   NAME=$(printf '%s' "$NAME" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')
-  if [[ "${INITIAL_INVENTORY:-false}" == true ]] &&
-    ! GUEST_INTERNET_PREFLIGHT_PCT "$CONTAINER"; then
-    STATUS_MODEL_RECORD "$CONTAINER" lxc pct false "$OS" "" "null" "null" \
-      not_checked NETWORK_UNAVAILABLE \
-      "LXC $CONTAINER has no guest internet access; package check skipped" \
-      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-    return 0
+  if ! GUEST_INTERNET_PREFLIGHT_PCT "$CONTAINER"; then
+    GUEST_CONNECTIVITY_FAILURE LXC "$CONTAINER" "Internet connectivity check failed for LXC $CONTAINER" pct
+    return $?
   fi
   if OS_RELEASE=$(RUN_PCT_COMMAND "$CONTAINER" sh -c 'cat /etc/os-release' 2>/dev/null); then
     OS_RELEASE_ID=$(printf '%s\n' "$OS_RELEASE" | awk -F= '/^ID=/{gsub(/^"|"$/, "", $2); print tolower($2); exit}')
@@ -1299,13 +1312,9 @@ CHECK_VM () {
     CHECK_VM_QEMU
     return
   fi
-  if [[ "${INITIAL_INVENTORY:-false}" == true ]] &&
-    ! GUEST_INTERNET_PREFLIGHT_SSH "$IP" "$SSH_VM_PORT" "$USER"; then
-    STATUS_MODEL_RECORD "$VM" vm ssh false "" "" "null" "null" \
-      not_checked NETWORK_UNAVAILABLE \
-      "VM $VM has no guest internet access; package check skipped" \
-      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-    return 0
+  if ! GUEST_INTERNET_PREFLIGHT_SSH "$IP" "$SSH_VM_PORT" "$USER"; then
+    GUEST_CONNECTIVITY_FAILURE VM "$VM" "Internet connectivity check failed for VM $VM; package check skipped" ssh
+    return $?
   fi
   OS_BASE=$(qm config "$VM" | grep ostype || true)
   if [[ "$OS_BASE" =~ l2 ]]; then
@@ -1511,13 +1520,9 @@ CHECK_VM_QEMU () {
     return 1
   fi
   if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
-    if [[ "${INITIAL_INVENTORY:-false}" == true ]] &&
-      ! GUEST_INTERNET_PREFLIGHT_QGA "$VM"; then
-      STATUS_MODEL_RECORD "$VM" vm qga false "$OS" "" "null" "null" \
-        not_checked NETWORK_UNAVAILABLE \
-        "VM $VM has no guest internet access; package check skipped" \
-        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-      return 0
+    if ! GUEST_INTERNET_PREFLIGHT_QGA "$VM"; then
+      GUEST_CONNECTIVITY_FAILURE VM "$VM" "Internet connectivity check failed for VM $VM; package check skipped" qga
+      return $?
     fi
     KERNEL=$(printf '%s\n' "$OS_INFO" | grep kernel-version || true)
 #    if [[ "$KERNEL" =~ FreeBSD ]]; then

@@ -64,11 +64,16 @@ if grep -Fq 'PACKAGE_MANAGER_CALLED' "$LOG_FILE"; then
   exit 1
 fi
 
-# Normal checks retain their existing package-manager behavior.
+# Normal checks preserve the first connectivity failure and do not continue
+# into the package manager with a misleading apt error.
 : > "$LOG_FILE"
 INITIAL_INVENTORY=false
 CHECK_CONTAINER 912 || true
-grep -Fq 'PACKAGE_MANAGER_CALLED' "$LOG_FILE"
+grep -Fq 'CONNECTIVITY_FAILED' "$LOG_FILE"
+if grep -Fq 'PACKAGE_MANAGER_CALLED' "$LOG_FILE"; then
+  echo 'package manager was called after failed guest preflight' >&2
+  exit 1
+fi
 HARNESS
 chmod 750 "$WORK_DIR/harness.sh"
 
