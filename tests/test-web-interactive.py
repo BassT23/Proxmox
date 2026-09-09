@@ -424,6 +424,8 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert 'id="interactive-terminal-message"' in WEB.PAGE
     assert "const terminalStatus=(value,error=false)=>{const node=document.getElementById('interactive-terminal-status');if(!node)return;" in WEB.PAGE
     assert "const terminalMessage=(value,visible=true)=>{const node=document.getElementById('interactive-terminal-message');if(!node)return;" in WEB.PAGE
+    assert "const heading=document.getElementById('interactive-terminal-heading'),help=document.getElementById('interactive-terminal-help');if(heading)heading.textContent='Live terminal';if(help)help.hidden=false" in WEB.PAGE
+    assert "const title=document.getElementById('interactive-terminal-title'),download=document.getElementById('interactive-terminal-download');if(title)title.textContent" in WEB.PAGE
     assert "panel.hidden=false;interactiveKeybarState(true);terminalMessage(message,true);terminalStatus('Stream unavailable',true)" in WEB.PAGE
     assert 'protocol_version = "HTTP/1.1"' in (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
     assert 'self.send_header("Connection", "keep-alive")' in (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
