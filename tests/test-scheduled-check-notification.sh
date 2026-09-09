@@ -27,6 +27,7 @@ export LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json"
 export PATH="$WORK_DIR:$PATH" MAIL_CAPTURE="$WORK_DIR/captured-mail" HOSTNAME=Test-Cluster
 # shellcheck disable=SC1091
 source "$ROOT_DIR/status-model.sh"
+grep -Fq 'scheduled_email_enabled' "$ROOT_DIR/check-updates.sh"
 
 # Scheduled checks are gated by EMAIL_DAILY_CHECK.
 export UU_JOB_SOURCE=scheduler
