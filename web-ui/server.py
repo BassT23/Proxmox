@@ -2729,7 +2729,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                 message = ""
         if not isinstance(message, str):
             message = str(message)
-        return cursor, (message + "\n").encode("utf-8", "replace")
+        # Journal records are rendered by a real terminal with convertEol
+        # disabled.  Normalize only the record line endings so every record
+        # starts at column zero without changing ANSI/control bytes.
+        message = message.replace("\r\n", "\n").rstrip("\n")
+        message = message.replace("\n", "\r\n")
+        return cursor, (message + "\r\n").encode("utf-8", "replace")
 
     def handle_journal_output_stream(self, unit):
         query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)

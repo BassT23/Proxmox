@@ -364,7 +364,16 @@ def test_journal_output_records_preserve_cursor_ansi_and_line_bytes():
     record = json.dumps({"__CURSOR": "s=cursor-1", "MESSAGE": "\u001b[31mfailed"}).encode()
     cursor, data = WEB.StatusHandler.journal_output_record(record)
     assert cursor == "s=cursor-1"
-    assert data == b"\x1b[31mfailed\n"
+    assert data == b"\x1b[31mfailed\r\n"
+    assert WEB.StatusHandler.journal_output_record(
+        json.dumps({"__CURSOR": "s=cursor-2", "MESSAGE": "one\ntwo"}).encode()
+    )[1] == b"one\r\ntwo\r\n"
+    assert WEB.StatusHandler.journal_output_record(
+        json.dumps({"__CURSOR": "s=cursor-3", "MESSAGE": "one\r\ntwo\r\n"}).encode()
+    )[1] == b"one\r\ntwo\r\n"
+    assert WEB.StatusHandler.journal_output_record(
+        json.dumps({"__CURSOR": "s=cursor-4", "MESSAGE": "first\nsecond\n"}).encode()
+    )[1] == b"first\r\nsecond\r\n"
     assert WEB.StatusHandler.journal_output_record(b"not-json") is None
 
 
