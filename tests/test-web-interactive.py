@@ -28,6 +28,16 @@ def test_state_metadata_is_backward_compatible():
     assert new["socket_available"] is True
 
 
+def test_interactive_dom_diagnostic_instrumentation_is_present():
+    source = WEB.PAGE
+    assert "interactive-dom-diagnostic" in source
+    assert "window.addEventListener('error'" in source
+    assert "window.addEventListener('unhandledrejection'" in source
+    assert "diagnosticTextWrite" in source
+    assert "decorateInteractiveJob status" in source
+    assert "decorateAllLiveJobs status" in source
+
+
 def test_broker_forwards_input_and_releases_attachment():
     with tempfile.TemporaryDirectory() as temporary:
         socket_path = Path(temporary) / "control.sock"
