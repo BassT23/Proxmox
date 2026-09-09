@@ -11,7 +11,8 @@ and filtering options include `EMAIL_DAILY_CHECK`, `EMAIL_SINGLE_RUNS`, `EMAIL_N
 single-target check or update can send one summary containing only that job's
 target; global and scheduled summaries are unaffected.
 `EMAIL_DAILY_CHECK` defaults to true and controls notifications for scheduled
-checks only. Manual global runs and update notifications are unaffected.
+checks only; the Web UI labels this setting **Email for scheduled checks**.
+Manual global runs and update notifications are unaffected.
 
 Notifications distinguish available updates from healthy/no-update,
 offline, unsupported, not-checked, and error states. A target error remains

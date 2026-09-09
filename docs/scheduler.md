@@ -33,6 +33,12 @@ uses the same job entry point.
 Times use the local system timezone shown in the WebUI. Schedules can be
 enabled, disabled, edited, or deleted without changing `update.conf`.
 
+Scheduled Check notifications are controlled by `EMAIL_DAILY_CHECK`, shown in
+Settings as **Email for scheduled checks**. Its default is `true`; setting it
+to `false` suppresses mail for scheduled Checks only. Manual global Checks and
+Updates are independent of this setting. Single-target notifications use the
+separate `EMAIL_SINGLE_RUNS` option.
+
 The selected target set is only the requested scope. Existing include/exclude,
 eligibility, backup, lifecycle, lock, notification, and reboot rules remain
 authoritative. Scheduler actions call the existing single-target or all-target

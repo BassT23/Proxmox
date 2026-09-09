@@ -56,6 +56,24 @@ Jobs run server-side and remain available after the browser session ends. The
 Jobs view shows the action, target, start time, result, exit code, and a link
 to the retained log.
 
+For a running non-interactive job or Check, choose **Live output**. This is a
+read-only terminal view: output is streamed while the job runs, and closing
+the browser does not stop the server-side job. The complete log remains
+available afterwards for viewing or download.
+
+Interactive update jobs can be opened with **Live terminal** when their
+transport supports interaction. This is a real terminal view with PTY output,
+ANSI/cursor handling, input, and terminal resizing. A browser disconnect does
+not end the job; the terminal can be attached again and existing output may be
+replayed. After completion the terminal remains open and shows **Job finished**
+or **Job failed**. In either case, existing output remains visible and the
+complete log can still be viewed or downloaded. Failed jobs disable further
+input, while Close remains available.
+
+On small displays the terminal uses a responsive, fullscreen-like layout. The
+mobile keybar provides **Esc**, **Tab**, arrow keys, and **Enter**. **Terminal
+Font Size** can be adjusted with the font controls and is saved per browser.
+
 ![Web UI jobs and logs](images/web-ui/jobs.png)
 
 ### Scheduler
@@ -69,6 +87,19 @@ actions Edit, Run now, Disable, and Delete.
 The UI does not expose a general shell, arbitrary commands, private keys, or
 password storage. Configuration writes preserve unrelated settings and are
 validated atomically. Updates require browser confirmation.
+
+### Reboot now
+
+In a target's detail view, **Reboot now** is shown only when **Reboot required**
+is **Yes** and the target is a supported Node, LXC, or VM. It is not a general
+reboot button in the overview. Guest reboots require one confirmation; Node
+reboots require an additional safety confirmation because running guests may be
+affected. Running or conflicting jobs, offline targets, and unsupported or
+restricted targets block the action.
+
+This manual action is separate from `REBOOT_IF_NEEDED`: that setting controls
+reboot handling in the Update path, while **Reboot now** is an explicit action
+started from target details.
 
 ## Authentication and service control
 

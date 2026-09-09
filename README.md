@@ -50,6 +50,10 @@ Key features include:
 - VM access through QEMU Guest Agent or SSH, with lifecycle restoration.
 - Persistent server-side jobs that continue after a browser or SSH session
   disconnects.
+- Interactive Web terminal support for supported update jobs and read-only
+  live output for Checks and other non-interactive jobs.
+- Scheduler support for weekdays and selected month days, plus job-scoped
+  notification controls.
 - Separate normal/security counts where classification is supported; other
   systems show a total count.
 - Snapshot and backup safety controls, filters, notifications, and logs.
