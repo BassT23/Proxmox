@@ -10,6 +10,7 @@ JOB_STATE_DIR="${UU_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
 REMOTE_REF_DIR="$JOB_STATE_DIR/remote"
 JOB_PREFIX="ultimate-updater-update-"
 CHECK_PREFIX="ultimate-updater-check-"
+REBOOT_PREFIX="ultimate-updater-reboot-"
 CHECK_WARNING_RC="${UU_CHECK_WARNING_RC:-10}"
 MAX_COMPLETED_JOBS="${UU_MAX_COMPLETED_JOBS:-50}"
 CHECK_SCRIPT="${UU_CHECK_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/check-updates.sh}"
@@ -24,7 +25,7 @@ RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 SYSTEMD_LOG_FILTER_ARGS=()
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | attach UNIT | list\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | list\n' "$0"
 }
 
 valid_target() {
@@ -93,7 +94,7 @@ interactive_socket() {
 
 prepare_interactive_runtime() {
   local unit="$1" directory
-  [[ "$unit" =~ ^ultimate-updater-(update|check)-[A-Za-z0-9_.-]+$ ]] || return 2
+  [[ "$unit" =~ ^ultimate-updater-(update|check|reboot)-[A-Za-z0-9_.-]+$ ]] || return 2
   mkdir -p "$INTERACTIVE_RUNTIME_DIR" || return 1
   chmod 0700 "$INTERACTIVE_RUNTIME_DIR" || return 1
   directory=$(interactive_job_dir "$unit")
@@ -105,7 +106,7 @@ prepare_interactive_runtime() {
 
 cleanup_interactive_runtime() {
   local unit="$1" directory
-  [[ "$unit" =~ ^ultimate-updater-(update|check)-[A-Za-z0-9_.-]+$ ]] || return 2
+  [[ "$unit" =~ ^ultimate-updater-(update|check|reboot)-[A-Za-z0-9_.-]+$ ]] || return 2
   directory=$(interactive_job_dir "$unit")
   [[ -d "$directory" ]] || return 0
   rm -f -- "$directory/control.sock" 2>/dev/null || true
@@ -169,7 +170,7 @@ ensure_state_dir() {
 }
 
 valid_unit() {
-  [[ "$1" =~ ^ultimate-updater-(update|check)-[A-Za-z0-9_.-]+$ ]]
+  [[ "$1" =~ ^ultimate-updater-(update|check|reboot)-[A-Za-z0-9_.-]+$ ]]
 }
 
 valid_remote_value() {
@@ -766,6 +767,85 @@ run_selfupdate_job() {
   return "$exit_code"
 }
 
+start_reboot_job() {
+  local target="$1" kind="$2" host="$3" user="$4" port="$5" identity="$6" local_target="$7"
+  local unit timestamp conflict
+  local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR" "--setenv=UU_JOB_TYPE=reboot")
+  valid_target "$target" || { printf 'Unsupported reboot target: %s\n' "$target" >&2; return 2; }
+  [[ "$kind" == host || "$kind" == lxc || "$kind" == vm ]] || { printf 'Unsupported reboot target type.\n' >&2; return 2; }
+  if [[ "$kind" != host && ! "$target" =~ ^[0-9]+$ ]]; then
+    printf 'Guest reboot targets must be numeric.\n' >&2
+    return 2
+  fi
+  [[ "$local_target" == true || "$local_target" == false ]] || return 2
+  [[ "$local_target" == true || ( -n "$host" && "$host" != *[!A-Za-z0-9_.:-]* && "$user" =~ ^[A-Za-z0-9._-]+$ && "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ) ]] || return 2
+  command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start reboot jobs.\n' >&2; return 5; }
+  [[ "$EUID" -eq 0 ]] || { printf 'Starting reboot jobs requires root.\n' >&2; return 2; }
+  ensure_state_dir || return 1
+  acquire_start_lock || { printf 'Could not acquire the job start lock.\n' >&2; return 1; }
+  if conflict=$(running_job_conflict "$target"); then
+    printf 'A job is already running for target %s.\n' "$target" >&2
+    return 3
+  fi
+  timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
+  unit="${REBOOT_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
+  UU_JOB_TYPE=reboot write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater reboot for $target" \
+      "${systemd_env[@]}" --property=Type=oneshot --property=StandardOutput=journal \
+      --property=StandardError=journal "$RUNNER_PATH" run-reboot "$unit" "$target" "$kind" "$host" "$user" "$port" "$identity" "$local_target"; then
+    UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
+    return 1
+  fi
+  printf 'Reboot job started\nTarget: %s\nJob: %s\nStatus: ultimate-updater status\nLogs: journalctl -u %s\n' \
+    "$target" "$unit" "$unit"
+}
+
+run_reboot_job() {
+  local unit="$1" target="$2" kind="$3" host="$4" user="$5" port="$6" identity="$7" local_target="$8"
+  local file started exit_code remote_command
+  local -a command
+  valid_unit "$unit" || return 2
+  valid_target "$target" || return 2
+  [[ "$kind" == host || "$kind" == lxc || "$kind" == vm ]] || return 2
+  [[ "$local_target" == true || "$local_target" == false ]] || return 2
+  [[ "$kind" == host || "$target" =~ ^[0-9]+$ ]] || return 2
+  file=$(state_file "$unit")
+  started=$(state_value "$file" started_at)
+  exec 9>"$JOB_STATE_DIR/$target.lock" || { UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" 1 "could not open target lock"; return 1; }
+  if ! flock -n 9; then
+    UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" 75 "target already locked"
+    return 75
+  fi
+  if [[ "$kind" == host ]]; then
+    remote_command='systemctl reboot'
+  elif [[ "$kind" == lxc ]]; then
+    remote_command="pct reboot $target"
+  else
+    remote_command="qm reboot $target"
+  fi
+  if [[ "$local_target" == true ]]; then
+    command=(bash -c "$remote_command")
+  else
+    command=(ssh -q -o BatchMode=yes -o ConnectTimeout=5)
+    [[ -n "$identity" ]] && command+=( -o IdentitiesOnly=yes -i "$identity" )
+    command+=( -p "$port" "$user@$host" "$remote_command" )
+  fi
+  # A node disappears as soon as the accepted reboot starts.  Persist the
+  # accepted state before issuing that one-way command; guest reboots use the
+  # normal success-after-return path below.
+  if [[ "$kind" == host ]]; then
+    UU_JOB_TYPE=reboot write_state "$unit" "$target" completed "$started" "$(now)" 0 "Reboot initiated" || return 1
+  fi
+  "${command[@]}"
+  exit_code=$?
+  if [[ "$exit_code" -eq 0 ]]; then
+    [[ "$kind" == host ]] || UU_JOB_TYPE=reboot write_state "$unit" "$target" completed "$started" "$(now)" 0 "Reboot initiated"
+  else
+    UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" "Reboot command failed"
+  fi
+  return "$exit_code"
+}
+
 run_check_job() {
   local unit="$1" target="$2" cli="$3" mode="$4" file started exit_code lock_file
   valid_unit "$unit" || return 2
@@ -951,6 +1031,14 @@ case "${1:-}" in
   run-selfupdate)
     [[ $# -eq 4 ]] || { usage >&2; exit 2; }
     run_selfupdate_job "$2" "$3" "$4"
+    ;;
+  start-reboot)
+    [[ $# -eq 8 ]] || { usage >&2; exit 2; }
+    start_reboot_job "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+    ;;
+  run-reboot)
+    [[ $# -eq 9 ]] || { usage >&2; exit 2; }
+    run_reboot_job "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9"
     ;;
   attach)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }

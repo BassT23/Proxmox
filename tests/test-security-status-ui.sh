@@ -85,8 +85,8 @@ assert "@media (max-width:760px)" in source
 assert "grid-template-columns:repeat(3,minmax(0,1fr))" in source
 assert "grid-template-columns:repeat(2,minmax(0,1fr))" in source
 assert "overflow-wrap:anywhere" in source
-assert "rebootDetail=t.type==='lxc'?'':`" in source
-assert "rebootField=t.type==='lxc'?'':`" in source
+assert "rebootDetail=['host','lxc','vm'].includes(t.type)" in source
+assert "rebootTargetSupported(t)" in source
 assert "row.classList.add('lxc-row')" in source
 assert ".target-row.lxc-row" in source
 assert "reboot_required" in source

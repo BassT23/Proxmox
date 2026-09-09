@@ -120,7 +120,7 @@ DEFAULT_PROXMOX_KEY = Path("/etc/pve/local/pve-ssl.key")
 DEFAULT_PROXMOX_CUSTOM_CERT = Path("/etc/pve/local/pveproxy-ssl.pem")
 DEFAULT_PROXMOX_CUSTOM_KEY = Path("/etc/pve/local/pveproxy-ssl.key")
 TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-JOB_RE = re.compile(r"^ultimate-updater-(?:update|check)-[A-Za-z0-9_.-]+$")
+JOB_RE = re.compile(r"^ultimate-updater-(?:update|check|reboot)-[A-Za-z0-9_.-]+$")
 HOST_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 USER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 INTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
@@ -481,7 +481,7 @@ PAGE = r"""<!doctype html>
     .pill { border-radius:999px; padding:5px 9px; font-size:.7rem; font-weight:750; white-space:nowrap } .pill.good { color:var(--good); background:#55d39a1f } .pill.warn { color:var(--warn); background:#f7c66b1f } .pill.security-warn { color:var(--security); background:#d783222b; border-color:#d7832266 } .pill.bad { color:var(--bad); background:#ff7e8b1f } .pill.neutral { color:var(--muted); background:#aab7cf1f }
     .target-info,.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px } .target-info span,.detail-grid span { display:block; color:var(--muted); font-size:.72rem; margin-bottom:4px } strong { overflow-wrap:anywhere }
     .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px } button { border:1px solid var(--line); border-radius:9px; padding:9px 12px; color:var(--text); background:#ffffff0d; cursor:pointer; font:inherit; font-size:.82rem } button:hover:not(:disabled),button:focus-visible { border-color:var(--accent); outline:2px solid #73a7ff55 } button.primary { background:#73a7ff24; border-color:#73a7ff88 } button:disabled { cursor:not-allowed; opacity:.45 }
-    .details,.jobs { border-radius:16px; padding:20px; margin-top:18px } .details h3 { margin:0 0 15px } .details-heading { display:flex; align-items:center; gap:12px; justify-content:space-between } .details-heading h3 { margin:0 } .details-close { padding:7px 10px; font-size:.72rem; color:var(--muted) } .detail-sections { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px } .detail-sections section { min-width:0; padding-top:12px; border-top:1px solid #94a3b815 } .detail-sections h4 { margin:0; font-size:.78rem; color:var(--accent) } .detail-sections .detail-grid { grid-template-columns:1fr; gap:10px; margin-top:10px } .error-text { color:var(--bad); white-space:pre-wrap; overflow-wrap:anywhere } .error-text.good { color:var(--good) } .error-text.neutral { color:var(--muted) }
+    .details,.jobs { border-radius:16px; padding:20px; margin-top:18px } .details h3 { margin:0 0 15px } .details-heading { display:flex; align-items:center; gap:12px; justify-content:space-between } .details-heading h3 { margin:0 } .details-close { padding:7px 10px; font-size:.72rem; color:var(--muted) } .detail-sections { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px } .detail-sections section { min-width:0; padding-top:12px; border-top:1px solid #94a3b815 } .detail-sections h4 { margin:0; font-size:.78rem; color:var(--accent) } .detail-sections .detail-grid { grid-template-columns:1fr; gap:10px; margin-top:10px } .details-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; padding-top:12px; border-top:1px solid #94a3b815 } .details-actions .danger { border-color:#ed6b7a99; color:#ff9aaa; background:#ed6b7a14 } .details-actions .danger:hover,.details-actions .danger:focus-visible { color:#fff; border-color:#ff8798; background:#ed6b7a2b } .error-text { color:var(--bad); white-space:pre-wrap; overflow-wrap:anywhere } .error-text.good { color:var(--good) } .error-text.neutral { color:var(--muted) }
     .job { display:grid; grid-template-columns:1.6fr 1fr .9fr auto auto; gap:10px; align-items:center; padding:11px 0; border-bottom:1px solid var(--line); font-size:.82rem } .job:last-child { border-bottom:0 } .job code { overflow-wrap:anywhere } .job small,.job-meta { color:var(--muted) } .job-meta { grid-column:1 / -1; font-size:.7rem } .job-download { display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:9px; padding:5px 9px; color:var(--muted); background:#ffffff0d; font-size:.7rem; text-decoration:none; white-space:nowrap } .job-download:hover,.job-download:focus-visible { border-color:var(--accent); color:var(--text); outline:2px solid #73a7ff55 } .log { max-height:220px; overflow:auto; white-space:pre-wrap; background:#00000045; border-radius:8px; padding:12px; margin-top:12px; color:#cbd5e1; font: .75rem ui-monospace,monospace } .log-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; margin:10px 0 0; flex-wrap:wrap } .log-actions + .log { margin-top:8px } .log-latest { padding:5px 9px; font-size:.7rem }
     .interactive-terminal-panel { position:fixed; inset:0; z-index:30; display:grid; place-items:center; min-width:0; min-height:0; padding:clamp(12px,3vw,34px); overflow:hidden; background:#030712cc; } .interactive-terminal-panel[hidden] { display:none } .interactive-terminal-dialog { width:min(1180px,100%); height:min(90vh,900px); max-height:100%; min-width:0; min-height:0; display:flex; flex-direction:column; padding:20px; border:1px solid #159cf055; border-radius:16px; background:linear-gradient(145deg,#07182bf5,#061323f5); box-shadow:0 24px 90px #000c; } .interactive-terminal-dialog .section-title { min-width:0; } .interactive-terminal-dialog .section-title > div:first-child { min-width:0; overflow:hidden; } .interactive-terminal-dialog h2,.interactive-terminal-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .interactive-terminal { flex:1 1 auto; min-width:0; min-height:0; overflow:hidden; padding:10px; border:1px solid #159cf055; border-radius:9px; background:#050914; } .interactive-terminal .xterm { width:100%; height:100%; min-width:0; } .interactive-terminal-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:12px } .interactive-terminal .xterm-viewport { overflow-y:auto !important; }
     .empty { border:1px dashed var(--line); border-radius:16px; padding:30px; text-align:center; color:var(--muted) } .node-scope-help { margin:8px 0 0; color:var(--muted); font-size:.74rem } footer { font-size:.75rem; margin-top:28px }
@@ -930,7 +930,10 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const statusTone=t=>{const [fallbackLabel,fallbackTone]=statusLabel(t.check_status),normal=knownNormalUpdates(t),security=knownSecurityUpdates(t),totalOnly=knownTotalOnlyUpdates(t),health=healthState(t),hasError=['bad'].includes(fallbackTone),securityClass=security!==null&&security>0&&!hasError?' security-warn':'';let label=fallbackLabel,tone=fallbackTone;if(!hasError){if(['ok','updates_available'].includes(t.check_status)&&health==='unknown'){label='Unknown';tone='neutral'}else if(security!==null&&security>0){label='Security updates available';tone='warn'}else if((normal!==null&&normal>0)||(totalOnly!==null&&totalOnly>0)){label='Updates available';tone='warn'}else if((securitySplitSupported(t)&&normal===0&&security===0)||(!securitySplitSupported(t)&&totalOnly===0)){label='Healthy';tone='good'}else if(securitySplitSupported(t)&&normal===0&&security===null){label='Unknown';tone='neutral'}}return `<span class="pill ${tone}${securityClass}">${label}</span>`};
     const updateFields=t=>securitySplitSupported(t)?`<div><span>Normal updates</span><strong>${updateValue(knownNormalUpdates(t))}</strong></div><div><span>Security updates</span><strong>${updateValue(knownSecurityUpdates(t))}</strong></div>`:`<div><span>Updates</span><strong>${updateValue(knownTotalOnlyUpdates(t))}</strong></div>`;
     function closeDetails(){const n=document.getElementById('details');openDetailId=null;n.hidden=true;n.replaceChildren()}
-    function renderDetails(t){const n=document.getElementById('details');if(openDetailId===t.id){closeDetails();return}const [errorText,errorTone]=detailError(t),rebootDetail=t.type==='lxc'?'':`<div><span>Reboot required</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong></div>`,backup=t.type==='external'&&t.backup_status?text(t.backup_status.status,'Unknown'):'Not applicable';openDetailId=t.id;n.hidden=false;n.innerHTML=`<div class="details-heading"><h3>${esc(friendlyTarget(t))}</h3><button type="button" class="details-close">Close details</button></div><div class="detail-sections"><section><h4>System</h4><div class="detail-grid"><div><span>Type</span><strong>${esc(friendlyType(t))}</strong></div><div><span>Node</span><strong>${esc(t.node||'Not assigned')}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(osDetailName(t))}</strong></div></div></section><section><h4>Updates</h4><div class="detail-grid"><div><span>Updater</span><strong>${esc(t.updater)}</strong></div>${updateFields(t)}${rebootDetail}</div></section><section><h4>Status</h4><div class="detail-grid"><div><span>Check status</span><strong>${statusTone(t)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div><div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Backup safety</span><strong>${esc(backup)}</strong></div><div><span>Error</span><strong class="error-text ${errorTone}">${esc(errorText)}</strong></div></div></section></div>`;n.querySelector('.details-close').onclick=closeDetails;n.scrollIntoView({behavior:'smooth',block:'nearest'})}
+    function rebootTargetSupported(t){return ['host','lxc','vm'].includes(t.type)&&t.reboot_required===true}
+    function rebootTargetBlocked(t){return running(t.id)||running(t.node||'')||t.reachable!==true||t.check_status==='offline'}
+    async function rebootTarget(t){if(!rebootTargetSupported(t)||rebootTargetBlocked(t))return;const label=t.type==='host'?`node ${friendlyTarget(t)}`:`${t.type==='lxc'?'CT':'VM'} ${t.id} · ${friendlyTarget(t)}`;if(t.type==='host'){if(!confirm(`Reboot ${label}?\n\nRunning guests on this node may be affected.`))return;if(!confirm('Confirm node reboot\n\nThis will reboot the entire Proxmox node.'))return}else if(!confirm(`Reboot ${label} now?\n\nThe system will be restarted.`))return;const button=document.querySelector('[data-reboot-target]');if(button)button.disabled=true;try{const result=await api(`/api/targets/${encodeURIComponent(t.id)}/reboot`,{method:'POST',body:'{}'});notice(result.message||'Reboot initiated.');await loadJobs();await loadStatus()}catch(error){notice(error.message||'Reboot could not be started.',true)}finally{if(button&&document.body.contains(button))button.disabled=false}}
+    function renderDetails(t){const n=document.getElementById('details');if(openDetailId===t.id){closeDetails();return}const [errorText,errorTone]=detailError(t),rebootDetail=['host','lxc','vm'].includes(t.type)?`<div><span>Reboot required</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong></div>`:'',rebootAction=rebootTargetSupported(t)?`<button type="button" class="danger" data-reboot-target="${esc(t.id)}" ${rebootTargetBlocked(t)?'disabled':''}>Reboot now</button>`:'',backup=t.type==='external'&&t.backup_status?text(t.backup_status.status,'Unknown'):'Not applicable';openDetailId=t.id;n.hidden=false;n.innerHTML=`<div class="details-heading"><h3>${esc(friendlyTarget(t))}</h3><button type="button" class="details-close">Close details</button></div><div class="detail-sections"><section><h4>System</h4><div class="detail-grid"><div><span>Type</span><strong>${esc(friendlyType(t))}</strong></div><div><span>Node</span><strong>${esc(t.node||'Not assigned')}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(osDetailName(t))}</strong></div></div></section><section><h4>Updates</h4><div class="detail-grid"><div><span>Updater</span><strong>${esc(t.updater)}</strong></div>${updateFields(t)}${rebootDetail}</div></section><section><h4>Status</h4><div class="detail-grid"><div><span>Check status</span><strong>${statusTone(t)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div><div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Backup safety</span><strong>${esc(backup)}</strong></div><div><span>Error</span><strong class="error-text ${errorTone}">${esc(errorText)}</strong></div></div></section></div><div class="details-actions">${rebootAction}</div>`;n.querySelector('.details-close').onclick=closeDetails;if(rebootAction)n.querySelector('[data-reboot-target]').onclick=()=>rebootTarget(t);n.scrollIntoView({behavior:'smooth',block:'nearest'})}
     function guestIdentity(t){return esc(friendlyTarget(t))}
     function toggleGroup(key){if(openNodes.has(key))openNodes.clear();else{openNodes.clear();openNodes.add(key)}render(currentStatus)}
     async function nodeAction(node,update=false,target=null){const key=`${update?'update':'check'}:${node}`,button=document.querySelector(`[data-node-action="${CSS.escape(key)}"]`);if(button?.disabled)return;const gate=update&&target?updateGate(target):{enabled:true,warning:null};if(update&&!gate.enabled)return;if(update&&!confirm(`${gate.warning?`${gate.warning}\n\n`:''}Update ${node.replace(/^host:/,'')}?\n\nOnly this Proxmox node will be updated. LXCs and VMs are not updated.`))return;document.querySelectorAll(`[data-node="${CSS.escape(node)}"]`).forEach(item=>{item.disabled=true});try{const d=await api(`/api/${update?'update-node':'check-node'}/${encodeURIComponent(node)}`,{method:'POST',body:'{}'});notice(d.message||'Action accepted.');await loadStatus();await loadJobs()}catch(error){notice(error.message,true)}finally{document.querySelectorAll(`[data-node="${CSS.escape(node)}"]`).forEach(item=>{item.disabled=false})}}
@@ -2576,7 +2579,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             "started_at": values.get("started_at") or None,
             "finished_at": values.get("finished_at") or None,
             "exit_code": int(exit_code) if exit_code.lstrip("-").isdigit() else None,
-            "type": values.get("type") if values.get("type") in {"check", "update", "selfupdate"} else "update",
+            "type": values.get("type") if values.get("type") in {"check", "update", "reboot", "selfupdate"} else "update",
             "source": values.get("source") or None,
             "owner_node": values.get("owner_node") or None,
             "remote": bool(values.get("owner_node")),
@@ -3793,6 +3796,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         if len(parts) == 4 and parts[:2] == ["api", "targets"] and parts[3] == "test":
             self.handle_target_test(parts[2], payload)
             return
+        if len(parts) == 4 and parts[:2] == ["api", "targets"] and parts[3] == "reboot":
+            self.action_reboot(parts[2])
+            return
         if len(parts) == 3 and parts[:2] == ["api", "check"]:
             self.action_check(parts[2])
             return
@@ -4004,6 +4010,65 @@ class StatusHandler(BaseHTTPRequestHandler):
             ), HTTPStatus.BAD_GATEWAY)
             return
         self.send_json({"node": node, "job": job_unit, "state": "running", "message": "Node update job started."}, HTTPStatus.ACCEPTED)
+
+    def reboot_target_record(self, target_id):
+        if not isinstance(target_id, str) or not target_id:
+            return None
+        try:
+            payload = json.loads(self.server.status_file.read_text(encoding="utf-8"))
+            projected = canonical_inventory(
+                payload, self.inventory_data(), proxmox_inventory_snapshot(), self.server.backup_state_file,
+            )
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+            return None
+        return next((item for item in projected.get("targets", [])
+                     if isinstance(item, dict) and str(item.get("id")) == target_id), None)
+
+    def action_reboot(self, target_id):
+        target = self.reboot_target_record(target_id)
+        if not target:
+            self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not available."), HTTPStatus.NOT_FOUND)
+            return
+        kind = str(target.get("type", ""))
+        if kind not in {"host", "lxc", "vm"}:
+            self.send_json(error_payload("REBOOT_UNSUPPORTED", "This target does not support a WebUI reboot."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        if target.get("reboot_required") is not True:
+            self.send_json(error_payload("REBOOT_NOT_REQUIRED", "This target is not currently marked as requiring a reboot."), HTTPStatus.CONFLICT)
+            return
+        if target.get("reachable") is not True or target.get("check_status") == "offline":
+            self.send_json(error_payload("TARGET_OFFLINE", "The target is not reachable."), HTTPStatus.CONFLICT)
+            return
+        action_target = self.node_action_target(target_id) if kind == "host" else target_id
+        try:
+            nodes, _ = self.internal_ssh_catalog()
+            local_node = socket.gethostname().split(".", 1)[0]
+            owner_node = target.get("node") if kind != "host" else str(target.get("name") or target_id).removeprefix("host:")
+            node_config = next((item for item in nodes if item.get("id") == owner_node), None)
+            if kind == "host" and owner_node.casefold() == local_node.casefold():
+                node_config = {"host": "", "user": "root", "port": 22, "identity_file": "", "local": True}
+            if not node_config or not node_config.get("enabled", True):
+                raise ValueError("The target's reboot transport is unavailable.")
+            local_target = bool(node_config.get("local"))
+            result = self.run_command([
+                str(self.server.job_runner), "start-reboot", action_target, kind,
+                str(node_config.get("host", "")), str(node_config.get("user", "root")),
+                str(node_config.get("port", 22)), str(node_config.get("identity_file", "")),
+                "true" if local_target else "false",
+            ], timeout=15)
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+            self.send_json(error_payload("REBOOT_START_FAILED", str(error) or "The reboot job could not be started."), HTTPStatus.BAD_GATEWAY)
+            return
+        output = f"{result.stdout}\n{result.stderr}"
+        job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
+        if result.returncode == 3:
+            self.send_json(error_payload("JOB_ALREADY_RUNNING", "A job is already running for this target."), HTTPStatus.CONFLICT)
+            return
+        if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
+            self.send_json(error_payload("REBOOT_START_FAILED", "The reboot job could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json({"target": target_id, "job": job_match.group(1), "type": "reboot",
+                        "state": "running", "message": "Reboot job started."}, HTTPStatus.ACCEPTED)
 
     def do_PUT(self):  # noqa: N802
         if not self.write_allowed():
