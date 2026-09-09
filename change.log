@@ -3,6 +3,18 @@ Changelog:
 
 **Unreleased**
 
+Added:
+- running interactive update jobs can be opened as a live browser terminal with ANSI, cursor, and Whiptail/Dialog support
+- interactive terminal input, terminal resizing, reconnects, and a mobile touch keybar are available without making the job depend on the browser
+- running non-interactive jobs, including checks, provide a read-only live output view while the existing log and download views remain available
+
+Improved:
+- interactive terminal output is streamed with bounded replay support so disconnects do not stop the server-side job
+- mobile terminal layout, viewport fitting, terminal font controls, and persistent per-browser font size improve small-screen use
+
+Fixed:
+- live journal output records now use terminal-correct line endings so successive records start at column zero
+
 **v5.1.3 Beta 1** (beta / release candidate for validation)
 Improved:
 - interactive update jobs can remain attached to a server-side PTY across CLI/WebUI disconnects and reconnects
