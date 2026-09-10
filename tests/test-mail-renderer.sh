@@ -70,7 +70,12 @@ if grep -Fq '⬆️' "$WORK_DIR/status-mail"; then
   exit 1
 fi
 grep -Fqx '🐧 985' "$WORK_DIR/status-mail"
-[[ $(grep -Fc '✅ 2 weitere Systeme geprüft – keine Updates verfügbar' "$WORK_DIR/status-mail") -eq 1 ]]
+grep -Fqx '✅ 🐧 986' "$WORK_DIR/status-mail"
+grep -Fqx '   No updates available' "$WORK_DIR/status-mail"
+if grep -Eq 'weitere Systeme|more systems|Systeme geprüft' "$WORK_DIR/status-mail"; then
+  echo 'anonymous current aggregation remains in check mail' >&2
+  exit 1
+fi
 if grep -Fq 'host:Proxmox-Test-2' "$WORK_DIR/status-mail"; then
   exit 1
 fi
@@ -117,17 +122,22 @@ cat > "$WORK_DIR/update-status.json" <<'JSON'
 JSON
 STATUS_MODEL_RENDER_NOTIFICATION "$WORK_DIR/update-status.json" update > "$WORK_DIR/update-status-mail"
 grep -Fqx '✅ Proxmox-Test-1' "$WORK_DIR/update-status-mail"
-grep -Fqx '   12 Pakete aktualisiert' "$WORK_DIR/update-status-mail"
+grep -Fqx '   12 packages updated' "$WORK_DIR/update-status-mail"
 grep -Fqx '✅ Proxmox-Test-2' "$WORK_DIR/update-status-mail"
-grep -Fqx '   Alles aktuell' "$WORK_DIR/update-status-mail"
+grep -Fqx '   Up to date' "$WORK_DIR/update-status-mail"
 grep -Fqx '⚠️ Proxmox-Test-3' "$WORK_DIR/update-status-mail"
 grep -Fqx '   Nicht verarbeitet' "$WORK_DIR/update-status-mail" && exit 1
-grep -Fqx '   Nicht erreichbar' "$WORK_DIR/update-status-mail"
+grep -Fqx '   Not reachable' "$WORK_DIR/update-status-mail"
 grep -Fqx '❌ 🐧 986 · broken' "$WORK_DIR/update-status-mail"
-grep -Fqx '   Update fehlgeschlagen' "$WORK_DIR/update-status-mail"
+grep -Fqx '   Update failed' "$WORK_DIR/update-status-mail"
 grep -Fqx '⚠️ 🐧 987 · needs-reboot' "$WORK_DIR/update-status-mail"
-grep -Fqx '   Aktualisiert – Neustart erforderlich' "$WORK_DIR/update-status-mail"
-[[ $(grep -Fc '✅ 2 weitere Systeme – alles aktuell' "$WORK_DIR/update-status-mail") -eq 1 ]]
+grep -Fqx '   Updated – reboot required' "$WORK_DIR/update-status-mail"
+grep -Fqx '✅ 🐧 985' "$WORK_DIR/update-status-mail"
+grep -Fqx '   Up to date' "$WORK_DIR/update-status-mail"
+if grep -Eq 'weitere Systeme|more systems|Systeme geprüft' "$WORK_DIR/update-status-mail"; then
+  echo 'anonymous current aggregation remains in update mail' >&2
+  exit 1
+fi
 
 cat > "$WORK_DIR/disabled-status.json" <<'JSON'
 {"targets":[
@@ -155,7 +165,7 @@ LOCAL_FILES="$WORK_DIR" LOG_FILE="$WORK_DIR/log" ERROR_LOG_FILE="$WORK_DIR/error
   bash -c 'source "$1"; source "$2"; UPDATE_MAIL_BODY' _ \
   "$ROOT_DIR/status-model.sh" "$WORK_DIR/update-mail.sh" > "$WORK_DIR/update-body-mail"
 grep -Fqx '✅ Proxmox-Test-2' "$WORK_DIR/update-body-mail"
-grep -Fqx '   Alles aktuell' "$WORK_DIR/update-body-mail"
+grep -Fqx '   Up to date' "$WORK_DIR/update-body-mail"
 
 LOCAL_FILES="$WORK_DIR" SINGLE_UPDATE=true HOSTNAME=Proxmox-Test-1 ID=984 NAME=unifi \
   CCONTAINER=true LOG_FILE="$WORK_DIR/log" ERROR_LOG_FILE="$WORK_DIR/errors" EXIT_CODE=0 \
@@ -178,6 +188,10 @@ for node in Proxmox-Test-1 Proxmox-Test-2 Proxmox-Test-3; do
   grep -Fqx "✅ $node" "$WORK_DIR/all-current-mail"
 done
 [[ $(grep -Fc '✅ Proxmox-Test-' "$WORK_DIR/all-current-mail") -eq 3 ]]
+if grep -Eq 'weitere Systeme|more systems|Systeme geprüft' "$WORK_DIR/all-current-mail"; then
+  echo 'anonymous current aggregation remains in all-current mail' >&2
+  exit 1
+fi
 
 # A scoped single-target render must never fall back to unrelated status
 # records. This is the core protection for opt-in single-run mail.
@@ -202,5 +216,12 @@ fi
 sender_placeholder="\$USER"
 [[ "$(STATUS_MODEL_EXPAND_SENDER "$sender_placeholder")" == "${USER:-$(id -un)}" ]]
 [[ "$(STATUS_MODEL_EXPAND_SENDER 'sender@example.test')" == 'sender@example.test' ]]
+
+for mail_file in "$WORK_DIR"/*-mail; do
+  if grep -Eiq 'weitere Systeme|more systems|Systeme geprüft|keine Updates verfügbar|Nicht erreichbar|Update fehlgeschlagen|Ergebnis nicht verfügbar|Aktualisiert|Neustart erforderlich|Alles aktuell|Pakete aktualisiert|Erfolgreich aktualisiert' "$mail_file"; then
+    echo "German or anonymous renderer literal remains in $mail_file" >&2
+    exit 1
+  fi
+done
 
 echo 'mail renderer tests: PASS'

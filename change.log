@@ -15,6 +15,7 @@ Improved:
 - check failures distinguish connectivity problems from APT/repository failures, while disabled checks are reported neutrally
 - single-target notifications can be enabled independently and are limited to the executed job scope; scheduled check notifications have their own setting
 - summary notifications keep node groups visually separated and the Welcome Screen remains compact while full job output stays available
+- notification summaries use consistent English wording and list current or up-to-date targets explicitly instead of anonymous aggregate counts
 
 Fixed:
 - live journal output records now use terminal-correct line endings so successive records start at column zero

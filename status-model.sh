@@ -778,25 +778,25 @@ def update_status(target):
 def update_line(target):
     result = update_result(target)
     if target.get("check_status") == "offline" or target.get("reachable") is False:
-        return "⚠️", "Nicht erreichbar"
+        return "⚠️", "Not reachable"
     skipped = check_skip_message(target)
     if skipped is not None:
         return "💤", skipped
     status = update_status(target)
     if status == "failed":
-        return "❌", "Update fehlgeschlagen"
+        return "❌", "Update failed"
     if status != "success":
-        return "⚠️", "Ergebnis nicht verfügbar"
+        return "⚠️", "Result unavailable"
     if target.get("reboot_required") is True:
-        return "⚠️", "Aktualisiert – Neustart erforderlich"
+        return "⚠️", "Updated – reboot required"
     values = target.get("updates")
     available = values.get("available") if isinstance(values, dict) else None
     if isinstance(available, int) and not isinstance(available, bool) and available == 0:
-        return "✅", "Alles aktuell"
+        return "✅", "Up to date"
     updated = result.get("updated_packages")
     if isinstance(updated, int) and not isinstance(updated, bool) and updated >= 0:
-        return "✅", f"{updated} Pakete aktualisiert"
-    return "✅", "Erfolgreich aktualisiert"
+        return "✅", f"{updated} packages updated"
+    return "✅", "Successfully updated"
 
 if run_type == "update":
     hosts = []
@@ -848,7 +848,7 @@ if run_type == "update":
     if guest_reboot:
         lines.extend(["", "Guests requiring reboot:"])
         for target in guest_reboot:
-            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", "   Aktualisiert – Neustart erforderlich"])
+            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", "   Updated – reboot required"])
     if guest_failed:
         lines.extend(["", "Failed guests:"])
         for target in guest_failed:
@@ -857,18 +857,15 @@ if run_type == "update":
     if guest_offline:
         lines.extend(["", "Unreachable guests:"])
         for target in guest_offline:
-            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", "   Nicht erreichbar"])
+            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", "   Not reachable"])
     if guest_skipped:
         lines.extend(["", "Skipped checks:"])
         for target in guest_skipped:
             lines.extend([f"💤 {target_icon(target)} {target_name(target)}", f"   {check_skip_message(target)}"])
-    if guest_current:
-        if scope_target:
-            lines.extend(["", "Guests:"])
-            for target in guest_current_targets:
-                lines.extend([f"✅ {target_icon(target)} {target_name(target)}", "   Alles aktuell"])
-        else:
-            lines.extend(["", f"✅ {guest_current} weitere Systeme – alles aktuell"])
+    if guest_current_targets:
+        lines.extend(["", "Guests:"])
+        for target in guest_current_targets:
+            lines.extend([f"✅ {target_icon(target)} {target_name(target)}", "   Up to date"])
     print("STATE=issues" if any(update_status(target) == "failed" for target in hosts + guest_failed) or guest_offline else "STATE=updates")
     print("\n".join(lines))
     raise SystemExit(0)
@@ -957,7 +954,7 @@ if updates:
             lines.append(f"{target_icon(target)} {target_name(target)}")
             lines.extend(update_split(target))
             if target.get("reboot_required") is True:
-                lines.append("🔄 Neustart erforderlich")
+                lines.append("🔄 Reboot required")
             lines.append(separator)
 else:
     lines.append("Available updates: none")
@@ -965,9 +962,8 @@ if has_known_count:
     lines.extend(["", f"Total available updates: {total}"])
 if current:
     lines.extend(["", "Current:"])
-    count = len(current)
-    noun = "weiteres System" if count == 1 else "weitere Systeme"
-    lines.append(f"✅ {count} {noun} geprüft – keine Updates verfügbar")
+    for target in current:
+        lines.extend([f"✅ {target_icon(target)} {target_name(target)}", "   No updates available"])
 if reboots:
     lines.extend(["", "Reboot required:"])
     lines.extend(f"🔄 {target_name(target)}" for target in reboots)

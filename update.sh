@@ -2074,15 +2074,15 @@ UPDATE_MAIL_BODY() {
     fi
   fi
   if [[ "${EXIT_CODE:-1}" -eq 0 && ! -s "$ERROR_LOG_FILE" ]]; then
-    printf '✅ Update erfolgreich\n'
+    printf '✅ Update successful\n'
     [[ -n "$package_count" ]] && printf '⬆️ %s\n' "$package_count"
   else
-    printf '⚠️ Update fehlgeschlagen\n'
+    printf '⚠️ Update failed\n'
     printf 'Exitcode: %s\n' "${EXIT_CODE:-1}"
     [[ -s "$ERROR_LOG_FILE" ]] && sed -n '1,4p' "$ERROR_LOG_FILE"
   fi
   if grep -Eqi 'reboot required|reboot needed' "$LOG_FILE" 2>/dev/null; then
-    printf '🔄 Neustart erforderlich\n'
+    printf '🔄 Reboot required\n'
   fi
 }
 
