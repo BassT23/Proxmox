@@ -212,6 +212,13 @@ assert "new Intl.Collator(undefined,{numeric:true,sensitivity:'base'})" in page
 assert "const sortNodes=items=>[...items].sort" in page
 assert "nodes=sortNodes(ts.filter(isProxmoxNode))" in page
 assert "externalGroup(external)" in page
+assert "target-selection-header" in page
+assert ">Check</span><span>Update</span><span>Actions</span>" in page
+assert "target-selection-label" in page
+assert "✓ Only · ✕ Exclude · empty = no explicit rule" in page
+assert "targetSelection={...(data.selection||copy),enabled:true}" in page
+assert "Enable Ultimate Updater target selection?" in page
+assert "aria-label" in page
 assert "grid-template-rows:auto auto" in page
 assert ".node-group .group-summary { grid-column:2; grid-row:2; display:flex; flex-wrap:wrap" in page
 assert ".config-field.boolean-field { width:fit-content; max-width:100%; justify-self:start; cursor:pointer }" in page
