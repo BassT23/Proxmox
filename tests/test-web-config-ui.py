@@ -31,7 +31,7 @@ assert "configField(row.check,values,true)" in page
 assert "'USE_INTERNAL_TARGET_SELECTION'" in page
 assert "input.type='checkbox';input.checked=values[key]===true" in page
 assert "input.type==='checkbox'?input.checked" in page
-assert ".target-selection-state{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:34px;min-width:34px;height:34px;min-height:34px;padding:0" in page
+assert ".target-selection-state{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;min-width:26px;height:26px;min-height:26px;padding:0" in page
 assert "check-update-matrix" in page
 assert "grid-template-columns:minmax(0,1fr) 58px 58px" in page
 assert ".matrix-cell { display:grid; place-items:center; justify-items:center }" in page
@@ -220,7 +220,8 @@ assert "target-selection-header" in page
 assert ">Check</span><span>Update</span><span>Actions</span>" in page
 assert "target-selection-label" in page
 assert "✓ Only · ✕ Exclude · empty = no explicit rule" in page
-assert "targetSelection={...(data.selection||copy),enabled:true}" in page
+assert "targetSelectionConfirmed=copyTargetSelection(targetSelection)" in page
+assert "targetSelectionRevision" in page
 assert "Enable Ultimate Updater target selection?" in page
 assert "aria-label" in page
 assert "grid-template-rows:auto auto" in page
