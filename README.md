@@ -1,6 +1,8 @@
 <div align="center">
 
-# Ultimate Updater 5.1.2
+# Ultimate Updater 5.1.3 Beta 2
+
+Status: Beta / release candidate for validation. Not a stable release.
 
 Central, safety-conscious updates and checks for Proxmox hosts, LXC
 containers, VMs, and selected external systems.

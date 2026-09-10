@@ -1,5 +1,10 @@
 # Upgrade notes: 5.0 → 5.1.2
 
+> **Beta 2 notice:** The `beta` branch contains the pre-release 5.1.3 Beta 2
+> validation build. Select it explicitly with `update beta -up`; existing
+> 5.1.x configuration is preserved, and no separate 5.1.x migration reboot is
+> required for this beta.
+
 Use the normal installer/self-update path on the existing central Proxmox
 cluster installation. Ultimate Updater is installed once per cluster; do not
 install a second administrative instance on every node.

@@ -1,6 +1,23 @@
-# Ultimate Updater 5.1.2
+# Ultimate Updater 5.1.3 Beta 2
 
-Status: Stable patch release.
+Status: Beta / release candidate for validation.
+
+## Beta 2
+
+- Interactive Live terminal support with persistent PTY sessions, reconnect and
+  bounded replay for supported update jobs.
+- Read-only Live output for checks and other non-interactive jobs.
+- Improved mobile terminal usability, keybar support, and terminal font controls.
+- Guarded `Reboot now` actions for supported nodes, LXC containers, and VMs.
+- Clearer connectivity, APT/repository, disabled-check, and job-failure reporting.
+- Scheduler month-day support and improved scheduled-check notification control.
+- Job-scoped single-target notifications with explicit per-target summaries.
+- Consistent English project-owned output, including explicit current/up-to-date
+  targets instead of anonymous counts.
+- Reliability fixes for terminal lifecycle, SSE/DOM handling, cleanup, and
+  final job status propagation.
+
+The Beta 2 contents are for validation and are not a stable 5.1.3 release.
 
 ## Fixed in 5.1.2
 
