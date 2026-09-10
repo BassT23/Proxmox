@@ -28,6 +28,10 @@ assert "matrix:[{label:'Virtual machines',check:'CHECK_WITH_VM',update:'WITH_VM'
 assert "function configMatrix(groupData,values)" in page
 assert "matrix-control" in page
 assert "configField(row.check,values,true)" in page
+assert "'USE_INTERNAL_TARGET_SELECTION'" in page
+assert "input.type='checkbox';input.checked=values[key]===true" in page
+assert "input.type==='checkbox'?input.checked" in page
+assert ".target-selection-state{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:34px;min-width:34px;height:34px;min-height:34px;padding:0" in page
 assert "check-update-matrix" in page
 assert "grid-template-columns:minmax(0,1fr) 58px 58px" in page
 assert ".matrix-cell { display:grid; place-items:center; justify-items:center }" in page
