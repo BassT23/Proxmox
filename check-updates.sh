@@ -624,6 +624,7 @@ CHECK_HOST () {
     if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true && -f "${TARGET_SELECTION_SCRIPT:-}" ]]; then
       remote_status_env=" UU_TARGET_SELECTION_SCRIPT='$remote_check_dir/target-selection.sh' UU_TARGET_SELECTION_FILE='$remote_check_dir/target-selection.json'$remote_status_env"
     fi
+    [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_status_env=" UU_INTERNAL_SKIP_HOST_TARGET=true$remote_status_env"
     remote_status_validation=" if [[ \"\$remote_rc\" -eq 0 && ! -s '$remote_check_dir/status.json' ]]; then remote_rc=86; elif [[ \"\$remote_rc\" -eq 0 ]] && ! python3 -c 'import json,sys; payload=json.load(open(sys.argv[1], encoding=\"utf-8\")); assert isinstance(payload, dict) and isinstance(payload.get(\"targets\"), list)' '$remote_check_dir/status.json'; then remote_rc=87; fi;"
   fi
   if [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]]; then
