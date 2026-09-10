@@ -621,6 +621,9 @@ CHECK_HOST () {
     # filter banner is an execution detail and must not be repeated once per
     # worker in the user's job output.
     remote_status_env=" TAG_OUTPUT=false STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records' STATUS_MODEL_DIAGNOSTICS_FILE='$remote_diagnostics_file'"
+    if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true && -f "${TARGET_SELECTION_SCRIPT:-}" ]]; then
+      remote_status_env=" UU_TARGET_SELECTION_SCRIPT='$remote_check_dir/target-selection.sh' UU_TARGET_SELECTION_FILE='$remote_check_dir/target-selection.json'$remote_status_env"
+    fi
     remote_status_validation=" if [[ \"\$remote_rc\" -eq 0 && ! -s '$remote_check_dir/status.json' ]]; then remote_rc=86; elif [[ \"\$remote_rc\" -eq 0 ]] && ! python3 -c 'import json,sys; payload=json.load(open(sys.argv[1], encoding=\"utf-8\")); assert isinstance(payload, dict) and isinstance(payload.get(\"targets\"), list)' '$remote_check_dir/status.json'; then remote_rc=87; fi;"
   fi
   if [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]]; then
