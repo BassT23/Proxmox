@@ -1,6 +1,6 @@
 # Upgrade notes: 5.0 → 5.1.2
 
-> **Beta 2 notice:** The `beta` branch contains the pre-release 5.1.3 Beta 2
+> **Beta 3 notice:** The `beta` branch contains the pre-release 5.1.3 Beta 3
 > validation build. Select it explicitly with `update beta -up`; existing
 > 5.1.x configuration is preserved, and no separate 5.1.x migration reboot is
 > required for this beta.
@@ -25,6 +25,10 @@ The supported branch selectors are `master`, `beta`, and `develop`.
 
 The migration preserves existing `update.conf` values, comments, unknown
 settings, External target registrations, and any configured `WEB_UI_PORT`.
+The optional Web UI target-selection rules in
+`/etc/ultimate-updater/target-selection.json` are persistent user configuration
+and are preserved across Beta 3 self-updates and deployments. The feature is
+opt-in; legacy Proxmox tag selection remains the default.
 An existing 5.1 installation can use the same command to move to 5.1.2;
 no separate migration or SSH reconfiguration is required.
 Upgrading from version 5.0 or earlier to 5.1 requires a restart of the Proxmox

@@ -3,10 +3,19 @@ Changelog:
 
 **Unreleased**
 
-- optional Web UI-managed Check/Update target selection with independent tri-state rules; legacy Proxmox tag selection remains the default
+**v5.1.3 Beta 3** (beta / release candidate for validation)
+
+Added:
+- optional Web UI-managed target selection with independent Check/Update tri-state rules for Proxmox nodes, guests, and External systems
+
+Improved:
+- first-use activation, clear Check/Update labels, compact controls, and immediate optimistic target-selection feedback
+- debounced persistence with stale-response protection and safe rollback on save failure
 
 Fixed:
-- existing Ultimate Updater target-selection rules are preserved across WebUI reloads, service restarts, self-updates, and deployments
+- target-selection rules are preserved across WebUI reloads, service restarts, self-updates, and deployments
+- invalid target-selection files are handled non-destructively
+- embedded WebUI JavaScript syntax no longer leaves the application on the loading screen
 
 **v5.1.3 Beta 2** (beta / release candidate for validation)
 

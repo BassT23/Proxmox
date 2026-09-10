@@ -1,6 +1,22 @@
-# Ultimate Updater 5.1.3 Beta 2
+# Ultimate Updater 5.1.3 Beta 3
 
 Status: Beta / release candidate for validation.
+
+## Beta 3
+
+- Optional Web UI-managed target selection for Proxmox nodes, LXC containers,
+  VMs, and External systems.
+- Independent Check and Update tri-state rules with `empty`, `Only`, and
+  `Exclude` states.
+- Legacy Proxmox Only/Exclude tags remain the default. When internal selection
+  is enabled, those tags are ignored but never modified.
+- First-use activation confirmation, clear Check/Update controls, compact
+  Systems integration, and immediate optimistic UI feedback.
+- Debounced persistence, stale-response protection, rollback on save failure,
+  and preservation of `target-selection.json` across reloads, restarts, and
+  self-updates.
+
+The Beta 3 contents are for validation and are not a stable 5.1.3 release.
 
 ## Beta 2
 

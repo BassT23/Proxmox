@@ -1,6 +1,6 @@
 <div align="center">
 
-# Ultimate Updater 5.1.3 Beta 2
+# Ultimate Updater 5.1.3 Beta 3
 
 Status: Beta / release candidate for validation. Not a stable release.
 
@@ -56,6 +56,8 @@ Key features include:
   live output for Checks and other non-interactive jobs.
 - Scheduler support for weekdays and selected month days, plus job-scoped
   notification controls.
+- Optional Web UI-managed target selection with independent Check/Update
+  tri-state rules; legacy Proxmox tag selection remains the default.
 - Separate normal/security counts where classification is supported; other
   systems show a total count.
 - Snapshot and backup safety controls, filters, notifications, and logs.
