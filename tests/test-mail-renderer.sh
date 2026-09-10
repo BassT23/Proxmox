@@ -167,6 +167,16 @@ LOCAL_FILES="$WORK_DIR" LOG_FILE="$WORK_DIR/log" ERROR_LOG_FILE="$WORK_DIR/error
 grep -Fqx '✅ Proxmox-Test-2' "$WORK_DIR/update-body-mail"
 grep -Fqx '   Up to date' "$WORK_DIR/update-body-mail"
 
+rm -f "$WORK_DIR/status.json"
+LOCAL_FILES="$WORK_DIR" HOSTNAME=Proxmox-Test-1 ID=984 NAME=unifi CCONTAINER=true \
+  LOG_FILE="$WORK_DIR/log" ERROR_LOG_FILE="$WORK_DIR/errors" EXIT_CODE=0 \
+  bash -c 'source "$1"; UPDATE_MAIL_BODY' _ "$WORK_DIR/update-mail.sh" > "$WORK_DIR/legacy-update-mail"
+grep -Fqx '✅ Update successful' "$WORK_DIR/legacy-update-mail"
+if grep -Eiq 'Erfolgreich|fehlgeschlagen|Neustart erforderlich|Alles aktuell|Pakete aktualisiert' "$WORK_DIR/legacy-update-mail"; then
+  echo 'legacy fallback still contains German renderer text' >&2
+  exit 1
+fi
+
 LOCAL_FILES="$WORK_DIR" SINGLE_UPDATE=true HOSTNAME=Proxmox-Test-1 ID=984 NAME=unifi \
   CCONTAINER=true LOG_FILE="$WORK_DIR/log" ERROR_LOG_FILE="$WORK_DIR/errors" EXIT_CODE=0 \
   bash -c 'source "$1"; source "$2"; UPDATE_MAIL_BODY' _ \
