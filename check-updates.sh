@@ -585,6 +585,20 @@ CHECK_HOST () {
     CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=prepare"
     return 1
   fi
+  if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true && -f "${TARGET_SELECTION_SCRIPT:-}" ]]; then
+    if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$TARGET_SELECTION_SCRIPT" "$HOST:$remote_check_dir/target-selection.sh" >/dev/null 2>&1; then
+      CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare remote target selection helper on host $HOST${CL}"
+      return 1
+    fi
+    if [[ -f "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" ]] &&
+      ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" "$HOST:$remote_check_dir/target-selection.json" >/dev/null 2>&1; then
+      CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare remote target selection state on host $HOST${CL}"
+      return 1
+    fi
+    remote_status_env=" UU_TARGET_SELECTION_SCRIPT='$remote_check_dir/target-selection.sh' UU_TARGET_SELECTION_FILE='$remote_check_dir/target-selection.json'$remote_status_env"
+  fi
   if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
     if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$TARGET_RUNTIME_FILE" "$HOST:$remote_check_dir/target-runtime.sh" >/dev/null 2>&1; then
       CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
