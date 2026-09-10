@@ -60,6 +60,28 @@ TARGET_SELECTION_ALLOWS() {
   [[ " $selected " == *" $target_id "* ]]
 }
 
+TARGET_SELECTION_HOST_REQUIRED() {
+  local scope="$1" host_id="$2" guest_rules
+  TARGET_SELECTION_ENABLED || return 1
+  TARGET_SELECTION_ALLOWS "$scope" "$host_id" "$host_id" && return 0
+  guest_rules=$(python3 - "$TARGET_SELECTION_FILE" "$scope" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        data = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+rules = data.get(sys.argv[2], {}) if isinstance(data, dict) else {}
+if not isinstance(rules, dict):
+    raise SystemExit(1)
+print("yes" if any(key.isdigit() or key.startswith("guest:") for key in rules) else "no")
+PY
+  ) || return 1
+  [[ "$guest_rules" == yes ]]
+}
+
 TARGET_SELECTION_WRITE() {
   local content="$1" directory temporary
   directory="${TARGET_SELECTION_FILE%/*}"

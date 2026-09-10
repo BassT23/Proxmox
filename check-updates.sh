@@ -248,7 +248,7 @@ ARGUMENTS () {
       host)
         COMMAND=true
         OUTPUT_TO_FILE
-        if [[ "$WITH_HOST" == true ]]; then CHECK_HOST_ITSELF; fi
+        if [[ "$WITH_HOST" == true && "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" != true ]]; then CHECK_HOST_ITSELF; fi
         # An explicit node check is a host observation, even when the
         # global configuration enables guest checks.  The configured guest
         # scope belongs to the full/automatic check path only.
@@ -509,19 +509,30 @@ PY
 
 HOST_CHECK_START () {
   USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
+  local host_selected=true host_required=true
   if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
     UU_FILTER_SCOPE=check UU_FILTER_ELIGIBLE_IDS="$(for host in $HOSTS; do printf 'host:%s ' "$(CLUSTER_HOST_NODE "$host")"; done)" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
   fi
   for HOST in $HOSTS; do
-    [[ "$USE_INTERNAL_TARGET_SELECTION" != true ]] || TARGET_SELECTION_ALLOWS check "host:$(CLUSTER_HOST_NODE "$HOST")" "$UU_FILTER_ELIGIBLE_IDS" || continue
+    host_selected=true
+    host_required=true
+    if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+      TARGET_SELECTION_ALLOWS check "host:$(CLUSTER_HOST_NODE "$HOST")" "$UU_FILTER_ELIGIBLE_IDS" || host_selected=false
+      TARGET_SELECTION_HOST_REQUIRED check "host:$(CLUSTER_HOST_NODE "$HOST")" || host_required=false
+      [[ "$host_required" == true ]] || continue
+    fi
     if HOST_IS_LOCAL "$HOST"; then
-      CHECK_HOST_ITSELF
+      [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
+      [[ "$host_selected" == true ]] && CHECK_HOST_ITSELF
       if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
       if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
+      unset UU_INTERNAL_SKIP_HOST_TARGET
     else
+      [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
       if ! CHECK_HOST "$HOST"; then
         CHECK_FAILURE=1
       fi
+      unset UU_INTERNAL_SKIP_HOST_TARGET
     fi
   done
 }
@@ -557,6 +568,7 @@ CHECK_HOST () {
   remote_done_file="$remote_check_dir/completed"
   remote_runtime_env=""
   remote_status_env=""
+  [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_status_env=" UU_INTERNAL_SKIP_HOST_TARGET=true"
   remote_status_validation=""
   remote_status_file="/tmp/ultimate-updater-remote-status-$$-$RANDOM.json"
   remote_diagnostics_file="$remote_check_dir/status-diagnostics"

@@ -305,7 +305,7 @@ ARGUMENTS () {
           if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Continue after errors: enabled${CL:-}\n"; else echo -e "ℹ ${OR:-} Continue after errors: disabled${CL:-}\n"; fi
         fi
         echo -e "🔄${GN:-} Updating Host${CL:-} : ${GN:-}$IP | ($HOSTNAME)${CL:-}\n"
-        if [[ "$WITH_HOST" == true ]]; then
+        if [[ "$WITH_HOST" == true && "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" != true ]]; then
           UPDATE_HOST_ITSELF
         else
           echo -e "⏩${BL:-} Skipped host itself by the user${CL:-}\n\n"
@@ -1306,13 +1306,20 @@ CHECK_QGA_EXEC () {
 # Host Update Start
 HOST_UPDATE_START () {
   USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
+  local host_selected=true host_required=true
   if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
     UU_FILTER_SCOPE=update UU_FILTER_ELIGIBLE_IDS="$(for host in $HOSTS; do printf 'host:%s ' "$(awk -v address="$host" '/name[[:space:]]*:/ { name=$2 } /ring0_addr[[:space:]]*:/ && $2 == address { print name; found=1; exit } END { if (!found) print address }' /etc/pve/corosync.conf 2>/dev/null)"; done)" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
   fi
   if [[ "$RICM" != true ]]; then true > $LOCAL_FILES/check-output; fi
   for HOST in $HOSTS; do
     HOST_NODE=$(awk -v address="$HOST" '/name[[:space:]]*:/ { name=$2 } /ring0_addr[[:space:]]*:/ && $2 == address { print name; found=1; exit } END { if (!found) print address }' /etc/pve/corosync.conf 2>/dev/null)
-    [[ "$USE_INTERNAL_TARGET_SELECTION" != true ]] || TARGET_SELECTION_ALLOWS update "host:$HOST_NODE" "$UU_FILTER_ELIGIBLE_IDS" || continue
+    host_selected=true
+    host_required=true
+    if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+      TARGET_SELECTION_ALLOWS update "host:$HOST_NODE" "$UU_FILTER_ELIGIBLE_IDS" || host_selected=false
+      TARGET_SELECTION_HOST_REQUIRED update "host:$HOST_NODE" || host_required=false
+      [[ "$host_required" == true ]] || continue
+    fi
     INTERNAL_SSH_RESOLVE_NODE "$HOST_NODE" "$HOST" "$SSH_PORT" || { UPDATE_FAILURE=true; continue; }
     [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || { UPDATE_FAILURE=true; continue; }
     HOST="${INTERNAL_SSH_HOST:-$HOST}"; SSH_PORT="${INTERNAL_SSH_PORT:-$SSH_PORT}"; INTERNAL_SSH_USE_IDENTITY
@@ -1321,9 +1328,11 @@ HOST_UPDATE_START () {
       echo -e "⏩ ${OR:-}Skip Host${CL:-} : ${GN:-}$HOST${CL:-} ${OR:-}- can't connect${CL:-}\n"
       UPDATE_FAILURE=true
     else
+      [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
       if ! UPDATE_HOST "$HOST"; then
         UPDATE_FAILURE=true
       fi
+      unset UU_INTERNAL_SKIP_HOST_TARGET
     fi
   done
 }
@@ -1331,6 +1340,8 @@ HOST_UPDATE_START () {
 # Host Update
 UPDATE_HOST () {
   HOST=$1
+  local remote_update_env=""
+  [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_update_env="UU_INTERNAL_SKIP_HOST_TARGET=true "
   START_HOST=$(hostname -i | cut -d ' ' -f1)
   if [[ "$HOST" != "$START_HOST" ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
@@ -1370,13 +1381,13 @@ UPDATE_HOST () {
     fi
   fi
   if EFFECTIVE_HEADLESS; then
-    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
+    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}bash -s" < "$0" -- "-s -c host"
     REMOTE_UPDATE_STATUS=$?
   elif [[ "$WELCOME_SCREEN" == true ]]; then
-    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c -w host"
+    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}bash -s" < "$0" -- "-c -w host"
     REMOTE_UPDATE_STATUS=$?
   else
-    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c host"
+    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}bash -s" < "$0" -- "-c host"
     REMOTE_UPDATE_STATUS=$?
   fi
   if [[ "$HOST" != "$START_HOST" ]]; then
