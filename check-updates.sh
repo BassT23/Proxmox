@@ -124,6 +124,7 @@ CENTRAL_REMOTE_PHASE() {
 
 # Tag filter
 TAG_FILTER_FILE="${TAG_FILTER_FILE:-$LOCAL_FILES/tag-filter.sh}"
+USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
 # shellcheck disable=SC1090,SC1091
 . "$TAG_FILTER_FILE"
 
@@ -306,6 +307,8 @@ READ_WRITE_CONFIG () {
   # REBOOT_IF_NEEDED belongs to update.sh; checks only report reboot_required.
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
+  USE_INTERNAL_TARGET_SELECTION=$(awk -F'"' '/^USE_INTERNAL_TARGET_SELECTION=/ {print $2}' "$CONFIG_FILE")
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
   EXE_FOR_INTERNET_CHECK=$(awk -F '"' '/^EXE_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
   EXE_FOR_INTERNET_CHECK="${EXE_FOR_INTERNET_CHECK:-ping}"
@@ -505,7 +508,12 @@ PY
 }
 
 HOST_CHECK_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=check UU_FILTER_ELIGIBLE_IDS="$(for host in $HOSTS; do printf 'host:%s ' "$(CLUSTER_HOST_NODE "$host")"; done)" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   for HOST in $HOSTS; do
+    [[ "$USE_INTERNAL_TARGET_SELECTION" != true ]] || TARGET_SELECTION_ALLOWS check "host:$(CLUSTER_HOST_NODE "$HOST")" "$UU_FILTER_ELIGIBLE_IDS" || continue
     if HOST_IS_LOCAL "$HOST"; then
       CHECK_HOST_ITSELF
       if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
@@ -847,13 +855,19 @@ HOST_KERNEL_REBOOT_REQUIRED () {
 ## Container ##
 # Container Check Start
 CONTAINER_CHECK_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   local lifecycle_failure=0 lifecycle_message
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=check UU_FILTER_ELIGIBLE_IDS="$CONTAINERS" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   # Loop through the containers
   if ! [[ -d $LOCAL_FILES/temp/ ]]; then mkdir $LOCAL_FILES/temp/; fi
   for CONTAINER in $CONTAINERS; do
-    if guest_id_matches "$EXCLUDED" "$CONTAINER"; then
+    if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS check "$CONTAINER" "$CONTAINERS"; then
+      continue
+    elif guest_id_matches "$EXCLUDED" "$CONTAINER"; then
       continue
     elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$CONTAINER"; then
       continue
@@ -1124,8 +1138,12 @@ CHECK_SINGLE_CONTAINER () {
 ## VM ##
 # VM Check Start
 VM_CHECK_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   # Get the list of VMs
   VMS=$(qm list | tail -n +2 | cut -c -10)
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=check UU_FILTER_ELIGIBLE_IDS="$VMS" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   # Loop through VMs
   for VM in $VMS; do
     local vm_has_internal_ssh=false
@@ -1145,7 +1163,9 @@ VM_CHECK_START () {
       [[ -f $LOCAL_FILES/VMs/"$VM" ]] || [[ "$vm_has_internal_ssh" == true ]]; then
       # Check VM
       PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-      if guest_id_matches "$EXCLUDED" "$VM"; then
+      if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS check "$VM" "$VMS"; then
+        continue
+      elif guest_id_matches "$EXCLUDED" "$VM"; then
         continue
       elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
         continue
@@ -1775,7 +1795,7 @@ if [[ "$COMMAND" != true && "$RDU" == true ]]; then
 elif [[ "$COMMAND" != true ]]; then
   OUTPUT_TO_FILE
   if [[ "$MODE" =~ Cluster ]]; then HOST_CHECK_START; else
-    if [[ "$WITH_HOST" == true ]]; then CHECK_HOST_ITSELF; fi
+    if [[ "$WITH_HOST" == true ]] && { [[ "${UU_CHECK_SCOPE:-}" == host || "$USE_INTERNAL_TARGET_SELECTION" != true ]] || TARGET_SELECTION_ALLOWS check "host:$(hostname -s 2>/dev/null || hostname)" "host:$(hostname -s 2>/dev/null || hostname)"; }; then CHECK_HOST_ITSELF; fi
     if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
     if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
   fi

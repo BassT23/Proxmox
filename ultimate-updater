@@ -31,6 +31,7 @@ CLUSTER_TARGET_SCRIPT="$LOCAL_FILES/cluster-target.sh"
 INTERNAL_SSH_FILE="$LOCAL_FILES/internal-ssh.sh"
 GLOBAL_UPDATE_SCRIPT="$LOCAL_FILES/global-update.sh"
 EXTERNAL_SELECTION_SCRIPT="$LOCAL_FILES/external-selection.sh"
+TARGET_SELECTION_SCRIPT="$LOCAL_FILES/target-selection.sh"
 
 configured_headless() {
   [[ "$(awk -F'\"' '/^IN_HEADLESS_MODE=/ {print $2; exit}' "$LOCAL_FILES/update.conf" 2>/dev/null)" == true ]]
@@ -90,6 +91,9 @@ if [[ ! -f "$GLOBAL_UPDATE_SCRIPT" && -f "$SCRIPT_DIR/global-update.sh" ]]; then
 fi
 if [[ ! -f "$EXTERNAL_SELECTION_SCRIPT" && -f "$SCRIPT_DIR/external-selection.sh" ]]; then
   EXTERNAL_SELECTION_SCRIPT="$SCRIPT_DIR/external-selection.sh"
+fi
+if [[ ! -f "$TARGET_SELECTION_SCRIPT" && -f "$SCRIPT_DIR/target-selection.sh" ]]; then
+  TARGET_SELECTION_SCRIPT="$SCRIPT_DIR/target-selection.sh"
 fi
 # shellcheck disable=SC1090
 [[ -f "$STATUS_MODEL_SCRIPT" ]] && source "$STATUS_MODEL_SCRIPT"
@@ -594,7 +598,7 @@ remote_node_check_via_cluster_transport() {
   local node="$1" host="${REMOTE_NODE_HOST:-$2}" port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
   local user="${REMOTE_NODE_USER:-root}" local_file remote_check_dir remote_command
   local remote_config remote_tag_filter remote_cluster_target remote_runtime remote_status_model
-  local remote_status_file tag_filter_script target_runtime_file
+  local remote_status_file tag_filter_script target_runtime_file target_selection_script
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
   remote_check_dir="/tmp/ultimate-updater-check-node-$$-$RANDOM-$RANDOM"
   remote_config="$remote_check_dir/update.conf"
@@ -604,8 +608,10 @@ remote_node_check_via_cluster_transport() {
   remote_status_model="$remote_check_dir/status-model.sh"
   remote_status_file="$remote_check_dir/status.json"
   tag_filter_script="$LOCAL_FILES/tag-filter.sh"
+  target_selection_script="$LOCAL_FILES/target-selection.sh"
   target_runtime_file="$LOCAL_FILES/target-runtime.sh"
   [[ -f "$tag_filter_script" ]] || tag_filter_script="$SCRIPT_DIR/tag-filter.sh"
+  [[ -f "$target_selection_script" ]] || target_selection_script="$SCRIPT_DIR/target-selection.sh"
   [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
   local_file=$(mktemp)
   if ! STATUS_MODEL_INIT; then
@@ -619,6 +625,7 @@ remote_node_check_via_cluster_transport() {
       "$LOCAL_FILES/update.conf" "$user@$host:$remote_config" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$tag_filter_script" "$user@$host:$remote_tag_filter" ||
+    ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$target_selection_script" "$user@$host:$remote_check_dir/target-selection.sh" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$CLUSTER_TARGET_SCRIPT" "$user@$host:$remote_cluster_target" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
@@ -633,9 +640,16 @@ remote_node_check_via_cluster_transport() {
     printf 'Node %s is unreachable.\n' "$node" >&2
     return 1
   fi
-  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true bash -s -- node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; exit 0' \
+  if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true && -f "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" ]]; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" "$user@$host:$remote_check_dir/target-selection.json" || {
+        timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+        return 1
+      }
+  fi
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_TARGET_SELECTION_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true bash -s -- node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; exit 0' \
     "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
-    "$remote_runtime" "$node" "$remote_status_model" "$remote_status_file" \
+    "$remote_runtime" "$node" "$remote_status_model" "$remote_status_file" "$remote_check_dir/target-selection.json" \
     "$remote_status_file.records" "$remote_status_model" "$node" "$remote_status_file" \
     "$remote_status_file.records" "$remote_status_model" "$remote_status_file" "$node" \
     "$remote_check_dir" "$remote_status_file" "$remote_check_dir"
@@ -832,7 +846,7 @@ record_remote_target_error() {
 remote_target_check() {
   local target="$1" kind="$2" node="$3" host="$4" mode remote_check_dir remote_config
   local remote_tag_filter remote_cluster_target remote_runtime remote_qga remote_status_model remote_internal_ssh remote_internal_conf remote_status_file
-  local tag_filter_script target_runtime_file qga_helper internal_ssh_file internal_ssh_conf legacy_profile local_file transport_rc
+  local tag_filter_script target_runtime_file target_selection_script qga_helper internal_ssh_file internal_ssh_conf legacy_profile local_file transport_rc
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]:-}")
   mode=$([[ "$kind" == container ]] && printf ccontainer || printf cvm)
   if ! resolve_remote_node_transport "$node" "$host"; then
@@ -852,12 +866,14 @@ remote_target_check() {
   remote_internal_conf="$remote_check_dir/internal-ssh.conf"
   remote_status_file="$remote_check_dir/status.json"
   tag_filter_script="$LOCAL_FILES/tag-filter.sh"
+  target_selection_script="$LOCAL_FILES/target-selection.sh"
   target_runtime_file="$LOCAL_FILES/target-runtime.sh"
   qga_helper="$LOCAL_FILES/qga-guest-exec.sh"
   internal_ssh_file="$LOCAL_FILES/internal-ssh.sh"
   internal_ssh_conf="$LOCAL_FILES/internal-ssh.conf"
   legacy_profile="$LOCAL_FILES/VMs/$target"
   [[ -f "$tag_filter_script" ]] || tag_filter_script="$SCRIPT_DIR/tag-filter.sh"
+  [[ -f "$target_selection_script" ]] || target_selection_script="$SCRIPT_DIR/target-selection.sh"
   [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
   [[ -f "$qga_helper" ]] || qga_helper="$SCRIPT_DIR/qga-guest-exec.sh"
   [[ -f "$internal_ssh_file" ]] || internal_ssh_file="$SCRIPT_DIR/internal-ssh.sh"
@@ -873,6 +889,7 @@ remote_target_check() {
       "$LOCAL_FILES/update.conf" "$user@$host:$remote_config" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$tag_filter_script" "$user@$host:$remote_tag_filter" ||
+    ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$target_selection_script" "$user@$host:$remote_check_dir/target-selection.sh" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$CLUSTER_TARGET_SCRIPT" "$user@$host:$remote_cluster_target" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
@@ -910,6 +927,13 @@ remote_target_check() {
     rm -f -- "$local_file"
     printf 'Could not transfer legacy SSH profile for target %s to node %s.\n' "$target" "$node" >&2
     return 1
+  fi
+  if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true && -f "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" ]]; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" "$user@$host:$remote_check_dir/target-selection.json" || {
+        timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+        return 1
+      }
   fi
   # shellcheck disable=SC2016
   printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q QGA_EXEC_SCRIPT=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_SINGLE_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true bash -s -- %q %q >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote guest status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; if [[ "$finish_rc" -ne 0 ]]; then exit "$finish_rc"; fi; exit "$remote_rc"' \

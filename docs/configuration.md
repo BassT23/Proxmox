@@ -22,6 +22,16 @@ EXCLUDE_UPDATE_CHECK
 `ONLY` takes precedence over its matching `EXCLUDE`. Filters accept VMIDs,
 ranges, and configured tags; check and update selections are independent.
 
+### Ultimate Updater target selection
+
+`USE_INTERNAL_TARGET_SELECTION` is `false` by default. When it is disabled,
+the existing Proxmox Only/Exclude tag behavior is unchanged. When enabled,
+the Web UI's Check and Update tri-state rules are used instead and Proxmox
+Only/Exclude tags are ignored without being changed. An empty rule means no
+explicit selection; `Only` includes a target, and `Exclude` removes it. Check
+and Update rules are independent. Disabling the option preserves the saved
+internal rules and restores the legacy tag behavior.
+
 ## Updates and lifecycle
 
 `REBOOT_IF_NEEDED` controls reboot handling for updates, not checks. Guest

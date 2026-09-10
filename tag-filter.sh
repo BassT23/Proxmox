@@ -43,6 +43,12 @@
 # shellcheck disable=SC2155  # Command substitution in local assignment is intentional
 # shellcheck disable=SC2086  # Intended word splitting for tag token arrays
 
+TARGET_SELECTION_SCRIPT="${UU_TARGET_SELECTION_SCRIPT:-${LOCAL_FILES:-${UU_LOCAL_FILES:-/etc/ultimate-updater}}/target-selection.sh}"
+if [[ -f "$TARGET_SELECTION_SCRIPT" ]]; then
+  # shellcheck disable=SC1090
+  source "$TARGET_SELECTION_SCRIPT"
+fi
+
 guest_id_matches() {
   local requested_list=${1:-} guest_id=${2:-} id
   local -a requested_ids
@@ -181,6 +187,21 @@ apply_only_exclude_tags() {
 
   # Indirect expansion: read caller-provided variables.
   local _ONLY_VALUE="${!_only_var_name}" _EXCLUDE_VALUE="${!_exclude_var_name}"
+  if declare -f TARGET_SELECTION_ENABLED >/dev/null 2>&1 && TARGET_SELECTION_ENABLED; then
+    # Internal rules supersede Proxmox tags while preserving the configured
+    # tag values on disk.  The caller supplies the eligible guest IDs when it
+    # knows them; an empty list is intentionally not treated as a selection.
+    local _internal_ids
+    _internal_ids=$(TARGET_SELECTION_STATE "${UU_FILTER_SCOPE:-update}" "${UU_FILTER_ELIGIBLE_IDS:-}" 2>/dev/null || true)
+    if [[ -n "${UU_FILTER_ELIGIBLE_IDS:-}" ]]; then
+      printf -v "$_only_var_name" '%s' "$_internal_ids"
+      printf -v "$_exclude_var_name" ''
+    else
+      printf -v "$_only_var_name" ''
+      printf -v "$_exclude_var_name" ''
+    fi
+    return 0
+  fi
   [[ -z $_ONLY_VALUE && -z $_EXCLUDE_VALUE ]] && return 0
 
   # ------------------------------------------------------------------------

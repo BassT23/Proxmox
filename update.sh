@@ -106,6 +106,7 @@ APT_COMMAND() {
 # Tag filter
 # shellcheck disable=SC1091
 . "$LOCAL_FILES/tag-filter.sh"
+USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
 
 # Colors
 BL="\e[36m"
@@ -654,6 +655,8 @@ READ_CONFIG () {
   EXTRA_IN_HEADLESS="$IN_HEADLESS_MODE"
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
+  USE_INTERNAL_TARGET_SELECTION=$(awk -F'"' '/^USE_INTERNAL_TARGET_SELECTION=/ {print $2}' "$CONFIG_FILE")
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_FSTRIM=$(awk -F'"' '/^INCLUDE_FSTRIM=/ {print $2}' "$CONFIG_FILE")
   FSTRIM_WITH_MOUNTPOINT=$(awk -F'"' '/^FSTRIM_WITH_MOUNTPOINT=/ {print $2}' "$CONFIG_FILE")
@@ -1302,9 +1305,14 @@ CHECK_QGA_EXEC () {
 
 # Host Update Start
 HOST_UPDATE_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=update UU_FILTER_ELIGIBLE_IDS="$(for host in $HOSTS; do printf 'host:%s ' "$(awk -v address="$host" '/name[[:space:]]*:/ { name=$2 } /ring0_addr[[:space:]]*:/ && $2 == address { print name; found=1; exit } END { if (!found) print address }' /etc/pve/corosync.conf 2>/dev/null)"; done)" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   if [[ "$RICM" != true ]]; then true > $LOCAL_FILES/check-output; fi
   for HOST in $HOSTS; do
     HOST_NODE=$(awk -v address="$HOST" '/name[[:space:]]*:/ { name=$2 } /ring0_addr[[:space:]]*:/ && $2 == address { print name; found=1; exit } END { if (!found) print address }' /etc/pve/corosync.conf 2>/dev/null)
+    [[ "$USE_INTERNAL_TARGET_SELECTION" != true ]] || TARGET_SELECTION_ALLOWS update "host:$HOST_NODE" "$UU_FILTER_ELIGIBLE_IDS" || continue
     INTERNAL_SSH_RESOLVE_NODE "$HOST_NODE" "$HOST" "$SSH_PORT" || { UPDATE_FAILURE=true; continue; }
     [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || { UPDATE_FAILURE=true; continue; }
     HOST="${INTERNAL_SSH_HOST:-$HOST}"; SSH_PORT="${INTERNAL_SSH_PORT:-$SSH_PORT}"; INTERNAL_SSH_USE_IDENTITY
@@ -1341,6 +1349,12 @@ UPDATE_HOST () {
     scp -r $LOCAL_FILES/VMs/ "$HOST":$LOCAL_FILES/
     if [[ -f $LOCAL_FILES/tag-filter.sh ]]; then
       scp $LOCAL_FILES/tag-filter.sh "$HOST":$LOCAL_FILES/tag-filter.sh
+    fi
+    if [[ -f "$LOCAL_FILES/target-selection.sh" ]]; then
+      scp "$LOCAL_FILES/target-selection.sh" "$HOST":$LOCAL_FILES/target-selection.sh
+    fi
+    if [[ "$USE_INTERNAL_TARGET_SELECTION" == true && -f "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" ]]; then
+      scp "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" "$HOST":$LOCAL_FILES/target-selection.json
     fi
     if [[ -f "$LOCAL_FILES/target-runtime.sh" ]]; then
       scp "$LOCAL_FILES/target-runtime.sh" "$HOST":$LOCAL_FILES/target-runtime.sh
@@ -1404,12 +1418,18 @@ UPDATE_HOST_ITSELF () {
 
 # Container Update Start
 CONTAINER_UPDATE_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=update UU_FILTER_ELIGIBLE_IDS="$CONTAINERS" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     ERROR_CODE=""
-    if guest_id_matches "$EXCLUDED" "$CONTAINER"; then
+    if [[ "$SINGLE_UPDATE" != true && "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS update "$CONTAINER" "$CONTAINERS"; then
+      echo -e "⏩${BL:-} Skipped LXC $CONTAINER by internal target selection${CL:-}\n\n"
+    elif guest_id_matches "$EXCLUDED" "$CONTAINER"; then
       echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
     elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$CONTAINER"; then
       if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"; else continue; fi
@@ -1615,12 +1635,18 @@ UPDATE_CONTAINER () {
 
 # VM Update Start
 VM_UPDATE_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   # Get the list of VMs
   VMS=$(qm list | tail -n +2 | cut -c -10)
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=update UU_FILTER_ELIGIBLE_IDS="$VMS" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   # Loop through the VMs
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep ostype || true)
-    if guest_id_matches "$EXCLUDED" "$VM"; then
+    if [[ "$SINGLE_UPDATE" != true && "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS update "$VM" "$VMS"; then
+      echo -e "⏩${BL:-} Skipped VM $VM by internal target selection${CL:-}\n\n"
+    elif guest_id_matches "$EXCLUDED" "$VM"; then
       echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
     elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
       if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"; else continue; fi
@@ -2181,7 +2207,7 @@ if [[ "$COMMAND" != true ]]; then
     HOST_UPDATE_START
   else
     echo -e "🔄${GN:-} Updating Host${CL:-} : ${GN:-}$IP | ($HOSTNAME)${CL:-}\n"
-    if [[ "$WITH_HOST" == true ]]; then
+    if [[ "$WITH_HOST" == true ]] && { [[ "${UU_UPDATE_SCOPE:-}" == host || "$USE_INTERNAL_TARGET_SELECTION" != true ]] || TARGET_SELECTION_ALLOWS update "host:$(hostname -s 2>/dev/null || hostname)" "host:$(hostname -s 2>/dev/null || hostname)"; }; then
       UPDATE_HOST_ITSELF
     else
       echo -e "⏩${BL:-} Skipped host itself by the user${CL:-}\n\n"

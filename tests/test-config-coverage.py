@@ -66,6 +66,7 @@ try:
     assert 'EXCLUDE=""' in defaults
     assert 'ONLY_UPDATE_CHECK=""' in defaults
     assert 'EXCLUDE_UPDATE_CHECK=""' in defaults
+    assert 'USE_INTERNAL_TARGET_SELECTION="false"' in defaults
     print("config coverage, migration and save-safety tests: PASS")
 finally:
     for path in sorted(work.glob("*"), reverse=True):

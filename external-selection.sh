@@ -2,6 +2,15 @@
 
 # Side-effect-free central selection for External targets.
 EXTERNAL_SELECTION_CONFIG_FILE="${EXTERNAL_SELECTION_CONFIG_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
+TARGET_SELECTION_SCRIPT="${UU_TARGET_SELECTION_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/target-selection.sh}"
+if [[ -f "$TARGET_SELECTION_SCRIPT" ]]; then
+  # shellcheck disable=SC1090
+  source "$TARGET_SELECTION_SCRIPT"
+fi
+
+external_internal_selection_enabled() {
+  [[ "$(external_selection_config_value USE_INTERNAL_TARGET_SELECTION)" == true ]]
+}
 
 external_selection_config_value() {
   local wanted="$1"
@@ -59,6 +68,11 @@ external_selection_allows() {
     update) only_key=ONLY; exclude_key=EXCLUDE ;;
     *) return 2 ;;
   esac
+  if external_internal_selection_enabled && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    TARGET_SELECTION_FILE="${UU_TARGET_SELECTION_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/target-selection.json}" \
+      USE_INTERNAL_TARGET_SELECTION=true TARGET_SELECTION_ALLOWS "$mode" "external:$target" "${UU_FILTER_ELIGIBLE_IDS:-external:$target}" || return 1
+    return 0
+  fi
   only=$(external_selection_config_value "$only_key")
   exclude=$(external_selection_config_value "$exclude_key")
   if [[ -n "$only" ]] && external_selection_only_active "$mode" "$only"; then

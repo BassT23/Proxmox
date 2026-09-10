@@ -28,6 +28,8 @@ runtime_sources = "\n".join(
 labels = re.search(r"const configLabels=\{(.*?)\};", server.PAGE, re.S)
 assert labels, "configLabels missing"
 visible_keys = set(re.findall(r"([A-Z][A-Z0-9_]+):", labels.group(1)))
+if "configLabels.USE_INTERNAL_TARGET_SELECTION='Use Ultimate Updater target selection'" in server.PAGE:
+    visible_keys.add("USE_INTERNAL_TARGET_SELECTION")
 assert visible_keys == server.CONFIG_KEYS, sorted(visible_keys ^ server.CONFIG_KEYS)
 orphaned = sorted(key for key in visible_keys if not re.search(rf"\b{re.escape(key)}\b", runtime_sources))
 assert not orphaned, orphaned

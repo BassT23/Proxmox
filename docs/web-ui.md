@@ -36,6 +36,17 @@ targets, and server-side jobs in one view.
 
 ![Ultimate Updater dashboard](images/web-ui/dashboard.png)
 
+### Target selection
+
+The Systems view can optionally manage target selection directly. Enable
+**Use Ultimate Updater target selection** in Settings to show independent
+**Check** and **Update** controls for Nodes, LXC containers, VMs, and External
+systems. Each control cycles through **No explicit selection**, **Only**, and
+**Exclude**. The first use asks for confirmation because enabling this mode
+ignores existing Proxmox Only/Exclude tags; those tags are not changed or
+removed. Disabling the mode keeps the saved rules and restores legacy tag
+selection.
+
 ### Navigation
 
 Use the compact menu button in the header to open the current navigation. It

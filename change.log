@@ -3,6 +3,8 @@ Changelog:
 
 **Unreleased**
 
+- optional Web UI-managed Check/Update target selection with independent tri-state rules; legacy Proxmox tag selection remains the default
+
 **v5.1.3 Beta 2** (beta / release candidate for validation)
 
 Added:

@@ -432,11 +432,13 @@ INSTALL () {
     cp "$TEMP_FILES"/qga-guest-exec.sh $LOCAL_FILES/qga-guest-exec.sh
     chmod 750 "$LOCAL_FILES"/qga-guest-exec.sh
     cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
+    cp "$TEMP_FILES"/target-selection.sh $LOCAL_FILES/target-selection.sh
     cp "$TEMP_FILES"/target-inventory.sh $LOCAL_FILES/target-inventory.sh
     chmod 750 $LOCAL_FILES/target-inventory.sh
     cp "$TEMP_FILES"/targets.conf $LOCAL_FILES/targets.conf
     cp "$TEMP_FILES"/status-model.sh $LOCAL_FILES/status-model.sh
     chmod 750 $LOCAL_FILES/status-model.sh
+    chmod 750 $LOCAL_FILES/target-selection.sh
     cp "$TEMP_FILES"/windows-update.sh $LOCAL_FILES/windows-update.sh
     chmod 750 $LOCAL_FILES/windows-update.sh
     cp "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
@@ -639,6 +641,10 @@ UPDATE () {
     chmod 750 $LOCAL_FILES/update.sh
     mv "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     mv "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
+    if [[ -f "$TEMP_FILES"/target-selection.sh ]]; then
+      mv "$TEMP_FILES"/target-selection.sh $LOCAL_FILES/target-selection.sh
+      chmod 750 "$LOCAL_FILES/target-selection.sh"
+    fi
     if [[ -f "$TEMP_FILES"/target-inventory.sh ]]; then
       mv "$TEMP_FILES"/target-inventory.sh $LOCAL_FILES/target-inventory.sh
       chmod 750 $LOCAL_FILES/target-inventory.sh

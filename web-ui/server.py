@@ -98,6 +98,7 @@ DEFAULT_CONFIG_FILE = Path("/etc/ultimate-updater/update.conf")
 DEFAULT_INVENTORY_FILE = Path("/etc/ultimate-updater/targets.conf")
 DEFAULT_INVENTORY_SCRIPT = Path("/etc/ultimate-updater/target-inventory.sh")
 DEFAULT_TAG_FILTER = Path("/etc/ultimate-updater/tag-filter.sh")
+DEFAULT_TARGET_SELECTION = Path("/etc/ultimate-updater/target-selection.json")
 DEFAULT_EXTERNAL_SCRIPT = Path("/etc/ultimate-updater/external-apt.sh")
 DEFAULT_CLUSTER_TARGET_SCRIPT = Path("/etc/ultimate-updater/cluster-target.sh")
 DEFAULT_EXTERNAL_SETTINGS_SCRIPT = Path("/etc/ultimate-updater/external-settings.sh")
@@ -400,6 +401,7 @@ CONFIG_BOOLEAN_KEYS = {
     "STOPPED_CONTAINER", "RUNNING_VM", "STOPPED_VM",
     "REBOOT_IF_NEEDED", "EXIT_ON_ERROR", "DEBUG", "SNAPSHOT", "BACKUP",
     "BACKUP_LXC_MP", "EMAIL_DAILY_CHECK", "EMAIL_SINGLE_RUNS", "EMAIL_NO_UPDATES",
+    "USE_INTERNAL_TARGET_SELECTION",
     "EMAIL_ONLY_SECURITY", "EMAIL_ONLY_ERROR", "VERSION_CHECK",
     "FREEBSD_UPDATES", "INCLUDE_PHASED_UPDATES", "INCLUDE_FSTRIM",
     "FSTRIM_WITH_MOUNTPOINT", "INCLUDE_HELPER_SCRIPTS", "EXTRA_GLOBAL",
@@ -427,6 +429,7 @@ CONFIG_KEY_CATEGORIES = {
     "LXC_START_DELAY": "advanced", "VM_START_DELAY": "advanced",
     "EMAIL_USER": "visible", "EMAIL_SENDER": "visible",
     "EMAIL_DAILY_CHECK": "visible", "EMAIL_SINGLE_RUNS": "visible", "EMAIL_NO_UPDATES": "visible",
+    "USE_INTERNAL_TARGET_SELECTION": "visible",
     "EMAIL_ONLY_SECURITY": "visible", "EMAIL_ONLY_ERROR": "visible",
     "CHECK_WITH_HOST": "visible", "CHECK_WITH_LXC": "visible", "CHECK_WITH_VM": "visible",
     "CHECK_STOPPED_CONTAINER": "visible", "CHECK_RUNNING_CONTAINER": "visible",
@@ -995,11 +998,12 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const configNumberKeys=['SSH_PORT','LXC_START_DELAY','VM_START_DELAY','KEEP_SNAPSHOTS'];
     const configStringKeys=['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE','BACKUP_MODE','BACKUP_STORAGE','EMAIL_USER','EMAIL_SENDER','EXE_FOR_INTERNET_CHECK','URL_FOR_INTERNET_CHECK','PACMAN_ENVIRONMENT','COMPOSE_PATH'];
     const configLabels={CHECK_WITH_HOST:'Check host',CHECK_WITH_LXC:'Check LXC',CHECK_WITH_VM:'Check VM',CHECK_RUNNING_CONTAINER:'Check running containers',CHECK_STOPPED_CONTAINER:'Check stopped containers',CHECK_RUNNING_VM:'Check running VMs',CHECK_STOPPED_VM:'Check stopped VMs',CHECK_PAUSED_VM:'Check paused VMs',WITH_HOST:'Update host',WITH_LXC:'Update LXC',WITH_VM:'Update VM',RUNNING_CONTAINER:'Update running containers',STOPPED_CONTAINER:'Update stopped containers',RUNNING_VM:'Update running VMs',STOPPED_VM:'Update stopped VMs',REBOOT_IF_NEEDED:'Reboot if needed',EXIT_ON_ERROR:'Continue after errors',DEBUG:'Debug logging',SNAPSHOT:'Create snapshots',KEEP_SNAPSHOTS:'Snapshots to keep',BACKUP:'Create backups',BACKUP_LXC_MP:'Backup LXC mount points',BACKUP_MODE:'Backup mode',BACKUP_STORAGE:'Backup storage',EMAIL_DAILY_CHECK:'Email for scheduled checks',EMAIL_SINGLE_RUNS:'Email for single-target runs',EMAIL_NO_UPDATES:'Email when no updates',EMAIL_ONLY_SECURITY:'Email security updates only',EMAIL_ONLY_ERROR:'Email errors only',VERSION_CHECK:'Check for updater updates',SSH_PORT:'SSH port',EXE_FOR_INTERNET_CHECK:'Internet check command',URL_FOR_INTERNET_CHECK:'Internet check address',FREEBSD_UPDATES:'Update FreeBSD guests',INCLUDE_PHASED_UPDATES:'Include phased updates',INCLUDE_FSTRIM:'Run fstrim',FSTRIM_WITH_MOUNTPOINT:'Include mount points in fstrim',PACMAN_ENVIRONMENT:'Pacman environment',INCLUDE_HELPER_SCRIPTS:'Include helper scripts',EXTRA_GLOBAL:'Enable extra updates',IN_HEADLESS_MODE:'Run extras in headless mode',PIHOLE:'Update Pi-hole',IOBROKER:'Update ioBroker',PTERODACTYL:'Update Pterodactyl',OCTOPRINT:'Update OctoPrint',DOCKER_COMPOSE:'Update Docker Compose',UNIFI:'Update UniFi',COMPOSE_PATH:'Compose search path',LXC_START_DELAY:'LXC start delay',VM_START_DELAY:'VM start delay',ONLY_UPDATE_CHECK:'Only check filter',EXCLUDE_UPDATE_CHECK:'Exclude check filter',ONLY:'Only update filter',EXCLUDE:'Exclude update filter',EMAIL_USER:'Email recipient',EMAIL_SENDER:'Email sender'};
+    configLabels.USE_INTERNAL_TARGET_SELECTION='Use Ultimate Updater target selection';
     const configGroups=[
       {title:'Host',hint:'Host checks and updates are controlled here. Guest settings below do not change host processing.',keys:['CHECK_WITH_HOST','WITH_HOST']},
       {title:'Containers / LXC',hint:'Choose which LXC guests and lifecycle states are included for checks and updates.',matrix:[{label:'Containers',check:'CHECK_WITH_LXC',update:'WITH_LXC'},{label:'Running containers',check:'CHECK_RUNNING_CONTAINER',update:'RUNNING_CONTAINER'},{label:'Stopped containers',check:'CHECK_STOPPED_CONTAINER',update:'STOPPED_CONTAINER'}],extras:['LXC_START_DELAY','BACKUP_LXC_MP']},
       {title:'Virtual Machines',hint:'Choose which VMs and lifecycle states are included for checks and updates.',matrix:[{label:'Virtual machines',check:'CHECK_WITH_VM',update:'WITH_VM'},{label:'Running VMs',check:'CHECK_RUNNING_VM',update:'RUNNING_VM'},{label:'Stopped VMs',check:'CHECK_STOPPED_VM',update:'STOPPED_VM'},{label:'Paused VMs',check:'CHECK_PAUSED_VM',update:null}],extras:['VM_START_DELAY']},
-      {title:'Target filters',hint:'Check and update filters are independent. Only activates when an eligible target matches; with zero matches all eligible targets are used. Exclude is always applied afterwards.',filterGroups:[{title:'Check',keys:['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK'],preview:'check'},{title:'Update',keys:['ONLY','EXCLUDE'],preview:'update'}]},
+      {title:'Target filters',hint:'Check and update filters are independent. Only activates when an eligible target matches; with zero matches all eligible targets are used. Proxmox tags remain the default selection source.',keys:['USE_INTERNAL_TARGET_SELECTION'],filterGroups:[{title:'Check',keys:['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK'],preview:'check'},{title:'Update',keys:['ONLY','EXCLUDE'],preview:'update'}]},
       {title:'General update behavior',hint:'These options affect how the core processes checks and updates.',keys:['REBOOT_IF_NEEDED','EXIT_ON_ERROR','DEBUG','VERSION_CHECK','SSH_PORT','EXE_FOR_INTERNET_CHECK','URL_FOR_INTERNET_CHECK']},
       {title:'Advanced settings',hint:'Optional behavior for specialized guests and maintenance tasks.',keys:['FREEBSD_UPDATES','INCLUDE_PHASED_UPDATES','INCLUDE_FSTRIM','FSTRIM_WITH_MOUNTPOINT','PACMAN_ENVIRONMENT','INCLUDE_HELPER_SCRIPTS']},
       {title:'Extra updates',hint:'Optional service-specific updates. These apply only when extra updates are enabled.',keys:['EXTRA_GLOBAL','IN_HEADLESS_MODE','PIHOLE','IOBROKER','PTERODACTYL','OCTOPRINT','DOCKER_COMPOSE','UNIFI','COMPOSE_PATH']},
@@ -1036,7 +1040,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     async function loadFilterPreview(form,scope){const keys=scope==='update'?['ONLY','EXCLUDE']:['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK'],only=form?.querySelector(`[data-key="${keys[0]}"]`)?.value||'',exclude=form?.querySelector(`[data-key="${keys[1]}"]`)?.value||'',box=document.getElementById(`${scope}-filter-preview`);if(box)box.innerHTML='<div class="filter-preview-note">Loading target preview…</div>';try{const query=new URLSearchParams({scope,only,exclude});const data=await api(`/api/config-preview?${query.toString()}`);renderFilterPreview(data,scope)}catch(error){if(box)box.innerHTML='<div class="filter-preview-note">Target preview is currently unavailable.</div>'}}
     function scheduleFilterPreview(form,scope){clearTimeout(filterPreviewTimers[scope]);filterPreviewTimers[scope]=setTimeout(()=>loadFilterPreview(form,scope),250)}
     function buildConfigForm(values){const form=document.getElementById('config-form');form.innerHTML='';form.dataset.initialConfig=JSON.stringify(values);for(const groupData of configGroups){const wide=groupData.title==='Host'||groupData.title==='Target filters'||groupData.filterGroups;const group=document.createElement('section');group.className=`settings-group${wide?' settings-group-wide':''}`;const heading=document.createElement('div');heading.className='settings-heading';const title=document.createElement('h3');title.textContent=groupData.title;heading.appendChild(title);if(helpContent[groupData.title])heading.appendChild(createHelpControl(groupData.title,helpContent[groupData.title]));group.appendChild(heading);const hint=document.createElement('p');hint.textContent=groupData.hint;group.appendChild(hint);if(groupData.filterGroups){const scopes=document.createElement('div');scopes.className='filter-scopes';groupData.filterGroups.forEach(scopeData=>{const scope=document.createElement('section');scope.className='filter-scope';const scopeTitle=document.createElement('h4');scopeTitle.textContent=scopeData.title;scope.appendChild(scopeTitle);const fields=document.createElement('div');fields.className='config-fields';scopeData.keys.forEach(key=>fields.appendChild(configField(key,values)));scope.appendChild(fields);const preview=document.createElement('div');preview.id=`${scopeData.preview}-filter-preview`;preview.className='filter-preview';scope.appendChild(preview);scopes.appendChild(scope)});group.appendChild(scopes)}else if(groupData.matrix){group.appendChild(configMatrix(groupData,values))}else if(groupData.columns){const columns=document.createElement('div');columns.className='settings-columns';groupData.columns.forEach(keys=>{const column=document.createElement('div');column.className='settings-column';keys.forEach(key=>column.appendChild(configField(key,values)));columns.appendChild(column)});group.appendChild(columns)}else{const fields=document.createElement('div');fields.className='config-fields';groupData.keys.forEach(key=>fields.appendChild(configField(key,values)));group.appendChild(fields)}form.appendChild(group)}const actions=document.createElement('div');actions.className='config-actions';actions.innerHTML='<button type="submit" class="primary">Save settings</button><button type="button" id="config-close">Cancel</button>';form.appendChild(actions);form.querySelectorAll('[data-key="ONLY_UPDATE_CHECK"],[data-key="EXCLUDE_UPDATE_CHECK"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'check')));form.querySelectorAll('[data-key="ONLY"],[data-key="EXCLUDE"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'update')));loadFilterPreview(form,'check');loadFilterPreview(form,'update');form.onsubmit=async e=>{e.preventDefault();const initial=JSON.parse(form.dataset.initialConfig||'{}'),next={};for(const input of form.querySelectorAll('[data-key]')){const value=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value,previous=initial[input.dataset.key]??'';if(value!==previous)next[input.dataset.key]=value}if(!Object.keys(next).length){setConfigOpen(false);return}try{const d=await api('/api/config',{method:'POST',body:JSON.stringify({values:next})});buildConfigForm(d.config);setConfigOpen(false);managementMessage('config-message','Configuration saved.')}catch(error){managementMessage('config-message',error.message,true)}};document.getElementById('config-close').onclick=()=>setConfigOpen(false)}
-    const buildConfigFormBase=buildConfigForm;buildConfigForm=function(values){buildConfigFormBase(values);const form=document.getElementById('config-form'),input=form?.querySelector('[data-key="EXIT_ON_ERROR"]');if(!input)return;input.checked=values.EXIT_ON_ERROR!==true;const submit=form.onsubmit;form.onsubmit=async event=>{input.checked=!input.checked;await submit.call(form,event);if(input.isConnected)input.checked=!input.checked}};
+    const buildConfigFormBase=buildConfigForm;buildConfigForm=function(values){buildConfigFormBase(values);const form=document.getElementById('config-form'),input=form?.querySelector('[data-key="EXIT_ON_ERROR"]');const filterGroup=[...form.querySelectorAll('.settings-group')].find(group=>group.querySelector('h3')?.textContent==='Target filters');if(filterGroup&&!filterGroup.querySelector('[data-key="USE_INTERNAL_TARGET_SELECTION"]')){const fields=document.createElement('div');fields.className='config-fields';fields.appendChild(configField('USE_INTERNAL_TARGET_SELECTION',values));const hint=document.createElement('p');hint.className='hint';hint.textContent='When enabled, Proxmox Only/Exclude tags are ignored; target selection is controlled by Ultimate Updater.';fields.appendChild(hint);filterGroup.insertBefore(fields,filterGroup.querySelector('.filter-scopes'))}if(!input)return;input.checked=values.EXIT_ON_ERROR!==true;const submit=form.onsubmit;form.onsubmit=async event=>{input.checked=!input.checked;await submit.call(form,event);if(input.isConnected)input.checked=!input.checked}};
     async function loadConfig(){try{const d=await api('/api/config');buildConfigForm(d.config)}catch(error){managementMessage('config-message',error.message,true)}}
     function renderManagedTargets(){const box=document.getElementById('managed-targets');if(!managedTargets.length){box.innerHTML='<div class="empty">No external systems configured.</div>';return}box.innerHTML=managedTargets.map(t=>`<div class="managed-target"><div><strong>${esc(t.id)}</strong><small>${esc(t.user)}@${esc(t.host)}:${esc(t.port)} · SSH</small></div><div class="managed-actions"><button data-edit="${esc(t.id)}">Edit</button><button data-test="${esc(t.id)}">Test connection</button><button data-remove="${esc(t.id)}">Remove</button></div></div>`).join('');box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openTargetModal(managedTargets.find(t=>t.id===b.dataset.edit)));box.querySelectorAll('[data-test]').forEach(b=>b.onclick=()=>testTarget(b.dataset.test,null,b));box.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>removeTarget(b.dataset.remove))}
     async function openExternalSettings(target){const form=document.getElementById('external-settings-form');form.elements.target.value=target;managementMessage('external-settings-message','Loading external settings…');document.getElementById('external-settings-modal').classList.add('open');try{const data=await api(`/api/external-settings/${encodeURIComponent(target)}`);const values=data.values||{};for(const key of ['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE'])form.elements[key].value=values[key]??'';managementMessage('external-settings-message','These settings are stored on this external system.')}catch(error){managementMessage('external-settings-message',error.message,true)}}
@@ -1069,7 +1073,13 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function testExternalForm(event){event.preventDefault();const form=document.getElementById('target-modal-form'),button=event.currentTarget;if(!form.checkValidity()){form.reportValidity();updateExternalTestAvailability();return}const payload=externalFormPayload(form);testTarget(payload.id,payload,button)}
     function targetRow(t){const rebootField=t.type==='lxc'?'':`<div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div>`;const row=document.createElement('div');row.className=`target-row ${securitySplitSupported(t)?'split-row':'total-only-row'}`;if(t.type==='lxc')row.classList.add('lxc-row');row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div>${securitySplitSupported(t)?`<div class="target-field"><span class="target-label">Normal</span><strong>${updateValue(knownNormalUpdates(t))}</strong></div><div class="target-field"><span class="target-label">Security</span><strong>${updateValue(knownSecurityUpdates(t))}</strong></div>`:`<div class="target-field"><span class="target-label">Updates</span><strong>${updateValue(knownTotalOnlyUpdates(t))}</strong></div>`}${rebootField}<div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osOverviewName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button></div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const update=row.querySelector('.update'),gate=updateGate(t);update.disabled=!gate.enabled;update.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true,{warning:gate.warning})});return row}
     document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));document.getElementById('internal-ssh-open').onclick=()=>setInternalSshView(true);document.getElementById('internal-ssh-back').onclick=()=>setInternalSshView(false);document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').addEventListener('click',testExternalForm);document.getElementById('target-modal-form').addEventListener('input',updateExternalTestAvailability);document.getElementById('target-modal-form').onsubmit=saveTarget;document.getElementById('external-settings-close').onclick=closeExternalSettings;document.getElementById('external-settings-form').onsubmit=saveExternalSettings;
-    async function bootstrap(){try{await ensureSession();showDashboard();applyPageRoute();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);scheduleUpdaterVersionCheck()}catch(error){if(csrfToken)notice(error.message,true)}}
+    let targetSelection={schema_version:1,check:{},update:{}};
+    const selectionKey=t=>String(t.type||'').toLowerCase()==='host'?`host:${String(t.id||'').replace(/^host:/,'')}`:String(t.type||'').toLowerCase()==='external'?`external:${t.id}`:String(t.id||'');
+    const selectionLabel=state=>state==='only'?'Only':state==='exclude'?'Exclude':'No explicit selection';
+    async function loadTargetSelection(){try{const data=await api('/api/target-selection');targetSelection={...(data.selection||targetSelection),enabled:data.enabled===true};const indicator=document.getElementById('target-selection-indicator');if(indicator)indicator.textContent=`Target selection: ${targetSelection.enabled?'Ultimate Updater':'Proxmox tags'}`}catch(error){managementMessage('config-message',error.message,true)}}
+    async function saveTargetSelection(scope,id,current){let next=current==='only'?'exclude':current==='exclude'?'': 'only';if(!targetSelection.enabled&&next){if(!confirm('Enable Ultimate Updater target selection?\n\nThis will ignore existing Proxmox Only/Exclude tags. Existing tags will not be changed or removed.'))return;try{await api('/api/config',{method:'POST',body:JSON.stringify({values:{USE_INTERNAL_TARGET_SELECTION:true}}})});targetSelection.enabled=true}catch(error){notice(error.message,true);return}}const copy={schema_version:1,check:{...(targetSelection.check||{})},update:{...(targetSelection.update||{})}};if(next)copy[scope][id]=next;else delete copy[scope][id];try{const data=await api('/api/target-selection',{method:'POST',body:JSON.stringify({selection:copy})});targetSelection=data.selection||copy;await loadStatus()}catch(error){notice(error.message,true)}}
+    const targetRowWithSelection=targetRow;targetRow=function(t){const row=targetRowWithSelection(t),id=selectionKey(t);if(!id)return row;const controls=document.createElement('div');controls.className='target-selection-controls';for(const scope of ['check','update']){const state=targetSelection[scope]?.[id]||'';const button=document.createElement('button');button.type='button';button.className=`target-selection-state ${state}`;button.textContent=state==='only'?'✓':state==='exclude'?'✕':'';button.title=selectionLabel(state);button.setAttribute('aria-label',`${scope} selection: ${selectionLabel(state)}`);button.dataset.selectionScope=scope;button.onclick=event=>{event.stopPropagation();saveTargetSelection(scope,id,state)};controls.appendChild(button)}row.querySelector('.row-actions')?.prepend(controls);return row};
+    async function bootstrap(){try{await ensureSession();showDashboard();applyPageRoute();await loadTargetSelection();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);scheduleUpdaterVersionCheck()}catch(error){if(csrfToken)notice(error.message,true)}}
     const aggregateField=field=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[],values=targets.map(t=>t?.[field]).filter(Number.isInteger);return values.length?values.reduce((sum,value)=>sum+value,0):null};
     const aggregateTotalOnly=()=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[],values=targets.map(knownTotalOnlyUpdates).filter(Number.isInteger);return values.length?values.reduce((sum,value)=>sum+value,0):null};
     const aggregateFieldComplete=field=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[];return targets.length&&targets.every(t=>Number.isInteger(t?.[field])||!securitySplitSupported(t))?aggregateField(field):null};
@@ -1165,7 +1175,8 @@ PAGE = PAGE.replace('<section class="settings-config-area" id="config-panel"><di
 PAGE = PAGE.replace('<button id="internal-ssh-back" type="button">Back to settings</button>', '<button id="internal-ssh-back" type="button">Close</button>')
 PAGE = PAGE.replace('<div class="settings-config-intro section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div></div>', '')
 PAGE = PAGE.replace('<h2 class="settings-management-title">Connection management</h2>', '')
-PAGE = PAGE.replace('</head>', '<style>.pill.security-warn{display:inline-flex;width:max-content;max-width:100%;white-space:nowrap}.pill .status-icon,.reboot-required-badge .status-icon{flex:0 0 auto}.main-body>#settings-page:not([hidden]){margin-top:0;padding-top:24px}</style></head>', 1)
+PAGE = PAGE.replace('</head>', '<style>.pill.security-warn{display:inline-flex;width:max-content;max-width:100%;white-space:nowrap}.pill .status-icon,.reboot-required-badge .status-icon{flex:0 0 auto}.main-body>#settings-page:not([hidden]){margin-top:0;padding-top:24px}.target-selection-controls{display:flex;gap:4px;align-items:center;margin-right:4px}.target-selection-state{min-width:28px;min-height:28px;padding:3px 7px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--muted);font-weight:700}.target-selection-state.only{color:#75e6a1;border-color:#75e6a1}.target-selection-state.exclude{color:#ff8b8b;border-color:#ff8b8b}.target-selection-state:focus-visible{outline:2px solid var(--accent);outline-offset:2px}</style></head>', 1)
+PAGE = PAGE.replace('<span class="view-note">Checks and updates use the existing CLI</span>', '<span class="view-note">Checks and updates use the existing CLI · <span id="target-selection-indicator">Target selection: Proxmox tags</span></span>')
 day_toggle_markup = "".join(f'<label><input type="checkbox" name="days" value="{day}"><span>{day}</span></label>' for day in SCHEDULER_DAYS)
 month_day_toggle_markup = "".join(f'<label><input type="checkbox" name="month_days" value="{day}"><span>{day}</span></label>' for day in range(1, 32))
 scheduler_markup = f'''<section id="scheduler-page" class="page-section" hidden><section class="scheduler-head"><div><h2>Scheduler</h2><p>Automatic checks and updates using the existing Ultimate Updater safety rules.</p></div><button id="schedule-add" class="primary" type="button">+ Add schedule</button></section><section class="scheduler-summary"><div><span>Scheduler</span><strong id="scheduler-state">Disabled</strong></div><div><span>Active schedules</span><strong id="scheduler-count">0</strong></div><div><span>Next run</span><strong id="scheduler-next">—</strong></div></section><div id="scheduler-message" class="management-message" hidden></div><section id="scheduler-list" class="scheduler-list"></section><div id="scheduler-empty" class="scheduler-empty">No schedules configured. Add a schedule to automate a full check or update.</div><section id="schedule-modal" class="scheduler-modal" hidden><form id="schedule-form" class="management-panel"><div class="section-title"><div><h2 id="schedule-modal-title">Add schedule</h2><span class="hint">Use the existing configured filters and safety rules.</span></div><button id="schedule-cancel" type="button">Cancel</button></div><input type="hidden" name="id"><label>Name<input name="name" maxlength="80" required></label><label>Action<select name="type"><option value="check-all">Check all systems</option><option value="check-selected">Check selected</option><option value="update-all">Update all systems</option><option value="update-selected">Update selected</option></select></label><fieldset class="schedule-days"><legend>Days of week</legend><div class="day-toggles">{day_toggle_markup}</div></fieldset><label>Time<input name="time" type="time" required></label><section id="schedule-targets" class="schedule-targets" hidden><div class="schedule-targets-head"><div><h3>Targets</h3><span class="hint">Select the concrete systems this schedule may run.</span></div><div class="schedule-target-tools"><button id="target-select-visible" type="button">Select all visible</button><button id="target-clear" type="button">Clear</button></div></div><label class="schedule-target-search">Search<input id="target-search" type="search" placeholder="Name, ID, node, type"></label><div id="schedule-missing" class="schedule-missing" hidden></div><div class="schedule-table-wrap"><table class="schedule-target-table"><thead><tr><th scope="col"><span class="visually-hidden">Select</span></th><th scope="col">ID</th><th scope="col">Node</th><th scope="col">Status</th><th scope="col">Name</th><th scope="col">Type</th></tr></thead><tbody id="schedule-target-body"></tbody></table></div><div id="schedule-selected" class="schedule-selected">Selected (0)</div></section><label class="schedule-enabled"><input name="enabled" type="checkbox" checked> Enabled</label><p id="schedule-update-warning" class="scheduler-warning" hidden>Scheduled updates use the same configured include/exclude and safety rules as manual updates. Reboots only occur according to the existing Ultimate Updater configuration.</p><div class="scheduler-form-actions"><button class="primary" type="submit">Save schedule</button><button id="schedule-delete" type="button" hidden>Delete</button></div></form></section></section>'''
@@ -1737,6 +1748,57 @@ def update_config_text(content, normalized):
     return "".join(output)
 
 
+TARGET_SELECTION_STATES = {"only", "exclude"}
+TARGET_SELECTION_SCOPES = ("check", "update")
+
+
+def target_selection_default():
+    return {"schema_version": 1, "check": {}, "update": {}}
+
+
+def validate_target_selection(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Target selection must be an object.")
+    result = target_selection_default()
+    if payload.get("schema_version", 1) != 1:
+        raise ValueError("Unsupported target selection schema.")
+    for scope in TARGET_SELECTION_SCOPES:
+        values = payload.get(scope, {})
+        if not isinstance(values, dict):
+            raise ValueError(f"{scope} selection must be an object.")
+        for target_id, state in values.items():
+            if not isinstance(target_id, str) or not re.fullmatch(r"(?:host:[A-Za-z0-9_.-]+|guest:[0-9]+|external:[A-Za-z0-9_.-]+|[0-9]+)", target_id):
+                raise ValueError("Target selection contains an invalid target ID.")
+            if state not in TARGET_SELECTION_STATES:
+                raise ValueError("Target selection state must be only or exclude.")
+            result[scope][target_id] = state
+    return result
+
+
+def read_target_selection(path):
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return target_selection_default()
+    return validate_target_selection(payload)
+
+
+def write_target_selection(path, payload):
+    normalized = validate_target_selection(payload)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as temporary:
+        json.dump(normalized, temporary, indent=2, sort_keys=True)
+        temporary.write("\n")
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        temporary_path = Path(temporary.name)
+    os.chmod(temporary_path, 0o600)
+    if os.geteuid() == 0:
+        os.chown(temporary_path, 0, 0)
+    os.replace(temporary_path, path)
+    return normalized
+
+
 def parse_inventory_text(content):
     sections = []
     current = None
@@ -2061,7 +2123,8 @@ def preview_eligible_ids(targets, config, scope):
 
 
 def target_preview(payload, config, tag_filter, inventory, proxmox_resources=None,
-                   filter_keys=("ONLY_UPDATE_CHECK", "EXCLUDE_UPDATE_CHECK")):
+                   filter_keys=("ONLY_UPDATE_CHECK", "EXCLUDE_UPDATE_CHECK"),
+                   internal_selection=None):
     projected = canonical_inventory(payload, inventory, proxmox_resources)
     targets = [dict(item) for item in projected["targets"]]
     known_ids = {str(item.get("id", "")) for item in targets}
@@ -2090,7 +2153,23 @@ def target_preview(payload, config, tag_filter, inventory, proxmox_resources=Non
             return ((not only_active) or item_id in selected_ids) and item_id not in excluded_ids
         item_id = item_id.lower()
         return ((not only_active) or item_id in only_external_ids) and item_id not in excluded_external_ids
-    if only_active:
+    internal_rules = (internal_selection or {}).get("check" if filter_keys[0].startswith("ONLY_UPDATE") else "update", {})
+    internal_enabled = config.get("USE_INTERNAL_TARGET_SELECTION") is True and isinstance(internal_rules, dict)
+    if internal_enabled:
+        def internal_id(item):
+            kind = str(item.get("type", "")).lower()
+            identifier = str(item.get("id", ""))
+            if kind == "host": return identifier if identifier.startswith("host:") else f"host:{identifier}"
+            if kind == "external": return identifier if identifier.startswith("external:") else f"external:{identifier}"
+            return identifier
+        only_internal = {key for key, value in internal_rules.items() if value == "only"}
+        exclude_internal = {key for key, value in internal_rules.items() if value == "exclude"}
+        known_internal = {internal_id(item) for item in targets}
+        active_internal = bool(only_internal)
+        included = [item for item in targets if (not active_internal or internal_id(item) in only_internal) and internal_id(item) not in exclude_internal]
+        excluded = [item for item in targets if item not in included]
+        mode = "internal-only" if active_internal else "internal-exclude" if exclude_internal else "internal-all"
+    elif only_active:
         included = [item for item in targets if not filterable(item) or selected(item)]
         excluded = [item for item in targets if filterable(item) and not selected(item)]
         mode = "only"
@@ -3236,6 +3315,19 @@ class StatusHandler(BaseHTTPRequestHandler):
                              lambda content: update_config_text(content, normalized))
         self.send_json({"message": "Configuration saved.", "config": config_value_map(self.config_content())})
 
+    def handle_target_selection_get(self):
+        config = config_value_map(self.config_content())
+        self.send_json({"path": str(self.server.target_selection_file),
+                        "enabled": config.get("USE_INTERNAL_TARGET_SELECTION") is True,
+                        "selection": read_target_selection(self.server.target_selection_file)})
+
+    def handle_target_selection_update(self, payload):
+        selection = payload.get("selection") if isinstance(payload, dict) else None
+        normalized = write_target_selection(self.server.target_selection_file, selection)
+        config = config_value_map(self.config_content())
+        self.send_json({"message": "Target selection saved.", "enabled": config.get("USE_INTERNAL_TARGET_SELECTION") is True,
+                        "selection": normalized})
+
     def handle_config_preview(self, query):
         if not self.server.status_file.exists():
             self.send_json({"available": False, "message": "Target preview unavailable until the initial inventory has completed."})
@@ -3259,6 +3351,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             payload, config, self.server.tag_filter_script, inventory,
             proxmox_inventory_snapshot(),
             filter_keys,
+            read_target_selection(self.server.target_selection_file),
         )
         self.send_json({"available": True, "scope": scope, "preview": preview})
 
@@ -3547,6 +3640,12 @@ class StatusHandler(BaseHTTPRequestHandler):
             except (OSError, UnicodeError):
                 self.send_json(error_payload("CONFIG_UNAVAILABLE", "Configuration is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
             return
+        if path == "/api/target-selection":
+            try:
+                self.handle_target_selection_get()
+            except (OSError, ValueError):
+                self.send_json(error_payload("TARGET_SELECTION_UNAVAILABLE", "Target selection is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return
         if path == "/api/config-preview":
             try:
                 self.handle_config_preview(parse_qs(urlsplit(self.path).query, keep_blank_values=True))
@@ -3776,6 +3875,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.handle_config_update(payload)
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 self.send_json(error_payload("CONFIG_NOT_SAVED", "Configuration was rejected and not changed."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        if urlsplit(self.path).path == "/api/target-selection":
+            try:
+                self.handle_target_selection_update(payload)
+            except (OSError, ValueError):
+                self.send_json(error_payload("TARGET_SELECTION_NOT_SAVED", "Target selection was rejected and not changed."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         if len(parts) == 3 and parts[:2] == ["api", "external-settings"]:
             try:
@@ -4182,6 +4287,7 @@ def main():
         server.socket = tls_context.wrap_socket(server.socket, server_side=True)
     server.status_file, server.cli = args.status_file, args.cli
     server.config_file, server.inventory_file = args.config_file, args.inventory_file
+    server.target_selection_file = args.config_file.parent / "target-selection.json"
     server.internal_ssh_file = args.config_file.parent / "internal-ssh.conf"
     server.backup_state_file = DEFAULT_BACKUP_STATE_FILE
     server.inventory_script, server.external_script = args.inventory_script, args.external_script

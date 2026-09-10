@@ -57,6 +57,9 @@ EMAIL_ONLY_SECURITY="false"
 # disable email on successful run
 EMAIL_ONLY_ERROR="false"
 
+# use Ultimate Updater-owned Check/Update target selection instead of Proxmox tags
+USE_INTERNAL_TARGET_SELECTION="false"
+
 
 ╔══════════════════════════════════════════════╗
 ║                   UPDATER                    ║
