@@ -33,4 +33,14 @@ with tempfile.TemporaryDirectory() as directory:
     assert path.stat().st_mode & 0o777 == 0o600
     assert server.read_target_selection(path) == valid
 
+    before = path.read_bytes()
+    assert server.read_target_selection(path) == valid
+    assert path.read_bytes() == before
+
+    invalid = Path(directory) / "invalid-target-selection.json"
+    invalid.write_text('{"schema_version":1,"check":{"guest:910":"broken"}}\n', encoding="utf-8")
+    invalid_before = invalid.read_bytes()
+    assert server.read_target_selection(invalid) == server.target_selection_default()
+    assert invalid.read_bytes() == invalid_before
+
 print("target selection validation tests: PASS")

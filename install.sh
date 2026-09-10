@@ -805,6 +805,9 @@ UPDATE () {
     # targets.conf is runtime inventory and must not be replaced by the
     # repository template after legacy migration or user edits.
     rm -f "$TEMP_FILES"/targets.conf
+    # target-selection.json is persistent user-owned state.  It is never a
+    # repository payload and must not enter the generic replacement pass.
+    rm -f "$TEMP_FILES"/target-selection.json
     rm -rf "$TEMP_FILES"/web-ui || true
     rm -f "$TEMP_FILES/$WEB_SERVICE_NAME"
     # Check if files are different
