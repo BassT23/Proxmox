@@ -3,6 +3,9 @@ Changelog:
 
 **Unreleased**
 
+Fixed:
+- target-selection state no longer falls back to an empty legacy view when the selection API has not loaded successfully
+
 Improved:
 - running jobs now show only their live terminal or live output, while completed jobs switch to a static final output view
 

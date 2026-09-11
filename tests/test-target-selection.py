@@ -41,6 +41,12 @@ with tempfile.TemporaryDirectory() as directory:
     invalid.write_text('{"schema_version":1,"check":{"guest:910":"broken"}}\n', encoding="utf-8")
     invalid_before = invalid.read_bytes()
     assert server.read_target_selection(invalid) == server.target_selection_default()
+    try:
+        server.read_target_selection_for_api(invalid)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        pass
+    else:
+        raise AssertionError("strict API read must reject invalid persisted selection")
     assert invalid.read_bytes() == invalid_before
 
 print("target selection validation tests: PASS")
