@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2034
+# shellcheck disable=SC2016,SC2034 # Literal grep assertions and sourced fixture globals are intentional.
 set -euo pipefail
 
 ROOT_DIR=$(dirname -- "${BASH_SOURCE[0]}")/..

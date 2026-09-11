@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC1091,SC2016,SC2034,SC2329 # Extracted/sourced test fixture intentionally uses globals and callback functions.
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
