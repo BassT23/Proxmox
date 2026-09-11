@@ -4,6 +4,7 @@ Changelog:
 **Unreleased**
 
 Fixed:
+- filtered global checks now execute selected remote Proxmox nodes correctly instead of dropping them from the effective scope
 - target-selection state no longer falls back to an empty legacy view when the selection API has not loaded successfully
 - filtered global checks preserve status for targets outside the current scope
 - global checks that execute no targets no longer report a successful zero-update result

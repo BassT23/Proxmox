@@ -580,30 +580,40 @@ PY
 
 HOST_CHECK_START () {
   USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
-  local host_selected=true host_required=true
+  local host_selected=true host_id host_only_scope=false
   if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
     UU_FILTER_SCOPE=check UU_FILTER_ELIGIBLE_IDS="$(for host in $HOSTS; do printf 'host:%s ' "$(CLUSTER_HOST_NODE "$host")"; done)" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
   fi
   for HOST in $HOSTS; do
     host_selected=true
-    host_required=true
+    host_only_scope=false
+    host_id="host:$(CLUSTER_HOST_NODE "$HOST")"
     if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
       TARGET_SELECTION_ALLOWS check "host:$(CLUSTER_HOST_NODE "$HOST")" "$UU_FILTER_ELIGIBLE_IDS" || host_selected=false
-      TARGET_SELECTION_HOST_REQUIRED check "host:$(CLUSTER_HOST_NODE "$HOST")" || host_required=false
-      [[ "$host_required" == true ]] || continue
+      if [[ "$host_selected" != true ]] &&
+        ! TARGET_SELECTION_GUEST_ONLY_REQUIRES_HOST check "$host_id"; then
+        continue
+      fi
+      if [[ "$host_selected" == true ]] &&
+        TARGET_SELECTION_HAS_HOST_ONLY check &&
+        ! TARGET_SELECTION_HAS_GUEST_ONLY check; then
+        host_only_scope=true
+      fi
     fi
     if HOST_IS_LOCAL "$HOST"; then
       [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
       [[ "$host_selected" == true ]] && CHECK_HOST_ITSELF
-      if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
-      if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
+      if [[ "$host_only_scope" != true && "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
+      if [[ "$host_only_scope" != true && "$WITH_VM" == true ]]; then VM_CHECK_START; fi
       unset UU_INTERNAL_SKIP_HOST_TARGET
     else
       [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
+      [[ "$host_only_scope" == true ]] && export UU_INTERNAL_SKIP_GUEST_TARGETS=true
       if ! CHECK_HOST "$HOST"; then
         CHECK_FAILURE=1
       fi
       unset UU_INTERNAL_SKIP_HOST_TARGET
+      unset UU_INTERNAL_SKIP_GUEST_TARGETS
     fi
   done
 }
@@ -696,6 +706,7 @@ CHECK_HOST () {
       remote_status_env=" UU_TARGET_SELECTION_SCRIPT='$remote_check_dir/target-selection.sh' UU_TARGET_SELECTION_FILE='$remote_check_dir/target-selection.json'$remote_status_env"
     fi
     [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_status_env=" UU_INTERNAL_SKIP_HOST_TARGET=true$remote_status_env"
+    [[ "${UU_INTERNAL_SKIP_GUEST_TARGETS:-false}" == true ]] && remote_status_env=" UU_CHECK_SCOPE=host$remote_status_env"
     remote_status_validation=" if [[ \"\$remote_rc\" -eq 0 && ! -s '$remote_check_dir/status.json' ]]; then remote_rc=86; elif [[ \"\$remote_rc\" -eq 0 ]] && ! python3 -c 'import json,sys; payload=json.load(open(sys.argv[1], encoding=\"utf-8\")); assert isinstance(payload, dict) and isinstance(payload.get(\"targets\"), list)' '$remote_check_dir/status.json'; then remote_rc=87; fi;"
   fi
   if [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]]; then
@@ -1895,7 +1906,7 @@ if [[ "$COMMAND" != true && "$RDU" == true ]]; then
   OUTPUT_TO_FILE
 elif [[ "$COMMAND" != true ]]; then
   OUTPUT_TO_FILE
-  if [[ "$MODE" =~ Cluster ]]; then HOST_CHECK_START; else
+  if [[ "$MODE" =~ Cluster || "${UU_GLOBAL_CHECK:-false}" == true ]]; then HOST_CHECK_START; else
     if [[ "$WITH_HOST" == true ]] && { [[ "${UU_CHECK_SCOPE:-}" == host || "$USE_INTERNAL_TARGET_SELECTION" != true ]] || TARGET_SELECTION_ALLOWS check "host:$(hostname -s 2>/dev/null || hostname)" "host:$(hostname -s 2>/dev/null || hostname)"; }; then CHECK_HOST_ITSELF; fi
     if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
     if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi

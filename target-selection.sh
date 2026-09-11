@@ -82,6 +82,66 @@ PY
   [[ "$guest_rules" == yes ]]
 }
 
+TARGET_SELECTION_GUEST_ONLY_REQUIRES_HOST() {
+  local scope="$1"
+  TARGET_SELECTION_ENABLED || return 1
+  python3 - "$TARGET_SELECTION_FILE" "$scope" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        data = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+rules = data.get(sys.argv[2], {}) if isinstance(data, dict) else {}
+if not isinstance(rules, dict):
+    raise SystemExit(1)
+raise SystemExit(0 if any(value == "only" and (key.isdigit() or key.startswith("guest:"))
+                          for key, value in rules.items()) else 1)
+PY
+}
+
+TARGET_SELECTION_HAS_GUEST_ONLY() {
+  local scope="$1"
+  TARGET_SELECTION_ENABLED || return 1
+  python3 - "$TARGET_SELECTION_FILE" "$scope" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        data = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+rules = data.get(sys.argv[2], {}) if isinstance(data, dict) else {}
+if not isinstance(rules, dict):
+    raise SystemExit(1)
+raise SystemExit(0 if any(value == "only" and (key.isdigit() or key.startswith("guest:"))
+                          for key, value in rules.items()) else 1)
+PY
+}
+
+TARGET_SELECTION_HAS_HOST_ONLY() {
+  local scope="$1"
+  TARGET_SELECTION_ENABLED || return 1
+  python3 - "$TARGET_SELECTION_FILE" "$scope" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        data = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+rules = data.get(sys.argv[2], {}) if isinstance(data, dict) else {}
+if not isinstance(rules, dict):
+    raise SystemExit(1)
+raise SystemExit(0 if any(value == "only" and key.startswith("host:")
+                          for key, value in rules.items()) else 1)
+PY
+}
+
 TARGET_SELECTION_WRITE() {
   local content="$1" directory temporary
   directory="${TARGET_SELECTION_FILE%/*}"
