@@ -1,6 +1,20 @@
-# Ultimate Updater 5.1.3 Beta 3
+# Ultimate Updater 5.1.3 Beta 4
 
 Status: Beta / release candidate for validation.
+
+## Beta 4
+
+- Running interactive jobs now show only `Live terminal`, running
+  non-interactive jobs show only `Live output`, and completed jobs use a static
+  `Final output` view.
+- Target Selection loading distinguishes loading, ready, and unavailable
+  states; stored rules remain visible instead of being replaced by a fake empty
+  legacy view.
+- Filtered global checks preserve status and timestamps for out-of-scope
+  targets, while zero-target checks no longer report a normal successful
+  zero-update result.
+- Selected remote Proxmox nodes are executed correctly in global checks without
+  implicitly selecting their guests.
 
 ## Beta 3
 

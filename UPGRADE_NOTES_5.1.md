@@ -1,6 +1,6 @@
 # Upgrade notes: 5.0 → 5.1.2
 
-> **Beta 3 notice:** The `beta` branch contains the pre-release 5.1.3 Beta 3
+> **Beta 4 notice:** The `beta` branch contains the pre-release 5.1.3 Beta 4
 > validation build. Select it explicitly with `update beta -up`; existing
 > 5.1.x configuration is preserved, and no separate 5.1.x migration reboot is
 > required for this beta.

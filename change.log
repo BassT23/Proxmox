@@ -1,7 +1,11 @@
 Changelog:
 ==========
 
-**Unreleased**
+**v5.1.3 Beta 4** (beta / release candidate for validation)
+
+Improved:
+- running jobs clearly switch from live views to static final output after completion
+- target selection now exposes explicit loading and error states instead of silently falling back
 
 Fixed:
 - filtered global checks now execute selected remote Proxmox nodes correctly instead of dropping them from the effective scope
@@ -11,8 +15,7 @@ Fixed:
 - authenticated WebUI login now loads target-selection state before rendering the target controls
 - malformed persisted target-selection data is reported as unavailable instead of being exposed as an empty selection
 
-Improved:
-- running jobs now show only their live terminal or live output, while completed jobs switch to a static final output view
+**Unreleased**
 
 **v5.1.3 Beta 3** (beta / release candidate for validation)
 
