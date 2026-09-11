@@ -1092,6 +1092,39 @@ PY
 
 print_global_check_summary() {
   local check_result="$1" external_result="$2"
+  local zero_target_file="${STATUS_FILE}.zero-target"
+  if [[ -e "$zero_target_file" ]]; then
+    rm -f -- "$zero_target_file"
+    rm -f -- "${STATUS_FILE}.run-meta"
+    printf 'CHECK all systems failed: No targets were checked.\n'
+    return 1
+  fi
+  local run_meta_file="${STATUS_FILE}.run-meta"
+  if [[ -r "$run_meta_file" ]]; then
+    python3 - "$run_meta_file" "$check_result" "$external_result" <<'PY'
+import json
+import sys
+
+meta_file, check_result, external_result = sys.argv[1:]
+try:
+    with open(meta_file, encoding="utf-8") as source:
+        meta = json.load(source)
+    checked = int(meta.get("checked", 0))
+    available = meta.get("available")
+except (OSError, ValueError, TypeError):
+    checked = 0
+    available = None
+if int(check_result) == 0 and int(external_result) == 0:
+    if isinstance(available, int) and not isinstance(available, bool):
+        print(f"CHECK all systems completed: {checked} targets checked, {available} updates available")
+    else:
+        print(f"CHECK all systems completed: {checked} targets checked")
+else:
+    print("CHECK all systems failed")
+PY
+    rm -f -- "$run_meta_file"
+    return 0
+  fi
   python3 - "$STATUS_FILE" "$check_result" "$external_result" <<'PY'
 import json
 import sys
@@ -1202,11 +1235,11 @@ run_check() {
   if [[ -z "$target" ]]; then
     require_file "$CHECK_SCRIPT" "check script" || return 1
     local check_result external_result
-    UU_DEFER_NOTIFICATION=true "$CHECK_SCRIPT"; check_result=$?
+    UU_GLOBAL_CHECK=true UU_DEFER_NOTIFICATION=true "$CHECK_SCRIPT"; check_result=$?
     classify_collection_result "$check_result"; check_result=$?
     run_external_checks; external_result=$?
     classify_collection_result "$external_result"; external_result=$?
-    if declare -f STATUS_MODEL_SEND_NOTIFICATION >/dev/null 2>&1; then
+    if [[ ! -e "${STATUS_FILE}.zero-target" ]] && declare -f STATUS_MODEL_SEND_NOTIFICATION >/dev/null 2>&1; then
       STATUS_MODEL_SEND_NOTIFICATION "$STATUS_FILE" "$LOCAL_FILES/update.conf" || true
     fi
     print_global_check_summary "$check_result" "$external_result"

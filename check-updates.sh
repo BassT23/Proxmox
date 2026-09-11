@@ -93,12 +93,83 @@ fi
 # unchanged and older consumers continue to work.
 CHECK_HARD_FAILURE_FILE="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}.hard-failure"
 rm -f -- "$CHECK_HARD_FAILURE_FILE"
+CHECK_ZERO_TARGET_FILE="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}.zero-target"
+rm -f -- "$CHECK_ZERO_TARGET_FILE"
+CHECK_RUN_META_FILE="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}.run-meta"
+rm -f -- "$CHECK_RUN_META_FILE"
 if [[ ! -f "$STATUS_MODEL_SCRIPT" ]]; then
   : > "$CHECK_HARD_FAILURE_FILE"
   CHECK_FAILURE=1
 fi
 mark_check_hard_failure() {
   : > "$CHECK_HARD_FAILURE_FILE" 2>/dev/null || true
+}
+
+STATUS_MODEL_GLOBAL_SCOPE_IS_PARTIAL() {
+  [[ "${UU_GLOBAL_CHECK:-false}" == true ]] || return 1
+  [[ -n "${ONLY:-}" || -n "${EXCLUDED:-}" ]] && return 0
+  [[ "${WITH_HOST:-true}" == true && "${WITH_LXC:-true}" == true && "${WITH_VM:-true}" == true ]] || return 0
+  if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true &&
+    -r "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" ]]; then
+    python3 - "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        payload = json.load(source)
+    check = payload.get("check", {}) if isinstance(payload, dict) else {}
+    raise SystemExit(0 if isinstance(check, dict) and bool(check) else 1)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+PY
+    return $?
+  fi
+  return 1
+}
+
+STATUS_MODEL_MARK_ZERO_TARGETS() {
+  : > "$CHECK_ZERO_TARGET_FILE" 2>/dev/null || true
+  CHECK_FAILURE=1
+  mark_check_hard_failure
+}
+
+STATUS_MODEL_WRITE_RUN_META() {
+  [[ "${STATUS_MODEL_PARTIAL:-false}" == true || -e "$CHECK_ZERO_TARGET_FILE" ]] || return 0
+  python3 - "${STATUS_MODEL_RECORD_FILE:-}" "$CHECK_RUN_META_FILE" <<'PY'
+import base64
+import json
+import sys
+
+record_file, meta_file = sys.argv[1:]
+checked = 0
+available = 0
+known = True
+try:
+    records = open(record_file, encoding="utf-8")
+except OSError:
+    records = []
+for line in records:
+    fields = line.rstrip("\n").split("\t")
+    if len(fields) < 7:
+        continue
+    try:
+        value = base64.b64decode(fields[6]).decode()
+    except (ValueError, UnicodeError):
+        continue
+    checked += 1
+    if value in ("", "null"):
+        known = False
+    else:
+        try:
+            available += int(value)
+        except ValueError:
+            known = False
+if records:
+    records.close()
+with open(meta_file, "w", encoding="utf-8") as output:
+    json.dump({"checked": checked, "available": available if known else None}, output)
+PY
 }
 
 STATUS_MODEL_DIAGNOSTIC() {
@@ -1834,6 +1905,14 @@ fi
 # Refresh the local MOTD version cache without making the login path depend on GitHub.
 UPDATE_VERSION_CACHE >/dev/null 2>&1 || true
 if [[ "$STATUS_MODEL_ENABLED" == true && "${UU_REMOTE_DEFER_STATUS_FINISH:-false}" != true ]]; then
+  if STATUS_MODEL_GLOBAL_SCOPE_IS_PARTIAL; then
+    STATUS_MODEL_PARTIAL=true
+  fi
+  if [[ "${UU_GLOBAL_CHECK:-false}" == true && ! -s "${STATUS_MODEL_RECORD_FILE:-}" ]]; then
+    STATUS_MODEL_PARTIAL=true
+    STATUS_MODEL_MARK_ZERO_TARGETS
+  fi
+  STATUS_MODEL_WRITE_RUN_META
   if declare -f STATUS_MODEL_HAS_FAILURES >/dev/null 2>&1 && STATUS_MODEL_HAS_FAILURES; then
     CHECK_FAILURE=1
   fi

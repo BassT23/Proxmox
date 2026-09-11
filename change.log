@@ -5,6 +5,8 @@ Changelog:
 
 Fixed:
 - target-selection state no longer falls back to an empty legacy view when the selection API has not loaded successfully
+- filtered global checks preserve status for targets outside the current scope
+- global checks that execute no targets no longer report a successful zero-update result
 - authenticated WebUI login now loads target-selection state before rendering the target controls
 - malformed persisted target-selection data is reported as unavailable instead of being exposed as an empty selection
 
