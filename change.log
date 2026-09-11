@@ -3,6 +3,9 @@ Changelog:
 
 **Unreleased**
 
+Improved:
+- running jobs now show only their live terminal or live output, while completed jobs switch to a static final output view
+
 **v5.1.3 Beta 3** (beta / release candidate for validation)
 
 Added:

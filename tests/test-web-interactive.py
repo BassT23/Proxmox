@@ -428,7 +428,9 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "const title=document.getElementById('interactive-terminal-title'),download=document.getElementById('interactive-terminal-download');if(title)title.textContent" in WEB.PAGE
     assert "panel.hidden=false;interactiveKeybarState(true);terminalMessage(message,true);terminalStatus('Stream unavailable',true)" in WEB.PAGE
     assert "renderJobsWithInteractiveResult=renderJobs" in WEB.PAGE
-    assert "terminalStatus('Job failed',true)" in WEB.PAGE
+    assert "finalJobStatus=job=>" in WEB.PAGE
+    assert "terminalStatus(status,error)" in WEB.PAGE
+    assert "heading.textContent='Final output'" in WEB.PAGE
     assert "Update failed. See the terminal output and full job log for the detailed cause." in WEB.PAGE
     assert 'protocol_version = "HTTP/1.1"' in (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
     assert 'self.send_header("Connection", "keep-alive")' in (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
