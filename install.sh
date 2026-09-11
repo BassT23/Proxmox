@@ -152,7 +152,9 @@ CL="\e[0m"
 
 #Header
 HEADER_INFO () {
-  clear
+  if [[ -n "${TERM:-}" && "${TERM:-}" != "dumb" && -t 1 ]]; then
+    clear >/dev/null 2>&1 || true
+  fi
   echo -e "\n \
       https://github.com/BassT23/Proxmox\n"
   cat <<'EOF'
@@ -1049,14 +1051,12 @@ ${BL:-} crontab file restored (old one backed up as crontab.bak)${CL:-}\n"
 set -e
 EXIT () {
   EXIT_CODE=$?
-  # Install Finish
-  if  [[ $EXIT_CODE -lt 2 ]]; then
+  if [[ "$EXIT_CODE" -eq 0 ]]; then
     exit 0
-  elif [[ $EXIT_CODE != "0" ]]; then
-    rm -rf $TEMP_FOLDER || true
-    echo -e "❌${RD:-} Error during install --- Exit Code: $EXIT_CODE${CL:-}\n"
-    exit "$EXIT_CODE"
   fi
+  rm -rf "$TEMP_FOLDER" || true
+  echo -e "❌${RD:-} Error during install --- Exit Code: $EXIT_CODE${CL:-}\n"
+  exit "$EXIT_CODE"
 }
 
 # Exit Code

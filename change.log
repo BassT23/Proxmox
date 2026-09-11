@@ -17,6 +17,10 @@ Fixed:
 
 **Unreleased**
 
+Fixed:
+- installer startup no longer aborts when `TERM` is missing or unsuitable
+- installer failures are no longer masked as successful exits
+
 **v5.1.3 Beta 3** (beta / release candidate for validation)
 
 Added:

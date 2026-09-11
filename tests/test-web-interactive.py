@@ -106,14 +106,17 @@ def test_broker_replays_exact_bytes_with_sequences_and_wakes_waiter():
         listener.listen(1)
         ready = threading.Event()
         release = threading.Event()
+        release_second_chunk = threading.Event()
         overflow_sent = threading.Event()
         hold = threading.Event()
+        expected = bytes([0x1b]) + b"[31mraw" + bytes([0xff, 0x00, 0x0a]) + b"second chunk\n"
 
         def accept_client():
             client, _ = listener.accept()
             assert client.recv(64).startswith(b"\x00UU_RESIZE 24 80\n")
             ready.set()
             client.sendall(bytes([0x1b]) + b"[31mraw" + bytes([0xff, 0x00, 0x0a]))
+            release_second_chunk.wait(2)
             client.sendall(b"second chunk\n")
             release.wait(2)
             client.sendall(b"overflow payload")
@@ -133,7 +136,14 @@ def test_broker_replays_exact_bytes_with_sequences_and_wakes_waiter():
                 break
             time.sleep(0.01)
         assert snapshot["chunks"]
-        assert b"".join(data for _, data in snapshot["chunks"]) == bytes([0x1b]) + b"[31mraw" + bytes([0xff, 0x00, 0x0a]) + b"second chunk\n"
+        assert b"".join(data for _, data in snapshot["chunks"]) == expected[:len(bytes([0x1b]) + b"[31mraw" + bytes([0xff, 0x00, 0x0a]))]
+        release_second_chunk.set()
+        for _ in range(200):
+            snapshot = broker.output_since(unit, "session", 0)
+            if b"".join(data for _, data in snapshot["chunks"]) == expected:
+                break
+            time.sleep(0.01)
+        assert b"".join(data for _, data in snapshot["chunks"]) == expected
         assert [seq for seq, _ in snapshot["chunks"]] == sorted(seq for seq, _ in snapshot["chunks"])
         first_seq = snapshot["chunks"][0][0]
         replay = broker.output_since(unit, "session", first_seq - 1)
@@ -167,6 +177,39 @@ def test_broker_replays_exact_bytes_with_sequences_and_wakes_waiter():
         assert close_waiter_result and close_waiter_result[0]["closed"] is True
         assert not broker.attached(unit)
         hold.set()
+        listener.close()
+
+
+def test_broker_replays_coalesced_bytes_without_chunk_assumptions():
+    with tempfile.TemporaryDirectory() as temporary:
+        socket_path = Path(temporary) / "control.sock"
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(socket_path))
+        listener.listen(1)
+        ready = threading.Event()
+        expected = bytes([0x1b]) + b"[31mraw" + bytes([0xff, 0x00, 0x0a]) + b"second chunk\n"
+
+        def accept_client():
+            client, _ = listener.accept()
+            assert client.recv(64).startswith(b"\x00UU_RESIZE 24 80\n")
+            ready.set()
+            client.sendall(expected)
+            time.sleep(0.1)
+            client.close()
+
+        threading.Thread(target=accept_client, daemon=True).start()
+        broker = WEB.InteractiveJobBroker(Path(temporary))
+        unit = "ultimate-updater-update-replay-coalesced-1"
+        broker.attach(unit, "session", socket_path)
+        assert ready.is_set()
+        snapshot = None
+        for _ in range(200):
+            snapshot = broker.output_since(unit, "session", 0)
+            if b"".join(data for _, data in snapshot["chunks"]) == expected:
+                break
+            time.sleep(0.01)
+        assert b"".join(data for _, data in snapshot["chunks"]) == expected
+        broker.detach(unit, "session")
         listener.close()
 
 
@@ -504,6 +547,7 @@ test_state_metadata_is_backward_compatible()
 test_broker_forwards_input_and_releases_attachment()
 test_broker_resize_uses_existing_attachment_socket_and_validates()
 test_broker_replays_exact_bytes_with_sequences_and_wakes_waiter()
+test_broker_replays_coalesced_bytes_without_chunk_assumptions()
 test_attachment_lifecycle_and_stream_grace()
 test_authenticated_sse_stream_uses_existing_attachment()
 test_local_xterm_terminal_assets_and_stable_panel()
