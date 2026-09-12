@@ -1,2 +1,24 @@
 __pycache__/
 *.py[cod]
+
+# Keep per-target local update scripts out of Git. Only the upstream example
+# remains versioned so local scripts survive branch changes and resets.
+scripts.d/*
+!scripts.d/000/
+scripts.d/000/*
+!scripts.d/000/example.sh
+
+# Local runtime and generated state
+/build-metadata
+/check-output
+/mail-output
+/status.json
+/status.json.*
+/update.conf.lock
+/web-ui.conf
+/target-selection.json
+/internal-ssh.conf
+
+# Local backup files
+*.bak
+*.bak.*
