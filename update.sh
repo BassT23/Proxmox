@@ -83,7 +83,7 @@ DPKG_OPTIONS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-conf
 DPKG_OPTIONS_STRING="${DPKG_OPTIONS[*]}"
 HEADLESS=false
 IN_HEADLESS_MODE=false
-if [[ "${UU_NONINTERACTIVE:-false}" == true ]]; then
+if [[ "${UU_NONINTERACTIVE:-false}" == true || "${RUN_FROM_CRON:-false}" == true ]]; then
   HEADLESS=true
 fi
 
@@ -657,7 +657,7 @@ READ_CONFIG () {
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
   IN_HEADLESS_MODE=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   [[ "$IN_HEADLESS_MODE" == true ]] || IN_HEADLESS_MODE=false
-  [[ "${UU_NONINTERACTIVE:-false}" == true ]] && IN_HEADLESS_MODE=true
+  [[ "${UU_NONINTERACTIVE:-false}" == true || "${RUN_FROM_CRON:-false}" == true ]] && IN_HEADLESS_MODE=true
   EXTRA_IN_HEADLESS="$IN_HEADLESS_MODE"
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")

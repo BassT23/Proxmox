@@ -38,7 +38,7 @@ configured_headless() {
 }
 
 interactive_requested() {
-  [[ "${UU_NONINTERACTIVE:-false}" != true ]] &&
+  [[ "${UU_NONINTERACTIVE:-false}" != true && "${RUN_FROM_CRON:-false}" != true ]] &&
     ! configured_headless && [[ "${UU_JOB_INTERACTIVE:-false}" == true || -t 0 ]]
 }
 

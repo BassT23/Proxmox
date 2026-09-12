@@ -36,7 +36,7 @@ if env -u UU_NONINTERACTIVE UU_JOB_INTERACTIVE=true LOCAL_FILES="$WORK_DIR/local
 fi
 
 printf 'IN_HEADLESS_MODE="false"\n' > "$WORK_DIR/local/update.conf"
-if env UU_NONINTERACTIVE=true LOCAL_FILES="$WORK_DIR/local" \
+if env RUN_FROM_CRON=true LOCAL_FILES="$WORK_DIR/local" \
     bash -c 'source "$1"; interactive_requested' _ "$WORK_DIR/policy.sh"; then
   echo 'scheduler/noninteractive policy unexpectedly selected interactive mode' >&2
   exit 1
