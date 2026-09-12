@@ -25,7 +25,7 @@ RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 SYSTEMD_LOG_FILTER_ARGS=()
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | list\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list\n' "$0"
 }
 
 valid_target() {
@@ -90,6 +90,10 @@ interactive_job_dir() {
 
 interactive_socket() {
   printf '%s/control.sock' "$(interactive_job_dir "$1")"
+}
+
+cancel_marker() {
+  printf '%s/%s.cancel' "$JOB_STATE_DIR" "$1"
 }
 
 prepare_interactive_runtime() {
@@ -159,8 +163,40 @@ write_state() {
   chmod 0644 "$temp" || return 1
   mv -f -- "$temp" "$file"
   case "$state" in
-    completed|completed_with_warnings|failed|interrupted) cleanup_completed_jobs || true ;;
+    completed|completed_with_warnings|failed|interrupted|cancelled)
+      if [[ "$state" == cancelled ]]; then
+        rm -f -- "$(cancel_marker "$unit")" 2>/dev/null || true
+      fi
+      cleanup_completed_jobs || true ;;
   esac
+}
+
+cancel_requested() {
+  [[ -f "$(cancel_marker "$1")" ]]
+}
+
+request_cancel() {
+  local unit="$1" file state interactive marker
+  valid_unit "$unit" || { printf 'Invalid job ID: %s\n' "$unit" >&2; return 2; }
+  file=$(state_file "$unit")
+  [[ -f "$file" ]] || { printf 'Job not found: %s\n' "$unit" >&2; return 4; }
+  state=$(state_value "$file" state)
+  [[ "$state" == running ]] || { printf 'Job is no longer running: %s (%s)\n' "$unit" "$state" >&2; return 3; }
+  interactive=$(state_value "$file" interactive 2>/dev/null || printf 'false')
+  [[ "$interactive" == true ]] || { printf 'Job is not cancellable: %s\n' "$unit" >&2; return 5; }
+  marker=$(cancel_marker "$unit")
+  if [[ -e "$marker" ]]; then
+    printf 'Cancellation already requested: %s\n' "$unit" >&2
+    return 6
+  fi
+  : > "$marker" || { printf 'Could not record cancellation request: %s\n' "$unit" >&2; return 1; }
+  if ! systemctl stop "$unit"; then
+    rm -f -- "$marker" 2>/dev/null || true
+    printf 'Could not stop job unit: %s\n' "$unit" >&2
+    return 1
+  fi
+  printf 'Cancellation requested: %s\n' "$unit"
+  return 0
 }
 
 ensure_state_dir() {
@@ -436,7 +472,7 @@ cleanup_completed_jobs() {
   for file in "$JOB_STATE_DIR"/*.state; do
     state=$(state_value "$file" state)
     case "$state" in
-      completed|completed_with_warnings|failed|interrupted)
+      completed|completed_with_warnings|failed|interrupted|cancelled)
         cleanup_interactive_runtime "$(state_value "$file" unit)" || true
         ;;
       *) continue ;;
@@ -593,6 +629,11 @@ run_job() {
     UU_DEFER_UPDATE_MAIL=true "$update_script" "$target" </dev/null
   fi
   exit_code=$?
+  if cancel_requested "$unit"; then
+    write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." || return 1
+    cleanup_interactive_runtime "$unit" || true
+    return 130
+  fi
   if [[ "$exit_code" -eq 0 ]]; then
     captured_status_file="${UU_REMOTE_WORK_DIR:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/temp}/post-update-status.rc"
     if [[ "$target" =~ ^[0-9]+$ && -f "$captured_status_file" ]]; then
@@ -682,6 +723,11 @@ run_global_job() {
   fi
   UU_DEFER_UPDATE_MAIL=true "$update_script"
   exit_code=$?
+  if cancel_requested "$unit"; then
+    write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." || return 1
+    cleanup_interactive_runtime "$unit" || true
+    return 130
+  fi
   if [[ "$exit_code" -eq 0 ]]; then
     printf 'Post-update status refresh started for all systems.\n'
     if [[ -x "$CHECK_CLI" ]]; then
@@ -891,6 +937,11 @@ run_check_job() {
     all) UU_CHECK_JOB_EXECUTION=true "$cli" check </dev/null ;;
   esac
   exit_code=$?
+  if cancel_requested "$unit"; then
+    write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." || return 1
+    cleanup_interactive_runtime "$unit" || true
+    return 130
+  fi
   if [[ "$mode" == target || "$mode" == node ]]; then
     send_check_notification "$STATUS_MODEL_FILE"
   fi
@@ -937,7 +988,11 @@ refresh_running_jobs() {
             age_seconds=$(( $(date -u +%s) - $(date -u -d "$started" +%s 2>/dev/null || date -u +%s) ))
             if (( age_seconds >= 30 )); then
               type=$(state_value "$file" type)
-              write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit is $active_state" "${type:-update}" || true
+              if cancel_requested "$unit"; then
+                write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." "${type:-update}" || true
+              else
+                write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit is $active_state" "${type:-update}" || true
+              fi
               cleanup_interactive_runtime "$unit" || true
             fi
           fi
@@ -948,7 +1003,11 @@ refresh_running_jobs() {
             age_seconds=$(( $(date -u +%s) - $(date -u -d "$started" +%s 2>/dev/null || date -u +%s) ))
             if (( age_seconds >= 30 )); then
               type=$(state_value "$file" type)
-              write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit no longer active" "${type:-update}" || true
+              if cancel_requested "$unit"; then
+                write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." "${type:-update}" || true
+              else
+                write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit no longer active" "${type:-update}" || true
+              fi
               cleanup_interactive_runtime "$unit" || true
             fi
           fi
@@ -1074,6 +1133,10 @@ case "${1:-}" in
   attach)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     attach_job "$2"
+    ;;
+  cancel)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    request_cancel "$2"
     ;;
   list)
     [[ $# -eq 1 ]] || { usage >&2; exit 2; }

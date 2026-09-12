@@ -389,6 +389,11 @@ def test_authenticated_sse_stream_uses_existing_attachment():
 
 def test_webui_exposes_only_authenticated_input_actions():
     source = (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
+    assert 'parts[3] == "cancel"' in source
+    assert '"JOB_NOT_CANCELLABLE"' in source
+    assert '"JOB_CANCEL_FAILED"' in source
+    assert '"cancel", unit' in source
+    assert 'systemctl stop' in (ROOT / "job-runner.sh").read_text(encoding="utf-8")
     assert 'parts[3] == "attach"' in source
     assert 'parts[3] == "input"' in source
     assert 'parts[3] == "resize"' in source
@@ -401,6 +406,53 @@ def test_webui_exposes_only_authenticated_input_actions():
     assert "self.write_allowed()" in source
     assert "The interactive job socket is unavailable." in source
     assert "Interactive terminal available" in WEB.PAGE
+
+
+def test_live_terminal_stop_control_requires_confirmation_and_is_interactive_only():
+    source = (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
+    assert 'id="interactive-terminal-stop"' in WEB.PAGE
+    assert 'id="interactive-stop-modal"' in WEB.PAGE
+    assert 'Stop running job?' in WEB.PAGE
+    assert 'This will stop the currently running job.' in WEB.PAGE
+    assert '>Cancel<' in WEB.PAGE
+    assert '>Stop job<' in WEB.PAGE
+    assert "mode:'interactive'" in WEB.PAGE
+    assert "state.mode==='output'" in WEB.PAGE
+    assert "state.inputClosed=true" in WEB.PAGE
+    assert "api(`/api/jobs/${encodeURIComponent(state.unit)}/cancel`" in WEB.PAGE
+    assert "interactiveStopModal.classList.add('open')" in WEB.PAGE
+    assert "interactiveStopCancel?.addEventListener" in WEB.PAGE
+    assert "state.stopping?'Stopping…':'Stop job'" in WEB.PAGE
+    assert "Only running interactive jobs can be stopped here." in source
+
+
+def test_cancel_endpoint_binds_only_running_interactive_job_unit():
+    with tempfile.TemporaryDirectory() as temporary:
+        jobs_dir = Path(temporary)
+        unit = "ultimate-updater-update-interactive-test"
+        (jobs_dir / f"{unit}.state").write_text(
+            f"unit={unit}\ntarget=900\nstate=running\ninteractive=true\n", encoding="utf-8",
+        )
+        handler = WEB.StatusHandler.__new__(WEB.StatusHandler)
+        handler.server = SimpleNamespace(jobs_dir=jobs_dir, job_runner=Path("/safe/job-runner.sh"))
+        responses = []
+        calls = []
+        handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        handler.run_command = lambda args, **kwargs: (calls.append((args, kwargs)) or SimpleNamespace(returncode=0))
+        handler.handle_job_cancel(unit)
+        assert responses[-1][0]["state"] == "stopping"
+        assert responses[-1][1] == WEB.HTTPStatus.ACCEPTED
+        assert calls[0][0] == ["/safe/job-runner.sh", "cancel", unit]
+
+        handler.handle_job_cancel("ultimate-updater-update-x;touch-pwned")
+        assert responses[-1][1] == WEB.HTTPStatus.BAD_REQUEST
+        assert len(calls) == 1
+
+        (jobs_dir / f"{unit}.state").write_text(
+            f"unit={unit}\ntarget=900\nstate=completed\ninteractive=true\n", encoding="utf-8",
+        )
+        handler.handle_job_cancel(unit)
+        assert responses[-1][1] == WEB.HTTPStatus.CONFLICT
 
 
 def test_journal_output_records_preserve_cursor_ansi_and_line_bytes():
