@@ -41,7 +41,34 @@ write_running "$warning_unit" all-systems
 UU_JOB_STATE_DIR="$WORK_DIR/jobs" bash "$ROOT_DIR/job-runner.sh" run-check \
   "$warning_unit" all-systems "$WORK_DIR/warning-cli" all
 grep -Fxq 'state=completed_with_warnings' "$WORK_DIR/jobs/$warning_unit.state"
-grep -Fxq 'exit_code=0' "$WORK_DIR/jobs/$warning_unit.state"
+grep -Fxq 'exit_code=10' "$WORK_DIR/jobs/$warning_unit.state"
+
+# The synchronous wrapper preserves the warning classification as a
+# non-zero application result. Scheduler context must have the same contract.
+cat > "$WORK_DIR/check-updates.sh" <<'EOF'
+#!/usr/bin/env bash
+cat > "$UU_LOCAL_FILES/status.json" <<'JSON'
+{"schema_version":1,"targets":[{"id":"fixture","check_status":"error","reachable":true,"error":{"code":"CHECK_FAILED"}}]}
+JSON
+printf '%s\n' 'CHECK all systems failed'
+exit 1
+EOF
+chmod +x "$WORK_DIR/check-updates.sh"
+for context in direct scheduler; do
+  if [[ "$context" == scheduler ]]; then
+    context_env=(RUN_FROM_CRON=true)
+  else
+    context_env=()
+  fi
+  if output=$(env "${context_env[@]}" UU_LOCAL_FILES="$WORK_DIR" \
+      UU_CHECK_JOB_EXECUTION=true "$ROOT_DIR/ultimate-updater" check 2>&1); then
+    context_rc=0
+  else
+    context_rc=$?
+  fi
+  [[ "$context_rc" -eq 10 ]]
+  grep -Fq 'CHECK all systems completed with warnings' <<<"$output"
+done
 
 hard_unit=ultimate-updater-check-all-systems-hard
 write_running "$hard_unit" all-systems

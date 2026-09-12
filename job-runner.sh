@@ -895,7 +895,9 @@ run_check_job() {
     send_check_notification "$STATUS_MODEL_FILE"
   fi
   if [[ "$mode" != target && "$exit_code" -eq "$CHECK_WARNING_RC" ]]; then
-    UU_JOB_TYPE=check write_state "$unit" "$target" completed_with_warnings "$started" "$(now)" 0 "Check completed with warnings" || return 1
+    # Keep the normalized non-zero check result visible to API/UI consumers
+    # while returning success to systemd for a completed job with warnings.
+    UU_JOB_TYPE=check write_state "$unit" "$target" completed_with_warnings "$started" "$(now)" "$exit_code" "Check completed with warnings" || return 1
     return 0
   elif [[ "$exit_code" -eq 0 ]]; then
     UU_JOB_TYPE=check write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" || return 1
