@@ -176,14 +176,12 @@ cancel_requested() {
 }
 
 request_cancel() {
-  local unit="$1" file state interactive marker
+  local unit="$1" file state marker
   valid_unit "$unit" || { printf 'Invalid job ID: %s\n' "$unit" >&2; return 2; }
   file=$(state_file "$unit")
   [[ -f "$file" ]] || { printf 'Job not found: %s\n' "$unit" >&2; return 4; }
   state=$(state_value "$file" state)
   [[ "$state" == running ]] || { printf 'Job is no longer running: %s (%s)\n' "$unit" "$state" >&2; return 3; }
-  interactive=$(state_value "$file" interactive 2>/dev/null || printf 'false')
-  [[ "$interactive" == true ]] || { printf 'Job is not cancellable: %s\n' "$unit" >&2; return 5; }
   marker=$(cancel_marker "$unit")
   if [[ -e "$marker" ]]; then
     printf 'Cancellation already requested: %s\n' "$unit" >&2
@@ -194,6 +192,14 @@ request_cancel() {
     rm -f -- "$marker" 2>/dev/null || true
     printf 'Could not stop job unit: %s\n' "$unit" >&2
     return 1
+  fi
+  # A systemd stop may terminate the runner before its post-command cancel
+  # handling gets a chance to publish the state.  Once the exact unit has
+  # stopped, make the cancellation result authoritative for every job type.
+  if [[ "$(state_value "$file" state 2>/dev/null || printf '')" == running ]]; then
+    UU_JOB_INTERACTIVE="$(state_value "$file" interactive 2>/dev/null || printf 'false')" \
+      write_state "$unit" "$(state_value "$file" target)" cancelled \
+      "$(state_value "$file" started_at)" "$(now)" 130 "Job cancelled by user." || return 1
   fi
   printf 'Cancellation requested: %s\n' "$unit"
   return 0

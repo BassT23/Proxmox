@@ -34,7 +34,11 @@ EOF
 SYSTEMCTL_LOG="$WORK_DIR/systemctl.log" UU_JOB_STATE_DIR="$JOBS" PATH="$WORK_DIR/bin:$PATH" \
   "$ROOT_DIR/job-runner.sh" cancel "$unit" >"$WORK_DIR/cancel.out"
 grep -Fq "stop $unit" "$WORK_DIR/systemctl.log"
-[[ -f "$JOBS/$unit.cancel" ]]
+grep -Eq '^state=cancelled$' "$JOBS/$unit.state"
+grep -Eq '^exit_code=130$' "$JOBS/$unit.state"
+grep -Fq 'Job cancelled by user.' "$JOBS/$unit.state"
+grep -Eq '^interactive=true$' "$JOBS/$unit.state"
+[[ ! -e "$JOBS/$unit.cancel" ]]
 
 if SYSTEMCTL_LOG="$WORK_DIR/systemctl.log" UU_JOB_STATE_DIR="$JOBS" PATH="$WORK_DIR/bin:$PATH" \
   "$ROOT_DIR/job-runner.sh" cancel "$unit" >/dev/null 2>&1; then
@@ -48,7 +52,7 @@ if SYSTEMCTL_LOG="$WORK_DIR/systemctl.log" UU_JOB_STATE_DIR="$JOBS" PATH="$WORK_
 fi
 
 # Simulate systemd having terminated the runner before its normal finalizer.
-# Refresh must make the marker authoritative and publish cancelled state.
+# The cancel request itself must publish the authoritative state.
 SYSTEMCTL_LOG="$WORK_DIR/systemctl.log" UU_JOB_STATE_DIR="$JOBS" PATH="$WORK_DIR/bin:$PATH" \
   "$ROOT_DIR/job-runner.sh" list >/dev/null
 grep -Eq '^state=cancelled$' "$JOBS/$unit.state"

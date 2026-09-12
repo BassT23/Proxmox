@@ -408,7 +408,7 @@ def test_webui_exposes_only_authenticated_input_actions():
     assert "Interactive terminal available" in WEB.PAGE
 
 
-def test_live_terminal_stop_control_requires_confirmation_and_is_interactive_only():
+def test_live_output_and_terminal_stop_control_require_confirmation():
     source = (ROOT / "web-ui" / "server.py").read_text(encoding="utf-8")
     assert 'id="interactive-terminal-stop"' in WEB.PAGE
     assert 'id="interactive-stop-modal"' in WEB.PAGE
@@ -423,10 +423,12 @@ def test_live_terminal_stop_control_requires_confirmation_and_is_interactive_onl
     assert "interactiveStopModal.classList.add('open')" in WEB.PAGE
     assert "interactiveStopCancel?.addEventListener" in WEB.PAGE
     assert "state.stopping?'Stopping…':'Stop job'" in WEB.PAGE
-    assert "Only running interactive jobs can be stopped here." in source
+    assert "Close window" in WEB.PAGE
+    assert "Close terminal" not in WEB.PAGE
+    assert "Only running interactive jobs can be stopped here." not in source
 
 
-def test_cancel_endpoint_binds_only_running_interactive_job_unit():
+def test_cancel_endpoint_binds_running_job_unit_for_both_output_modes():
     with tempfile.TemporaryDirectory() as temporary:
         jobs_dir = Path(temporary)
         unit = "ultimate-updater-update-interactive-test"
@@ -444,9 +446,18 @@ def test_cancel_endpoint_binds_only_running_interactive_job_unit():
         assert responses[-1][1] == WEB.HTTPStatus.ACCEPTED
         assert calls[0][0] == ["/safe/job-runner.sh", "cancel", unit]
 
+        (jobs_dir / f"{unit}.state").write_text(
+            f"unit={unit}\ntarget=900\nstate=running\ninteractive=false\n", encoding="utf-8",
+        )
+        handler.handle_job_cancel(unit)
+        assert responses[-1][0]["state"] == "stopping"
+        assert responses[-1][1] == WEB.HTTPStatus.ACCEPTED
+        assert len(calls) == 2
+        assert calls[1][0] == ["/safe/job-runner.sh", "cancel", unit]
+
         handler.handle_job_cancel("ultimate-updater-update-x;touch-pwned")
         assert responses[-1][1] == WEB.HTTPStatus.BAD_REQUEST
-        assert len(calls) == 1
+        assert len(calls) == 2
 
         (jobs_dir / f"{unit}.state").write_text(
             f"unit={unit}\ntarget=900\nstate=completed\ninteractive=true\n", encoding="utf-8",
@@ -546,7 +557,7 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "localStorage" in WEB.PAGE
     assert "interactive-terminal-font-decrease" in WEB.PAGE
     assert "interactive-terminal-font-increase" in WEB.PAGE
-    assert 'aria-label="Close terminal"' in WEB.PAGE
+    assert 'aria-label="Close window"' in WEB.PAGE
     assert "interactive-terminal-close-icon" in WEB.PAGE
     assert "interactive-terminal-keybar" in WEB.PAGE
     jobs_position = WEB.PAGE.index('<section id="jobs"')
