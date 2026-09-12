@@ -24,8 +24,12 @@ if grep -Eq '([Pp]assword|PRIVATE KEY|identity_file=|192\.168\.)' "$TRACE_FILE";
   exit 1
 fi
 
-for step in check_host_enter helper_prepare helper_copy remote_launch completion_fetch remote_rc status_fetch diagnostics_fetch result_import result_emitted check_host_exit; do
+for step in host_candidates host_candidate host_loop_enter host_local_or_remote check_host_call \
+  check_host_enter helper_prepare helper_copy remote_launch completion_fetch remote_rc status_fetch diagnostics_fetch \
+  result_import result_emitted check_host_exit; do
   grep -Fq "step=$step" "$ROOT_DIR/check-updates.sh"
 done
+
+grep -Fq 'REMOTE_TRACE "step=external_phase_enter"' "$ROOT_DIR/ultimate-updater"
 
 echo 'remote check trace tests: PASS'

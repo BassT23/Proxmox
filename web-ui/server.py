@@ -3868,7 +3868,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.send_json(error_payload("SCHEDULE_RUN_FAILED", str(error) or "Schedule could not be started."), status)
             return
         if parts == ["api", "check-all"]:
-            self.action_check_all()
+            self.action_check_all(remote_trace=isinstance(payload, dict) and payload.get("remote_trace") is True)
             return
         if parts == ["api", "update-all"]:
             self.action_update_all()
@@ -4029,10 +4029,11 @@ class StatusHandler(BaseHTTPRequestHandler):
             return "local-host"
         return node
 
-    def action_check_all(self):
+    def action_check_all(self, remote_trace=False):
+        extra_env = {"UU_REMOTE_TRACE": "true"} if remote_trace is True else None
         try:
             result = self.run_command([str(self.server.job_runner), "start-check", "all-systems",
-                                       str(self.server.cli), "all"], timeout=15)
+                                       str(self.server.cli), "all"], timeout=15, extra_env=extra_env)
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("CHECK_START_FAILED", "The full check could not be started."), HTTPStatus.BAD_GATEWAY)
             return

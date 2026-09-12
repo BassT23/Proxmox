@@ -11,6 +11,7 @@ grep -Fq 'MODE" =~ Cluster || "${UU_GLOBAL_CHECK:-false}" == true' "$ROOT_DIR/ch
 
 sed -n '/^HOST_CHECK_START () {/,/^# Host Check/p' "$ROOT_DIR/check-updates.sh" \
   | sed '$d' > "$WORK_DIR/host-loop.sh"
+REMOTE_TRACE() { :; }
 source "$WORK_DIR/host-loop.sh"
 
 HOSTS='node1 node2 node3'

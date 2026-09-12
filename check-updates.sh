@@ -588,7 +588,12 @@ PY
 
 HOST_CHECK_START () {
   USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
-  local host_selected=true host_id host_only_scope=false
+  local host_selected=true host_id host_only_scope=false host_count=0
+  for host in $HOSTS; do host_count=$((host_count + 1)); done
+  REMOTE_TRACE "step=host_candidates count=$host_count"
+  for host in $HOSTS; do
+    REMOTE_TRACE "step=host_candidate host=host:$(CLUSTER_HOST_NODE "$host")"
+  done
   if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
     UU_FILTER_SCOPE=check UU_FILTER_ELIGIBLE_IDS="$(for host in $HOSTS; do printf 'host:%s ' "$(CLUSTER_HOST_NODE "$host")"; done)" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
   fi
@@ -596,6 +601,7 @@ HOST_CHECK_START () {
     host_selected=true
     host_only_scope=false
     host_id="host:$(CLUSTER_HOST_NODE "$HOST")"
+    REMOTE_TRACE "host=$host_id step=host_loop_enter"
     if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
       TARGET_SELECTION_ALLOWS check "host:$(CLUSTER_HOST_NODE "$HOST")" "$UU_FILTER_ELIGIBLE_IDS" || host_selected=false
       if [[ "$host_selected" != true ]] &&
@@ -609,14 +615,17 @@ HOST_CHECK_START () {
       fi
     fi
     if HOST_IS_LOCAL "$HOST"; then
+      REMOTE_TRACE "host=$host_id step=host_local_or_remote mode=local"
       [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
       [[ "$host_selected" == true ]] && CHECK_HOST_ITSELF
       if [[ "$host_only_scope" != true && "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
       if [[ "$host_only_scope" != true && "$WITH_VM" == true ]]; then VM_CHECK_START; fi
       unset UU_INTERNAL_SKIP_HOST_TARGET
     else
+      REMOTE_TRACE "host=$host_id step=host_local_or_remote mode=remote"
       [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
       [[ "$host_only_scope" == true ]] && export UU_INTERNAL_SKIP_GUEST_TARGETS=true
+      REMOTE_TRACE "host=$host_id step=check_host_call"
       if ! CHECK_HOST "$HOST"; then
         CHECK_FAILURE=1
       fi

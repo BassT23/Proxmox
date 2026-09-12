@@ -104,6 +104,15 @@ fi
 # shellcheck disable=SC1090
 [[ -f "$EXTERNAL_SELECTION_SCRIPT" ]] && source "$EXTERNAL_SELECTION_SCRIPT"
 
+REMOTE_TRACE() {
+  [[ "${UU_REMOTE_TRACE:-false}" == true ]] || return 0
+  if declare -f STATUS_MODEL_DIAGNOSTIC >/dev/null 2>&1; then
+    STATUS_MODEL_DIAGNOSTIC "REMOTE_TRACE $*"
+  else
+    printf 'REMOTE_TRACE %s\n' "$*" >&2
+  fi
+}
+
 usage() {
   cat <<EOF
 Usage: $(basename "$0") COMMAND [TARGET|OPTIONS]
@@ -1010,6 +1019,7 @@ remote_target_update() {
 
 run_external_checks() {
   local target result=0 target_result targets
+  REMOTE_TRACE "step=external_phase_enter"
   targets=$(inventory_targets) || return 1
   [[ -n "$targets" ]] || return 0
   require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1
