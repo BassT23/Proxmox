@@ -726,6 +726,7 @@ start_check_job() {
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${CHECK_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
+  [[ "${UU_REMOTE_TRACE:-false}" == true ]] && systemd_env+=("--setenv=UU_REMOTE_TRACE=true")
   if [[ "$mode" == target || "$mode" == node ]]; then
     systemd_env+=("--setenv=UU_SINGLE_TARGET=true" \
       "--setenv=UU_SINGLE_TARGET_ID=$target" \
