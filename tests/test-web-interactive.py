@@ -426,6 +426,10 @@ def test_live_output_and_terminal_stop_control_require_confirmation():
     assert "Close window" in WEB.PAGE
     assert "Close terminal" not in WEB.PAGE
     assert "Only running interactive jobs can be stopped here." not in source
+    assert 'class="modal-backdrop interactive-stop-modal"' in WEB.PAGE
+    assert ".interactive-stop-modal{z-index:100}" in WEB.PAGE
+    assert "interactive-terminal-close-icon" not in WEB.PAGE
+    assert "interactive-terminal-header-actions{width:100%;justify-content:flex-end}" in WEB.PAGE
 
 
 def test_cancel_endpoint_binds_running_job_unit_for_both_output_modes():
@@ -558,7 +562,7 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "interactive-terminal-font-decrease" in WEB.PAGE
     assert "interactive-terminal-font-increase" in WEB.PAGE
     assert 'aria-label="Close window"' in WEB.PAGE
-    assert "interactive-terminal-close-icon" in WEB.PAGE
+    assert ">Close window</button>" in WEB.PAGE
     assert "interactive-terminal-keybar" in WEB.PAGE
     jobs_position = WEB.PAGE.index('<section id="jobs"')
     terminal_position = WEB.PAGE.index('<section id="interactive-terminal-panel"')
