@@ -588,14 +588,15 @@ PY
 
 HOST_CHECK_START () {
   USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
-  local host_selected=true host_id host_only_scope=false host_count=0
+  local host_selected=true host_id host_only_scope=false host_count=0 host_eligible_ids=""
   for host in $HOSTS; do host_count=$((host_count + 1)); done
   REMOTE_TRACE "step=host_candidates count=$host_count"
   for host in $HOSTS; do
     REMOTE_TRACE "step=host_candidate host=host:$(CLUSTER_HOST_NODE "$host")"
   done
   if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
-    UU_FILTER_SCOPE=check UU_FILTER_ELIGIBLE_IDS="$(for host in $HOSTS; do printf 'host:%s ' "$(CLUSTER_HOST_NODE "$host")"; done)" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+    host_eligible_ids="$(for host in $HOSTS; do printf 'host:%s ' "$(CLUSTER_HOST_NODE "$host")"; done)"
+    UU_FILTER_SCOPE=check UU_FILTER_ELIGIBLE_IDS="$host_eligible_ids" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
   fi
   for HOST in $HOSTS; do
     host_selected=true
@@ -603,7 +604,9 @@ HOST_CHECK_START () {
     host_id="host:$(CLUSTER_HOST_NODE "$HOST")"
     REMOTE_TRACE "host=$host_id step=host_loop_enter"
     if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
-      TARGET_SELECTION_ALLOWS check "host:$(CLUSTER_HOST_NODE "$HOST")" "$UU_FILTER_ELIGIBLE_IDS" || host_selected=false
+      # Guest checks below intentionally reuse UU_FILTER_ELIGIBLE_IDS for
+      # their own scope. Keep host eligibility stable across those calls.
+      TARGET_SELECTION_ALLOWS check "host:$(CLUSTER_HOST_NODE "$HOST")" "$host_eligible_ids" || host_selected=false
       if [[ "$host_selected" != true ]] &&
         ! TARGET_SELECTION_GUEST_ONLY_REQUIRES_HOST check "$host_id"; then
         continue

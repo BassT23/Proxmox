@@ -69,4 +69,22 @@ JSON
 USE_INTERNAL_TARGET_SELECTION=true UU_TARGET_SELECTION_FILE="$WORK_DIR/target-selection.json" \
   bash -c 'source "$1"; TARGET_SELECTION_GUEST_ONLY_REQUIRES_HOST check host:node1' _ "$ROOT_DIR/target-selection.sh"
 
+# A local host's guest scan changes the shared guest eligibility variable.
+# Host selection must continue to use the host-scoped snapshot captured by
+# HOST_CHECK_START, otherwise subsequent remote hosts are silently skipped.
+checked_hosts=()
+HOST_IS_LOCAL() { [[ "$1" == node1 ]]; }
+CHECK_HOST_ITSELF() { checked_hosts+=("local:$HOST"); }
+CONTAINER_CHECK_START() { UU_FILTER_ELIGIBLE_IDS='guest:211'; }
+VM_CHECK_START() { UU_FILTER_ELIGIBLE_IDS='guest:212'; }
+TARGET_SELECTION_ALLOWS() { [[ " $3 " == *" $2 "* ]]; }
+TARGET_SELECTION_GUEST_ONLY_REQUIRES_HOST() { return 1; }
+TARGET_SELECTION_HAS_HOST_ONLY() { return 1; }
+TARGET_SELECTION_HAS_GUEST_ONLY() { return 1; }
+CHECK_HOST() { checked_hosts+=("remote:$1"); return 0; }
+HOSTS='node1 node2 node3'
+UU_FILTER_ELIGIBLE_IDS='stale-value'
+HOST_CHECK_START
+[[ "${checked_hosts[*]}" == 'local:node1 remote:node2 remote:node3' ]]
+
 echo 'global remote-node selection tests: PASS'
