@@ -361,8 +361,10 @@ ARGUMENTS () {
         exit 2
         ;;
       -check)
-        "$LOCAL_FILES/check-updates.sh"
-        exit $?
+        local check_rc=0
+        CHECK_ONLY_RUN=true
+        "$LOCAL_FILES/check-updates.sh" || check_rc=$?
+        exit "$check_rc"
         ;;
       inventory)
         COMMAND=true
@@ -2144,8 +2146,11 @@ EXIT () {
     rm -rf "$LOCAL_FILES"/update
     exit "$EXIT_CODE"
   fi
+  # Check-only runs own their notification and final status handling.
+  if [[ "${CHECK_ONLY_RUN:-false}" == true ]]; then
+    :
   # Exit without echo
-  if [[ "$EXIT_CODE" == 2 ]]; then
+  elif [[ "$EXIT_CODE" == 2 ]]; then
     exit
   # Update Finish
   elif [[ "$EXIT_CODE" == 0 ]]; then
@@ -2184,6 +2189,7 @@ EXIT () {
   rm -f -- "${TEMP_STATE_DIR:?}/var"
   rm -rf "$LOCAL_FILES"/update
   if [[ -f "$TEMP_STATE_DIR/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf "$LOCAL_FILES"; fi
+  exit "$EXIT_CODE"
 }
 trap EXIT EXIT
 

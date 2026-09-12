@@ -18,6 +18,8 @@ Fixed:
 **Unreleased**
 
 Fixed:
+- duplicate update-summary notifications are no longer sent after `update -check`
+- check-only runs skip update finalization while preserving the original check exit status
 - installer startup no longer aborts when `TERM` is missing or unsuitable
 - installer failures are no longer masked as successful exits
 
