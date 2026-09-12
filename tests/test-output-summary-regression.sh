@@ -16,7 +16,7 @@ grep -Fq 'TAG_OUTPUT=false STATUS_MODEL_NODE=' "$ROOT_DIR/check-updates.sh"
 
 # The explicit diagnostic gate is part of the output contract: DEBUG=false is
 # clean, while DEBUG=true retains the technical remote details.
-grep -Fq 'if [[ "${DEBUG:-false}" == true && "$remote_diagnostics_found" == true ]]; then' \
+grep -Fq 'if [[ ("${DEBUG:-false}" == true || "${UU_REMOTE_TRACE:-false}" == true) && "$remote_diagnostics_found" == true ]]; then' \
   "$ROOT_DIR/check-updates.sh"
 grep -Fq '[[ "${DEBUG:-false}" == true ]] || return 0' "$ROOT_DIR/check-updates.sh"
 

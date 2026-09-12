@@ -193,6 +193,14 @@ CENTRAL_REMOTE_PHASE() {
   fi
 }
 
+# Explicitly opt-in trace for one controlled remote-check run. This records
+# lifecycle metadata only and does not alter execution, retries, or results.
+REMOTE_TRACE() {
+  [[ "${UU_REMOTE_TRACE:-false}" == true ]] || return 0
+  STATUS_MODEL_DIAGNOSTIC "REMOTE_TRACE $*"
+  [[ -n "${STATUS_MODEL_DIAGNOSTICS_FILE:-}" ]] || printf 'REMOTE_TRACE %s\n' "$*" >&2
+}
+
 # Tag filter
 TAG_FILTER_FILE="${TAG_FILTER_FILE:-$LOCAL_FILES/tag-filter.sh}"
 USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
@@ -630,6 +638,7 @@ CHECK_HOST () {
   local remote_job_timeout="${UU_CHECK_REMOTE_JOB_TIMEOUT:-300}"
   local remote_cleanup_state=pending remote_diag_level=success remote_failure_class=none
   HOST_NODE=$(CLUSTER_HOST_NODE "$HOST")
+  REMOTE_TRACE "host=host:$HOST_NODE step=check_host_enter"
   CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_START node=$HOST_NODE host=$HOST"
   if ! INTERNAL_SSH_RESOLVE_NODE "$HOST_NODE" "$HOST" "$SSH_PORT"; then
     CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=resolve"
@@ -680,6 +689,7 @@ CHECK_HOST () {
     fi
     remote_status_env=" UU_TARGET_SELECTION_SCRIPT='$remote_check_dir/target-selection.sh' UU_TARGET_SELECTION_FILE='$remote_check_dir/target-selection.json'$remote_status_env"
   fi
+  REMOTE_TRACE "host=host:$HOST_NODE step=helper_prepare rc=0"
   if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
     if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$TARGET_RUNTIME_FILE" "$HOST:$remote_check_dir/target-runtime.sh" >/dev/null 2>&1; then
       CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
@@ -709,6 +719,8 @@ CHECK_HOST () {
     [[ "${UU_INTERNAL_SKIP_GUEST_TARGETS:-false}" == true ]] && remote_status_env=" UU_CHECK_SCOPE=host$remote_status_env"
     remote_status_validation=" if [[ \"\$remote_rc\" -eq 0 && ! -s '$remote_check_dir/status.json' ]]; then remote_rc=86; elif [[ \"\$remote_rc\" -eq 0 ]] && ! python3 -c 'import json,sys; payload=json.load(open(sys.argv[1], encoding=\"utf-8\")); assert isinstance(payload, dict) and isinstance(payload.get(\"targets\"), list)' '$remote_check_dir/status.json'; then remote_rc=87; fi;"
   fi
+  [[ "${UU_REMOTE_TRACE:-false}" == true ]] && remote_status_env=" UU_REMOTE_TRACE=true$remote_status_env"
+  REMOTE_TRACE "host=host:$HOST_NODE step=helper_copy rc=0"
   if [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]]; then
     # The remote check derives its lifecycle-safe mode from this explicit
     # job context. Never infer it from the command name.
@@ -720,12 +732,14 @@ CHECK_HOST () {
   else
     remote_status=$?
   fi
+  REMOTE_TRACE "host=host:$HOST_NODE step=remote_launch rc=$remote_status"
   CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_SSH_RETURN node=$HOST_NODE rc=$remote_status"
   CENTRAL_REMOTE_PHASE "CENTRAL_COMPLETION_FETCH_START node=$HOST_NODE"
   remote_done_value=""
   for remote_status_attempt in 1 2 3; do
     remote_done_transport_rc=0
     remote_done_value=$(CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "cat -- '$remote_done_file'" 2>"$remote_done_error_file") || remote_done_transport_rc=$?
+    REMOTE_TRACE "host=host:$HOST_NODE step=completion_fetch attempt=$remote_status_attempt rc=$remote_done_transport_rc found=$([[ "$remote_done_value" =~ ^[0-9]+$ ]] && echo true || echo false)"
     if [[ "$remote_done_value" =~ ^[0-9]+$ ]]; then
       remote_done_found=true
       break
@@ -733,35 +747,43 @@ CHECK_HOST () {
     sleep 0.2
   done
   CENTRAL_REMOTE_PHASE "CENTRAL_COMPLETION_FETCH_END node=$HOST_NODE rc=$remote_done_transport_rc found=$remote_done_found value=${remote_done_value:-unknown}"
+  REMOTE_TRACE "host=host:$HOST_NODE step=completion_fetch found=$remote_done_found rc=$remote_done_transport_rc"
   if [[ -n "$remote_done_value" && "$remote_done_value" != "$remote_status" ]]; then
     remote_status="$remote_done_value"
   fi
+  REMOTE_TRACE "host=host:$HOST_NODE step=remote_rc value=${remote_done_value:-$remote_status}"
   CENTRAL_REMOTE_PHASE "CENTRAL_STATUS_FETCH_START node=$HOST_NODE"
   for remote_status_attempt in 1 2 3; do
     remote_status_transport_rc=0
     if CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_check_dir/status.json" "$remote_status_file" > /dev/null 2>"$remote_status_error_file"; then
       remote_status_transport_rc=0
+      REMOTE_TRACE "host=host:$HOST_NODE step=status_fetch attempt=$remote_status_attempt rc=0 found=true"
       break
     fi
     remote_status_transport_rc=$?
+    REMOTE_TRACE "host=host:$HOST_NODE step=status_fetch attempt=$remote_status_attempt rc=$remote_status_transport_rc"
     [[ "$remote_status_attempt" -lt 3 ]] && sleep 0.2
   done
   local remote_status_file_found=false
   [[ -e "$remote_status_file" ]] && remote_status_file_found=true
   CENTRAL_REMOTE_PHASE "CENTRAL_STATUS_FETCH_END node=$HOST_NODE rc=$remote_status_transport_rc found=$remote_status_file_found"
+  REMOTE_TRACE "host=host:$HOST_NODE step=status_fetch found=$remote_status_file_found rc=$remote_status_transport_rc"
   CENTRAL_REMOTE_PHASE "CENTRAL_DIAGNOSTICS_FETCH_START node=$HOST_NODE"
   for remote_diagnostics_attempt in 1 2 3; do
     remote_diagnostics_transport_rc=0
     if CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_diagnostics_file" "$remote_diagnostics_local_file" > /dev/null 2>"$remote_diagnostics_error_file"; then
       remote_diagnostics_transport_rc=0
+      REMOTE_TRACE "host=host:$HOST_NODE step=diagnostics_fetch attempt=$remote_diagnostics_attempt rc=0 found=true"
       break
     fi
     remote_diagnostics_transport_rc=$?
+    REMOTE_TRACE "host=host:$HOST_NODE step=diagnostics_fetch attempt=$remote_diagnostics_attempt rc=$remote_diagnostics_transport_rc"
     [[ "$remote_diagnostics_attempt" -lt 3 ]] && sleep 0.2
   done
   local remote_diagnostics_file_found=false
   [[ -e "$remote_diagnostics_local_file" ]] && remote_diagnostics_file_found=true
   CENTRAL_REMOTE_PHASE "CENTRAL_DIAGNOSTICS_FETCH_END node=$HOST_NODE rc=$remote_diagnostics_transport_rc found=$remote_diagnostics_file_found"
+  REMOTE_TRACE "host=host:$HOST_NODE step=diagnostics_fetch found=$remote_diagnostics_file_found rc=$remote_diagnostics_transport_rc"
   if [[ -e "$remote_diagnostics_local_file" ]]; then
     remote_diagnostics_found=true
     remote_diagnostics_size=$(stat -c '%s' "$remote_diagnostics_local_file" 2>/dev/null || printf '0')
@@ -779,6 +801,7 @@ CHECK_HOST () {
       STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "$HOST_NODE ($HOST): remote check status was invalid and could not be imported" "$HOST_NODE"
     else
       remote_json_result=valid
+      REMOTE_TRACE "host=host:$HOST_NODE step=result_import rc=0"
       if python3 - "$remote_status_file" "$HOST_NODE" <<'PY'
 import json
 import sys
@@ -854,7 +877,7 @@ PY
       *) remote_failure_class=remote-rc-nonzero ;;
     esac
   fi
-  if [[ "${DEBUG:-false}" == true && "$remote_diagnostics_found" == true ]]; then
+  if [[ ("${DEBUG:-false}" == true || "${UU_REMOTE_TRACE:-false}" == true) && "$remote_diagnostics_found" == true ]]; then
     while IFS= read -r remote_diagnostic_line; do
       [[ -n "$remote_diagnostic_line" ]] || continue
       printf 'Remote status model: node=%s %s\n' "$HOST_NODE" "$remote_diagnostic_line"
@@ -884,7 +907,9 @@ PY
   if [[ "$remote_status" -ne 0 && "$remote_node_status_ok" != true ]]; then
     STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "$HOST_NODE ($HOST): remote check exited with $remote_status" "$HOST_NODE"
   fi
+  REMOTE_TRACE "host=host:$HOST_NODE step=result_emitted value=$remote_node_status_ok"
   CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=$remote_status phase=complete cleanup_rc=$remote_cleanup_rc"
+  REMOTE_TRACE "host=host:$HOST_NODE step=check_host_exit rc=$remote_status"
   return "$remote_status"
 }
 
