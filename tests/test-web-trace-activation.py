@@ -25,20 +25,20 @@ class Handler:
 
 normal = Handler()
 server.StatusHandler.action_check_all(normal)
-assert normal.calls[0][2] is None
+assert normal.calls[0][2] == {"UU_JOB_INTERACTIVE": "true"}
 
 diagnostic = Handler()
 server.StatusHandler.action_check_all(diagnostic, remote_trace=True)
-assert diagnostic.calls[0][2] == {"UU_REMOTE_TRACE": "true"}
+assert diagnostic.calls[0][2] == {"UU_JOB_INTERACTIVE": "true", "UU_REMOTE_TRACE": "true"}
 
 for value in (False, None, 1, "true", {"value": True}):
     handler = Handler()
     server.StatusHandler.action_check_all(handler, remote_trace=value)
-    assert handler.calls[0][2] is None
+    assert handler.calls[0][2] == {"UU_JOB_INTERACTIVE": "true"}
 
 source = (Path(__file__).parents[1] / "web-ui/server.py").read_text(encoding="utf-8")
 assert 'payload.get("remote_trace") is True' in source
-assert 'extra_env = {"UU_REMOTE_TRACE": "true"} if remote_trace is True else None' in source
+assert 'extra_env["UU_REMOTE_TRACE"] = "true"' in source
 assert "os.environ.update" not in source
 
 print("web trace activation tests: PASS")

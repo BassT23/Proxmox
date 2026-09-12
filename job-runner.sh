@@ -60,6 +60,15 @@ configured_debug_enabled() {
   [[ "${value,,}" == true || "${value,,}" == 1 || "${value,,}" == yes ]]
 }
 
+configured_headless_enabled() {
+  local value="${IN_HEADLESS_MODE:-}"
+  if [[ -z "$value" && -f "$UPDATE_CONFIG_FILE" ]]; then
+    value=$(awk -F= '$1 == "IN_HEADLESS_MODE" { sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); gsub(/^"|"$/, "", $2); gsub(/^\x27|\x27$/, "", $2); print $2; exit }' \
+      "$UPDATE_CONFIG_FILE" 2>/dev/null || true)
+  fi
+  [[ "${value,,}" == true || "${value,,}" == 1 || "${value,,}" == yes ]]
+}
+
 prepare_systemd_log_filters() {
   SYSTEMD_LOG_FILTER_ARGS=()
   configured_debug_enabled && return 0
@@ -520,6 +529,7 @@ start_job() {
     return 3
   fi
   systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
+  [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
   systemd_env+=("--setenv=UU_SINGLE_TARGET=true" \
     "--setenv=UU_SINGLE_TARGET_ID=$target" \
     "--setenv=UU_SINGLE_TARGET_KIND=$(notification_scope_kind "$target")")
@@ -539,7 +549,7 @@ start_job() {
 
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
-  if [[ "${UU_JOB_INTERACTIVE:-false}" == true ]]; then
+  if [[ "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_INTERACTIVE:-false}" == true ]] && ! configured_headless_enabled; then
     [[ -x "$PTY_BRIDGE" ]] || { printf 'Interactive job bridge is not available: %s\n' "$PTY_BRIDGE" >&2; return 1; }
     interactive=true
     socket_path=$(interactive_socket "$unit")
@@ -579,13 +589,14 @@ start_global_job() {
     return 3
   fi
   systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
+  [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
   if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
     systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
   fi
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}all-systems-$timestamp-$BASHPID"
   prepare_systemd_log_filters
-  if [[ "${UU_JOB_INTERACTIVE:-false}" == true ]]; then
+  if [[ "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_INTERACTIVE:-false}" == true ]] && ! configured_headless_enabled; then
     [[ -x "$PTY_BRIDGE" ]] || { printf 'Interactive job bridge is not available: %s\n' "$PTY_BRIDGE" >&2; return 1; }
     interactive=true
     socket_path=$(interactive_socket "$unit")
@@ -778,6 +789,7 @@ start_check_job() {
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${CHECK_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
+  [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
   [[ "${UU_REMOTE_TRACE:-false}" == true ]] && systemd_env+=("--setenv=UU_REMOTE_TRACE=true")
   if [[ "$mode" == target || "$mode" == node ]]; then
     systemd_env+=("--setenv=UU_SINGLE_TARGET=true" \
@@ -785,11 +797,24 @@ start_check_job() {
       "--setenv=UU_SINGLE_TARGET_KIND=$mode")
   fi
   prepare_systemd_log_filters
-  UU_JOB_TYPE=check write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  local interactive=false socket_path
+  if [[ "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_INTERACTIVE:-false}" == true ]] && ! configured_headless_enabled; then
+    [[ -x "$PTY_BRIDGE" ]] || { printf 'Interactive job bridge is not available: %s\n' "$PTY_BRIDGE" >&2; return 1; }
+    interactive=true
+    socket_path=$(interactive_socket "$unit")
+    prepare_interactive_runtime "$unit" || return 1
+  fi
+  UU_JOB_TYPE=check UU_JOB_INTERACTIVE="$interactive" write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  [[ "$interactive" == true ]] && systemd_env+=("--setenv=UU_JOB_INTERACTIVE=true")
+  local -a job_command=("$RUNNER_PATH" run-check "$unit" "$target" "$cli" "$mode")
+  if [[ "$interactive" == true ]]; then
+    job_command=("$PTY_BRIDGE" --socket "$socket_path" -- "${job_command[@]}")
+  fi
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater check for $target" \
     "${systemd_env[@]}" "${SYSTEMD_LOG_FILTER_ARGS[@]}" --property=Type=oneshot --property=StandardOutput=journal \
-    --property=StandardError=journal "$RUNNER_PATH" run-check "$unit" "$target" "$cli" "$mode"; then
+    --property=StandardError=journal "${job_command[@]}"; then
     UU_JOB_TYPE=check write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
+    cleanup_interactive_runtime "$unit" || true
     return 1
   fi
   printf 'Check job started\nTarget: %s\nJob: %s\nStatus: ultimate-updater status\nLogs: journalctl -u %s\n' \
@@ -925,12 +950,13 @@ run_reboot_job() {
 }
 
 run_check_job() {
-  local unit="$1" target="$2" cli="$3" mode="$4" file started exit_code lock_file
+  local unit="$1" target="$2" cli="$3" mode="$4" file started exit_code lock_file interactive
   valid_unit "$unit" || return 2
   valid_target "$target" || return 2
   [[ -x "$cli" ]] || return 1
   file=$(state_file "$unit")
   started=$(state_value "$file" started_at)
+  interactive=$(state_value "$file" interactive 2>/dev/null || printf 'false')
   lock_file="$JOB_STATE_DIR/$target.lock"
   exec 9>"$lock_file" || { UU_JOB_TYPE=check write_state "$unit" "$target" failed "$started" "$(now)" 1 "could not open target lock"; return 1; }
   if ! flock -n 9; then
@@ -938,9 +964,12 @@ run_check_job() {
     return 75
   fi
   case "$mode" in
-    target) UU_CHECK_JOB_EXECUTION=true "$cli" check "$target" </dev/null ;;
-    node) UU_CHECK_JOB_EXECUTION=true "$cli" check-node "$target" </dev/null ;;
-    all) UU_CHECK_JOB_EXECUTION=true "$cli" check </dev/null ;;
+    target)
+      if [[ "$interactive" == true ]]; then UU_CHECK_JOB_EXECUTION=true "$cli" check "$target"; else UU_CHECK_JOB_EXECUTION=true "$cli" check "$target" </dev/null; fi ;;
+    node)
+      if [[ "$interactive" == true ]]; then UU_CHECK_JOB_EXECUTION=true "$cli" check-node "$target"; else UU_CHECK_JOB_EXECUTION=true "$cli" check-node "$target" </dev/null; fi ;;
+    all)
+      if [[ "$interactive" == true ]]; then UU_CHECK_JOB_EXECUTION=true "$cli" check; else UU_CHECK_JOB_EXECUTION=true "$cli" check </dev/null; fi ;;
   esac
   exit_code=$?
   if cancel_requested "$unit"; then

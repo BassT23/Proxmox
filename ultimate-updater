@@ -38,7 +38,8 @@ configured_headless() {
 }
 
 interactive_requested() {
-  ! configured_headless && [[ "${UU_JOB_INTERACTIVE:-false}" == true || -t 0 ]]
+  [[ "${UU_NONINTERACTIVE:-false}" != true ]] &&
+    ! configured_headless && [[ "${UU_JOB_INTERACTIVE:-false}" == true || -t 0 ]]
 }
 
 if [[ ! -f "$UPDATE_SCRIPT" && -f "$SCRIPT_DIR/update.sh" ]]; then
@@ -1236,9 +1237,17 @@ run_check() {
   if [[ "${UU_CHECK_JOB_EXECUTION:-false}" != true ]]; then
     require_file "$JOB_RUNNER" "job runner" || return 1
     if [[ -n "$target" ]]; then
-      "$JOB_RUNNER" start-check "$target" "$SCRIPT_DIR/ultimate-updater" target
+      if interactive_requested; then
+        UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start-check "$target" "$SCRIPT_DIR/ultimate-updater" target
+      else
+        "$JOB_RUNNER" start-check "$target" "$SCRIPT_DIR/ultimate-updater" target
+      fi
     else
-      "$JOB_RUNNER" start-check all-systems "$SCRIPT_DIR/ultimate-updater" all
+      if interactive_requested; then
+        UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start-check all-systems "$SCRIPT_DIR/ultimate-updater" all
+      else
+        "$JOB_RUNNER" start-check all-systems "$SCRIPT_DIR/ultimate-updater" all
+      fi
     fi
     return $?
   fi
@@ -1393,7 +1402,11 @@ check-node)
       run_node_check "$2"
     else
       require_file "$JOB_RUNNER" "job runner" || exit 1
-      "$JOB_RUNNER" start-check "$2" "$SCRIPT_DIR/ultimate-updater" node
+      if interactive_requested; then
+        UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start-check "$2" "$SCRIPT_DIR/ultimate-updater" node
+      else
+        "$JOB_RUNNER" start-check "$2" "$SCRIPT_DIR/ultimate-updater" node
+      fi
     fi
     ;;
   update-node)

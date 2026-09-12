@@ -299,7 +299,7 @@ def scheduler_unit_files(schedule, unit_dir, cli):
     commands = scheduler_commands(schedule, cli)
     service_lines = ["[Unit]", f"Description=Ultimate Updater scheduled {action}", "", "[Service]",
                      "Type=oneshot", "Environment=UU_JOB_SOURCE=scheduler",
-                     "Environment=UU_JOB_INTERACTIVE=true"]
+                     "Environment=UU_NONINTERACTIVE=true"]
     service_lines.extend(f"ExecStart={shlex.join(command)}" for command in commands)
     service_lines.append("")
     service_text = "\n".join(service_lines)
@@ -3655,7 +3655,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         started, errors = [], []
         for command in scheduler_commands(schedule, self.server.cli):
             result = self.run_command(command, timeout=30, extra_env={
-                "UU_JOB_SOURCE": "scheduler", "UU_JOB_INTERACTIVE": "true",
+                "UU_JOB_SOURCE": "scheduler", "UU_NONINTERACTIVE": "true",
             })
             output = f"{result.stdout}\n{result.stderr}"
             job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
@@ -4020,7 +4020,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         try:
             result = self.run_command([str(self.server.job_runner), "start-check", target,
-                                       str(self.server.cli), "target"], timeout=15)
+                                       str(self.server.cli), "target"], timeout=15,
+                                      extra_env={"UU_JOB_INTERACTIVE": "true"})
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("CHECK_START_FAILED", "The check job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
@@ -4095,7 +4096,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         return node
 
     def action_check_all(self, remote_trace=False):
-        extra_env = {"UU_REMOTE_TRACE": "true"} if remote_trace is True else None
+        extra_env = {"UU_JOB_INTERACTIVE": "true"}
+        if remote_trace is True:
+            extra_env["UU_REMOTE_TRACE"] = "true"
         try:
             result = self.run_command([str(self.server.job_runner), "start-check", "all-systems",
                                        str(self.server.cli), "all"], timeout=15, extra_env=extra_env)
@@ -4159,7 +4162,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         try:
             action_target = self.node_action_target(node)
             result = self.run_command([str(self.server.job_runner), "start-check", action_target,
-                                       str(self.server.cli), "node"], timeout=15)
+                                       str(self.server.cli), "node"], timeout=15,
+                                      extra_env={"UU_JOB_INTERACTIVE": "true"})
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("CHECK_START_FAILED", "The node check job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
