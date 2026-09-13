@@ -570,6 +570,11 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "Live connection unavailable; the job is still running." in WEB.PAGE
     assert "state.terminal?.dispose();state.resizeObserver?.disconnect();state.eventSource=null;interactiveTerminal=null" in WEB.PAGE
     assert "await disposeInteractiveTerminal(true);await openInteractiveTerminal(unit)" not in WEB.PAGE
+    assert "userClosedTerminal=false,reconnectTimer=null,terminalGeneration=0" in WEB.PAGE
+    assert "const closeInteractiveTerminal=async()=>{userClosedTerminal=true;terminalGeneration++" in WEB.PAGE
+    assert "if(userClosedTerminal||generation!==terminalGeneration||interactiveTerminal!==state)" in WEB.PAGE
+    assert "if(!userClosedTerminal&&generation===terminalGeneration)await openInteractiveTerminal(unit,true,generation)" in WEB.PAGE
+    assert "interactive-terminal-detach').onclick=()=>closeInteractiveTerminal()" in WEB.PAGE
     assert "interactive-terminal-keybar" in WEB.PAGE
     jobs_position = WEB.PAGE.index('<section id="jobs"')
     terminal_position = WEB.PAGE.index('<section id="interactive-terminal-panel"')
