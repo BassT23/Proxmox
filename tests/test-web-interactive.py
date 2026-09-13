@@ -568,6 +568,8 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "scheduleInteractiveReconnect" in WEB.PAGE
     assert "state.eventSource.readyState===EventSource.CLOSED" in WEB.PAGE
     assert "Live connection unavailable; the job is still running." in WEB.PAGE
+    assert "state.terminal?.dispose();state.resizeObserver?.disconnect();state.eventSource=null;interactiveTerminal=null" in WEB.PAGE
+    assert "await disposeInteractiveTerminal(true);await openInteractiveTerminal(unit)" not in WEB.PAGE
     assert "interactive-terminal-keybar" in WEB.PAGE
     jobs_position = WEB.PAGE.index('<section id="jobs"')
     terminal_position = WEB.PAGE.index('<section id="interactive-terminal-panel"')
