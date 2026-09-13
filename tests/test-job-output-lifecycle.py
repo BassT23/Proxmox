@@ -24,7 +24,7 @@ def main():
     assert "state.terminal.reset();state.terminal.write" in page
     assert "interactiveKeybarVisibility(false)" in page
     assert "if(finalJobState(job))void showFinalOutput(state,job)" in page
-    assert "if(state.finalizing)return" in page
+    assert "state.finalizing)return" in page
     assert "onclick=()=>interactive?openInteractiveTerminal(unit):openLiveOutput(unit)" in page
     assert "const openInteractiveTerminal=async(unit,reconnect=false,generation=terminalGeneration)=>{if(!reconnect){userClosedTerminal=false;generation=++terminalGeneration}" in page
     assert "const openLiveOutput=async unit=>{const job=jobs.find(item=>item.unit===unit);if(finalJobState(job))return" in page

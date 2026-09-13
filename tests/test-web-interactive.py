@@ -575,6 +575,7 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "if(userClosedTerminal||generation!==terminalGeneration||interactiveTerminal!==state)" in WEB.PAGE
     assert "if(!userClosedTerminal&&generation===terminalGeneration)await openInteractiveTerminal(unit,true,generation)" in WEB.PAGE
     assert "interactive-terminal-detach').onclick=()=>closeInteractiveTerminal()" in WEB.PAGE
+    assert "source.onopen=()=>{if(interactiveTerminal===state&&!userClosedTerminal)terminalStatus('Connected')}" in WEB.PAGE
     assert "interactive-terminal-keybar" in WEB.PAGE
     jobs_position = WEB.PAGE.index('<section id="jobs"')
     terminal_position = WEB.PAGE.index('<section id="interactive-terminal-panel"')
