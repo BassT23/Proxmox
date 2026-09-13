@@ -1512,7 +1512,7 @@ class InteractiveJobBroker:
                 if remote_command is not None:
                     process = subprocess.Popen(
                         remote_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL, bufsize=0,
+                        stderr=subprocess.PIPE, bufsize=0,
                     )
                     connection = RemoteInteractiveConnection(process)
                 else:
@@ -1524,12 +1524,25 @@ class InteractiveJobBroker:
                 # Give dialog/whiptail a stable usable size instead of the
                 # PTY default until a future terminal UI can resize it.
                 connection.sendall(b"\x00UU_RESIZE 24 80\n")
+                if process is not None:
+                    try:
+                        process.wait(timeout=0.2)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    else:
+                        raise RuntimeError("The remote interactive terminal could not be attached.")
             except (OSError, subprocess.SubprocessError) as error:
                 if connection is not None:
                     connection.close()
                 elif process is not None:
                     process.terminate()
                 raise RuntimeError("The interactive job socket is unavailable.") from error
+            except RuntimeError:
+                if connection is not None:
+                    connection.close()
+                elif process is not None:
+                    process.terminate()
+                raise
             item = {
                 "socket": connection, "owner": owner, "ready": threading.Event(), "busy": False,
                 "output": deque(), "output_bytes": 0, "next_seq": 0,
@@ -2892,6 +2905,9 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         except RuntimeError as error:
             message = str(error)
+            if job.get("remote") and "remote interactive terminal" in message.lower():
+                self.send_json(error_payload("REMOTE_ATTACH_FAILED", message), HTTPStatus.BAD_GATEWAY)
+                return
             code = "JOB_INPUT_BUSY" if "already attached" in message else "JOB_INPUT_UNAVAILABLE"
             status = HTTPStatus.CONFLICT if code == "JOB_INPUT_BUSY" else HTTPStatus.UNPROCESSABLE_ENTITY
             self.send_json(error_payload(code, message), status)

@@ -1131,11 +1131,20 @@ remote_attach() {
   IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
   workspace=$(state_value "$(remote_ref_file "$unit")" workspace 2>/dev/null || true)
   if [[ -n "$workspace" ]]; then
+    [[ "$workspace" =~ ^/tmp/ultimate-updater-update-node-[0-9]+-[0-9]+-[0-9]+$ ]] || {
+      printf 'Remote job workspace is invalid: %s\n' "$unit" >&2
+      return 1
+    }
     runner="$workspace/job-runner.sh"
   else
     runner="/etc/ultimate-updater/job-runner.sh"
   fi
-  printf -v remote_command 'exec %q attach %q' "$runner" "$unit"
+  if [[ -n "$workspace" ]]; then
+    printf -v remote_command 'exec /usr/bin/env UU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q UU_PTY_BRIDGE=%q %q attach %q' \
+      "$workspace" "$workspace" "$workspace/job-pty-bridge.py" "$runner" "$unit"
+  else
+    printf -v remote_command 'exec %q attach %q' "$runner" "$unit"
+  fi
   exec ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
 }
 

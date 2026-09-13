@@ -502,6 +502,8 @@ def test_live_output_uses_job_bound_read_only_journal_stream():
     assert '"--lines", "200"' in source
     assert 'command = [str(self.server.job_runner), "remote-log-follow", unit]' in source
     assert 'remote_command = [str(self.server.job_runner), "remote-attach", unit]' in source
+    assert 'REMOTE_ATTACH_FAILED' in source
+    assert 'The remote interactive terminal could not be attached.' in source
     assert "class RemoteInteractiveConnection" in source
     assert "job.get(\"remote\")" in source
     assert "direct_job_record(unit)" in source
