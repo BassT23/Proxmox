@@ -26,6 +26,11 @@ def test_state_metadata_is_backward_compatible():
     new = WEB.parse_state_line("unit\ttarget\trunning\tstart\t\t\tupdate\t\tsource\ttrue\ttrue")
     assert new["interactive"] is True
     assert new["socket_available"] is True
+    remote = WEB.parse_state_line("unit\ttarget\trunning\tstart\t\t\tupdate\tnode2\tsource\ttrue\ttrue")
+    assert remote["remote"] is True
+    assert remote["owner_node"] == "node2"
+    assert remote["interactive"] is True
+    assert remote["socket_available"] is True
 
 
 def test_broker_forwards_input_and_releases_attachment():
@@ -495,6 +500,10 @@ def test_live_output_uses_job_bound_read_only_journal_stream():
     assert '"--output=json"' in source
     assert '"--after-cursor"' in source
     assert '"--lines", "200"' in source
+    assert 'command = [str(self.server.job_runner), "remote-log-follow", unit]' in source
+    assert 'remote_command = [str(self.server.job_runner), "remote-attach", unit]' in source
+    assert "class RemoteInteractiveConnection" in source
+    assert "job.get(\"remote\")" in source
     assert "direct_job_record(unit)" in source
     assert "JOB_STREAM_UNAVAILABLE" in source
     assert "Interactive jobs use the terminal stream." in source

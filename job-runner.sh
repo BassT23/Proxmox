@@ -339,8 +339,10 @@ remote_state_line() {
       { values[$1]=$0; sub(/^[^=]*=/, "", values[$1]) }
       END {
         if (values["unit"] == "") exit 1
-        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", values["unit"], values["target"],
-          values["state"], values["started_at"], values["finished_at"], values["exit_code"], owner
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", values["unit"], values["target"],
+          values["state"], values["started_at"], values["finished_at"], values["exit_code"],
+          values["type"], owner, values["source"], values["interactive"],
+          (values["state"] == "running" && values["interactive"] == "true" ? "true" : "false")
       }' <<< "$output") || remote_line=""
     if [[ -n "$remote_line" ]]; then
       printf '%s\n' "$remote_line"
@@ -1112,6 +1114,31 @@ remote_log_full() {
   ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
 }
 
+remote_log_follow() {
+  local unit="$1" cursor="${2:-}" ref_line target owner_node owner_host port remote_command
+  ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  printf -v remote_command 'journalctl -u %q --output=json --no-pager --follow --lines 200' "$unit"
+  if [[ -n "$cursor" ]]; then
+    printf -v remote_command '%s --after-cursor %q' "$remote_command" "$cursor"
+  fi
+  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
+}
+
+remote_attach() {
+  local unit="$1" ref_line target owner_node owner_host port workspace runner remote_command
+  ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  workspace=$(state_value "$(remote_ref_file "$unit")" workspace 2>/dev/null || true)
+  if [[ -n "$workspace" ]]; then
+    runner="$workspace/job-runner.sh"
+  else
+    runner="/etc/ultimate-updater/job-runner.sh"
+  fi
+  printf -v remote_command 'exec %q attach %q' "$runner" "$unit"
+  exec ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
+}
+
 attach_job() {
   local unit="$1" file state interactive socket_path
   valid_unit "$unit" || { printf 'Invalid job ID: %s\n' "$unit" >&2; return 2; }
@@ -1191,6 +1218,14 @@ case "${1:-}" in
   remote-log-full)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     remote_log_full "$2"
+    ;;
+  remote-log-follow)
+    [[ $# -eq 2 || $# -eq 3 ]] || { usage >&2; exit 2; }
+    remote_log_follow "$2" "${3:-}"
+    ;;
+  remote-attach)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    remote_attach "$2"
     ;;
   *)
     usage >&2

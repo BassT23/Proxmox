@@ -1317,6 +1317,49 @@ def parse_state_line(line):
             "interactive": interactive, "socket_available": socket_available}
 
 
+class RemoteInteractiveConnection:
+    """Adapt a controlled SSH subprocess to the broker's socket interface."""
+
+    def __init__(self, process):
+        self.process = process
+
+    def recv(self, size):
+        if self.process.stdout is None:
+            return b""
+        data = self.process.stdout.read(size)
+        return data or b""
+
+    def sendall(self, data):
+        if self.process.stdin is None:
+            raise OSError("remote input is unavailable")
+        self.process.stdin.write(data)
+        self.process.stdin.flush()
+
+    def shutdown(self, _how):
+        if self.process.stdin is not None:
+            try:
+                self.process.stdin.close()
+            except OSError:
+                pass
+
+    def close(self):
+        for stream in (self.process.stdin, self.process.stdout):
+            if stream is not None and not stream.closed:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+        if self.process.poll() is None:
+            try:
+                self.process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
+
+
 class InteractiveJobBroker:
     """Keep one authenticated WebUI connection to a job's PTY socket.
 
@@ -1434,7 +1477,7 @@ class InteractiveJobBroker:
             raise RuntimeError("This WebUI attachment is no longer valid.")
         return item
 
-    def attach(self, unit, owner, socket_path):
+    def attach(self, unit, owner, socket_path, remote_command=None):
         with self.lock:
             existing = self.clients.get(unit)
             if existing is not None:
@@ -1445,17 +1488,29 @@ class InteractiveJobBroker:
         # observed by the bridge.  Retry that transient BUSY state briefly;
         # a genuinely attached CLI still receives a bounded BUSY response.
         for attempt in range(10):
-            connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            process = None
+            connection = None
             try:
-                connection.settimeout(1.0)
-                connection.connect(str(socket_path))
-                connection.settimeout(None)
+                if remote_command is not None:
+                    process = subprocess.Popen(
+                        remote_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL, bufsize=0,
+                    )
+                    connection = RemoteInteractiveConnection(process)
+                else:
+                    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    connection.settimeout(1.0)
+                    connection.connect(str(socket_path))
+                    connection.settimeout(None)
                 # The compact input panel is not a full terminal emulator.
                 # Give dialog/whiptail a stable usable size instead of the
                 # PTY default until a future terminal UI can resize it.
                 connection.sendall(b"\x00UU_RESIZE 24 80\n")
-            except OSError as error:
-                connection.close()
+            except (OSError, subprocess.SubprocessError) as error:
+                if connection is not None:
+                    connection.close()
+                elif process is not None:
+                    process.terminate()
                 raise RuntimeError("The interactive job socket is unavailable.") from error
             item = {
                 "socket": connection, "owner": owner, "ready": threading.Event(), "busy": False,
@@ -2784,6 +2839,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             raise RuntimeError("The job is no longer running.")
         if not job.get("interactive"):
             raise RuntimeError("The job does not accept interactive input.")
+        if job.get("remote"):
+            return job, None
         socket_path = self.server.interactive_broker.socket_path(unit)
         state_file = self.server.jobs_dir / f"{unit}.state"
         try:
@@ -2803,7 +2860,12 @@ class StatusHandler(BaseHTTPRequestHandler):
     def handle_interactive_attach(self, unit):
         try:
             job, socket_path = self.interactive_job_context(unit)
-            attachment_id = self.server.interactive_broker.attach(unit, self.session_owner(), socket_path)
+            remote_command = None
+            if job.get("remote"):
+                remote_command = [str(self.server.job_runner), "remote-attach", unit]
+            attachment_id = self.server.interactive_broker.attach(
+                unit, self.session_owner(), socket_path, remote_command=remote_command,
+            )
         except KeyError:
             self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
             return
@@ -2937,13 +2999,18 @@ class StatusHandler(BaseHTTPRequestHandler):
         if job.get("state") != "running":
             self.send_json(error_payload("JOB_STREAM_UNAVAILABLE", "The job is no longer running."), HTTPStatus.CONFLICT)
             return
-        command = [
-            "journalctl", "--unit", unit, "--output=json", "--no-pager", "--follow",
-        ]
-        if last_event:
-            command.extend(["--after-cursor", last_event])
+        if job.get("remote"):
+            command = [str(self.server.job_runner), "remote-log-follow", unit]
+            if last_event:
+                command.append(last_event)
         else:
-            command.extend(["--lines", "200"])
+            command = [
+                "journalctl", "--unit", unit, "--output=json", "--no-pager", "--follow",
+            ]
+            if last_event:
+                command.extend(["--after-cursor", last_event])
+            else:
+                command.extend(["--lines", "200"])
         try:
             process = subprocess.Popen(
                 command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
