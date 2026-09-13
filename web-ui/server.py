@@ -984,10 +984,18 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const decorateInteractiveJobs=()=>document.querySelectorAll('#jobs .job').forEach(decorateInteractiveJob);
     const decorateAllLiveJobs=()=>document.querySelectorAll('#jobs .job').forEach(item=>{const unit=item.dataset.unit,job=jobs.find(candidate=>candidate.unit===unit),running=job?.state==='running',interactive=job?.interactive===true;let controls=item.querySelector('.interactive-controls');if(!running){if(controls)controls.remove();if(!interactiveTerminal||interactiveTerminal.unit!==unit)interactiveAttachments.delete(unit);return}if(!controls){controls=document.createElement('div');controls.className='interactive-controls';controls.innerHTML='<span class="interactive-status"></span><button type="button" data-live-job></button>';item.appendChild(controls);controls.querySelector('[data-live-job]').onclick=()=>interactive?openInteractiveTerminal(unit):openLiveOutput(unit)}const status=controls.querySelector('.interactive-status'),button=controls.querySelector('[data-live-job]');status.textContent=interactive?(interactiveAttached.has(unit)?'Interactive terminal attached':'Interactive terminal available'):'Live output available';button.textContent=interactive?(interactiveTerminal?.unit===unit?'Terminal open':'Live terminal'):'Live output';button.disabled=false});
     const renderJobsBase=renderJobs;renderJobs=function(){renderJobsBase();renderRunningIndicator();decorateJobRows();decorateAllLiveJobs()};window.renderJobs=renderJobs;
-    document.getElementById('jobs').addEventListener('click',event=>{const button=event.target.closest('button[data-job]'),job=button&&jobs.find(item=>item.unit===button.dataset.job);if(!button||button.textContent!=='Show log'||job?.state!=='running')return;event.preventDefault();event.stopImmediatePropagation();if(job.interactive)void openInteractiveTerminal(job.unit);else void openLiveOutput(job.unit)},true);
+    // Show log remains an independent server-side log view, including while a
+    // job is running. Live terminal/output is opened only by its own action.
     document.getElementById('check-all').onclick=()=>globalAction(false);
     document.getElementById('update-all').onclick=()=>globalAction(true);
     clearTimeout(pollTimer);
+  </script>
+  <script>
+    // Rebuild a lost interactive attachment from the same running job. The
+    // terminal is reset before replaying the PTY backlog, so history is not
+    // duplicated and no second job is created.
+    const scheduleInteractiveReconnect=state=>{if(!state||state.reconnectScheduled||state.mode==='final')return;const unit=state.unit,job=jobs.find(item=>item.unit===unit);if(!job||job.state!=='running')return;state.reconnectScheduled=true;terminalStatus('Reconnecting…');setTimeout(async()=>{if(interactiveTerminal!==state||jobs.find(item=>item.unit===unit)?.state!=='running'){return}try{await disposeInteractiveTerminal(true);await openInteractiveTerminal(unit)}catch(error){if(interactiveTerminal?.unit===unit)terminalMessage(error.message||'Live connection unavailable; the job is still running.',true)}finally{if(interactiveTerminal?.unit===unit)interactiveTerminal.reconnectScheduled=false}},1000)};
+    setInterval(()=>{const state=interactiveTerminal;if(!state||state.mode==='final'||!state.eventSource)return;if(state.eventSource.readyState===EventSource.CLOSED)scheduleInteractiveReconnect(state)},500);
   </script>
   <script>
     // Job polling is the authoritative source for the final interactive

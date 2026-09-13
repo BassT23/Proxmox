@@ -507,6 +507,8 @@ def test_live_output_uses_job_bound_read_only_journal_stream():
     assert "/api/jobs/${encodeURIComponent(unit)}/input" in WEB.PAGE
     assert "X-CSRF-Token" in WEB.PAGE
     assert "new MutationObserver(()=>decorateInteractiveJobs())" not in WEB.PAGE
+    assert "Show log remains an independent server-side log view" in WEB.PAGE
+    assert "stopImmediatePropagation" not in WEB.PAGE
 
 
 def test_local_xterm_terminal_assets_and_stable_panel():
@@ -563,6 +565,9 @@ def test_local_xterm_terminal_assets_and_stable_panel():
     assert "interactive-terminal-font-increase" in WEB.PAGE
     assert 'aria-label="Close window"' in WEB.PAGE
     assert ">Close window</button>" in WEB.PAGE
+    assert "scheduleInteractiveReconnect" in WEB.PAGE
+    assert "state.eventSource.readyState===EventSource.CLOSED" in WEB.PAGE
+    assert "Live connection unavailable; the job is still running." in WEB.PAGE
     assert "interactive-terminal-keybar" in WEB.PAGE
     jobs_position = WEB.PAGE.index('<section id="jobs"')
     terminal_position = WEB.PAGE.index('<section id="interactive-terminal-panel"')

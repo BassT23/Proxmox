@@ -25,7 +25,7 @@ def main():
     assert "interactiveKeybarVisibility(false)" in page
     assert "if(finalJobState(job))void showFinalOutput(state,job)" in page
     assert "if(state.finalizing)return" in page
-    assert "if(job.interactive)void openInteractiveTerminal(job.unit);else void openLiveOutput(job.unit)" in page
+    assert "onclick=()=>interactive?openInteractiveTerminal(unit):openLiveOutput(unit)" in page
     assert "const openInteractiveTerminal=async unit=>{const job=jobs.find(item=>item.unit===unit);if(finalJobState(job))return" in page
     assert "const openLiveOutput=async unit=>{const job=jobs.find(item=>item.unit===unit);if(finalJobState(job))return" in page
     print("job output lifecycle contract: PASS")
