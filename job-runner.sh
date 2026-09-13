@@ -544,6 +544,7 @@ start_job() {
   fi
   [[ -n "${UU_LOCAL_FILES:-}" ]] && systemd_env+=("--setenv=UU_LOCAL_FILES=$UU_LOCAL_FILES")
   [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && systemd_env+=("--setenv=UU_REMOTE_WORK_DIR=$UU_REMOTE_WORK_DIR")
+  [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   [[ "$target" =~ ^[0-9]+$ ]] && systemd_env+=("--setenv=UU_POST_UPDATE_STATUS_CAPTURE=true")
   prepare_systemd_log_filters
 
@@ -590,6 +591,7 @@ start_global_job() {
   fi
   systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
   [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
+  [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
     systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
   fi
@@ -790,6 +792,7 @@ start_check_job() {
   unit="${CHECK_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
   [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
+  [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   [[ "${UU_REMOTE_TRACE:-false}" == true ]] && systemd_env+=("--setenv=UU_REMOTE_TRACE=true")
   if [[ "$mode" == target || "$mode" == node ]]; then
     systemd_env+=("--setenv=UU_SINGLE_TARGET=true" \
