@@ -1286,6 +1286,24 @@ def error_payload(code, message):
     return {"error": {"code": code, "message": message}}
 
 
+def update_start_failure_message(result, generic_message):
+    """Return a useful update-start error without exposing command details."""
+    diagnostic = "\n".join(
+        str(value or "") for value in (getattr(result, "stdout", ""), getattr(result, "stderr", ""))
+    )
+    if "Interactive job bridge is not available" in diagnostic:
+        return "Interactive job setup failed."
+    if "Could not prepare remote update workspace" in diagnostic:
+        return "The remote node is unavailable."
+    if "Could not transfer remote update helper" in diagnostic:
+        return "The remote job runner could not be prepared."
+    if "Could not start update job" in diagnostic:
+        return "The remote job runner could not start the job."
+    if getattr(result, "returncode", None) == 124:
+        return "Job start timed out."
+    return f"{generic_message} (exit code {getattr(result, 'returncode', 'unknown')})."
+
+
 def parse_state_line(line):
     fields = line.rstrip("\n").split("\t")
     if len(fields) < 6:
@@ -4128,7 +4146,10 @@ class StatusHandler(BaseHTTPRequestHandler):
             command.append("--without-verified-backup")
         try:
             result = self.run_command(command, timeout=30, extra_env={"UU_JOB_INTERACTIVE": "true"})
-        except (OSError, subprocess.TimeoutExpired):
+        except subprocess.TimeoutExpired:
+            self.send_json(error_payload("UPDATE_START_FAILED", "Job start timed out."), HTTPStatus.GATEWAY_TIMEOUT)
+            return
+        except OSError:
             self.send_json(error_payload("UPDATE_START_FAILED", "The update job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
         output = f"{result.stdout}\n{result.stderr}"
@@ -4141,7 +4162,8 @@ class StatusHandler(BaseHTTPRequestHandler):
                 ), HTTPStatus.CONFLICT)
                 return
             code = "JOB_ALREADY_RUNNING" if result.returncode == 3 else "UPDATE_START_FAILED"
-            message = "An update job is already running for this target." if result.returncode == 3 else "The update job could not be started."
+            message = ("An update job is already running for this target." if result.returncode == 3 else
+                       update_start_failure_message(result, "The update job could not be started."))
             self.send_json(error_payload(code, message), HTTPStatus.CONFLICT if result.returncode == 3 else HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         if not job_match or not JOB_RE.fullmatch(job_match.group(1)):
@@ -4262,7 +4284,10 @@ class StatusHandler(BaseHTTPRequestHandler):
             action_target = self.node_action_target(node)
             result = self.run_command([str(self.server.cli), "update-node", action_target], timeout=30,
                                       extra_env={"UU_JOB_INTERACTIVE": "true"})
-        except (OSError, subprocess.TimeoutExpired):
+        except subprocess.TimeoutExpired:
+            self.send_json(error_payload("UPDATE_START_FAILED", "Job start timed out."), HTTPStatus.GATEWAY_TIMEOUT)
+            return
+        except OSError:
             self.send_json(error_payload("UPDATE_START_FAILED", "The node update job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
         output = f"{result.stdout}\n{result.stderr}"
@@ -4271,10 +4296,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("JOB_ALREADY_RUNNING", "An update job is already running for this node."), HTTPStatus.CONFLICT)
             return
         if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
-            detail = (result.stderr or result.stdout or "").strip().replace("\n", " ")[:300]
-            message = "The node update job could not be started."
-            if detail:
-                message += f" {detail}"
+            message = update_start_failure_message(result, "The node update job could not be started.")
             self.send_json(error_payload("UPDATE_START_FAILED", message), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         job_unit = job_match.group(1)
