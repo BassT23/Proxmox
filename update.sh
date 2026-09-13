@@ -13,6 +13,8 @@ SAFETY_FAILURE=false
 # Continue-on-error keeps processing later targets, but real target failures
 # must still produce a non-zero final update result.
 UPDATE_FAILURE=false
+SINGLE_TARGET_EXECUTED=false
+TARGET_SELECTION_RUNTIME_ERROR=false
 
 # Variable / Function
 LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
@@ -669,7 +671,11 @@ READ_CONFIG () {
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
   if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
     export UU_FILTER_SCOPE=update
-    apply_only_exclude_tags ONLY EXCLUDED
+    if ! apply_only_exclude_tags ONLY EXCLUDED &&
+      [[ "${TARGET_SELECTION_RUNTIME_ERROR:-false}" == true ]]; then
+      printf 'Internal target selection runtime is unavailable; refusing legacy fallback.\n' >&2
+      return 1
+    fi
   fi
   EMAIL_USER=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$CONFIG_FILE")
   EMAIL_USER="${EMAIL_USER:-root}"
@@ -1444,12 +1450,14 @@ CONTAINER_UPDATE_START () {
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     ERROR_CODE=""
-    if [[ "$SINGLE_UPDATE" != true && "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS update "$CONTAINER" "$CONTAINERS"; then
+    if [[ "$SINGLE_UPDATE" == true && "$CONTAINER" != "$ONLY" ]]; then
+      continue
+    elif [[ "$SINGLE_UPDATE" != true && "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS update "$CONTAINER" "$CONTAINERS"; then
       echo -e "⏩${BL:-} Skipped LXC $CONTAINER by internal target selection${CL:-}\n\n"
-    elif guest_id_matches "$EXCLUDED" "$CONTAINER"; then
-      echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
-    elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$CONTAINER"; then
-      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"; else continue; fi
+    elif [[ "$SINGLE_UPDATE" != true ]] && guest_id_matches "$EXCLUDED" "$CONTAINER"; then
+      echo -e "⏩${BL:-} Skipped LXC $CONTAINER by update filter (excluded)${CL:-}\n\n"
+    elif [[ "$SINGLE_UPDATE" != true && "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$CONTAINER"; then
+      echo -e "⏩${BL:-} Skipped LXC $CONTAINER by update filter (not selected)${CL:-}\n\n"
     elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
       echo -e "⏩ ${OR:-}LXC $CONTAINER is a template - skip update${CL:-}\n\n"
       continue
@@ -1463,6 +1471,7 @@ CONTAINER_UPDATE_START () {
         echo -e "⏳${GN:-} Waiting for LXC ${BL:-}$CONTAINER${CL:-}${GN:-} to start ${CL:-}"
 #        sleep "$LXC_START_DELAY"
         if WAIT_FOR_BOOTUP_LXC; then
+          SINGLE_TARGET_EXECUTED=true
           UPDATE_CONTAINER "$CONTAINER"
           CAPTURE_POST_UPDATE_STATUS "$CONTAINER" ccontainer
         else
@@ -1477,12 +1486,13 @@ CONTAINER_UPDATE_START () {
         RUN_PROXMOX_COMMAND pct shutdown "$CONTAINER" &
         WILL_STOP="false"
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" != true ]]; then
-        echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
+        echo -e "⏩${BL:-} Skipped LXC $CONTAINER because stopped containers are disabled${CL:-}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" == true ]]; then
+        SINGLE_TARGET_EXECUTED=true
         UPDATE_CONTAINER "$CONTAINER"
         CAPTURE_POST_UPDATE_STATUS "$CONTAINER" ccontainer
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" != true ]]; then
-        echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
+        echo -e "⏩${BL:-} Skipped LXC $CONTAINER because running containers are disabled${CL:-}\n\n"
       else
         echo -e "⚠ Can't find status, please report this issue${CL:-}\n\n"
         UPDATE_FAILURE=true
@@ -1661,12 +1671,14 @@ VM_UPDATE_START () {
   # Loop through the VMs
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep ostype || true)
-    if [[ "$SINGLE_UPDATE" != true && "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS update "$VM" "$VMS"; then
+    if [[ "$SINGLE_UPDATE" == true && "$VM" != "$ONLY" ]]; then
+      continue
+    elif [[ "$SINGLE_UPDATE" != true && "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS update "$VM" "$VMS"; then
       echo -e "⏩${BL:-} Skipped VM $VM by internal target selection${CL:-}\n\n"
-    elif guest_id_matches "$EXCLUDED" "$VM"; then
-      echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
-    elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
-      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"; else continue; fi
+    elif [[ "$SINGLE_UPDATE" != true ]] && guest_id_matches "$EXCLUDED" "$VM"; then
+      echo -e "⏩${BL:-} Skipped VM $VM by update filter (excluded)${CL:-}\n\n"
+    elif [[ "$SINGLE_UPDATE" != true && "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
+      echo -e "⏩${BL:-} Skipped VM $VM by update filter (not selected)${CL:-}\n\n"
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
       echo -e "⏩${BL:-} ${OR:-}VM $VM is a template - skip update${CL:-}\n\n"
       continue
@@ -1683,6 +1695,7 @@ VM_UPDATE_START () {
           echo -e " ▶${GN:-} Starting VM${BL:-} $VM ${CL:-}"
           RUN_PROXMOX_COMMAND qm start "$VM"
           START_WAITING="true"
+          SINGLE_TARGET_EXECUTED=true
           UPDATE_VM "$VM"
           CAPTURE_POST_UPDATE_STATUS "$VM" cvm
           # Stop the VM
@@ -1694,12 +1707,13 @@ VM_UPDATE_START () {
           echo -e "⏩${BL:-} Skipped VM $VM because, QEMU or SSH hasn't initialized${CL:-}\n\n"
         fi
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" != true ]]; then
-        echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
+        echo -e "⏩${BL:-} Skipped VM $VM because stopped VMs are disabled${CL:-}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
+        SINGLE_TARGET_EXECUTED=true
         UPDATE_VM "$VM"
         CAPTURE_POST_UPDATE_STATUS "$VM" cvm
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" != true ]]; then
-        echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
+        echo -e "⏩${BL:-} Skipped VM $VM because running VMs are disabled${CL:-}\n\n"
       else
         echo -e "⚠ Can't find status, please report this issue${CL:-}\n\n"
         UPDATE_FAILURE=true
@@ -2025,7 +2039,9 @@ UPDATE_VM_QEMU_WINDOWS () {
 }
 
 ## General ##
-READ_CONFIG
+if ! READ_CONFIG; then
+  exit 1
+fi
 
 # Debug
 DEBUG=$(awk -F'"' '/^DEBUG=/ {print $2}' $CONFIG_FILE)
@@ -2248,6 +2264,11 @@ fi
 
 if [[ "$SAFETY_FAILURE" == true ]]; then
   exit 1
+fi
+
+if [[ "$SINGLE_UPDATE" == true && "$SINGLE_TARGET_EXECUTED" != true ]]; then
+  printf 'Explicit target %s was not updated; no update lifecycle was started.\n' "$ONLY" >&2
+  UPDATE_FAILURE=true
 fi
 
 if ! UPDATE_FINAL_RC 0; then

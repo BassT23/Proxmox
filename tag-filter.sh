@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2034 # TARGET_SELECTION_RUNTIME_ERROR is consumed by update.sh.
 
 ##############
 # Tag-filter #
@@ -187,7 +188,13 @@ apply_only_exclude_tags() {
 
   # Indirect expansion: read caller-provided variables.
   local _ONLY_VALUE="${!_only_var_name}" _EXCLUDE_VALUE="${!_exclude_var_name}"
-  if declare -f TARGET_SELECTION_ENABLED >/dev/null 2>&1 && TARGET_SELECTION_ENABLED; then
+  if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true ]]; then
+    # Internal selection is authoritative.  Never silently fall back to
+    # Proxmox tag filters when its runtime helper is unavailable or invalid.
+    if ! declare -f TARGET_SELECTION_ENABLED >/dev/null 2>&1 || ! TARGET_SELECTION_ENABLED; then
+      TARGET_SELECTION_RUNTIME_ERROR=true
+      return 1
+    fi
     # Internal rules supersede Proxmox tags while preserving the configured
     # tag values on disk.  The caller supplies the eligible guest IDs when it
     # knows them; an empty list is intentionally not treated as a selection.

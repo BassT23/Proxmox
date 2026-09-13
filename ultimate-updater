@@ -728,6 +728,7 @@ remote_update_job() {
   local port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
   local legacy_profile="$LOCAL_FILES/VMs/$target"
   local user="${REMOTE_NODE_USER:-root}" output job_unit command remote_update_dir source scope_env=''
+  local target_selection_file="${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}"
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
   remote_update_dir="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
   if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "mkdir -p -- '$remote_update_dir'"; then
@@ -737,6 +738,7 @@ remote_update_job() {
   for source in \
     "$JOB_RUNNER" "$UPDATE_SCRIPT" "$LOCAL_FILES/update.conf" \
     "$LOCAL_FILES/tag-filter.sh" "$LOCAL_FILES/status-model.sh" \
+    "$LOCAL_FILES/target-selection.sh" "$target_selection_file" \
     "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/ultimate-updater" \
     "$LOCAL_FILES/qga-guest-exec.sh" \
     "$LOCAL_FILES/target-runtime.sh" "$LOCAL_FILES/cluster-target.sh" \
@@ -784,8 +786,8 @@ remote_update_job() {
   if [[ "$remote_target" == host ]]; then
     scope_env='UU_UPDATE_SCOPE=host '
   fi
-  printf -v command 'exec /usr/bin/env %sUU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q %q start %q %q' \
-    "$scope_env" "$remote_update_dir" "$remote_update_dir" "$remote_update_dir/job-runner.sh" \
+  printf -v command 'exec /usr/bin/env %sUU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q UU_TARGET_SELECTION_FILE=%q %q start %q %q' \
+    "$scope_env" "$remote_update_dir" "$remote_update_dir" "$remote_update_dir/target-selection.json" "$remote_update_dir/job-runner.sh" \
     "$remote_update_dir/update.sh" "$remote_target"
   if ! output=$(timeout 30 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "$command"); then
     timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
