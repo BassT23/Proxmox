@@ -1,6 +1,27 @@
 Changelog:
 ==========
 
+**Unreleased**
+
+Added:
+- running jobs can be stopped from the Web UI after explicit confirmation, with clear mobile controls and preserved cancellation state
+
+Improved:
+- manually started jobs now use the interactive terminal by default, while scheduler and cron runs remain non-interactive
+- remote interactive jobs now retain their live terminal and output across cluster nodes, including reconnects, close/reopen, PTY runtime transfer, and remote journal streaming
+- remote update and terminal actions preserve the authoritative target-selection context and resolve jobs directly on their owner node
+
+Fixed:
+- check warning exit codes and completed-with-warnings results are preserved through job finalization
+- explicit remote single-target updates no longer fall back to legacy Proxmox exclude tags or report unrelated guests as skipped
+- remote interactive jobs now start and attach with the same temporary runtime, PTY bridge, and workspace context
+- remote terminal attach failures and update-start failures now produce visible, safe Web UI errors instead of silent or generic failures
+- duplicate update-check notifications are avoided and check-only runs skip update finalization while preserving their original result
+- installer startup tolerates a missing or unsuitable `TERM`, and installer failures are no longer masked as successful exits
+
+Security/Safety:
+- browser disconnects, terminal close/reopen, and remote stream failures remain independent from the running job and do not stop it
+
 **v5.1.3 Beta 4** (beta / release candidate for validation)
 
 Improved:
@@ -14,14 +35,6 @@ Fixed:
 - global checks that execute no targets no longer report a successful zero-update result
 - authenticated WebUI login now loads target-selection state before rendering the target controls
 - malformed persisted target-selection data is reported as unavailable instead of being exposed as an empty selection
-
-**Unreleased**
-
-Fixed:
-- duplicate update-summary notifications are no longer sent after `update -check`
-- check-only runs skip update finalization while preserving the original check exit status
-- installer startup no longer aborts when `TERM` is missing or unsuitable
-- installer failures are no longer masked as successful exits
 
 **v5.1.3 Beta 3** (beta / release candidate for validation)
 
