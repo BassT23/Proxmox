@@ -2795,24 +2795,34 @@ class StatusHandler(BaseHTTPRequestHandler):
                 if separator:
                     values[key] = value
         except OSError:
+            values = None
+        if values is not None and values.get("unit") == unit:
+            exit_code = values.get("exit_code", "")
+            return {
+                "unit": unit,
+                "target": values.get("target", ""),
+                "state": values.get("state", ""),
+                "started_at": values.get("started_at") or None,
+                "finished_at": values.get("finished_at") or None,
+                "exit_code": int(exit_code) if exit_code.lstrip("-").isdigit() else None,
+                "type": values.get("type") if values.get("type") in {"check", "update", "reboot", "selfupdate"} else "update",
+                "source": values.get("source") or None,
+                "owner_node": values.get("owner_node") or None,
+                "remote": bool(values.get("owner_node")),
+                "interactive": values.get("interactive", "false").lower() == "true",
+                "socket_available": False,
+            }
+        try:
+            result = self.run_command([str(self.server.job_runner), "show", unit], timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
             return None
-        if values.get("unit") != unit:
+        if result.returncode:
             return None
-        exit_code = values.get("exit_code", "")
-        return {
-            "unit": unit,
-            "target": values.get("target", ""),
-            "state": values.get("state", ""),
-            "started_at": values.get("started_at") or None,
-            "finished_at": values.get("finished_at") or None,
-            "exit_code": int(exit_code) if exit_code.lstrip("-").isdigit() else None,
-            "type": values.get("type") if values.get("type") in {"check", "update", "reboot", "selfupdate"} else "update",
-            "source": values.get("source") or None,
-            "owner_node": values.get("owner_node") or None,
-            "remote": bool(values.get("owner_node")),
-            "interactive": values.get("interactive", "false").lower() == "true",
-            "socket_available": False,
-        }
+        for line in result.stdout.splitlines():
+            row = parse_state_line(line)
+            if row and row.get("unit") == unit and row.get("remote"):
+                return row
+        return None
 
     def handle_job_cancel(self, unit):
         """Request cancellation of one running job.
@@ -2867,6 +2877,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         if not job:
             raise KeyError("Job not found.")
         if job.get("state") != "running":
+            if job.get("remote") and job.get("state") == "remote_unavailable":
+                raise RuntimeError("The remote job state is unavailable.")
             raise RuntimeError("The job is no longer running.")
         if not job.get("interactive"):
             raise RuntimeError("The job does not accept interactive input.")
@@ -2889,6 +2901,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         return job, socket_path
 
     def handle_interactive_attach(self, unit):
+        job = None
         try:
             job, socket_path = self.interactive_job_context(unit)
             remote_command = None
@@ -2905,7 +2918,10 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         except RuntimeError as error:
             message = str(error)
-            if job.get("remote") and "remote interactive terminal" in message.lower():
+            if job and job.get("remote") and "remote job state" in message.lower():
+                self.send_json(error_payload("REMOTE_RUNTIME_UNAVAILABLE", message), HTTPStatus.BAD_GATEWAY)
+                return
+            if job and job.get("remote") and "remote interactive terminal" in message.lower():
                 self.send_json(error_payload("REMOTE_ATTACH_FAILED", message), HTTPStatus.BAD_GATEWAY)
                 return
             code = "JOB_INPUT_BUSY" if "already attached" in message else "JOB_INPUT_UNAVAILABLE"

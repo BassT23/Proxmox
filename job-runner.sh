@@ -25,7 +25,7 @@ RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 SYSTEMD_LOG_FILTER_ARGS=()
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list | show UNIT\n' "$0"
 }
 
 valid_target() {
@@ -315,14 +315,42 @@ refresh_remote_target_status() {
 }
 
 remote_ref_line() {
-  local unit="$1" file
+  local unit="$1" file ref_unit owner_node owner_host port
   valid_unit "$unit" || return 2
   file=$(remote_ref_file "$unit")
   [[ -f "$file" ]] || return 1
+  ref_unit=$(state_value "$file" unit)
+  owner_node=$(state_value "$file" owner_node)
+  owner_host=$(state_value "$file" owner_host)
+  port=$(state_value "$file" port)
+  [[ "$ref_unit" == "$unit" ]] || return 1
+  valid_remote_value "$owner_node" && valid_remote_value "$owner_host" || return 1
+  [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]] || return 1
   printf '%s\t%s\t%s\t%s\t%s\n' \
-    "$(state_value "$file" unit)" "$(state_value "$file" target)" \
-    "$(state_value "$file" owner_node)" "$(state_value "$file" owner_host)" \
-    "$(state_value "$file" port)"
+    "$ref_unit" "$(state_value "$file" target)" "$owner_node" "$owner_host" "$port"
+}
+
+show_job() {
+  local unit="$1" file ref_line target owner_node owner_host port remote_state socket_available
+  valid_unit "$unit" || { printf 'Invalid job ID: %s\n' "$unit" >&2; return 2; }
+  file=$(state_file "$unit")
+  if [[ -f "$file" && "$(state_value "$file" unit)" == "$unit" ]]; then
+    socket_available=false
+    if [[ "$(state_value "$file" state)" == running && "$(state_value "$file" interactive)" == true ]]; then
+      socket_available=true
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t%s\t%s\t%s\n' \
+      "$unit" "$(state_value "$file" target)" "$(state_value "$file" state)" \
+      "$(state_value "$file" started_at)" "$(state_value "$file" finished_at)" \
+      "$(state_value "$file" exit_code)" "$(state_value "$file" type)" \
+      "$(state_value "$file" source)" "$(state_value "$file" interactive)" \
+      "$socket_available"
+    return 0
+  fi
+  ref_line=$(remote_ref_line "$unit") || return 1
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  remote_state=$(remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port") || return 1
+  printf '%s\n' "$remote_state"
 }
 
 remote_state_line() {
@@ -1215,6 +1243,10 @@ case "${1:-}" in
   list)
     [[ $# -eq 1 ]] || { usage >&2; exit 2; }
     list_jobs
+    ;;
+  show)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    show_job "$2"
     ;;
   record-remote)
     [[ $# -eq 6 || $# -eq 7 ]] || { usage >&2; exit 2; }
