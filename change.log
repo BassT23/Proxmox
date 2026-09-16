@@ -18,6 +18,8 @@ Fixed:
 - remote terminal attach failures and update-start failures now produce visible, safe Web UI errors instead of silent or generic failures
 - duplicate update-check notifications are avoided and check-only runs skip update finalization while preserving their original result
 - installer startup tolerates a missing or unsuitable `TERM`, and installer failures are no longer masked as successful exits
+- the compact Welcome Screen now renders update summaries from structured status data instead of parsing package-manager output
+- security-only notification decisions now use structured security-update counts instead of raw check output
 
 Security/Safety:
 - browser disconnects, terminal close/reopen, and remote stream failures remain independent from the running job and do not stop it

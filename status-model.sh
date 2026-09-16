@@ -510,6 +510,128 @@ PY
   return "$result"
 }
 
+# Return success only when the structured status model contains a positive
+# security-update count in the notification scope.  Unknown, failed, and
+# unreachable targets are not converted to zero by this gate.
+STATUS_MODEL_HAS_SECURITY_UPDATES() {
+  local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
+  local scope_target="${2:-}" scope_kind="${3:-}"
+  python3 - "$status_file" "$scope_target" "$scope_kind" <<'PY'
+import json
+import sys
+
+status_file, scope_target, scope_kind = sys.argv[1:]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError):
+    raise SystemExit(2)
+
+targets = payload.get("targets") if isinstance(payload, dict) else None
+if not isinstance(targets, list):
+    raise SystemExit(2)
+
+def target_matches_scope(target):
+    if not scope_target:
+        return True
+    wanted = str(scope_target)
+    target_id = str(target.get("id") or "")
+    if scope_kind == "node":
+        if target.get("type") != "host":
+            return False
+        candidates = {wanted, wanted.removeprefix("host:"), wanted.removeprefix("node-")}
+        values = {
+            target_id,
+            target_id.removeprefix("host:"),
+            str(target.get("node") or ""),
+            str(target.get("name") or ""),
+        }
+        return bool(candidates & values) or wanted == "host"
+    candidates = {wanted, wanted.removeprefix("guest:"), wanted.removeprefix("host:")}
+    values = {target_id, target_id.removeprefix("guest:"), target_id.removeprefix("host:")}
+    return bool(candidates & values)
+
+selected = [
+    target for target in targets
+    if isinstance(target, dict) and target_matches_scope(target)
+]
+if scope_target and not selected:
+    raise SystemExit(2)
+
+for target in selected:
+    status = target.get("check_status")
+    if status not in ("ok", "updates_available") or target.get("reachable") is not True:
+        continue
+    value = target.get("security_updates")
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+# Render the compact login summary from the structured status model.  The raw
+# check log remains a diagnostic artifact and is intentionally not an input to
+# this renderer.
+STATUS_MODEL_RENDER_WELCOME() {
+  local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
+  python3 - "$status_file" <<'PY'
+import json
+import re
+import sys
+
+status_file = sys.argv[1]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError):
+    print("Update status unavailable.")
+    raise SystemExit(0)
+
+targets = payload.get("targets") if isinstance(payload, dict) else None
+if not isinstance(targets, list):
+    print("Update status unavailable.")
+    raise SystemExit(0)
+
+def clean_id(target):
+    value = str(target.get("id") or "unknown")
+    return re.sub(r"^(guest:|host:)", "", value)
+
+def label(target):
+    kind = str(target.get("type") or "external").lower()
+    identifier = clean_id(target)
+    name = str(target.get("name") or "").strip()
+    if kind == "host":
+        return f"Host : {target.get('node') or name or identifier}"
+    prefix = {"lxc": "LXC", "vm": "VM", "external": "External"}.get(kind, kind.title())
+    return f"{prefix} {identifier} : {name}" if name and name != identifier else f"{prefix} {identifier}"
+
+def integer(target, field):
+    value = target.get(field)
+    return str(value) if isinstance(value, int) and not isinstance(value, bool) else "Unknown"
+
+for index, target in enumerate(targets):
+    if not isinstance(target, dict):
+        continue
+    if index:
+        print()
+    print(label(target))
+    status = target.get("check_status")
+    reachable = target.get("reachable")
+    if status in ("error", "offline", "unsupported") or reachable is False:
+        print("Status: Unknown")
+        continue
+    if target.get("reboot_required") is True:
+        print("Reboot required")
+    if "normal_updates" in target or "security_updates" in target:
+        print(f"S: {integer(target, 'security_updates')} / N: {integer(target, 'normal_updates')}")
+    else:
+        updates = target.get("updates")
+        available = updates.get("available") if isinstance(updates, dict) else None
+        value = str(available) if isinstance(available, int) and not isinstance(available, bool) else "Unknown"
+        print(f"Updates: {value}")
+PY
+}
+
 # Render and optionally send one notification from the unified status model.
 # The first output line is an internal decision marker; callers remove it
 # before writing the human-readable mail body.
@@ -555,11 +677,8 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   state=${state#STATE=}
   body=${notification#*$'\n'}
 
-  # The status schema does not classify security updates. Preserve the
-  # existing security-only policy by using the check output as the gate.
   if [[ "$email_only_security" == true ]]; then
-    if [[ ! -f "${LOCAL_FILES:-/etc/ultimate-updater}/check-output" ]] ||
-      ! grep -q 'S' "${LOCAL_FILES:-/etc/ultimate-updater}/check-output"; then
+    if ! STATUS_MODEL_HAS_SECURITY_UPDATES "$status_file" "$render_target" "$render_kind"; then
       return 0
     fi
   fi

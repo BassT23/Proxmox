@@ -5,79 +5,64 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf -- "$WORK_DIR"' EXIT
 
-awk '/^COMPACT_WELCOME_OUTPUT \(\) \{/{copy=1} copy{print} copy && /^}/{exit}' \
-  "$ROOT_DIR/welcome-screen.sh" > "$WORK_DIR/formatter.sh"
-# shellcheck disable=SC1091
-source "$WORK_DIR/formatter.sh"
+cat > "$WORK_DIR/status.json" <<'JSON'
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-16T12:00:00Z",
+  "targets": [
+    {"id":"host:node1","type":"host","node":"node1","name":"node1","check_status":"updates_available","reachable":true,"normal_updates":104,"security_updates":19,"updates":{"available":123},"reboot_required":false},
+    {"id":"guest:110","type":"lxc","name":"git-repo","node":"node1","check_status":"updates_available","reachable":true,"normal_updates":48,"security_updates":3,"updates":{"available":51},"reboot_required":false},
+    {"id":"guest:100","type":"vm","name":"pfsense","node":"node1","check_status":"updates_available","reachable":true,"updates":{"available":1},"reboot_required":false},
+    {"id":"guest:340","type":"vm","name":"Kubuntu-VM","node":"node1","check_status":"updates_available","reachable":true,"normal_updates":56,"security_updates":0,"updates":{"available":56},"reboot_required":true}
+  ]
+}
+JSON
 
-cat > "$WORK_DIR/check-output" <<'EOF'
-Available Updates:
-S = Security / N = Normal
-Host : node1
-Normal updates: 3
-Security updates: 4
-LXC 105 : pdm
-Normal updates: 20
-Security updates: 23
-VM 101 : omv
-Normal updates: 51
-Security updates: 28
-LXC 200 : healthy
-Normal updates: 0
-Security updates: 0
-VM 300 : partial
-Normal updates: 4
-Security updates: Unknown
-LXC 400 : unknown
-Normal updates: Unknown
-Security updates: 1
-VM 100 : pfsense
-Updates: 5
-LXC 211 : iobroker
-Check failed: apt-get update failed
-Get:1 http://deb.debian.org/debian trixie InRelease [140 kB]
-Holen:2 http://security.debian.org trixie-security InRelease [55 kB]
+cat > "$WORK_DIR/raw-a" <<'EOF'
+Fetched 544 kB in 1s (544 kB/s)
+Es wurden 10,5 MB in 4 s geholt (2.950 kB/s).
+Téléchargé; Descargado; nonsense package chatter
+EOF
+cat > "$WORK_DIR/raw-b" <<'EOF'
 Paketlisten werden gelesen…
-Err:3 http://deb.nodesource.com/node_22.x nodistro InRelease
-  Temporärer Fehlschlag beim Auflösen von deb.nodesource.com
-E: Das Depot »http://deb.nodesource.com/node_22.x nodistro InRelease« ist nicht signiert.
-W: Einige Indexdateien konnten nicht heruntergeladen werden.
+Scaricato; Pobrano; arbitrary localized output
 EOF
 
-actual=$(COMPACT_WELCOME_OUTPUT "$WORK_DIR/check-output")
-expected=$(cat <<'EOF'
-Available Updates:
-S = Security / N = Normal
-Host : node1
-S: 4 / N: 3
-LXC 105 : pdm
-S: 23 / N: 20
-VM 101 : omv
-S: 28 / N: 51
-LXC 200 : healthy
-S: 0 / N: 0
-VM 300 : partial
-S: Unknown / N: 4
-LXC 400 : unknown
-S: 1 / N: Unknown
-VM 100 : pfsense
-Updates: 5
-LXC 211 : iobroker
-Check failed: apt-get update failed
-EOF
-)
+export LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/status-model.sh"
 
-[[ "$actual" == "$expected" ]]
-awk '
-  /echo -e "S = Security \/ N = Normal"/ {
-    if (getline next_line <= 0 || next_line !~ /^[[:space:]]+echo$/) exit 1
-    found = 1
+cp "$WORK_DIR/raw-a" "$WORK_DIR/check-output"
+output_a=$(STATUS_MODEL_RENDER_WELCOME "$WORK_DIR/status.json")
+cp "$WORK_DIR/raw-b" "$WORK_DIR/check-output"
+output_b=$(STATUS_MODEL_RENDER_WELCOME "$WORK_DIR/status.json")
+[[ "$output_a" == "$output_b" ]]
+
+for noise in 'Fetched' 'Es wurden' 'geholt' 'kB/s' 'MB/s'; do
+  if grep -Fq "$noise" <<<"$output_a"; then
+    echo "external APT chatter leaked into structured Welcome output: $noise" >&2
+    exit 1
+  fi
+done
+for expected in \
+  'Host : node1' \
+  'S: 19 / N: 104' \
+  'LXC 110 : git-repo' \
+  'S: 3 / N: 48' \
+  'VM 100 : pfsense' \
+  'Updates: 1' \
+  'VM 340 : Kubuntu-VM' \
+  'Reboot required' \
+  'S: 0 / N: 56'; do
+  grep -Fq "$expected" <<<"$output_a" || {
+    echo "structured Welcome summary is missing: $expected" >&2
+    exit 1
   }
-  END { exit(found ? 0 : 1) }
-' "$ROOT_DIR/welcome-screen.sh"
-if grep -Fq 'Normal updates:' <<<"$actual" ||
-   grep -Fq 'Security updates:' <<<"$actual"; then
-  echo 'verbose update labels remain in compact welcome output' >&2
-  exit 1
-fi
-printf '%s\n' 'welcome compact output tests: PASS'
+done
+
+printf '{broken-json\n' > "$WORK_DIR/status-invalid.json"
+[[ "$(STATUS_MODEL_RENDER_WELCOME "$WORK_DIR/status-invalid.json")" == "Update status unavailable." ]]
+rm -f "$WORK_DIR/status-missing.json"
+[[ "$(STATUS_MODEL_RENDER_WELCOME "$WORK_DIR/status-missing.json")" == "Update status unavailable." ]]
+
+printf '%s\n' 'welcome structured output tests: PASS'

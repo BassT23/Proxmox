@@ -25,6 +25,8 @@ CL="\e[0m"
 
 # shellcheck disable=SC1091
 . "$LOCAL_FILES/tag-filter.sh"
+# shellcheck disable=SC1091
+. "$LOCAL_FILES/status-model.sh"
 
 # Version Check. This path intentionally uses only the local cache so SSH/MOTD
 # login never waits for GitHub or another external service.
@@ -113,44 +115,6 @@ TIME_CALCULTION () {
   MINUTES=$(( (NOW - MOD) / 60 ))
 }
 
-COMPACT_WELCOME_OUTPUT () {
-  awk '
-    # The check stream is also retained for Web UI/live diagnostics.  Keep
-    # those diagnostics intact, but do not replay apt progress chatter in the
-    # compact login/MOTD summary.
-    function is_apt_noise(line) {
-      return line ~ /^[[:space:]]*(Get|Hit|Ign|Err|Holen|OK|Fehl):[[:space:]]*/ ||
-        line ~ /^[[:space:]]*(Fetched|Reading package lists|Building dependency tree|Reading state information|Paketlisten werden gelesen|Abhängigkeitsbaum wird aufgebaut|Statusinformationen werden eingelesen|Alle Pakete sind aktuell|All packages are up to date|W:|E:|N:)/ ||
-        line ~ /^[[:space:]]*(Temporary failure resolving|Temporärer Fehlschlag beim Auflösen|Could not resolve|Konnte .* nicht auflösen)/
-    }
-    is_apt_noise($0) { next }
-    /^Normal updates: / {
-      normal = $0
-      sub(/^Normal updates: /, "", normal)
-      next
-    }
-    /^Security updates: / {
-      if (normal != "") {
-        security = $0
-        sub(/^Security updates: /, "", security)
-        printf "S: %s / N: %s\n", security, normal
-        normal = ""
-        next
-      }
-    }
-    {
-      if (normal != "") {
-        print "Normal updates: " normal
-        normal = ""
-      }
-      print
-    }
-    END {
-      if (normal != "") print "Normal updates: " normal
-    }
-  ' "$1"
-}
-
 # Welcome. Disk discovery is deliberately disabled: screenfetch/neofetch
 # otherwise call df across every mounted filesystem, and a dead NFS/CIFS
 # server can leave that syscall in uninterruptible kernel sleep. A login/MOTD
@@ -174,12 +138,13 @@ if [[ -f "$LOCAL_FILES/check-output" ]]; then
   else
     echo -e "     Last Update Check: $MINUTES minute(s) ago\n"
   fi
-  if [[ $CHECK_OUTPUT -gt 0 ]]; then
-    echo -e "${OR}Available Updates:${CL}"
-    echo -e "S = Security / N = Normal"
-    echo
-    COMPACT_WELCOME_OUTPUT "$LOCAL_FILES/check-output"
-  fi
+  echo
+fi
+if [[ -f "$LOCAL_FILES/status.json" ]]; then
+  echo -e "${OR}Available Updates:${CL}"
+  echo -e "S = Security / N = Normal"
+  echo
+  STATUS_MODEL_RENDER_WELCOME "$LOCAL_FILES/status.json"
   echo
 fi
 

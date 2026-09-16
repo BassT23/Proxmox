@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT_DIR"
 
-# Project-owned runtime and documentation text must remain English.  The
-# localized strings intentionally used to recognize external APT/DNS output
-# are excluded here and checked explicitly below.
+# Project-owned runtime and documentation text must remain English.  External
+# human-readable output is not a runtime protocol and must not be parsed by
+# the Welcome screen.
 pattern='Fehler|fehlgeschlagen|Erfolgreich|Ergebnis|verfügbar|Neustart|erforderlich|erreichbar|geprüft|weitere Systeme|keine Updates|Einstellungen|Benachrichtigung|Abbrechen|Schließen|Speichern|Löschen|Zurück|Auswahl|Prüfung|deaktiviert|aktiviert|wird|wurde|werden|[ÄÖÜäöüß]'
 
 matches=$(git grep -n -I -E "$pattern" -- \
@@ -23,17 +23,15 @@ if [[ -n "$matches" ]]; then
   exit 1
 fi
 
-for matcher in \
-  'Paketlisten werden gelesen' \
-  'Abhängigkeitsbaum wird aufgebaut' \
-  'Statusinformationen werden eingelesen' \
-  'Alle Pakete sind aktuell' \
-  'Temporärer Fehlschlag beim Auflösen' \
-  'Konnte .* nicht auflösen'; do
-  grep -Fq "$matcher" welcome-screen.sh || {
-    echo "localized input matcher missing: $matcher" >&2
-    exit 1
-  }
-done
+if grep -Eq 'Fetched|Es wurden|Paketlisten werden gelesen|Reading package lists|Temporary failure resolving' \
+  welcome-screen.sh; then
+  echo 'language-dependent external-output matcher remains in welcome-screen.sh' >&2
+  exit 1
+fi
+
+if grep -Eq "check-output.*grep|grep.*check-output" status-model.sh; then
+  echo 'security/status logic still parses check-output' >&2
+  exit 1
+fi
 
 echo 'language consistency: PASS'
