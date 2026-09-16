@@ -616,16 +616,19 @@ remote_node_check_via_cluster_transport() {
   remote_cluster_target="$remote_check_dir/cluster-target.sh"
   remote_runtime="$remote_check_dir/target-runtime.sh"
   local remote_apt_count="$remote_check_dir/apt-count.py"
+  local remote_rpm_count="$remote_check_dir/rpm-count.py"
   remote_status_model="$remote_check_dir/status-model.sh"
   remote_status_file="$remote_check_dir/status.json"
   tag_filter_script="$LOCAL_FILES/tag-filter.sh"
   target_selection_script="$LOCAL_FILES/target-selection.sh"
   target_runtime_file="$LOCAL_FILES/target-runtime.sh"
   local apt_count_file="$LOCAL_FILES/apt-count.py"
+  local rpm_count_file="$LOCAL_FILES/rpm-count.py"
   [[ -f "$tag_filter_script" ]] || tag_filter_script="$SCRIPT_DIR/tag-filter.sh"
   [[ -f "$target_selection_script" ]] || target_selection_script="$SCRIPT_DIR/target-selection.sh"
   [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
   [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+  [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
   local_file=$(mktemp)
   if ! STATUS_MODEL_INIT; then
     rm -f -- "$local_file"
@@ -645,6 +648,8 @@ remote_node_check_via_cluster_transport() {
       "$target_runtime_file" "$user@$host:$remote_runtime" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$apt_count_file" "$user@$host:$remote_apt_count" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$rpm_count_file" "$user@$host:$remote_rpm_count" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$STATUS_MODEL_SCRIPT" "$user@$host:$remote_status_model"; then
     timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
@@ -885,6 +890,7 @@ remote_target_check() {
   remote_cluster_target="$remote_check_dir/cluster-target.sh"
   remote_runtime="$remote_check_dir/target-runtime.sh"
   local remote_apt_count="$remote_check_dir/apt-count.py"
+  local remote_rpm_count="$remote_check_dir/rpm-count.py"
   remote_qga="$remote_check_dir/qga-guest-exec.sh"
   remote_status_model="$remote_check_dir/status-model.sh"
   remote_internal_ssh="$remote_check_dir/internal-ssh.sh"
@@ -894,6 +900,7 @@ remote_target_check() {
   target_selection_script="$LOCAL_FILES/target-selection.sh"
   target_runtime_file="$LOCAL_FILES/target-runtime.sh"
   local apt_count_file="$LOCAL_FILES/apt-count.py"
+  local rpm_count_file="$LOCAL_FILES/rpm-count.py"
   qga_helper="$LOCAL_FILES/qga-guest-exec.sh"
   internal_ssh_file="$LOCAL_FILES/internal-ssh.sh"
   internal_ssh_conf="$LOCAL_FILES/internal-ssh.conf"
@@ -902,6 +909,7 @@ remote_target_check() {
   [[ -f "$target_selection_script" ]] || target_selection_script="$SCRIPT_DIR/target-selection.sh"
   [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
   [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+  [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
   [[ -f "$qga_helper" ]] || qga_helper="$SCRIPT_DIR/qga-guest-exec.sh"
   [[ -f "$internal_ssh_file" ]] || internal_ssh_file="$SCRIPT_DIR/internal-ssh.sh"
   local_file=$(mktemp)
@@ -923,6 +931,8 @@ remote_target_check() {
       "$target_runtime_file" "$user@$host:$remote_runtime" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$apt_count_file" "$user@$host:$remote_apt_count" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$rpm_count_file" "$user@$host:$remote_rpm_count" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$qga_helper" "$user@$host:$remote_qga" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \

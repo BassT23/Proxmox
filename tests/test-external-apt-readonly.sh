@@ -14,6 +14,9 @@ if os.environ.get("APT_MODE") == "error":
     sys.exit(2)
 print("APT_COUNTS|1|1|0|true" if os.environ.get("APT_MODE") == "updates" else "APT_COUNTS|0|0|0|true")
 PY
+cat > "$WORK_DIR/rpm-count.py" <<'PY'
+print("UU_RPM_COUNTS|ok|2|null|null|false")
+PY
 
 cat > "$WORK_DIR/fake-bin/ssh" <<'FAKE_SSH'
 #!/bin/bash
@@ -99,6 +102,7 @@ run_check() {
     TARGET_INVENTORY_SCRIPT="$ROOT_DIR/target-inventory.sh" \
     STATUS_MODEL_SCRIPT="$ROOT_DIR/status-model.sh" TARGET_RUNTIME_SCRIPT="$ROOT_DIR/target-runtime.sh" \
     STATUS_MODEL_FILE="$status_file" STATUS_MODEL_RECORD_FILE="$WORK_DIR/$target-records" \
+    RPM_COUNT_SCRIPT="$WORK_DIR/rpm-count.py" \
     SSH_ARGS_LOG="$WORK_DIR/$target-ssh.args" UU_SSH_COMMAND_TIMEOUT=1 "$ROOT_DIR/external-apt.sh" check "$target" > "$WORK_DIR/$target.out" 2>&1 || rc=$?
   rc=${rc:-0}
   if [[ "$rc" -ne "$expected_rc" ]]; then

@@ -78,10 +78,11 @@ classify_ssh_error() {
 }
 
 remote_check() {
-  local apt_count_command
+  local apt_count_command rpm_count_command
   apt_count_command=$(APT_COUNT_REMOTE_COMMAND) || return 1
+  rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND) || return 1
   RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" \
-    "UU_EXTERNAL_TARGET_NAME=$EXTERNAL_TARGET UU_APT_COUNT_COMMAND=$(printf '%q' "$apt_count_command") bash -s" <<'REMOTE_CHECK'
+    "UU_EXTERNAL_TARGET_NAME=$EXTERNAL_TARGET UU_APT_COUNT_COMMAND=$(printf '%q' "$apt_count_command") UU_RPM_COUNT_COMMAND=$(printf '%q' "$rpm_count_command") bash -s" <<'REMOTE_CHECK'
 set -u
 config=/etc/ultimate-updater/external.conf
 config_value() {
@@ -166,17 +167,20 @@ EOF
   if [ -e "${UU_REBOOT_REQUIRED_FILE:-/var/run/reboot-required}" ] ||
     [ -e "${UU_REBOOT_REQUIRED_PACKAGES_FILE:-/var/run/reboot-required.pkgs}" ]; then reboot=true; fi
 else
-  dnf_output=$(dnf -q check-update 2>&1)
-  dnf_status=$?
-  if [ "$dnf_status" -ne 0 ] && [ "$dnf_status" -ne 100 ]; then
-    printf 'UU_RESULT|error|%s|%s|null|null|dnf|DNF_CHECK_FAILED|dnf check-update failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+  rpm_counts=$(bash -c "$UU_RPM_COUNT_COMMAND") || {
+    printf 'UU_RESULT|error|%s|%s|null|null|dnf|RPM_COUNT_FAILED|structured RPM metadata query failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+    exit 25
+  }
+  IFS='|' read -r rpm_marker rpm_status rpm_total rpm_normal rpm_security rpm_known _ <<EOF
+$rpm_counts
+EOF
+  if [ "$rpm_marker" != UU_RPM_COUNTS ] || [ "$rpm_status" != ok ] ||
+    ! printf '%s\n' "$rpm_total" | grep -Eq '^[0-9]+$' ||
+    [ "$rpm_normal" != null ] || [ "$rpm_security" != null ] || [ "$rpm_known" != false ]; then
+    printf 'UU_RESULT|error|%s|%s|null|null|dnf|RPM_COUNT_INVALID|structured RPM count result was invalid\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
     exit 25
   fi
-  if [ "$dnf_status" -eq 0 ]; then
-    updates=0
-  else
-    updates=$(printf '%s\n' "$dnf_output" | awk 'NF >= 3 && $2 ~ /^[0-9]/ {count++} END {print count + 0}')
-  fi
+  updates="$rpm_total"
   reboot=null
   if command -v needs-restarting >/dev/null 2>&1; then
     needs-restarting -r >/dev/null 2>&1

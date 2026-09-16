@@ -446,6 +446,8 @@ INSTALL () {
     cp "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
     cp "$TEMP_FILES"/apt-count.py $LOCAL_FILES/apt-count.py
     chmod 750 "$LOCAL_FILES"/apt-count.py
+    cp "$TEMP_FILES"/rpm-count.py $LOCAL_FILES/rpm-count.py
+    chmod 750 "$LOCAL_FILES"/rpm-count.py
     cp "$TEMP_FILES"/internal-ssh.sh $LOCAL_FILES/internal-ssh.sh
     chmod 750 $LOCAL_FILES/internal-ssh.sh
     cp "$TEMP_FILES"/config-merge.sh $LOCAL_FILES/config-merge.sh
@@ -668,6 +670,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/apt-count.py ]]; then
       mv "$TEMP_FILES"/apt-count.py $LOCAL_FILES/apt-count.py
       chmod 750 $LOCAL_FILES/apt-count.py
+    fi
+    if [[ -f "$TEMP_FILES"/rpm-count.py ]]; then
+      mv "$TEMP_FILES"/rpm-count.py $LOCAL_FILES/rpm-count.py
+      chmod 750 $LOCAL_FILES/rpm-count.py
     fi
     if [[ -f "$TEMP_FILES"/internal-ssh.sh ]]; then
       mv "$TEMP_FILES"/internal-ssh.sh $LOCAL_FILES/internal-ssh.sh

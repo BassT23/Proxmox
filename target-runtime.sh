@@ -85,6 +85,44 @@ APT_COUNT_REMOTE_COMMAND() {
   printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
 }
 
+READ_RPM_UPDATE_COUNTS() {
+  local script="${RPM_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/rpm-count.py}"
+  local result
+  result=$(python3 "$script") || {
+    RPM_COUNTS_TOTAL=null
+    RPM_SECURITY_UPDATES=null
+    RPM_NORMAL_UPDATES=null
+    return 1
+  }
+  PARSE_RPM_UPDATE_COUNTS "$result"
+}
+
+PARSE_RPM_UPDATE_COUNTS() {
+  local result="$1" marker status total normal security known
+  IFS='|' read -r marker status total normal security known _ <<<"$result"
+  if [[ "$marker" != UU_RPM_COUNTS || "$status" != ok ||
+    ! "$total" =~ ^[0-9]+$ || "$normal" != null || "$security" != null ||
+    "$known" != false ]]; then
+    RPM_COUNTS_TOTAL=null
+    RPM_SECURITY_UPDATES=null
+    RPM_NORMAL_UPDATES=null
+    return 1
+  fi
+  # shellcheck disable=SC2034
+  RPM_COUNTS_TOTAL="$total"
+  # shellcheck disable=SC2034
+  RPM_SECURITY_UPDATES=null
+  # shellcheck disable=SC2034
+  RPM_NORMAL_UPDATES=null
+}
+
+RPM_COUNT_REMOTE_COMMAND() {
+  local script="${RPM_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/rpm-count.py}"
+  local encoded
+  encoded=$(base64 -w0 "$script") || return 1
+  printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
+}
+
 # Proxmox commands are noisy because the API prints task/UPID progress. Keep
 # that implementation detail out of normal user logs while retaining the
 # exact command output and return code for DEBUG and caller-side diagnostics.

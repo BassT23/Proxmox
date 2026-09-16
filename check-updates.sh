@@ -58,6 +58,25 @@ else
     encoded=$(base64 -w0 "$script") || return 1
     printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
   }
+  READ_RPM_UPDATE_COUNTS() {
+    local script="${RPM_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/rpm-count.py}" result
+    result=$(python3 "$script") || { RPM_COUNTS_TOTAL=null; return 1; }
+    PARSE_RPM_UPDATE_COUNTS "$result"
+  }
+  PARSE_RPM_UPDATE_COUNTS() {
+    local result="$1" marker status total normal security known
+    IFS='|' read -r marker status total normal security known _ <<<"$result"
+    if [[ "$marker" != UU_RPM_COUNTS || "$status" != ok || ! "$total" =~ ^[0-9]+$ ||
+      "$normal" != null || "$security" != null || "$known" != false ]]; then
+      RPM_COUNTS_TOTAL=null; return 1
+    fi
+    RPM_COUNTS_TOTAL="$total"
+  }
+  RPM_COUNT_REMOTE_COMMAND() {
+    local script="${RPM_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/rpm-count.py}" encoded
+    encoded=$(base64 -w0 "$script") || return 1
+    printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
+  }
   RUN_PROXMOX_COMMAND() { if [[ "${DEBUG:-false}" == true ]]; then "$@"; else "$@" >/dev/null 2>&1; fi; }
   RUN_PROXMOX_CAPTURE() { local rc; PROXMOX_CAPTURE_OUTPUT=$("$@" 2>&1); rc=$?; [[ "${DEBUG:-false}" == true && -n "$PROXMOX_CAPTURE_OUTPUT" ]] && printf '%s\n' "$PROXMOX_CAPTURE_OUTPUT"; return "$rc"; }
 fi
@@ -661,6 +680,7 @@ HOST_CHECK_START () {
 # Host Check
 CHECK_HOST () {
   local HOST=$1 remote_check_dir remote_status remote_status_file remote_done_file
+  local remote_apt_count remote_rpm_count
   local remote_done_value remote_status_attempt HOST_NODE HOST_ID remote_done_error_file remote_status_error_file remote_diagnostics_error_file
   local remote_diagnostics_file remote_diagnostics_local_file remote_diagnostics_attempt
   local remote_done_found=false remote_done_transport_rc=0 remote_status_transport_rc=0
@@ -687,6 +707,8 @@ CHECK_HOST () {
   # checks overlap or are retried.  Keep the artifact private to this one
   # dispatch and let the remote wrapper signal completion explicitly.
   remote_check_dir="/tmp/ultimate-updater-check-${$}-${RANDOM}-${RANDOM}"
+  remote_apt_count="$remote_check_dir/apt-count.py"
+  remote_rpm_count="$remote_check_dir/rpm-count.py"
   remote_done_file="$remote_check_dir/completed"
   remote_runtime_env=""
   remote_status_env=""
@@ -730,7 +752,15 @@ CHECK_HOST () {
       CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=prepare-target-runtime"
       return 1
     fi
-    remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh'"
+    if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
+      "$LOCAL_FILES/apt-count.py" "$HOST:$remote_apt_count" >/dev/null 2>&1 ||
+      ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
+      "$LOCAL_FILES/rpm-count.py" "$HOST:$remote_rpm_count" >/dev/null 2>&1; then
+      CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare package count helpers on remote host $HOST${CL}"
+      return 1
+    fi
+    remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh' APT_COUNT_SCRIPT='$remote_apt_count' RPM_COUNT_SCRIPT='$remote_rpm_count'"
   fi
   if [[ -f "$STATUS_MODEL_SCRIPT" ]]; then
     if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$STATUS_MODEL_SCRIPT" "$HOST:$remote_check_dir/status-model.sh" >/dev/null 2>&1; then
@@ -1182,16 +1212,25 @@ CHECK_CONTAINER () {
       PRINT_UPDATE_SPLIT "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
     fi
   elif [[ "$OS" =~ fedora ]]; then
-    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "dnf check-update | grep -Ec ' updates$'"); then
-      CHECK_CONTAINER_FAILURE "dnf check-update failed for LXC $CONTAINER"
+    local rpm_count_command rpm_count_result
+    if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+      CHECK_CONTAINER_FAILURE "RPM count helper is unavailable for LXC $CONTAINER"
       return
     fi
-    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
-    CONTAINER_NORMAL_UPDATES=$CONTAINER_UPDATES
-    if [[ "$UPDATES" -gt 0 ]]; then
+    if ! rpm_count_result=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "$rpm_count_command"); then
+      CHECK_CONTAINER_FAILURE "Could not determine RPM update counts for LXC $CONTAINER"
+      return
+    fi
+    if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+      CHECK_CONTAINER_FAILURE "RPM update count metadata is unavailable for LXC $CONTAINER"
+      return
+    fi
+    CONTAINER_UPDATES=$RPM_COUNTS_TOTAL
+    CONTAINER_NORMAL_UPDATES=null
+    CONTAINER_SECURITY_UPDATES=null
+    if [[ "$CONTAINER_UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
-      echo -e "$UPDATES"
+      PRINT_UPDATE_TOTAL "$CONTAINER_UPDATES"
     fi
   elif [[ "$OS" =~ archlinux ]]; then
     if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "pacman -Qu | wc -l"); then
@@ -1222,16 +1261,25 @@ CHECK_CONTAINER () {
       echo -e "$UPDATES"
     fi
   else
-    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "yum -q check-update | wc -l"); then
-      CHECK_CONTAINER_FAILURE "yum check-update failed for LXC $CONTAINER"
+    local rpm_count_command rpm_count_result
+    if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+      CHECK_CONTAINER_FAILURE "RPM count helper is unavailable for LXC $CONTAINER"
       return
     fi
-    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
-    CONTAINER_NORMAL_UPDATES=$CONTAINER_UPDATES
-    if [[ "$UPDATES" -gt 0 ]]; then
+    if ! rpm_count_result=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "$rpm_count_command"); then
+      CHECK_CONTAINER_FAILURE "Could not determine RPM update counts for LXC $CONTAINER"
+      return
+    fi
+    if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+      CHECK_CONTAINER_FAILURE "RPM update count metadata is unavailable for LXC $CONTAINER"
+      return
+    fi
+    CONTAINER_UPDATES=$RPM_COUNTS_TOTAL
+    CONTAINER_NORMAL_UPDATES=null
+    CONTAINER_SECURITY_UPDATES=null
+    if [[ "$CONTAINER_UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
-      echo -e "$UPDATES"
+      PRINT_UPDATE_TOTAL "$CONTAINER_UPDATES"
     fi
   fi
   [[ "$CONTAINER_UPDATES" -gt 0 ]] && CONTAINER_STATUS=updates_available
@@ -1579,9 +1627,23 @@ CHECK_VM () {
       # Checks only report reboot_required. Reboot execution belongs exclusively
       # to the update runtime and must never occur in this function.
     elif [[ "$OS" =~ Fedora ]]; then
-      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "dnf check-update | grep -Ec ' updates$'")
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local rpm_count_command rpm_count_result
+      if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! rpm_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" bash -c "$rpm_count_command"); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$RPM_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -1603,9 +1665,23 @@ CHECK_VM () {
       fi
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     elif [[ "$OS" =~ CentOS ]]; then
-      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "yum -q check-update | wc -l")
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local rpm_count_command rpm_count_result
+      if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! rpm_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" bash -c "$rpm_count_command"); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$RPM_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -1774,11 +1850,25 @@ CHECK_VM_QEMU () {
       [[ "$QEMU_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && QEMU_APT_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "$QEMU_APT_UPDATES" "$REBOOT_REQUIRED" "$QEMU_APT_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
     elif [[ "$OS" =~ Fedora ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "dnf check-update | grep -Ec ' updates$'"
-      QEMU_COUNT_RESULT_OK "QEMU dnf check for VM $VM" || return 1
-      UPDATES="$QEMU_EXEC_STDOUT"
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local rpm_count_command rpm_count_result
+      if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$rpm_count_command"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      rpm_count_result="$QEMU_EXEC_STDOUT"
+      if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$RPM_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -1813,11 +1903,25 @@ CHECK_VM_QEMU () {
       [[ "$UPDATES" -gt 0 ]] && QEMU_APK_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "$UPDATES" false "$QEMU_APK_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ "$OS" =~ CentOS ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "yum -q check-update | wc -l"
-      QEMU_COUNT_RESULT_OK "QEMU yum check for VM $VM" || return 1
-      UPDATES="$QEMU_EXEC_STDOUT"
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local rpm_count_command rpm_count_result
+      if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$rpm_count_command"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      rpm_count_result="$QEMU_EXEC_STDOUT"
+      if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$RPM_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi

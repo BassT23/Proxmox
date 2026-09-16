@@ -11,6 +11,7 @@ Improved:
 - remote interactive jobs now retain their live terminal and output across cluster nodes, including reconnects, close/reopen, PTY runtime transfer, and remote journal streaming
 - remote update and terminal actions preserve the authoritative target-selection context and resolve jobs directly on their owner node
 - APT update counts are now derived from structured package metadata instead of parsing localized package-manager output
+- DNF/YUM update counts are now derived from deterministic package metadata queries instead of parsing localized package-manager output
 
 Fixed:
 - check warning exit codes and completed-with-warnings results are preserved through job finalization
