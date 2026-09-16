@@ -24,7 +24,6 @@ assert "testTarget(payload.id,payload,button)" in server.PAGE
 assert "function testExternalForm(event){event.preventDefault()" in server.PAGE
 assert "target-modal-test').addEventListener('click',testExternalForm)" in server.PAGE
 assert "SSH port unreachable" in source
-assert "SSH authentication failed." in source
 assert "socket.create_connection" in source
 assert "button.textContent='Testing…'" in server.PAGE
 assert "uname -s" in server.StatusHandler.external_connection_diagnostics.__doc__ or "uname -s" in source
@@ -73,11 +72,12 @@ with patch("server.subprocess.run", side_effect=[ping_result, auth_failed]), \
         object.__new__(server.StatusHandler), payload
     )
 assert diagnostics["ssh_port_reachable"] is True
-assert message == "Host reachable · SSH authentication failed."
+assert message == "Host reachable · SSH connection failed."
 
-assert server.ssh_failure_message("ssh: connect to host x port 22: Connection refused") == "Connection refused."
-assert server.ssh_failure_message("Permission denied (publickey)") == "Authentication failed."
-assert server.ssh_failure_message("no supported authentication methods available") == "Authentication failed."
+assert server.ssh_failure_message("ssh: connect to host x port 22: Connection refused") == "SSH connection failed."
+assert server.ssh_failure_message("Permission denied (publickey)") == "SSH connection failed."
+assert server.ssh_failure_message("Verbindung abgelehnt") == "SSH connection failed."
+assert server.ssh_failure_message("random stderr", 42) == "Remote command failed."
 assert server.ssh_failure_message("") == "SSH connection failed."
 
 owner = object.__new__(server.StatusHandler)

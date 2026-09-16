@@ -911,8 +911,6 @@ PY
     if [[ "$remote_done_found" != true ]]; then
       if [[ "$remote_done_transport_rc" -eq 124 ]]; then
         remote_failure_class=timeout
-      elif grep -qiE 'permission denied|access denied' "$remote_done_error_file" 2>/dev/null; then
-        remote_failure_class=permission-denied
       elif [[ "$remote_done_transport_rc" -ne 0 ]]; then
         remote_failure_class=ssh-retrieval-failed
       else
@@ -920,8 +918,6 @@ PY
       fi
     elif [[ "$remote_status_transport_rc" -eq 124 ]]; then
       remote_failure_class=timeout
-    elif grep -qiE 'permission denied|access denied' "$remote_status_error_file" 2>/dev/null; then
-      remote_failure_class=permission-denied
     elif [[ "$remote_status_transport_rc" -ne 0 ]]; then
       remote_failure_class=scp-retrieval-failed
     else
@@ -937,8 +933,6 @@ PY
     remote_diag_level=failure
     if [[ "$remote_done_transport_rc" -eq 124 ]]; then
       remote_failure_class=timeout
-    elif grep -qiE 'permission denied|access denied' "$remote_done_error_file" 2>/dev/null; then
-      remote_failure_class=permission-denied
     elif [[ "$remote_done_transport_rc" -ne 0 ]]; then
       remote_failure_class=ssh-retrieval-failed
     else

@@ -33,6 +33,14 @@ else
     shift 3
     ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"
   }
+  CLASSIFY_SSH_EXIT() {
+    case "$1" in
+      0) printf 'SSH_OK' ;;
+      124) printf 'SSH_TIMEOUT' ;;
+      255) printf 'SSH_CONNECTION_FAILED' ;;
+      *) printf 'REMOTE_COMMAND_FAILED' ;;
+    esac
+  }
 fi
 
 usage() { printf 'Usage: %s check TARGET | TARGET\n' "$0"; }
@@ -61,19 +69,6 @@ load_target() {
       printf 'external-linux: identity file is not readable: %s\n' "$EXTERNAL_IDENTITY_FILE" >&2
       return 4
     }
-  fi
-}
-
-classify_ssh_error() {
-  local output="${1,,}"
-  if [[ "$output" == *"permission denied"* || "$output" == *"authentication"* ]]; then
-    printf 'AUTH_FAILED'
-  elif [[ "$output" == *"could not resolve"* || "$output" == *"connection timed out"* ||
-    "$output" == *"no route to host"* || "$output" == *"network is unreachable"* ||
-    "$output" == *"connection refused"* ]]; then
-    printf 'SSH_UNREACHABLE'
-  else
-    printf 'SSH_CONNECTION_FAILED'
   fi
 }
 
@@ -206,8 +201,12 @@ check_target() {
   result=$(remote_check 2>&1)
   rc=$?
   if [[ $rc -ne 0 && "$result" != UU_RESULT\|* ]]; then
-    code=$(classify_ssh_error "$result")
-    record_check_error false offline "$code" "SSH connection failed: $result"
+    code=$(CLASSIFY_SSH_EXIT "$rc")
+    if [[ "$code" == SSH_TIMEOUT || "$code" == SSH_CONNECTION_FAILED ]]; then
+      record_check_error false offline "$code" "SSH transport failed: $result"
+    else
+      record_check_error true error "$code" "Remote check command failed: $result"
+    fi
     printf 'external-linux: %s: %s\n' "$EXTERNAL_TARGET" "$result" >&2
     return 1
   fi
@@ -330,8 +329,7 @@ update_target() {
     printf '%s: update completed successfully\n' "$EXTERNAL_TARGET"
     return 0
   fi
-  code=$(classify_ssh_error "$output")
-  [[ "$code" == SSH_* || "$code" == AUTH_FAILED ]] || code=APT_UPDATE_FAILED
+  code=$(CLASSIFY_SSH_EXIT "$rc")
   STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" failed "$rc" || true
   printf 'external-linux: %s: update failed (%s): %s\n' "$EXTERNAL_TARGET" "$code" "$output" >&2
   return "$rc"

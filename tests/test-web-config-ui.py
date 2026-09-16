@@ -111,11 +111,7 @@ assert "nodes are detected automatically" in page.lower()
 assert "External systems are managed separately under External Targets." in page
 assert "No additional VM SSH connections configured." in source
 assert "No additional LXC SSH connections configured." in source
-assert "Host unreachable." in source
 assert "Connection timed out." in source
-assert "Authentication failed." in source
-assert "Host key verification failed." in source
-assert "Connection refused." in source
 assert "Could not load Internal SSH connections." in source
 assert "internal-ssh-retry" in source
 assert "Edit SSH settings" in page

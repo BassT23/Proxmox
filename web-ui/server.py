@@ -2403,27 +2403,9 @@ def validate_target_payload(payload, current_id=None):
             "transport": "ssh", "identity_file": identity_file}
 
 
-def ssh_failure_message(output):
-    """Map SSH diagnostics to a safe, useful user-facing message."""
-    text = (output or "").upper()
-    if "REMOTE HOST IDENTIFICATION HAS CHANGED" in text or "HOST KEY" in text:
-        return "Host key verification failed."
-    if ("PERMISSION DENIED" in text or "AUTHENTICATION" in text or
-            "PUBLICKEY" in text or "PUBLIC KEY" in text or
-            "NO SUPPORTED AUTHENTICATION METHODS" in text or
-            "TOO MANY AUTHENTICATION FAILURES" in text or
-            ("OFFERED" in text and "KEY" in text)):
-        return "Authentication failed."
-    if "CONNECTION REFUSED" in text:
-        return "Connection refused."
-    if "TIMED OUT" in text or "TIMEOUT" in text:
-        return "Connection timed out."
-    if ("NO ROUTE TO HOST" in text or "NETWORK IS UNREACHABLE" in text or
-            "COULD NOT RESOLVE HOST" in text):
-        return "Host unreachable."
-    if "IDENTITY FILE" in text or "NO SUCH FILE" in text:
-        return "SSH identity file is unavailable."
-    return "SSH connection failed."
+def ssh_failure_message(_output=None, returncode=255):
+    """Map only structured subprocess state, never OpenSSH diagnostic text."""
+    return "SSH connection failed." if returncode == 255 else "Remote command failed."
 
 
 def update_inventory_text(content, target, current_id=None, delete=False):
@@ -3346,7 +3328,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         except OSError:
             return None, "Connection test could not be started."
         if result.returncode:
-            return result, ssh_failure_message(result.stderr)
+            return result, ssh_failure_message(result.stderr, result.returncode)
         return result, None
 
     def external_connection_diagnostics(self, target):
@@ -3385,8 +3367,6 @@ class StatusHandler(BaseHTTPRequestHandler):
         if auth_error:
             diagnostics["ssh_authenticated"] = False
             host_context = "Host reachable · " if diagnostics["host_reachable"] else ""
-            if auth_error == "Authentication failed.":
-                return diagnostics, f"{host_context}SSH authentication failed."
             return diagnostics, f"{host_context}{auth_error}"
         diagnostics["ssh_authenticated"] = True
 
@@ -3445,7 +3425,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         except OSError:
             return None, "Owner-node connection test could not be started."
         if result.returncode:
-            return result, ssh_failure_message(result.stderr)
+            return result, ssh_failure_message(result.stderr, result.returncode)
         return result, None
 
     def handle_internal_ssh_test(self, kind, target_id):

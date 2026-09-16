@@ -149,6 +149,15 @@ PACKAGE_COUNT_REMOTE_COMMAND() {
   printf 'printf %%s %q | base64 -d | sh -s -- %q' "$encoded" "$manager"
 }
 
+CLASSIFY_SSH_EXIT() {
+  case "$1" in
+    0) printf 'SSH_OK' ;;
+    124) printf 'SSH_TIMEOUT' ;;
+    255) printf 'SSH_CONNECTION_FAILED' ;;
+    *) printf 'REMOTE_COMMAND_FAILED' ;;
+  esac
+}
+
 # Proxmox commands are noisy because the API prints task/UPID progress. Keep
 # that implementation detail out of normal user logs while retaining the
 # exact command output and return code for DEBUG and caller-side diagnostics.
