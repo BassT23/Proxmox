@@ -14,6 +14,7 @@ Improved:
 - DNF/YUM update counts are now derived from deterministic package metadata queries instead of parsing localized package-manager output
 - Pacman, APK, and FreeBSD pkg update counts now use deterministic package queries instead of line-counting human-readable output
 - SSH transport failures are now classified from stable return codes instead of localized OpenSSH error messages
+- QEMU Guest Agent failures are now classified from protocol state and return codes instead of human-readable guest-agent output
 
 Fixed:
 - check warning exit codes and completed-with-warnings results are preserved through job finalization
