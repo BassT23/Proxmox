@@ -48,14 +48,41 @@ RUN_SSH_COMMAND() {
 }
 
 READ_APT_UPDATE_COUNTS() {
-  local apt_output="$1"
-  local apt_total
-  SECURITY_APT_UPDATES=$(printf '%s\n' "$apt_output" | grep -ci '^inst.*security' || true)
-  apt_total=$(printf '%s\n' "$apt_output" | grep -ci '^inst.' || true)
-  # The total install count includes security updates.  Keep the status
-  # fields disjoint so normal + security never double-counts packages.
+  local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+  local result
+  result=$(python3 "$script") || {
+    SECURITY_APT_UPDATES=null
+    NORMAL_APT_UPDATES=null
+    APT_COUNTS_TOTAL=null
+    return 1
+  }
+  PARSE_APT_UPDATE_COUNTS "$result"
+}
+
+PARSE_APT_UPDATE_COUNTS() {
+  local result="$1" total normal security known
+  IFS='|' read -r _ total normal security known _ <<<"$result"
+  if [[ ! "$total" =~ ^[0-9]+$ || ! "$normal" =~ ^[0-9]+$ ||
+    ! "$security" =~ ^[0-9]+$ || "$known" != true ]]; then
+    SECURITY_APT_UPDATES=null
+    NORMAL_APT_UPDATES=null
+    APT_COUNTS_TOTAL=null
+    return 1
+  fi
   # shellcheck disable=SC2034
-  NORMAL_APT_UPDATES=$((apt_total - SECURITY_APT_UPDATES))
+  APT_COUNTS_TOTAL="$total"
+  # shellcheck disable=SC2034
+  NORMAL_APT_UPDATES="$normal"
+  # shellcheck disable=SC2034
+  SECURITY_APT_UPDATES="$security"
+  [[ $((normal + security)) -eq $total ]]
+}
+
+APT_COUNT_REMOTE_COMMAND() {
+  local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+  local encoded
+  encoded=$(base64 -w0 "$script") || return 1
+  printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
 }
 
 # Proxmox commands are noisy because the API prints task/UPID progress. Keep

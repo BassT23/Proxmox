@@ -26,6 +26,8 @@ EXE_FOR_INTERNET_CHECK=ping
 STATUS_MODEL_RECORD_FILE="$PWD/records"
 SANITIZE_NUMBER() { tr -cd '0-9' <<< "$1"; }
 READ_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; }
+PARSE_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; APT_COUNTS_TOTAL=0; }
+APT_COUNT_REMOTE_COMMAND() { printf ':'; }
 cluster_target_guest_name() { printf 'smarthome-service\n'; }
 STATUS_MODEL_RECORD() { printf '%s\n' "$*" >> "$STATUS_MODEL_RECORD_FILE"; }
 RUN_PCT_COMMAND() {
@@ -73,6 +75,8 @@ STATUS_MODEL_RECORD_FILE="$PWD/hostname-records"
 YL='' CL=''
 SANITIZE_NUMBER() { tr -cd '0-9' <<< "$1"; }
 READ_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; }
+PARSE_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; APT_COUNTS_TOTAL=0; }
+APT_COUNT_REMOTE_COMMAND() { printf ':'; }
 cluster_target_guest_name() { printf 'tasmota\n'; }
 STATUS_MODEL_RECORD() { printf '%s\n' "$*" >> "$STATUS_MODEL_RECORD_FILE"; }
 RUN_PCT_COMMAND() {
@@ -84,11 +88,10 @@ RUN_PCT_COMMAND() {
   if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == *ping* ]]; then
     return 0
   fi
-  if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == "apt-get update" ]]; then
+  if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == : ]]; then
     return 0
   fi
-  if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == "apt-get -s upgrade" ]]; then
-    printf '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n'
+  if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == "apt-get update" ]]; then
     return 0
   fi
   return 1
@@ -125,6 +128,8 @@ STATUS_MODEL_RECORD_FILE="$PWD/apt-failure-records"
 YL='' CL=''
 SANITIZE_NUMBER() { tr -cd '0-9' <<< "$1"; }
 READ_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; }
+PARSE_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; APT_COUNTS_TOTAL=0; }
+APT_COUNT_REMOTE_COMMAND() { printf ':'; }
 cluster_target_guest_name() { printf 'iobroker\n'; }
 STATUS_MODEL_RECORD() { printf '%s\n' "$*" >> "$STATUS_MODEL_RECORD_FILE"; }
 RUN_PCT_COMMAND() {
@@ -141,9 +146,6 @@ RUN_PCT_COMMAND() {
     printf 'ID=debian\nVERSION_ID="12"\nPRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\n'
     return 0
   fi
-  if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == "apt-get update" ]]; then
-    return 1
-  fi
   return 1
 }
 pct() {
@@ -154,7 +156,7 @@ source "$PWD/check-container.sh"
 source "$PWD/preflight-functions.sh"
 CHECK_CONTAINER 211 || true
 grep -Fq 'CHECK_COMMAND_FAILED' "$STATUS_MODEL_RECORD_FILE"
-grep -Fq 'apt-get update failed for LXC 211' "$STATUS_MODEL_RECORD_FILE"
+grep -Fq 'Could not determine APT update counts for LXC 211' "$STATUS_MODEL_RECORD_FILE"
 ! grep -Fq 'CONNECTIVITY_FAILED' "$STATUS_MODEL_RECORD_FILE"
 HARNESS
 chmod 750 "$WORK_DIR/apt-failure.sh"

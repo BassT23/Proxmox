@@ -5,6 +5,15 @@ ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 WORK_DIR=$(mktemp -d)
 trap 'find "$WORK_DIR" -type f -delete; rmdir "$WORK_DIR/fake-bin" "$WORK_DIR" 2>/dev/null || true' EXIT
 mkdir "$WORK_DIR/fake-bin"
+cat > "$WORK_DIR/apt-count.py" <<'PY'
+import os
+import sys
+
+if os.environ.get("APT_MODE") == "error":
+    print("APT_COUNTS|unknown|unknown|unknown|false")
+    sys.exit(2)
+print("APT_COUNTS|1|1|0|true" if os.environ.get("APT_MODE") == "updates" else "APT_COUNTS|0|0|0|true")
+PY
 
 cat > "$WORK_DIR/fake-bin/ssh" <<'FAKE_SSH'
 #!/bin/bash
@@ -16,7 +25,8 @@ script=$(cat)
 if [[ -n "${REMOTE_CONFIG:-}" ]]; then
   script=${script//config=\/etc\/ultimate-updater\/external.conf/config=$REMOTE_CONFIG}
 fi
-bash -s <<< "$script"
+remote_command="${@: -1}"
+bash -c "$remote_command" <<< "$script"
 FAKE_SSH
 
 cat > "$WORK_DIR/fake-bin/apt" <<'FAKE_APT'

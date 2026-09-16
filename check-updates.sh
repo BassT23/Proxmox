@@ -33,10 +33,30 @@ else
   # shellcheck disable=SC2317,SC2329
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
   READ_APT_UPDATE_COUNTS() {
-    local apt_total
-    SECURITY_APT_UPDATES=$(printf '%s\n' "$1" | grep -ci '^inst.*security' || true)
-    apt_total=$(printf '%s\n' "$1" | grep -ci '^inst.' || true)
-    NORMAL_APT_UPDATES=$((apt_total - SECURITY_APT_UPDATES))
+    local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+    local result
+    result=$(python3 "$script") || {
+      SECURITY_APT_UPDATES=null
+      NORMAL_APT_UPDATES=null
+      APT_COUNTS_TOTAL=null
+      return 1
+    }
+    PARSE_APT_UPDATE_COUNTS "$result"
+  }
+  PARSE_APT_UPDATE_COUNTS() {
+    local result="$1" total normal security known
+    IFS='|' read -r _ total normal security known _ <<<"$result"
+    if [[ ! "$total" =~ ^[0-9]+$ || ! "$normal" =~ ^[0-9]+$ ||
+      ! "$security" =~ ^[0-9]+$ || "$known" != true ]]; then
+      SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
+    fi
+    APT_COUNTS_TOTAL="$total"; NORMAL_APT_UPDATES="$normal"; SECURITY_APT_UPDATES="$security"
+    [[ $((normal + security)) -eq $total ]]
+  }
+  APT_COUNT_REMOTE_COMMAND() {
+    local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}" encoded
+    encoded=$(base64 -w0 "$script") || return 1
+    printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
   }
   RUN_PROXMOX_COMMAND() { if [[ "${DEBUG:-false}" == true ]]; then "$@"; else "$@" >/dev/null 2>&1; fi; }
   RUN_PROXMOX_CAPTURE() { local rc; PROXMOX_CAPTURE_OUTPUT=$("$@" 2>&1); rc=$?; [[ "${DEBUG:-false}" == true && -n "$PROXMOX_CAPTURE_OUTPUT" ]] && printf '%s\n' "$PROXMOX_CAPTURE_OUTPUT"; return "$rc"; }
@@ -929,15 +949,13 @@ CHECK_HOST_ITSELF () {
   STATUS_MODEL_GUEST_NAME=""
   REBOOT_REQUIRED=false
   local STATUS_HOST_NAME="${STATUS_MODEL_NODE:-$HOSTNAME}"
-  # Keep apt's diagnostics in the server-side check log.  The exit status is
-  # still taken directly from apt-get, so a failed refresh remains a failed
-  # check instead of being hidden behind a logging pipeline.
-  apt-get update
-  local APT_OUTPUT
-  APT_OUTPUT=$(apt-get -s upgrade)
-  # Keep the log and status model on the same package-manager snapshot.  The
-  # shared helper owns the security classification and disjoint split.
-  READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
+  # Counts come from the local structured package metadata.  Checks are
+  # deliberately read-only; refreshing APT lists belongs to update actions.
+  if ! READ_APT_UPDATE_COUNTS; then
+    STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true "" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+      "Could not determine APT update counts from package metadata" "$STATUS_HOST_NAME" "$STATUS_HOST_NAME"
+    return
+  fi
   if [[ $SECURITY_APT_UPDATES != 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
   if [[ -f /var/run/reboot-required || -f /var/run/reboot-required.pkgs ]] ||
     HOST_KERNEL_REBOOT_REQUIRED; then
@@ -1140,15 +1158,19 @@ CHECK_CONTAINER () {
     [[ -z "$OS_DISPLAY" && -n "$OS_RELEASE_ID" ]] && OS_DISPLAY="$OS_RELEASE_ID"
   fi
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
-    if ! RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get update"; then
-      CHECK_CONTAINER_FAILURE "apt-get update failed for LXC $CONTAINER"
+    local apt_count_command
+    if ! apt_count_command=$(APT_COUNT_REMOTE_COMMAND); then
+      CHECK_CONTAINER_FAILURE "APT count helper is unavailable for LXC $CONTAINER"
       return
     fi
-    if ! APT_OUTPUT=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get -s upgrade"); then
-      CHECK_CONTAINER_FAILURE "apt-get -s upgrade failed for LXC $CONTAINER"
+    if ! APT_OUTPUT=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "$apt_count_command"); then
+      CHECK_CONTAINER_FAILURE "Could not determine APT update counts for LXC $CONTAINER"
       return
     fi
-    READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
+    if ! PARSE_APT_UPDATE_COUNTS "$APT_OUTPUT"; then
+      CHECK_CONTAINER_FAILURE "APT update count metadata is unavailable for LXC $CONTAINER"
+      return
+    fi
     CONTAINER_NORMAL_UPDATES=$NORMAL_APT_UPDATES
     CONTAINER_SECURITY_UPDATES=$SECURITY_APT_UPDATES
     if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
@@ -1526,9 +1548,22 @@ CHECK_VM () {
       return 0
     fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
-      RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apt-get update"
-      APT_OUTPUT=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apt-get -s upgrade")
-      READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
+      local apt_count_command
+      if ! apt_count_command=$(APT_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "APT count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! APT_OUTPUT=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" bash -c "$apt_count_command"); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "Could not determine APT update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! PARSE_APT_UPDATE_COUNTS "$APT_OUTPUT"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "APT update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
       if RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" stat /var/run/reboot-required.pkgs >/dev/null 2>&1; then
         REBOOT_REQUIRED=true
       fi
@@ -1699,23 +1734,24 @@ CHECK_VM_QEMU () {
 #      return
 #    fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "apt-get update"
-      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
-        echo -e "${RD}QEMU apt update failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
+      local apt_count_command
+      if ! apt_count_command=$(APT_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "APT count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'"
-      QEMU_COUNT_RESULT_OK "QEMU security update check for VM $VM" || return 1
-      SECURITY_APT_UPDATES="$QEMU_EXEC_STDOUT"
-      SECURITY_APT_UPDATES=$(SANITIZE_NUMBER "$SECURITY_APT_UPDATES")
-      SECURITY_APT_UPDATES=${SECURITY_APT_UPDATES:-0}
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$apt_count_command"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "Could not determine APT update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! PARSE_APT_UPDATE_COUNTS "$QEMU_EXEC_STDOUT"; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "APT update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
       if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "apt-get -s upgrade | grep -ci '^inst.'"
-      QEMU_COUNT_RESULT_OK "QEMU update check for VM $VM" || return 1
-      NORMAL_APT_UPDATES="$QEMU_EXEC_STDOUT"
-      NORMAL_APT_UPDATES=$(SANITIZE_NUMBER "$NORMAL_APT_UPDATES")
-      NORMAL_APT_UPDATES=${NORMAL_APT_UPDATES:-0}
-      NORMAL_APT_UPDATES=$((NORMAL_APT_UPDATES - SECURITY_APT_UPDATES))
       QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c '[ -f /var/run/reboot-required.pkgs ]'
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
         echo -e "${RD}QEMU reboot check failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"

@@ -78,7 +78,10 @@ classify_ssh_error() {
 }
 
 remote_check() {
-  RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" "UU_EXTERNAL_TARGET_NAME=$EXTERNAL_TARGET bash -s" <<'REMOTE_CHECK'
+  local apt_count_command
+  apt_count_command=$(APT_COUNT_REMOTE_COMMAND) || return 1
+  RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" \
+    "UU_EXTERNAL_TARGET_NAME=$EXTERNAL_TARGET UU_APT_COUNT_COMMAND=$(printf '%q' "$apt_count_command") bash -s" <<'REMOTE_CHECK'
 set -u
 config=/etc/ultimate-updater/external.conf
 config_value() {
@@ -145,11 +148,20 @@ if [ "$updater" = apt ]; then
   # The check is deliberately read-only.  It uses the package metadata
   # already cached on the external system; refreshing package metadata belongs
   # exclusively to the update path below.
-  apt_output=$(apt-get -s upgrade 2>&1) || {
-    printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|apt simulation failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+  apt_counts=$(bash -c "$UU_APT_COUNT_COMMAND") || {
+    printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|structured APT metadata query failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
     exit 25
   }
-  updates=$(printf '%s\n' "$apt_output" | grep -ci '^inst ' || true)
+  IFS='|' read -r apt_marker apt_total apt_normal apt_security apt_known _ <<EOF
+$apt_counts
+EOF
+  if [[ "$apt_marker" != APT_COUNTS || ! "$apt_total" =~ ^[0-9]+$ ||
+    ! "$apt_normal" =~ ^[0-9]+$ || ! "$apt_security" =~ ^[0-9]+$ ||
+    "$apt_known" != true || "$((apt_normal + apt_security))" -ne "$apt_total" ]]; then
+    printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_COUNT_INVALID|structured APT count result was invalid\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+    exit 25
+  fi
+  updates="$apt_total"
   reboot=false
   if [ -e "${UU_REBOOT_REQUIRED_FILE:-/var/run/reboot-required}" ] ||
     [ -e "${UU_REBOOT_REQUIRED_PACKAGES_FILE:-/var/run/reboot-required.pkgs}" ]; then reboot=true; fi

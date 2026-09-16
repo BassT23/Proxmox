@@ -6,7 +6,7 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf -- "$WORK_DIR"' EXIT
 
-sed -n '198,202p' "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/trace.sh"
+awk '/^REMOTE_TRACE\(\)/,/^}/' "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/trace.sh"
 cat >> "$WORK_DIR/trace.sh" <<'EOF'
 STATUS_MODEL_DIAGNOSTIC() { printf '%s\n' "$*" >> "$TRACE_FILE"; }
 EOF

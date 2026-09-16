@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091,SC2016
+# shellcheck disable=SC1091,SC2016,SC2034
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -49,19 +49,38 @@ grep -Fq 'CONTAINER_SECURITY_UPDATES=$SECURITY_APT_UPDATES' "$ROOT_DIR/check-upd
 grep -Fq 'PRINT_UPDATE_SPLIT "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true' "$ROOT_DIR/check-updates.sh"
 grep -Fq '"$STATUS_HOST_NAME" "$STATUS_HOST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"' "$ROOT_DIR/check-updates.sh"
-grep -Fq 'APT_OUTPUT=$(apt-get -s upgrade)' "$ROOT_DIR/check-updates.sh"
-grep -Fq 'READ_APT_UPDATE_COUNTS "$APT_OUTPUT"' "$ROOT_DIR/check-updates.sh"
+if grep -Eq "grep -ci ['\"]\^inst|grep -ci ['\"]\^Inst" "$ROOT_DIR/check-updates.sh" "$ROOT_DIR/target-runtime.sh" "$ROOT_DIR/external-apt.sh"; then
+  echo 'APT count path still parses simulation output' >&2
+  exit 1
+fi
 
-cat > "$WORK_DIR/apt-output" <<'EOF'
-Inst security-one (1.0 Ubuntu-Security)
-Inst security-two (2.0 Ubuntu-Security)
-Inst ordinary (3.0 Ubuntu)
+cat > "$WORK_DIR/apt-count.py" <<'EOF'
+#!/usr/bin/env python3
+print('APT_COUNTS|3|1|2|true')
 EOF
+chmod +x "$WORK_DIR/apt-count.py"
 
+LOCAL_FILES="$WORK_DIR"
+APT_COUNT_SCRIPT="$WORK_DIR/apt-count.py"
 source "$ROOT_DIR/target-runtime.sh"
-READ_APT_UPDATE_COUNTS "$(cat "$WORK_DIR/apt-output")"
+READ_APT_UPDATE_COUNTS
+[[ "$APT_COUNTS_TOTAL" == 3 ]]
 [[ "$NORMAL_APT_UPDATES" == 1 ]]
 [[ "$SECURITY_APT_UPDATES" == 2 ]]
+
+cat > "$WORK_DIR/apt-count-invalid.py" <<'EOF'
+#!/usr/bin/env python3
+print('APT_COUNTS|unknown|unknown|unknown|false')
+EOF
+chmod +x "$WORK_DIR/apt-count-invalid.py"
+APT_COUNT_SCRIPT="$WORK_DIR/apt-count-invalid.py"
+source "$ROOT_DIR/target-runtime.sh"
+if READ_APT_UPDATE_COUNTS; then
+  echo 'invalid APT metadata was accepted' >&2
+  exit 1
+fi
+[[ "$NORMAL_APT_UPDATES" == null ]]
+[[ "$SECURITY_APT_UPDATES" == null ]]
 
 python3 - "$ROOT_DIR/web-ui/server.py" <<'PY'
 import sys
