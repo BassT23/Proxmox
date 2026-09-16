@@ -12,6 +12,7 @@ Improved:
 - remote update and terminal actions preserve the authoritative target-selection context and resolve jobs directly on their owner node
 - APT update counts are now derived from structured package metadata instead of parsing localized package-manager output
 - DNF/YUM update counts are now derived from deterministic package metadata queries instead of parsing localized package-manager output
+- Pacman, APK, and FreeBSD pkg update counts now use deterministic package queries instead of line-counting human-readable output
 
 Fixed:
 - check warning exit codes and completed-with-warnings results are preserved through job finalization

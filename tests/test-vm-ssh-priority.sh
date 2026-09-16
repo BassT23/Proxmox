@@ -67,10 +67,16 @@ LOG="$PWD/ssh-result"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
 PRINT_UPDATE_SPLIT() { :; }
 PRINT_UPDATE_TOTAL() { :; }
+PACKAGE_COUNT_REMOTE_COMMAND() { printf ':'; }
+PARSE_PACKAGE_UPDATE_COUNTS() { IFS='|' read -r _ _ _ PACKAGE_COUNTS_TOTAL _ _ _ _ <<<"$1"; }
 INTERNAL_SSH_USE_IDENTITY() { :; }
 INTERNAL_SSH_RESOLVE_VM() { source "$PWD/internal-ssh.sh"; INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "$4"; }
 RUN_SSH_COMMAND() {
   printf 'ssh:%s\n' "$*" >> "$LOG"
+  if [[ "$4" == sh && "${6-}" == : ]]; then
+    printf 'UU_PACKAGE_COUNTS|ok|pkg|1|null|null|false\n'
+    return 0
+  fi
   [[ "$4" == hostnamectl ]] && printf 'System: FreeBSD\n'
   [[ "$4" == "uname -s" ]] && printf 'FreeBSD\n'
   [[ "$4" == "uname -v" ]] && printf 'FreeBSD ... pfSense ...\n'
@@ -153,6 +159,8 @@ LOG="$PWD/qga-result"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
 PRINT_UPDATE_SPLIT() { :; }
 PRINT_UPDATE_TOTAL() { :; }
+PACKAGE_COUNT_REMOTE_COMMAND() { printf ':'; }
+PARSE_PACKAGE_UPDATE_COUNTS() { IFS='|' read -r _ _ _ PACKAGE_COUNTS_TOTAL _ _ _ _ <<<"$1"; }
 GN='' BL='' CL=''
 timeout() { shift; "$@"; }
 qm() {
@@ -166,7 +174,9 @@ QEMU_GUEST_EXEC() {
   QEMU_EXEC_STDERR=''
   QEMU_EXEC_TRANSPORT_RC=0
   QEMU_EXEC_EXITCODE=0
-  if [[ "$*" == *'pkg version -U -l <'* ]]; then
+  if [[ "$*" == *'sh -c :'* ]]; then
+    QEMU_EXEC_STDOUT='UU_PACKAGE_COUNTS|ok|pkg|1|null|null|false'
+  elif [[ "$*" == *'pkg version -U -l <'* ]]; then
     QEMU_EXEC_STDOUT='pfSense-pkg-test <'
   else
     QEMU_EXEC_STDOUT='linux-probe-called'
@@ -176,7 +186,7 @@ QEMU_GUEST_EXEC() {
 STATUS_MODEL_RECORD() { printf 'record:%s\n' "$*" >> "$LOG"; }
 source "$PWD/check-qemu.sh"
 CHECK_VM_QEMU
-grep -Fq 'qga-exec:100 --timeout 120 -- pkg version -U -l <' "$LOG"
+grep -Fq 'qga-exec:100 --timeout 120 -- sh -c :' "$LOG"
 grep -Fq 'record:100 vm qga true pfSense pkg 1 false updates_available' "$LOG"
 if grep -Fq '/bin/true' "$LOG"; then
   echo 'FreeBSD QGA path executed Linux guest probe' >&2

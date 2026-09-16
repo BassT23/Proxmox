@@ -77,6 +77,20 @@ else
     encoded=$(base64 -w0 "$script") || return 1
     printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
   }
+  PARSE_PACKAGE_UPDATE_COUNTS() {
+    local result="$1" marker status manager total normal security known
+    IFS='|' read -r marker status manager total normal security known _ <<<"$result"
+    if [[ "$marker" != UU_PACKAGE_COUNTS || "$status" != ok || ! "$total" =~ ^[0-9]+$ ||
+      "$normal" != null || "$security" != null || "$known" != false ]]; then
+      PACKAGE_COUNTS_TOTAL=null; return 1
+    fi
+    PACKAGE_COUNTS_TOTAL="$total"
+  }
+  PACKAGE_COUNT_REMOTE_COMMAND() {
+    local manager="$1" script="${PACKAGE_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/package-count.sh}" encoded
+    encoded=$(base64 -w0 "$script") || return 1
+    printf 'printf %%s %q | base64 -d | sh -s -- %q' "$encoded" "$manager"
+  }
   RUN_PROXMOX_COMMAND() { if [[ "${DEBUG:-false}" == true ]]; then "$@"; else "$@" >/dev/null 2>&1; fi; }
   RUN_PROXMOX_CAPTURE() { local rc; PROXMOX_CAPTURE_OUTPUT=$("$@" 2>&1); rc=$?; [[ "${DEBUG:-false}" == true && -n "$PROXMOX_CAPTURE_OUTPUT" ]] && printf '%s\n' "$PROXMOX_CAPTURE_OUTPUT"; return "$rc"; }
 fi
@@ -1233,32 +1247,52 @@ CHECK_CONTAINER () {
       PRINT_UPDATE_TOTAL "$CONTAINER_UPDATES"
     fi
   elif [[ "$OS" =~ archlinux ]]; then
-    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "pacman -Qu | wc -l"); then
-      CHECK_CONTAINER_FAILURE "pacman query failed for LXC $CONTAINER"
+    local package_count_command package_count_result
+    if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pacman); then
+      CHECK_CONTAINER_FAILURE "Pacman count helper is unavailable for LXC $CONTAINER"
       return
     fi
-    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
-    CONTAINER_NORMAL_UPDATES=$CONTAINER_UPDATES
-    if [[ "$UPDATES" -gt 0 ]]; then
+    if ! package_count_result=$(RUN_PCT_COMMAND "$CONTAINER" sh -c "$package_count_command"); then
+      CHECK_CONTAINER_FAILURE "Could not determine Pacman update counts for LXC $CONTAINER"
+      return
+    fi
+    if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+      CHECK_CONTAINER_FAILURE "Pacman update count metadata is unavailable for LXC $CONTAINER"
+      return
+    fi
+    CONTAINER_UPDATES=$PACKAGE_COUNTS_TOTAL
+    CONTAINER_NORMAL_UPDATES=null
+    CONTAINER_SECURITY_UPDATES=null
+    if [[ "$CONTAINER_UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
-      echo -e "$UPDATES"
+      PRINT_UPDATE_TOTAL "$CONTAINER_UPDATES"
     fi
   elif [[ "$OS" =~ alpine ]]; then
+    local package_count_command package_count_result
+    # Preserve the existing Alpine check policy: apk refreshes its local
+    # index before the read-only structured query.
     if ! RUN_PCT_COMMAND "$CONTAINER" ash -c "apk update"; then
       CHECK_CONTAINER_FAILURE "apk update failed for LXC $CONTAINER"
       return
     fi
-    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" ash -c "apk list -u | wc -l"); then
-      CHECK_CONTAINER_FAILURE "apk query failed for LXC $CONTAINER"
+    if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND apk); then
+      CHECK_CONTAINER_FAILURE "APK count helper is unavailable for LXC $CONTAINER"
       return
     fi
-    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
-    CONTAINER_NORMAL_UPDATES=$CONTAINER_UPDATES
-    if [[ "$UPDATES" -gt 0 ]]; then
+    if ! package_count_result=$(RUN_PCT_COMMAND "$CONTAINER" sh -c "$package_count_command"); then
+      CHECK_CONTAINER_FAILURE "Could not determine APK update counts for LXC $CONTAINER"
+      return
+    fi
+    if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+      CHECK_CONTAINER_FAILURE "APK update count metadata is unavailable for LXC $CONTAINER"
+      return
+    fi
+    CONTAINER_UPDATES=$PACKAGE_COUNTS_TOTAL
+    CONTAINER_NORMAL_UPDATES=null
+    CONTAINER_SECURITY_UPDATES=null
+    if [[ "$CONTAINER_UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
-      echo -e "$UPDATES"
+      PRINT_UPDATE_TOTAL "$CONTAINER_UPDATES"
     fi
   else
     local rpm_count_command rpm_count_result
@@ -1574,19 +1608,23 @@ CHECK_VM () {
       if [[ "$SSH_UNAME_VERSION" =~ [0-9] ]]; then
         OS="${OS} / ${SSH_UNAME_VERSION}"
       fi
-      if FREEBSD_PKG_LIST=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "pkg version -U -l '<'" 2>/dev/null); then
-        PKG_RC=0
-      else
-        PKG_RC=$?
-      fi
-      if [[ $PKG_RC -ne 0 ]]; then
-        STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error CHECK_COMMAND_FAILED \
-          "pkg version failed for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      local package_count_command package_count_result
+      if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pkg); then
+        STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
+          "pkg count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      UPDATES=$(printf '%s\n' "$FREEBSD_PKG_LIST" | awk '$NF == "<" {count++} END {print count+0}')
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      if ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" sh -c "$package_count_command"); then
+        STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error PACKAGE_COUNT_FAILED \
+          "Could not determine pkg update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pkg "null" "null" error PACKAGE_COUNT_INVALID \
+          "pkg update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$PACKAGE_COUNTS_TOTAL
       [[ "$UPDATES" -gt 0 ]] && echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       STATUS_MODEL_STATUS=ok
@@ -1649,17 +1687,29 @@ CHECK_VM () {
       fi
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     elif [[ "$OS" =~ Arch ]]; then
-      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "pacman -Qu | wc -l")
-      UPDATES=${UPDATES//[^0-9]/}
-      UPDATES=${UPDATES:-0}
+      local package_count_command package_count_result
+      if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pacman) ||
+        ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" sh -c "$package_count_command") ||
+        ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pacman "null" "null" error PACKAGE_COUNT_FAILED \
+          "Could not determine Pacman update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$PACKAGE_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     elif [[ "$OS" =~ Alpine ]]; then
-      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apk list -u | wc -l")
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local package_count_command package_count_result
+      if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND apk) ||
+        ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" sh -c "$package_count_command") ||
+        ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apk "null" "null" error PACKAGE_COUNT_FAILED \
+          "Could not determine APK update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$PACKAGE_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -1748,7 +1798,13 @@ CHECK_VM_QEMU () {
     return
   fi
   if [[ "$OS_NAME_LOWER" =~ freebsd|pfsense ]]; then
-    QEMU_GUEST_EXEC "$VM" --timeout 120 -- pkg version -U -l "<"
+    local package_count_command package_count_result
+    if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pkg); then
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" pkg "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
+        "pkg count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 1
+    fi
+    QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
     if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
       STATUS_MODEL_RECORD "$VM" vm qga false "$OS_NAME" pkg "null" "null" \
         error QGA_TRANSPORT "QEMU Guest Agent transport failed during pkg check: ${QEMU_EXEC_OUTPUT}" \
@@ -1761,9 +1817,13 @@ CHECK_VM_QEMU () {
         "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
       return 1
     fi
-    UPDATES=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | awk '$NF == "<" {count++} END {print count+0}')
-    UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-    UPDATES=${UPDATES:-0}
+    package_count_result="$QEMU_EXEC_STDOUT"
+    if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" pkg "null" "null" error PACKAGE_COUNT_INVALID \
+        "pkg update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 1
+    fi
+    UPDATES=$PACKAGE_COUNTS_TOTAL
     [[ "$UPDATES" -gt 0 ]] && echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
     [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     QEMU_PKG_STATUS=ok
@@ -1877,11 +1937,25 @@ CHECK_VM_QEMU () {
       [[ "$UPDATES" -gt 0 ]] && QEMU_DNF_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "$UPDATES" false "$QEMU_DNF_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ "$OS" =~ Arch ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "pacman -Qu | wc -l"
-      QEMU_COUNT_RESULT_OK "QEMU pacman check for VM $VM" || return 1
-      UPDATES="$QEMU_EXEC_STDOUT"
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local package_count_command package_count_result
+      if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pacman); then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
+          "Pacman count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "null" "null" error PACKAGE_COUNT_FAILED \
+          "Could not determine Pacman update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      package_count_result="$QEMU_EXEC_STDOUT"
+      if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "null" "null" error PACKAGE_COUNT_INVALID \
+          "Pacman update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$PACKAGE_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -1890,11 +1964,25 @@ CHECK_VM_QEMU () {
       [[ "$UPDATES" -gt 0 ]] && QEMU_PACMAN_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "$UPDATES" false "$QEMU_PACMAN_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ "$OS" =~ Alpine ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- ash -c "apk list -u | wc -l"
-      QEMU_COUNT_RESULT_OK "QEMU apk check for VM $VM" || return 1
-      UPDATES="$QEMU_EXEC_STDOUT"
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local package_count_command package_count_result
+      if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND apk); then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
+          "APK count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "null" "null" error PACKAGE_COUNT_FAILED \
+          "Could not determine APK update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      package_count_result="$QEMU_EXEC_STDOUT"
+      if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "null" "null" error PACKAGE_COUNT_INVALID \
+          "APK update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$PACKAGE_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi

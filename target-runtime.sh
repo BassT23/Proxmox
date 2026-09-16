@@ -123,6 +123,32 @@ RPM_COUNT_REMOTE_COMMAND() {
   printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
 }
 
+PARSE_PACKAGE_UPDATE_COUNTS() {
+  local result="$1" marker status manager total normal security known
+  IFS='|' read -r marker status manager total normal security known _ <<<"$result"
+  if [[ "$marker" != UU_PACKAGE_COUNTS || "$status" != ok ||
+    ! "$total" =~ ^[0-9]+$ || "$normal" != null || "$security" != null ||
+    "$known" != false ]]; then
+    PACKAGE_COUNTS_TOTAL=null
+    PACKAGE_NORMAL_UPDATES=null
+    PACKAGE_SECURITY_UPDATES=null
+    return 1
+  fi
+  # shellcheck disable=SC2034
+  PACKAGE_COUNTS_TOTAL="$total"
+  # shellcheck disable=SC2034
+  PACKAGE_NORMAL_UPDATES=null
+  # shellcheck disable=SC2034
+  PACKAGE_SECURITY_UPDATES=null
+}
+
+PACKAGE_COUNT_REMOTE_COMMAND() {
+  local manager="$1" script="${PACKAGE_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/package-count.sh}"
+  local encoded
+  encoded=$(base64 -w0 "$script") || return 1
+  printf 'printf %%s %q | base64 -d | sh -s -- %q' "$encoded" "$manager"
+}
+
 # Proxmox commands are noisy because the API prints task/UPID progress. Keep
 # that implementation detail out of normal user logs while retaining the
 # exact command output and return code for DEBUG and caller-side diagnostics.
