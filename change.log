@@ -20,6 +20,7 @@ Fixed:
 - installer startup tolerates a missing or unsuitable `TERM`, and installer failures are no longer masked as successful exits
 - the compact Welcome Screen now renders update summaries from structured status data instead of parsing package-manager output
 - security-only notification decisions now use structured security-update counts instead of raw check output
+- Community-Scripts helper updates no longer inherit a controlling terminal on the automated update path, preventing terminal job-control suspension during nested terminal operations
 
 Security/Safety:
 - browser disconnects, terminal close/reopen, and remote stream failures remain independent from the running job and do not stop it

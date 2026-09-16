@@ -34,6 +34,16 @@ case "${COMMUNITY_TEST_MODE:-success}" in
     printf 'long job finished\n'
     exit 0
     ;;
+  tty)
+    if [[ -t 0 ]]; then
+      printf 'HELPER_STDIN_IS_TTY=YES\n'
+    else
+      printf 'HELPER_STDIN_IS_TTY=NO\n'
+    fi
+    stty sane >/dev/null 2>&1 || true
+    printf 'HELPER_AFTER_STTY=YES\n'
+    exit 0
+    ;;
 esac
 EOF
 chmod 750 "$WORK_DIR/bin/update"
@@ -72,6 +82,12 @@ grep -Fq '✅ Update process completed' <<<"$empty_output"
 long_output=$(run_helper long)
 grep -Fq 'long job started' <<<"$long_output"
 grep -Fq 'long job finished' <<<"$long_output"
+
+# Run the real extras wrapper through a controlling PTY. The Community-Scripts
+# helper must still receive no terminal stdin and must continue after stty.
+tty_output=$(script -qec "PATH='$WORK_DIR/bin:$PATH' LOCAL_FILES='$WORK_DIR' UU_UPDATE_CONFIG_FILE='$WORK_DIR/update.conf' UU_COMMUNITY_UPDATE_COMMAND=update COMMUNITY_TEST_MODE=tty bash '$ROOT_DIR/update-extras.sh'" /dev/null)
+grep -Fq 'HELPER_STDIN_IS_TTY=NO' <<<"$tty_output"
+grep -Fq 'HELPER_AFTER_STTY=YES' <<<"$tty_output"
 
 if grep -Fq 'timeout 1800s' "$ROOT_DIR/update-extras.sh"; then
   echo 'community update must not use a hard timeout' >&2
