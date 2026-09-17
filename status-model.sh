@@ -298,7 +298,7 @@ with open(record_file, encoding="utf-8") as records:
             "node": node or None,
             "security_split_supported": security_split_supported
             if security_split_supported is not None else (
-                updater == "apt" or normal_updates is not None or security_updates is not None
+                updater == "apt" or security_updates is not None
             ),
         })
         if target_type == "host":
