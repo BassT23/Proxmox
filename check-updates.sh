@@ -1774,6 +1774,14 @@ CHECK_VM_QEMU () {
   OS_NAME="${OS_NAME//\"/}"
   OS_NAME="${OS_NAME//\'/}"
   OS_NAME_LOWER="${OS_NAME,,}"
+
+  # Home Assistant OS exposes a stable "id": "haos" through QGA.
+  # Its updates are managed by the HA CLI rather than a Linux package manager.
+  if grep -Eqi '"id"[[:space:]]*:[[:space:]]*"haos"' <<< "$OS_INFO"; then
+    CHECK_VM_QEMU_HAOS
+    return $?
+  fi
+
   # FreeBSD/pfSense commonly exposes its identity through kernel-version
   # rather than the optional QGA `name` field. Checks are read-only and do
   # not depend on the FreeBSD update setting.
@@ -2011,6 +2019,113 @@ CHECK_VM_QEMU () {
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" "" "null" "null" unsupported UNSUPPORTED_OS "No supported updater detected"
     fi
   fi
+}
+
+HAOS_PARSE_UPDATE_INFO () {
+  python3 -c '
+import json
+import sys
+
+try:
+    payload = json.load(sys.stdin)
+except (ValueError, TypeError):
+    raise SystemExit(1)
+
+if payload.get("result") != "ok" or not isinstance(payload.get("data"), dict):
+    raise SystemExit(1)
+
+data = payload["data"]
+version = data.get("version")
+update_available = data.get("update_available")
+
+if not isinstance(version, str) or not version:
+    raise SystemExit(1)
+if not isinstance(update_available, bool):
+    raise SystemExit(1)
+
+print("{}\t{}".format(
+    version,
+    "true" if update_available else "false"
+))
+'
+}
+
+CHECK_VM_QEMU_HAOS () {
+  local os_payload core_payload os_parsed core_parsed
+  local os_version os_update core_version core_update
+  local updates=0 status=ok display_os
+
+  QEMU_GUEST_EXEC "$VM" --timeout 60 -- /usr/bin/ha os info --raw-json
+  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga false "Home Assistant OS" ha \
+      "null" false error QGA_TRANSPORT \
+      "HAOS OS check failed: ${QEMU_EXEC_OUTPUT}" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+  if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga true "Home Assistant OS" ha \
+      "null" false error HAOS_CHECK \
+      "ha os info failed: ${QEMU_EXEC_OUTPUT}" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+
+  os_payload="$QEMU_EXEC_STDOUT"
+  if ! os_parsed=$(printf '%s' "$os_payload" | HAOS_PARSE_UPDATE_INFO); then
+    STATUS_MODEL_RECORD "$VM" vm qga true "Home Assistant OS" ha \
+      "null" false error HAOS_INVALID_RESPONSE \
+      "Invalid ha os info response" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+
+  IFS=$'\t' read -r os_version os_update <<< "$os_parsed"
+
+  QEMU_GUEST_EXEC "$VM" --timeout 60 -- /usr/bin/ha core info --raw-json
+  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga false "Home Assistant OS ${os_version}" ha \
+      "null" false error QGA_TRANSPORT \
+      "HA Core check failed: ${QEMU_EXEC_OUTPUT}" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+  if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga true "Home Assistant OS ${os_version}" ha \
+      "null" false error HAOS_CHECK \
+      "ha core info failed: ${QEMU_EXEC_OUTPUT}" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+
+  core_payload="$QEMU_EXEC_STDOUT"
+  if ! core_parsed=$(printf '%s' "$core_payload" | HAOS_PARSE_UPDATE_INFO); then
+    STATUS_MODEL_RECORD "$VM" vm qga true "Home Assistant OS ${os_version}" ha \
+      "null" false error HAOS_INVALID_RESPONSE \
+      "Invalid ha core info response" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+
+  IFS=$'\t' read -r core_version core_update <<< "$core_parsed"
+
+  [[ "$os_update" == true ]] && updates=$((updates + 1))
+  [[ "$core_update" == true ]] && updates=$((updates + 1))
+  [[ "$updates" -gt 0 ]] && status=updates_available
+
+  display_os="Home Assistant OS ${os_version}"
+  [[ -n "$core_version" ]] && display_os+=" / Core ${core_version}"
+
+  STATUS_MODEL_RECORD "$VM" vm qga true "$display_os" ha \
+    "$updates" false "$status" "" "" \
+    "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+
+  if [[ "$updates" -gt 0 ]]; then
+    echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+    PRINT_UPDATE_TOTAL "$updates"
+  fi
+
+  return 0
 }
 
 CHECK_VM_QEMU_WINDOWS () {
