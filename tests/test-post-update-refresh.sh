@@ -37,6 +37,10 @@ exit 0
 EOF
 cat > "$WORK_DIR/check.sh" <<'EOF'
 #!/usr/bin/env bash
+if [[ "$*" == "check" && "${UU_CHECK_JOB_EXECUTION:-false}" != true ]]; then
+  printf 'GLOBAL_CHECK_REENTERED_JOB_RUNNER\n' >> "$POST_REFRESH_LOG"
+  exit 3
+fi
 printf 'CHECK_SCOPE=%s CHECK_ARGS=%s\n' "${UU_CHECK_SCOPE:-}" "$*" >> "$POST_REFRESH_LOG"
 if [[ "$*" == host ]]; then
   # A generic host invocation is intentionally not a valid explicit node
