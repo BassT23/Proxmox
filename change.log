@@ -8,6 +8,7 @@ Added:
 - running jobs can be stopped from the Web UI after explicit confirmation, with clear mobile controls and preserved cancellation state
 
 Improved:
+- Welcome Screen update summaries now use a compact node-grouped dashboard with MOTD-only colors and only show positive updates from the effective check scope
 - manually started jobs now use the interactive terminal by default, while scheduler and cron runs remain non-interactive
 - remote interactive jobs now retain their live terminal and output across cluster nodes, including reconnects, close/reopen, PTY runtime transfer, and remote journal streaming
 - remote update and terminal actions preserve the authoritative target-selection context and resolve jobs directly on their owner node
