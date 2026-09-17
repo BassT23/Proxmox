@@ -4,6 +4,7 @@ Changelog:
 **Unreleased**
 
 Added:
+- read-only Home Assistant OS and Home Assistant Core update checks through QGA
 - running jobs can be stopped from the Web UI after explicit confirmation, with clear mobile controls and preserved cancellation state
 
 Improved:

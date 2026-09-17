@@ -1796,7 +1796,7 @@ CHECK_VM () {
 }
 
 CHECK_VM_QEMU () {
-  local OS_INFO OS_NAME OS_NAME_LOWER OS_VERSION=""
+  local OS_INFO OS_NAME OS_NAME_LOWER OS_VERSION="" OS_INFO_ID=""
   # A successful agent ping proves QGA transport without assuming that the
   # guest contains a Linux executable such as /bin/true.  FreeBSD/pfSense
   # commonly has a working agent but no Linux guest-exec environment.
@@ -1832,10 +1832,21 @@ print(data.get("pretty-name") or data.get("name") or "")
       head -n 1)
   fi
   OS_NAME_LOWER="${OS_NAME,,}"
+  OS_INFO_ID=$(printf '%s' "$OS_INFO" | python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except (ValueError, TypeError):
+    raise SystemExit(1)
+
+print(data.get("id") or "")
+' 2>/dev/null || true)
 
   # Home Assistant OS exposes a stable "id": "haos" through QGA.
   # Its updates are managed by the HA CLI rather than a Linux package manager.
-  if grep -Eqi '"id"[[:space:]]*:[[:space:]]*"haos"' <<< "$OS_INFO"; then
+  if [[ "$OS_INFO_ID" == haos ]]; then
     CHECK_VM_QEMU_HAOS
     return $?
   fi
