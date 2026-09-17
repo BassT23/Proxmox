@@ -58,11 +58,6 @@ else
     encoded=$(base64 -w0 "$script") || return 1
     printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
   }
-  READ_RPM_UPDATE_COUNTS() {
-    local script="${RPM_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/rpm-count.py}" result
-    result=$(python3 "$script") || { RPM_COUNTS_TOTAL=null; return 1; }
-    PARSE_RPM_UPDATE_COUNTS "$result"
-  }
   PARSE_RPM_UPDATE_COUNTS() {
     local result="$1" marker status total normal security known
     IFS='|' read -r marker status total normal security known _ <<<"$result"
@@ -303,26 +298,6 @@ else
     QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC
   }
 fi
-
-QEMU_COUNT_RESULT_OK () {
-  local QEMU_COUNT_LABEL="$1"
-  local QEMU_COUNT_ZERO=false
-  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
-    echo -e "${RD}${QEMU_COUNT_LABEL} failed: ${QEMU_EXEC_OUTPUT}${CL}"
-    return 1
-  fi
-  # grep -c returns 1 for zero matches. That is the only non-zero guest
-  # status accepted for numeric update-count commands; all other failures
-  # must remain visible instead of being treated as zero updates.
-  if [[ "$QEMU_EXEC_EXITCODE" -eq 1 && "$QEMU_EXEC_STDOUT" =~ ^[[:space:]]*0[[:space:]]*$ && -z "$QEMU_EXEC_STDERR" ]]; then
-    QEMU_COUNT_ZERO=true
-  fi
-  if [[ "$QEMU_EXEC_EXITCODE" -ne 0 && "$QEMU_COUNT_ZERO" != true ]]; then
-    echo -e "${RD}${QEMU_COUNT_LABEL} failed (guest exit code $QEMU_EXEC_EXITCODE): ${QEMU_EXEC_OUTPUT}${CL}"
-    return 1
-  fi
-  return 0
-}
 
 ARGUMENTS () {
   local check_rc
