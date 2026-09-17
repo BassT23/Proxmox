@@ -11,6 +11,9 @@ update = pathlib.Path(sys.argv[1]).read_text()
 check = pathlib.Path(sys.argv[2]).read_text()
 
 welcome = update.split('UPDATE_CHECK () {', 1)[1].split('\n}\n', 1)[0]
+assert ' -u ccontainer "$CONTAINER"' in welcome
+assert 'status_target="$CONTAINER"' in welcome
+assert 'STATUS_MODEL_PARTIAL=true "$LOCAL_FILES/check-updates.sh" -u ccontainer | tee -a "$LOCAL_FILES/check-output"' not in welcome
 assert ' -u cvm \\"$VM\\"' in welcome
 assert 'status_target="$VM"' in welcome
 
