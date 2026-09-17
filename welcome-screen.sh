@@ -158,7 +158,7 @@ if [[ -f "$LOCAL_FILES/status.json" ]]; then
   echo -e "${OR}Available Updates:${CL}"
   echo -e "S = Security / N = Normal"
   echo
-  STATUS_MODEL_RENDER_WELCOME "$LOCAL_FILES/status.json"
+  UU_WELCOME_COLOR=always STATUS_MODEL_RENDER_WELCOME "$LOCAL_FILES/status.json"
   echo
 fi
 
