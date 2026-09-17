@@ -675,33 +675,80 @@ for target in checked_targets:
         if node in node_targets and not positive_updates(target):
             node_targets[node].append(target)
 
-ordered_targets = []
-for node in sorted(node_targets, key=natural_key):
-    ordered_targets.extend(sorted(node_targets[node],
-                                  key=lambda target: (target.get("type") != "host",
-                                                      target_sort_key(target))))
-ordered_targets.extend(sorted(external_targets,
-                              key=lambda target: (str(target.get("name") or "").casefold(),
-                                                  clean_id(target).casefold())))
+def metric(target, field, prefix):
+    return f"{prefix}:{integer(target, field)}"
 
-for index, target in enumerate(ordered_targets):
-    if index:
-        print()
-    print(label(target))
-    status = target.get("check_status")
-    reachable = target.get("reachable")
-    if target.get("type") == "host" and not positive_updates(target):
-        continue
-    if target.get("reboot_required") is True:
-        print(paint("Reboot required", "orange"))
+def compact_name(target, width):
+    name = str(target.get("name") or clean_id(target))
+    if len(name) <= width:
+        return name
+    if width < 4:
+        return name[:width]
+    return name[:width - 3] + "..."
+
+def guest_line(target, name_width, id_width):
+    identifier = clean_id(target)
+    name = compact_name(target, name_width)
+    prefix = f"  {identifier:<{id_width}} {name:<{name_width}}"
     if "normal_updates" in target or "security_updates" in target:
-        print(f"Normal updates: {integer(target, 'normal_updates')}")
-        print(f"Security updates: {integer(target, 'security_updates')}")
+        security = paint(metric(target, "security_updates", "S"), "orange")
+        normal = metric(target, "normal_updates", "N")
+        line = f"{prefix} {security} {normal}"
     else:
-        updates = target.get("updates")
-        available = updates.get("available") if isinstance(updates, dict) else None
+        values = target.get("updates")
+        available = values.get("available") if isinstance(values, dict) else None
         value = str(available) if isinstance(available, int) and not isinstance(available, bool) else "Unknown"
-        print(f"Updates: {value}")
+        line = f"{prefix} Updates:{value}"
+    if target.get("reboot_required") is True:
+        line += f"  {paint('Reboot', 'orange')}"
+    return paint(line[:len(prefix)], "green") + line[len(prefix):]
+
+def host_header(node, host):
+    header = paint(node, "cyan")
+    if host is not None and positive_updates(host):
+        if "normal_updates" in host or "security_updates" in host:
+            header += f"  {paint(metric(host, 'security_updates', 'S'), 'orange')} {metric(host, 'normal_updates', 'N')}"
+        else:
+            values = host.get("updates")
+            available = values.get("available") if isinstance(values, dict) else None
+            if isinstance(available, int) and not isinstance(available, bool):
+                header += f"  Updates:{available}"
+    return header
+
+rendered_nodes = []
+for node in sorted(node_targets, key=natural_key):
+    targets_for_node = sorted(node_targets[node],
+                              key=lambda target: (target.get("type") != "host",
+                                                  target_sort_key(target)))
+    host = next((target for target in targets_for_node
+                 if str(target.get("type") or "").lower() == "host"), None)
+    guests = [target for target in targets_for_node if target is not host]
+    rendered_nodes.append((node, host, guests))
+
+name_width = min(24, max(
+    [len(str(target.get("name") or clean_id(target)))
+     for _, _, guests in rendered_nodes for target in guests] or [0]
+))
+id_width = max([len(clean_id(target)) for _, _, guests in rendered_nodes for target in guests] or [1])
+
+for block_index, (node, host, guests) in enumerate(rendered_nodes):
+    if block_index:
+        print()
+    print(host_header(node, host))
+    for target in guests:
+        print(guest_line(target, name_width, id_width))
+
+if external_targets:
+    if rendered_nodes:
+        print()
+    print(paint("External", "cyan"))
+    external_width = min(24, max(len(str(target.get("name") or clean_id(target)))
+                             for target in external_targets))
+    external_id_width = max(len(clean_id(target)) for target in external_targets)
+    for target in sorted(external_targets,
+                         key=lambda item: (str(item.get("name") or "").casefold(),
+                                            clean_id(item).casefold())):
+        print(guest_line(target, external_width, external_id_width))
 PY
 }
 

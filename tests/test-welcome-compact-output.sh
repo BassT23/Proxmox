@@ -25,11 +25,13 @@ cat > "$WORK_DIR/status.json" <<'JSON'
     {"id":"guest:210","type":"lxc","name":"storage","node":"node2","check_status":"updates_available","reachable":true,"updates":{"available":1}},
     {"id":"guest:200","type":"lxc","name":"media","node":"node2","check_status":"updates_available","reachable":true,"updates":{"available":2}},
     {"id":"guest:220","type":"vm","name":"windows","node":"node2","check_status":"updates_available","reachable":true,"updates":{"available":1},"reboot_required":true},
+    {"id":"guest:230","type":"lxc","name":"very-long-container-name-for-layout-testing","node":"node2","check_status":"updates_available","reachable":true,"normal_updates":7,"security_updates":2,"updates":{"available":9}},
     {"id":"host:node3","type":"host","node":"node3","name":"node3","check_status":"ok","reachable":true,"normal_updates":0,"security_updates":0,"updates":{"available":0}},
     {"id":"guest:971","type":"vm","name":"healthy","node":"node3","check_status":"updates_available","reachable":true,"updates":{"available":3}},
     {"id":"guest:310","type":"vm","name":"unreachable","node":"node3","check_status":"offline","reachable":false,"updates":{"available":null}},
     {"id":"guest:340","type":"vm","name":"failed","node":"node3","check_status":"error","reachable":true,"updates":{"available":null},"error":{"code":"CHECK_FAILED","message":"guest check failed"}},
-    {"id":"external:med","type":"external","name":"Mediacenter","node":"","check_status":"offline","reachable":false,"updates":{"available":null}}
+    {"id":"external:med","type":"external","name":"Mediacenter","node":"","check_status":"offline","reachable":false,"updates":{"available":null}},
+    {"id":"external:ext-1","type":"external","name":"Backup service","node":"","check_status":"updates_available","reachable":true,"updates":{"available":4}}
   ]
 }
 JSON
@@ -62,57 +64,64 @@ for noise in 'Fetched' 'Es wurden' 'geholt' 'kB/s' 'MB/s'; do
 done
 
 line() { grep -n -F "$1" <<<"$output_a" | head -n1 | cut -d: -f1; }
-[[ "$(line 'Host : node1')" -lt "$(line 'VM 100 : pfsense')" ]]
-[[ "$(line 'Host : node2')" -lt "$(line 'LXC 200 : media')" ]]
-[[ "$(line 'LXC 200 : media')" -lt "$(line 'LXC 210 : storage')" ]]
-[[ "$(line 'Host : node3')" -lt "$(line 'VM 971 : healthy')" ]]
-if grep -Fq 'Host : node3' <<<"$output_a"; then
-  node3_host_line=$(line 'Host : node3')
-  node3_guest_line=$(line 'VM 971 : healthy')
-  node3_block=$(sed -n "${node3_host_line},$((node3_guest_line - 1))p" <<<"$output_a")
-  if grep -Eq '^(Normal|Security) updates:' <<<"$node3_block"; then
-    echo 'zero-update host received a fabricated count' >&2
-    exit 1
-  fi
-fi
+[[ "$(line 'node1  S:19 N:104')" -lt "$(line '  100 pfsense')" ]]
+[[ "$(line 'node2  S:1 N:2')" -lt "$(line '  200 media')" ]]
+[[ "$(line '  200 media')" -lt "$(line '  210 storage')" ]]
+[[ "$(line 'node3')" -lt "$(line '  971 healthy')" ]]
+[[ "$(line '  100 pfsense')" -lt "$(line '  110 git-repo')" ]]
+[[ "$(line '  110 git-repo')" -lt "$(line '  340 Kubuntu-VM')" ]]
+[[ "$(line 'External')" -lt "$(line '  ext-1 Backup service')" ]]
+long_line=$(grep -E '^  230 very-long-container.*\.\.\.' <<<"$output_a" | head -n1)
+[[ -n "$long_line" ]]
+[[ "$(line '  230')" -gt "$(line '  220 windows')" ]]
 
 # Color is opt-in for deterministic non-TTY tests, and is applied only while
 # rendering; the status JSON above remains free of ANSI escape sequences.
 colored=$(UU_WELCOME_COLOR=always bash -c 'source "$1"; STATUS_MODEL_RENDER_WELCOME "$2"' _ "$ROOT_DIR/status-model.sh" "$WORK_DIR/status.json")
-grep -Fq $'\033[36mHost\033[0m' <<<"$colored"
-grep -Fq $'\033[1;92mVM 100 : pfsense\033[0m' <<<"$colored"
-grep -Fq $'\033[1;33mReboot required\033[0m' <<<"$colored"
+grep -Fq $'\033[36mnode1\033[0m' <<<"$colored"
+grep -Fq $'\033[1;92m  100 pfsense' <<<"$colored"
+grep -Fq $'\033[1;33mS:19\033[0m' <<<"$colored"
+grep -Fq $'\033[1;33mReboot\033[0m' <<<"$colored"
 if grep -q $'\033' "$WORK_DIR/status.json"; then
   echo 'ANSI escape sequence leaked into structured status data' >&2
   exit 1
 fi
 for expected in \
-  'Host : node1' \
-  'Normal updates: 104' \
-  'Security updates: 19' \
-  'LXC 110 : git-repo' \
-  'Normal updates: 48' \
-  'Security updates: 3' \
-  'VM 100 : pfsense' \
-  'Updates: 1' \
-  'VM 340 : Kubuntu-VM' \
-  'Reboot required' \
-  'Normal updates: 56' \
-  'Security updates: 0'; do
+  'node1  S:19 N:104' \
+  '  100 pfsense' \
+  '  110 git-repo' \
+  '  340 Kubuntu-VM' \
+  '  340 Kubuntu-VM' \
+  'Reboot' \
+  'node2  S:1 N:2' \
+  '  200 media' \
+  '  230 very-long-container' \
+  'node3' \
+  '  971 healthy' \
+  'External' \
+  '  ext-1 Backup service'; do
   grep -Fq "$expected" <<<"$output_a" || {
     echo "structured Welcome summary is missing: $expected" >&2
     exit 1
   }
 done
+grep -Eq '^  100 pfsense +Updates:1' <<<"$output_a"
+grep -Eq '^  ext-1 Backup service +Updates:4' <<<"$output_a"
 
-for excluded in 'VM 102 : old-pbs' 'LXC 130 : GameServer' 'VM 140 : inventory-only' \
-  'VM 150 : broken' 'VM 160 : offline' 'Status: Check failed' 'Status: Offline' \
-  'External med : Mediacenter'; do
+for excluded in 'old-pbs' 'GameServer' 'inventory-only' 'broken' 'offline' \
+  'Status: Check failed' 'Status: Offline' 'Mediacenter' '  111 second' \
+  '  105'; do
   if grep -Fq "$excluded" <<<"$output_a"; then
     echo "non-current Welcome entry leaked into summary: $excluded" >&2
     exit 1
   fi
 done
+
+plain=$(UU_WELCOME_COLOR=never STATUS_MODEL_RENDER_WELCOME "$WORK_DIR/status.json")
+if grep -q $'\033' <<<"$plain"; then
+  echo 'ANSI escape sequence leaked with color=never' >&2
+  exit 1
+fi
 
 # Internal target selection must suppress legacy tag warnings.  The source
 # contract also ensures the setting is read from update.conf before the tag
