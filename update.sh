@@ -1418,7 +1418,6 @@ UPDATE_HOST () {
     if [[ "$WELCOME_SCREEN" == true ]]; then
       if ! scp "$HOST:$LOCAL_FILES/check-output" "$LOCAL_FILES/check-output"; then
         echo -e "${RD:-}⚠ Could not retrieve check-output from remote host $HOST${CL:-}" >&2
-        [[ "${REMOTE_UPDATE_STATUS:-0}" -eq 0 ]] && REMOTE_UPDATE_STATUS=1
       fi
     fi
     ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf.uu-backup ]]; then mv -f $LOCAL_FILES/update.conf.uu-backup $LOCAL_FILES/update.conf; else rm -f $LOCAL_FILES/update.conf; fi"
