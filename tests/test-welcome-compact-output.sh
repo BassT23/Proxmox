@@ -122,6 +122,13 @@ if grep -q $'\033' <<<"$plain"; then
   echo 'ANSI escape sequence leaked with color=never' >&2
   exit 1
 fi
+for columns in 40 60 80 120; do
+  width_output=$(COLUMNS="$columns" UU_WELCOME_COLOR=never STATUS_MODEL_RENDER_WELCOME "$WORK_DIR/status.json")
+  if grep -Eq $'\033\[[0-9;]*[HfGJK]' <<<"$width_output"; then
+    echo "cursor control sequence emitted at COLUMNS=$columns" >&2
+    exit 1
+  fi
+done
 
 # Internal target selection must suppress legacy tag warnings.  The source
 # contract also ensures the setting is read from update.conf before the tag
