@@ -802,6 +802,43 @@ CHECK_HOST () {
     # job context. Never infer it from the command name.
     remote_status_env=" UU_JOB_SOURCE=initial-inventory REMOTE_JOB_SOURCE=initial-inventory REMOTE_INITIAL_INVENTORY=true$remote_status_env"
   fi
+  # Stage guest-specific helpers with the remote worker. The check script
+  # itself is streamed via stdin, so using helpers already installed on the
+  # remote node could mix versions during a cluster-wide check.
+  local remote_guest_helper_env=""
+
+  if [[ -f "$QGA_EXEC_SCRIPT" ]]; then
+    if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
+      "$QGA_EXEC_SCRIPT" "$HOST:$remote_check_dir/qga-guest-exec.sh" >/dev/null 2>&1; then
+      CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 \
+        "$HOST" -p "$SSH_PORT" \
+        "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare QGA helper on remote host $HOST${CL}"
+      STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error \
+        REMOTE_HELPER_TRANSFER_FAILED \
+        "Could not transfer qga-guest-exec.sh to $HOST_NODE" "$HOST_NODE"
+      return 1
+    fi
+    remote_guest_helper_env+=" UU_QGA_EXEC_SCRIPT='$remote_check_dir/qga-guest-exec.sh'"
+  fi
+
+  if [[ -f "$WINDOWS_UPDATE_FILE" ]]; then
+    if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
+      "$WINDOWS_UPDATE_FILE" "$HOST:$remote_check_dir/windows-update.sh" >/dev/null 2>&1; then
+      CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 \
+        "$HOST" -p "$SSH_PORT" \
+        "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare Windows helper on remote host $HOST${CL}"
+      STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error \
+        REMOTE_HELPER_TRANSFER_FAILED \
+        "Could not transfer windows-update.sh to $HOST_NODE" "$HOST_NODE"
+      return 1
+    fi
+    remote_guest_helper_env+=" WINDOWS_UPDATE_FILE='$remote_check_dir/windows-update.sh'"
+  fi
+
+  remote_runtime_env="${remote_runtime_env}${remote_guest_helper_env}"
+
   if CHECK_REMOTE_JOB_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" \
     "printf '%s\\n' \"REMOTE_CHECK_START node=$HOST_NODE\" >> '$remote_diagnostics_file'; UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env timeout '$remote_job_timeout' bash -s -- host; remote_rc=\$?; printf '%s\\n' \"REMOTE_CHECK_RETURN node=$HOST_NODE rc=\$remote_rc\" >> '$remote_diagnostics_file'; finish_rc=0; finish_error_file='$remote_check_dir/status-finish.error'; printf '%s\\n' \"STATUS_MODEL_FINISH_START node=$HOST_NODE script=$remote_check_dir/status-model.sh file=$remote_check_dir/status.json records=$remote_check_dir/status.records\" >> '$remote_diagnostics_file'; if [[ -f '$remote_check_dir/status-model.sh' ]]; then STATUS_MODEL_NODE='$HOST_NODE'; STATUS_MODEL_FILE='$remote_check_dir/status.json'; STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'; . '$remote_check_dir/status-model.sh'; STATUS_MODEL_FINISH >/dev/null 2>\"\$finish_error_file\" || finish_rc=\$?; else finish_rc=1; printf '%s\\n' 'status-model script missing' > \"\$finish_error_file\"; fi; finish_reason=none; if [[ -s \"\$finish_error_file\" ]]; then finish_reason=\$(tr '\\n' ' ' < \"\$finish_error_file\" | cut -c1-500); fi; finish_exists=false; [[ -s '$remote_check_dir/status.json' ]] && finish_exists=true; finish_size=0; [[ -e '$remote_check_dir/status.json' ]] && finish_size=\$(stat -c '%s' '$remote_check_dir/status.json' 2>/dev/null || printf '0'); printf '%s\\n' \"STATUS_MODEL_FINISH_END node=$HOST_NODE rc=\$finish_rc exists=\$finish_exists size=\$finish_size reason=\$finish_reason\" >> '$remote_diagnostics_file'; if [[ \"\$remote_rc\" -eq 0 && \"\$finish_rc\" -ne 0 ]]; then remote_rc=\$finish_rc; fi;$remote_status_validation printf '%s\\n' \"COMPLETION_WRITE node=$HOST_NODE rc=\$remote_rc\" >> '$remote_diagnostics_file'; printf '%s\\n' \"\$remote_rc\" > '$remote_done_file'; rm -f -- \"\$finish_error_file\"; exit \"\$remote_rc\"" < "$0"; then
     remote_status=0
@@ -1768,11 +1805,32 @@ CHECK_VM_QEMU () {
     return 1
   fi
   OS_INFO=$(qm guest cmd "$VM" get-osinfo 2>/dev/null || true)
+  # Keep the raw name fields for guest-specific handlers such as Windows,
+  # but derive one canonical display name from the QGA JSON.
   OS=$(printf '%s\n' "$OS_INFO" | grep name || true)
-  OS_NAME=${OS#*:}
-  OS_NAME="${OS_NAME#"${OS_NAME%%[![:space:]]*}"}"
-  OS_NAME="${OS_NAME//\"/}"
-  OS_NAME="${OS_NAME//\'/}"
+  OS_NAME=$(printf '%s' "$OS_INFO" | python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except (ValueError, TypeError):
+    raise SystemExit(1)
+
+print(data.get("pretty-name") or data.get("name") or "")
+' 2>/dev/null || true)
+
+  # Compatibility fallback for non-JSON get-osinfo output.
+  if [[ -z "$OS_NAME" ]]; then
+    OS_NAME=$(printf '%s\n' "$OS_INFO" |
+      sed -nE 's/^[[:space:]]*"pretty-name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' |
+      head -n 1)
+  fi
+  if [[ -z "$OS_NAME" ]]; then
+    OS_NAME=$(printf '%s\n' "$OS_INFO" |
+      sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' |
+      head -n 1)
+  fi
   OS_NAME_LOWER="${OS_NAME,,}"
   # FreeBSD/pfSense commonly exposes its identity through kernel-version
   # rather than the optional QGA `name` field. Checks are read-only and do
@@ -1826,6 +1884,10 @@ CHECK_VM_QEMU () {
       "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     return 0
   fi
+  # Guest-specific handlers above may use the raw get-osinfo fields.
+  # Generic Linux checks and status records use the canonical QGA name.
+  OS="$OS_NAME"
+
   # Do not guess a Linux guest from a successful QGA ping alone.  In the
   # read-only onboarding mode an unknown OS must not trigger a Linux-specific
   # guest-exec probe and turn a reachable agent into a false transport error.
@@ -2015,7 +2077,10 @@ CHECK_VM_QEMU () {
 
 CHECK_VM_QEMU_WINDOWS () {
   local result marker check_status updates reboot message windows_os reachable=true error_code=WINDOWS_UPDATE_CHECK
-  windows_os=$(printf '%s\n' "$OS" | sed -E 's/^[[:space:]]*name[[:space:]]*:[[:space:]]*//')
+  windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"pretty-name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
+  if [[ -z "$windows_os" ]]; then
+    windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
+  fi
   windows_os="${windows_os:-Windows}"
   if ! declare -f WINDOWS_POWERSHELL_ENCODE >/dev/null 2>&1; then
     STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_HELPER_MISSING "Windows update helper is not installed"
@@ -2033,7 +2098,7 @@ CHECK_VM_QEMU_WINDOWS () {
     STATUS_MODEL_RECORD "$VM" vm qga "$reachable" "$windows_os" windows-update "null" "null" error "$error_code" "${QEMU_EXEC_OUTPUT}"
     return 1
   fi
-  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | tail -n 1)
+  result=$(printf '%s' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n '/^UU_WINDOWS|/p' | tail -n 1)
   IFS='|' read -r marker check_status updates reboot message <<< "$result"
   if [[ "$marker" != UU_WINDOWS || "$check_status" != ok || ! "$updates" =~ ^[0-9]+$ || ("$reboot" != true && "$reboot" != false) ]]; then
     STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_UPDATE_CHECK "Invalid Windows Update response: $result"
@@ -2047,6 +2112,7 @@ CHECK_VM_QEMU_WINDOWS () {
     PRINT_UPDATE_SPLIT Unknown Unknown
   fi
   [[ "$reboot" == true ]] && echo -e "${OR} Reboot required${CL}"
+  return 0
 }
 
 # Output to file

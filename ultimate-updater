@@ -879,8 +879,8 @@ record_remote_target_error() {
 
 remote_target_check() {
   local target="$1" kind="$2" node="$3" host="$4" mode remote_check_dir remote_config
-  local remote_tag_filter remote_cluster_target remote_runtime remote_qga remote_status_model remote_internal_ssh remote_internal_conf remote_status_file
-  local tag_filter_script target_runtime_file target_selection_script qga_helper internal_ssh_file internal_ssh_conf legacy_profile local_file transport_rc
+  local remote_tag_filter remote_cluster_target remote_runtime remote_qga remote_windows_update remote_status_model remote_internal_ssh remote_internal_conf remote_status_file
+  local tag_filter_script target_runtime_file target_selection_script qga_helper windows_update_file internal_ssh_file internal_ssh_conf legacy_profile local_file transport_rc
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]:-}")
   mode=$([[ "$kind" == container ]] && printf ccontainer || printf cvm)
   if ! resolve_remote_node_transport "$node" "$host"; then
@@ -898,6 +898,7 @@ remote_target_check() {
   local remote_rpm_count="$remote_check_dir/rpm-count.py"
   local remote_package_count="$remote_check_dir/package-count.sh"
   remote_qga="$remote_check_dir/qga-guest-exec.sh"
+  remote_windows_update="$remote_check_dir/windows-update.sh"
   remote_status_model="$remote_check_dir/status-model.sh"
   remote_internal_ssh="$remote_check_dir/internal-ssh.sh"
   remote_internal_conf="$remote_check_dir/internal-ssh.conf"
@@ -909,6 +910,7 @@ remote_target_check() {
   local rpm_count_file="$LOCAL_FILES/rpm-count.py"
   local package_count_file="$LOCAL_FILES/package-count.sh"
   qga_helper="$LOCAL_FILES/qga-guest-exec.sh"
+  windows_update_file="$LOCAL_FILES/windows-update.sh"
   internal_ssh_file="$LOCAL_FILES/internal-ssh.sh"
   internal_ssh_conf="$LOCAL_FILES/internal-ssh.conf"
   legacy_profile="$LOCAL_FILES/VMs/$target"
@@ -919,6 +921,7 @@ remote_target_check() {
   [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
   [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
   [[ -f "$qga_helper" ]] || qga_helper="$SCRIPT_DIR/qga-guest-exec.sh"
+  [[ -f "$windows_update_file" ]] || windows_update_file="$SCRIPT_DIR/windows-update.sh"
   [[ -f "$internal_ssh_file" ]] || internal_ssh_file="$SCRIPT_DIR/internal-ssh.sh"
   local_file=$(mktemp)
   if ! STATUS_MODEL_INIT; then
@@ -945,6 +948,8 @@ remote_target_check() {
       "$package_count_file" "$user@$host:$remote_package_count" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$qga_helper" "$user@$host:$remote_qga" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$windows_update_file" "$user@$host:$remote_windows_update" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$STATUS_MODEL_SCRIPT" "$user@$host:$remote_status_model"; then
     timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
