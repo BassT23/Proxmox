@@ -772,8 +772,18 @@ CONTAINER_BACKUP () {
       else
         snapshot_output="$PROXMOX_CAPTURE_OUTPUT"
         if grep -Eqi 'snapshot feature is not available|snapshot[^[:alnum:]]*(feature )?(is )?(not available|unsupported|not supported)|not supported[^[:alnum:]]*snapshot' <<< "$snapshot_output"; then
-          echo -e "⚠️${OR:-} Snapshot not supported for LXC $CONTAINER; continuing without snapshot${CL:-}"
-          snapshot_requested=false
+          echo -e "⚠️${OR:-} Snapshot not supported for LXC $CONTAINER${CL:-}"
+          if [[ "$BACKUP_LXC_MP" == true ]] && pct config "$CONTAINER" | grep -q '^mp'; then
+            backup_requested=true
+            snapshot_requested=false
+            echo -e "ℹ ${OR:-} Configured mount-point backup fallback will be used${CL:-}"
+          elif [[ "$backup_requested" == true ]]; then
+            snapshot_requested=false
+            echo -e "ℹ ${OR:-} Attempting configured backup fallback${CL:-}"
+          else
+            echo -e "❌${RD:-} Guest update aborted: configured snapshot protection was not created${CL:-}"
+            return 1
+          fi
         elif [[ "$backup_requested" == true ]]; then
           snapshot_requested=false
           echo -e "ℹ ${OR:-} Attempting configured backup fallback${CL:-}"

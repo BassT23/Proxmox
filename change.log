@@ -17,6 +17,7 @@ Improved:
 - QEMU Guest Agent failures are now classified from protocol state and return codes instead of human-readable guest-agent output
 
 Fixed:
+- LXC mount-point backup fallback now runs when a configured snapshot is unsupported, and failed configured protection blocks the guest update
 - check warning exit codes and completed-with-warnings results are preserved through job finalization
 - explicit remote single-target updates no longer fall back to legacy Proxmox exclude tags or report unrelated guests as skipped
 - remote interactive jobs now start and attach with the same temporary runtime, PTY bridge, and workspace context

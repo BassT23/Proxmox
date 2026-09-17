@@ -3,9 +3,10 @@
 [← Back to README](../README.md)
 
 Snapshots and backups are independent safety mechanisms. A snapshot can be
-requested without enabling a backup, and an unsupported snapshot does not
-silently turn into a backup. Backup behavior is selected explicitly through
-the configured backup mode.
+requested without enabling a backup. An unsupported snapshot does not
+automatically turn into a backup, except when `BACKUP=true` or the explicit
+LXC mount-point fallback `BACKUP_LXC_MP=true` applies. If configured
+protection cannot be created, the guest update is aborted.
 
 Relevant settings include:
 
