@@ -22,11 +22,11 @@ cat > "$WORK_DIR/status.json" <<'JSON'
     {"id":"guest:160","type":"vm","name":"offline","node":"node1","check_status":"offline","reachable":false,"updates":{"available":null},"error":{"code":"OFFLINE","message":"connection unavailable"}},
     {"id":"guest:111","type":"lxc","name":"second","node":"node1","check_status":"ok","reachable":true,"normal_updates":0,"security_updates":0,"updates":{"available":0}},
     {"id":"host:node2","type":"host","node":"node2","name":"node2","check_status":"updates_available","reachable":true,"normal_updates":2,"security_updates":1,"updates":{"available":3}},
-    {"id":"guest:210","type":"lxc","name":"storage","node":"node2","check_status":"ok","reachable":true,"updates":{"available":0}},
+    {"id":"guest:210","type":"lxc","name":"storage","node":"node2","check_status":"updates_available","reachable":true,"updates":{"available":1}},
     {"id":"guest:200","type":"lxc","name":"media","node":"node2","check_status":"updates_available","reachable":true,"updates":{"available":2}},
     {"id":"guest:220","type":"vm","name":"windows","node":"node2","check_status":"updates_available","reachable":true,"updates":{"available":1},"reboot_required":true},
     {"id":"host:node3","type":"host","node":"node3","name":"node3","check_status":"ok","reachable":true,"normal_updates":0,"security_updates":0,"updates":{"available":0}},
-    {"id":"guest:971","type":"vm","name":"healthy","node":"node3","check_status":"ok","reachable":true,"updates":{"available":0}},
+    {"id":"guest:971","type":"vm","name":"healthy","node":"node3","check_status":"updates_available","reachable":true,"updates":{"available":3}},
     {"id":"guest:310","type":"vm","name":"unreachable","node":"node3","check_status":"offline","reachable":false,"updates":{"available":null}},
     {"id":"guest:340","type":"vm","name":"failed","node":"node3","check_status":"error","reachable":true,"updates":{"available":null},"error":{"code":"CHECK_FAILED","message":"guest check failed"}},
     {"id":"external:med","type":"external","name":"Mediacenter","node":"","check_status":"offline","reachable":false,"updates":{"available":null}}
@@ -65,17 +65,22 @@ line() { grep -n -F "$1" <<<"$output_a" | head -n1 | cut -d: -f1; }
 [[ "$(line 'Host : node1')" -lt "$(line 'VM 100 : pfsense')" ]]
 [[ "$(line 'Host : node2')" -lt "$(line 'LXC 200 : media')" ]]
 [[ "$(line 'LXC 200 : media')" -lt "$(line 'LXC 210 : storage')" ]]
-[[ "$(line 'Host : node3')" -lt "$(line 'VM 310 : unreachable')" ]]
-[[ "$(line 'VM 310 : unreachable')" -lt "$(line 'VM 340 : failed')" ]]
-[[ "$(line 'VM 340 : failed')" -lt "$(line 'VM 971 : healthy')" ]]
-[[ "$(line 'VM 971 : healthy')" -lt "$(line 'External med : Mediacenter')" ]]
+[[ "$(line 'Host : node3')" -lt "$(line 'VM 971 : healthy')" ]]
+if grep -Fq 'Host : node3' <<<"$output_a"; then
+  node3_host_line=$(line 'Host : node3')
+  node3_guest_line=$(line 'VM 971 : healthy')
+  node3_block=$(sed -n "${node3_host_line},$((node3_guest_line - 1))p" <<<"$output_a")
+  if grep -Eq '^(Normal|Security) updates:' <<<"$node3_block"; then
+    echo 'zero-update host received a fabricated count' >&2
+    exit 1
+  fi
+fi
 
 # Color is opt-in for deterministic non-TTY tests, and is applied only while
 # rendering; the status JSON above remains free of ANSI escape sequences.
 colored=$(UU_WELCOME_COLOR=always bash -c 'source "$1"; STATUS_MODEL_RENDER_WELCOME "$2"' _ "$ROOT_DIR/status-model.sh" "$WORK_DIR/status.json")
 grep -Fq $'\033[36mHost\033[0m' <<<"$colored"
 grep -Fq $'\033[1;92mVM 100 : pfsense\033[0m' <<<"$colored"
-grep -Fq $'\033[1;91mStatus: Check failed\033[0m' <<<"$colored"
 grep -Fq $'\033[1;33mReboot required\033[0m' <<<"$colored"
 if grep -q $'\033' "$WORK_DIR/status.json"; then
   echo 'ANSI escape sequence leaked into structured status data' >&2
@@ -83,26 +88,26 @@ if grep -q $'\033' "$WORK_DIR/status.json"; then
 fi
 for expected in \
   'Host : node1' \
-  'S: 19 / N: 104' \
+  'Normal updates: 104' \
+  'Security updates: 19' \
   'LXC 110 : git-repo' \
-  'S: 3 / N: 48' \
+  'Normal updates: 48' \
+  'Security updates: 3' \
   'VM 100 : pfsense' \
   'Updates: 1' \
   'VM 340 : Kubuntu-VM' \
   'Reboot required' \
-  'S: 0 / N: 56' \
-  'VM 150 : broken' \
-  'Status: Check failed' \
-  'repository check failed' \
-  'VM 160 : offline' \
-  'Status: Offline'; do
+  'Normal updates: 56' \
+  'Security updates: 0'; do
   grep -Fq "$expected" <<<"$output_a" || {
     echo "structured Welcome summary is missing: $expected" >&2
     exit 1
   }
 done
 
-for excluded in 'VM 102 : old-pbs' 'LXC 130 : GameServer' 'VM 140 : inventory-only' 'Status: Unknown'; do
+for excluded in 'VM 102 : old-pbs' 'LXC 130 : GameServer' 'VM 140 : inventory-only' \
+  'VM 150 : broken' 'VM 160 : offline' 'Status: Check failed' 'Status: Offline' \
+  'External med : Mediacenter'; do
   if grep -Fq "$excluded" <<<"$output_a"; then
     echo "non-current Welcome entry leaked into summary: $excluded" >&2
     exit 1

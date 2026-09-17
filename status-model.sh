@@ -627,6 +627,16 @@ def integer(target, field):
     value = target.get(field)
     return str(value) if isinstance(value, int) and not isinstance(value, bool) else "Unknown"
 
+def positive_updates(target):
+    split = "normal_updates" in target or "security_updates" in target
+    if split:
+        return any(isinstance(target.get(field), int) and
+                   not isinstance(target.get(field), bool) and target.get(field) > 0
+                   for field in ("normal_updates", "security_updates"))
+    values = target.get("updates")
+    available = values.get("available") if isinstance(values, dict) else None
+    return isinstance(available, int) and not isinstance(available, bool) and available > 0
+
 def natural_key(value):
     return [int(part) if part.isdigit() else part.casefold()
             for part in re.split(r"(\d+)", str(value))]
@@ -640,20 +650,30 @@ def target_sort_key(target):
     return (numeric is None, numeric if numeric is not None else natural_key(identifier),
             str(target.get("name") or "").casefold(), identifier.casefold())
 
-visible_targets = [
+checked_targets = [
     target for target in targets
     if isinstance(target, dict) and
-    target.get("check_status") not in ("not_checked", "skipped", "stopped")
+    target.get("check_status") in ("ok", "updates_available") and
+    target.get("reachable") is True
 ]
 
 node_targets = {}
 external_targets = []
-for target in visible_targets:
+for target in checked_targets:
     kind = str(target.get("type") or "external").lower()
     if kind == "external":
-        external_targets.append(target)
-    else:
+        if positive_updates(target):
+            external_targets.append(target)
+    elif positive_updates(target):
         node_targets.setdefault(target_node(target) or "Unassigned", []).append(target)
+
+# A checked host with no own updates still heads a node block when one of its
+# guests has updates. It contributes no fabricated count of its own.
+for target in checked_targets:
+    if str(target.get("type") or "").lower() == "host":
+        node = target_node(target) or "Unassigned"
+        if node in node_targets and not positive_updates(target):
+            node_targets[node].append(target)
 
 ordered_targets = []
 for node in sorted(node_targets, key=natural_key):
@@ -670,27 +690,13 @@ for index, target in enumerate(ordered_targets):
     print(label(target))
     status = target.get("check_status")
     reachable = target.get("reachable")
-    if status == "offline" or reachable is False:
-        print(paint("Status: Offline", "red"))
-        error = target.get("error")
-        if isinstance(error, dict) and error.get("message"):
-            print(paint(str(error['message']).replace(chr(10), ' ').strip(), "red"))
-        continue
-    if status == "unsupported":
-        print(paint("Status: Unsupported", "red"))
-        continue
-    if status == "error":
-        print(paint("Status: Check failed", "red"))
-        error = target.get("error")
-        if isinstance(error, dict):
-            message = error.get("message") or error.get("code")
-            if message:
-                print(paint(str(message).replace(chr(10), ' ').strip(), "red"))
+    if target.get("type") == "host" and not positive_updates(target):
         continue
     if target.get("reboot_required") is True:
         print(paint("Reboot required", "orange"))
     if "normal_updates" in target or "security_updates" in target:
-        print(f"S: {integer(target, 'security_updates')} / N: {integer(target, 'normal_updates')}")
+        print(f"Normal updates: {integer(target, 'normal_updates')}")
+        print(f"Security updates: {integer(target, 'security_updates')}")
     else:
         updates = target.get("updates")
         available = updates.get("available") if isinstance(updates, dict) else None
