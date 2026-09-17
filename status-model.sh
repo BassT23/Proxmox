@@ -576,6 +576,7 @@ STATUS_MODEL_RENDER_WELCOME() {
   local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
   python3 - "$status_file" <<'PY'
 import json
+import os
 import re
 import sys
 
@@ -592,22 +593,52 @@ if not isinstance(targets, list):
     print("Update status unavailable.")
     raise SystemExit(0)
 
+color_mode = os.environ.get("UU_WELCOME_COLOR", "auto").lower()
+use_color = color_mode == "always" or (color_mode == "auto" and sys.stdout.isatty())
+COLORS = {
+    "cyan": "\033[36m",
+    "green": "\033[1;92m",
+    "orange": "\033[1;33m",
+    "red": "\033[1;91m",
+    "reset": "\033[0m",
+}
+
+def paint(value, color):
+    return f"{COLORS[color]}{value}{COLORS['reset']}" if use_color else value
+
 def clean_id(target):
     value = str(target.get("id") or "unknown")
-    return re.sub(r"^(guest:|host:)", "", value)
+    return re.sub(r"^(guest:|host:|external:)", "", value)
 
 def label(target):
     kind = str(target.get("type") or "external").lower()
     identifier = clean_id(target)
     name = str(target.get("name") or "").strip()
     if kind == "host":
-        return f"Host : {target.get('node') or name or identifier}"
+        hostname = target.get('node') or name or identifier
+        return f"{paint('Host', 'cyan')} : {paint(hostname, 'green')}"
     prefix = {"lxc": "LXC", "vm": "VM", "external": "External"}.get(kind, kind.title())
-    return f"{prefix} {identifier} : {name}" if name and name != identifier else f"{prefix} {identifier}"
+    target_label = f"{prefix} {identifier}"
+    if name and name != identifier:
+        target_label += f" : {name}"
+    return paint(target_label, "green")
 
 def integer(target, field):
     value = target.get(field)
     return str(value) if isinstance(value, int) and not isinstance(value, bool) else "Unknown"
+
+def natural_key(value):
+    return [int(part) if part.isdigit() else part.casefold()
+            for part in re.split(r"(\d+)", str(value))]
+
+def target_node(target):
+    return str(target.get("node") or "").strip()
+
+def target_sort_key(target):
+    identifier = clean_id(target)
+    numeric = int(identifier) if identifier.isdigit() else None
+    return (numeric is None, numeric if numeric is not None else natural_key(identifier),
+            str(target.get("name") or "").casefold(), identifier.casefold())
 
 visible_targets = [
     target for target in targets
@@ -615,31 +646,49 @@ visible_targets = [
     target.get("check_status") not in ("not_checked", "skipped", "stopped")
 ]
 
-for index, target in enumerate(visible_targets):
+node_targets = {}
+external_targets = []
+for target in visible_targets:
+    kind = str(target.get("type") or "external").lower()
+    if kind == "external":
+        external_targets.append(target)
+    else:
+        node_targets.setdefault(target_node(target) or "Unassigned", []).append(target)
+
+ordered_targets = []
+for node in sorted(node_targets, key=natural_key):
+    ordered_targets.extend(sorted(node_targets[node],
+                                  key=lambda target: (target.get("type") != "host",
+                                                      target_sort_key(target))))
+ordered_targets.extend(sorted(external_targets,
+                              key=lambda target: (str(target.get("name") or "").casefold(),
+                                                  clean_id(target).casefold())))
+
+for index, target in enumerate(ordered_targets):
     if index:
         print()
     print(label(target))
     status = target.get("check_status")
     reachable = target.get("reachable")
     if status == "offline" or reachable is False:
-        print("Status: Offline")
+        print(paint("Status: Offline", "red"))
         error = target.get("error")
         if isinstance(error, dict) and error.get("message"):
-            print(f"{str(error['message']).replace(chr(10), ' ').strip()}")
+            print(paint(str(error['message']).replace(chr(10), ' ').strip(), "red"))
         continue
     if status == "unsupported":
-        print("Status: Unsupported")
+        print(paint("Status: Unsupported", "red"))
         continue
     if status == "error":
-        print("Status: Check failed")
+        print(paint("Status: Check failed", "red"))
         error = target.get("error")
         if isinstance(error, dict):
             message = error.get("message") or error.get("code")
             if message:
-                print(f"{str(message).replace(chr(10), ' ').strip()}")
+                print(paint(str(message).replace(chr(10), ' ').strip(), "red"))
         continue
     if target.get("reboot_required") is True:
-        print("Reboot required")
+        print(paint("Reboot required", "orange"))
     if "normal_updates" in target or "security_updates" in target:
         print(f"S: {integer(target, 'security_updates')} / N: {integer(target, 'normal_updates')}")
     else:
