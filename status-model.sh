@@ -609,16 +609,34 @@ def integer(target, field):
     value = target.get(field)
     return str(value) if isinstance(value, int) and not isinstance(value, bool) else "Unknown"
 
-for index, target in enumerate(targets):
-    if not isinstance(target, dict):
-        continue
+visible_targets = [
+    target for target in targets
+    if isinstance(target, dict) and
+    target.get("check_status") not in ("not_checked", "skipped", "stopped")
+]
+
+for index, target in enumerate(visible_targets):
     if index:
         print()
     print(label(target))
     status = target.get("check_status")
     reachable = target.get("reachable")
-    if status in ("error", "offline", "unsupported") or reachable is False:
-        print("Status: Unknown")
+    if status == "offline" or reachable is False:
+        print("Status: Offline")
+        error = target.get("error")
+        if isinstance(error, dict) and error.get("message"):
+            print(f"{str(error['message']).replace(chr(10), ' ').strip()}")
+        continue
+    if status == "unsupported":
+        print("Status: Unsupported")
+        continue
+    if status == "error":
+        print("Status: Check failed")
+        error = target.get("error")
+        if isinstance(error, dict):
+            message = error.get("message") or error.get("code")
+            if message:
+                print(f"{str(message).replace(chr(10), ' ').strip()}")
         continue
     if target.get("reboot_required") is True:
         print("Reboot required")

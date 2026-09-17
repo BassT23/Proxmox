@@ -9,7 +9,7 @@
 VERSION="3.0"
 
 # Variable / Function
-LOCAL_FILES="/etc/ultimate-updater"
+LOCAL_FILES="${LOCAL_FILES:-/etc/ultimate-updater}"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 CHECK_OUTPUT=0
@@ -91,6 +91,7 @@ READ_WRITE_CONFIG () {
   STOPPED=$(awk -F'"' '/^CHECK_STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' "$CONFIG_FILE")
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' "$CONFIG_FILE")
+  USE_INTERNAL_TARGET_SELECTION=$(awk -F'"' '/^USE_INTERNAL_TARGET_SELECTION=/ {print $2}' "$CONFIG_FILE")
   if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then
     # shellcheck disable=SC1091
     . "$LOCAL_FILES/tag-filter.sh"
@@ -98,7 +99,20 @@ READ_WRITE_CONFIG () {
       apply_only_exclude_tags ONLY EXCLUDED
     fi
   fi
-  if [[ $ONLY != "" ]]; then
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]]; then
+    selection_file="${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}"
+    if [[ -r "$selection_file" ]] && python3 - "$selection_file" <<'PY' >/dev/null 2>&1
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    data = json.load(source)
+rules = data.get("check", {}) if isinstance(data, dict) else None
+raise SystemExit(0 if isinstance(rules, dict) and any(value in {"only", "exclude"} for value in rules.values()) else 1)
+PY
+    then
+      echo -e "${OR}Target selection is active. Not all systems may be checked.${CL}\n"
+    fi
+  elif [[ $ONLY != "" ]]; then
     echo -e "${OR}Only is set. Not all machines are checked.${CL}\n"
   elif [[ $ONLY == "" && $EXCLUDED != "" ]]; then
     echo -e "${OR}Exclude is set. Not all machines are checked.${CL}\n"
