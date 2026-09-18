@@ -28,14 +28,50 @@ if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
   # shellcheck disable=SC1090,SC1091
   . "$TARGET_RUNTIME_FILE"
 else
-  # These indirect transport calls are used by the legacy-compatible paths
-  # below when an older installation has no shared runtime helper yet.
+  # Legacy-compatible fallback when an older installation has no shared
+  # runtime helper yet. Keep the same single-execution/error semantics.
   # shellcheck disable=SC2317,SC2329
   RUN_LOCAL_COMMAND() { "$@"; }
   RUN_PCT_COMMAND() { local target_id="$1"; shift; pct exec "$target_id" -- "$@"; }
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
   RUN_PROXMOX_COMMAND() { if [[ "${DEBUG:-false}" == true ]]; then "$@"; else "$@" >/dev/null 2>&1; fi; }
   RUN_PROXMOX_CAPTURE() { local rc; PROXMOX_CAPTURE_OUTPUT=$("$@" 2>&1); rc=$?; [[ "${DEBUG:-false}" == true && -n "$PROXMOX_CAPTURE_OUTPUT" ]] && printf '%s\n' "$PROXMOX_CAPTURE_OUTPUT"; return "$rc"; }
+  RUN_CAPTURED_COMMAND() {
+    local output_file command_rc tee_rc had_errexit=false command_text
+    local -a pipeline_status
+    COMMAND_CAPTURE_OUTPUT=""
+    COMMAND_CAPTURE_STATUS=1
+    output_file=$(mktemp "${TMPDIR:-/tmp}/ultimate-updater-step.XXXXXX") || {
+      COMMAND_CAPTURE_OUTPUT="Unable to create temporary output file for update step."
+      return 1
+    }
+    if [[ $- == *e* ]]; then had_errexit=true; set +e; fi
+    "$@" 2>&1 | tee "$output_file"
+    pipeline_status=("${PIPESTATUS[@]}")
+    [[ "$had_errexit" == true ]] && set -e
+    command_rc=${pipeline_status[0]:-1}
+    tee_rc=${pipeline_status[1]:-0}
+    (( command_rc == 0 && tee_rc != 0 )) && command_rc=$tee_rc
+    COMMAND_CAPTURE_OUTPUT=$(<"$output_file")
+    rm -f -- "$output_file"
+    COMMAND_CAPTURE_STATUS=$command_rc
+    if (( command_rc != 0 && ${#COMMAND_CAPTURE_OUTPUT} == 0 )); then
+      printf -v command_text '%q ' "$@"
+      COMMAND_CAPTURE_OUTPUT="Command failed without output: ${command_text% }"
+    fi
+    return "$command_rc"
+  }
+  RUN_UPDATE_STEP() {
+    local target_id="$1" target_name="$2" rc
+    shift 2
+    if RUN_CAPTURED_COMMAND "$@"; then return 0; else rc=$?; fi
+    ERROR_CODE=$rc; ID="$target_id"; NAME="$target_name"; ERROR_MSG="$COMMAND_CAPTURE_OUTPUT"
+    if declare -F ERROR >/dev/null 2>&1; then ERROR; else printf '%s\n' "$ERROR_MSG" >&2; fi
+    return "$rc"
+  }
+  RUN_HOST_STEP() { RUN_UPDATE_STEP "${HOSTNAME:-HOST}" "${HOSTNAME:-HOST}" "$@"; }
+  RUN_LXC_STEP() { RUN_UPDATE_STEP "${CONTAINER:-LXC}" "${NAME:-LXC ${CONTAINER:-unknown}}" "$@"; }
+  RUN_VM_SSH_STEP() { RUN_UPDATE_STEP "${VM:-VM}" "${NAME:-VM ${VM:-unknown}}" "$@"; }
 fi
 CLUSTER_TARGET_FILE="${CLUSTER_TARGET_FILE:-$LOCAL_FILES/cluster-target.sh}"
 if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
@@ -869,32 +905,77 @@ VM_BACKUP () {
 
 # User scripts
 USER_SCRIPTS () {
-  if [[ -d $USER_SCRIPTS/$CONTAINER ]]; then
-    echo -e "\n*** Run user scripts now ***\n"
-    USER_SCRIPTS_LS=$(ls $USER_SCRIPTS/"$CONTAINER")
-    pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/user-scripts"
-    for SCRIPT in $USER_SCRIPTS_LS; do
-      pct push "$CONTAINER" -- "$USER_SCRIPTS"/"$CONTAINER"/"$SCRIPT" "$LOCAL_FILES"/user-scripts/"$SCRIPT"
-      pct exec "$CONTAINER" -- bash -c "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
-                                        $LOCAL_FILES/user-scripts/$SCRIPT"
-    done
-    pct exec "$CONTAINER" -- bash -c "rm -rf $LOCAL_FILES || true"
-    echo -e "\n*** User scripts finished ***\n"
-  fi
+  local script_root script_path script_name remote_script step_status script_shell
+  local -a script_paths=()
+
+  script_root="$USER_SCRIPTS/$CONTAINER"
+  [[ -d "$script_root" ]] || return 0
+  mapfile -d '' -t script_paths < <(
+    find "$script_root" -maxdepth 1 -type f \
+      ! -name '.*' ! -name '*~' ! -name '*.bak' ! -name '*.tmp' ! -name '*.swp' \
+      -print0 | sort -z
+  )
+  ((${#script_paths[@]} > 0)) || return 0
+
+  echo -e "\n*** Run user scripts now ***\n"
+  script_shell=bash
+  [[ "$OS" == alpine ]] && script_shell=ash
+  RUN_LXC_STEP pct exec "$CONTAINER" -- "$script_shell" -c "mkdir -p '$LOCAL_FILES/user-scripts'" || return $?
+
+  for script_path in "${script_paths[@]}"; do
+    script_name=${script_path##*/}
+    remote_script="$LOCAL_FILES/user-scripts/$script_name"
+    RUN_LXC_STEP pct push "$CONTAINER" -- "$script_path" "$remote_script" || {
+      step_status=$?
+      pct exec "$CONTAINER" -- "$script_shell" -c "rm -rf '$LOCAL_FILES/user-scripts'" >/dev/null 2>&1 || true
+      return "$step_status"
+    }
+    RUN_LXC_STEP pct exec "$CONTAINER" -- "$script_shell" -c 'chmod +x "$1" && "$1"' _ "$remote_script" || {
+      step_status=$?
+      pct exec "$CONTAINER" -- "$script_shell" -c "rm -rf '$LOCAL_FILES/user-scripts'" >/dev/null 2>&1 || true
+      return "$step_status"
+    }
+  done
+
+  RUN_LXC_STEP pct exec "$CONTAINER" -- "$script_shell" -c "rm -rf '$LOCAL_FILES/user-scripts'" || return $?
+  echo -e "\n*** User scripts finished ***\n"
+  return 0
 }
 USER_SCRIPTS_VM () {
-  if [[ -d $USER_SCRIPTS/$VM ]]; then
-    echo -e "\n*** Run user scripts now ***\n"
-    USER_SCRIPTS_LS=$(ls "$USER_SCRIPTS"/"$VM")
-    ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/user-scripts/
-    for SCRIPT in $USER_SCRIPTS_LS; do
-      scp "$USER_SCRIPTS"/"$VM"/"$SCRIPT" "$IP":$LOCAL_FILES/user-scripts/"$SCRIPT"
-      ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "chmod +x $LOCAL_FILES/user-scripts/$SCRIPT && \
-                $LOCAL_FILES/user-scripts/$SCRIPT"
-    done
-    ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "rm -rf $LOCAL_FILES || true"
-    echo -e "\n*** User scripts finished ***\n"
-  fi
+  local script_root script_path script_name remote_script step_status
+  local -a script_paths=()
+
+  script_root="$USER_SCRIPTS/$VM"
+  [[ -d "$script_root" ]] || return 0
+  mapfile -d '' -t script_paths < <(
+    find "$script_root" -maxdepth 1 -type f \
+      ! -name '.*' ! -name '*~' ! -name '*.bak' ! -name '*.tmp' ! -name '*.swp' \
+      -print0 | sort -z
+  )
+  ((${#script_paths[@]} > 0)) || return 0
+
+  echo -e "\n*** Run user scripts now ***\n"
+  RUN_VM_SSH_STEP ssh -q -p "$SSH_VM_PORT" "$USER@$IP" mkdir -p "$LOCAL_FILES/user-scripts" || return $?
+
+  for script_path in "${script_paths[@]}"; do
+    script_name=${script_path##*/}
+    remote_script="$LOCAL_FILES/user-scripts/$script_name"
+    RUN_VM_SSH_STEP scp -q -P "$SSH_VM_PORT" "$script_path" "$USER@$IP:$remote_script" || {
+      step_status=$?
+      ssh -q -p "$SSH_VM_PORT" "$USER@$IP" rm -rf "$LOCAL_FILES/user-scripts" >/dev/null 2>&1 || true
+      return "$step_status"
+    }
+    RUN_VM_SSH_STEP ssh -q -p "$SSH_VM_PORT" -tt "$USER@$IP" \
+      "chmod +x '$remote_script' && '$remote_script'" || {
+      step_status=$?
+      ssh -q -p "$SSH_VM_PORT" "$USER@$IP" rm -rf "$LOCAL_FILES/user-scripts" >/dev/null 2>&1 || true
+      return "$step_status"
+    }
+  done
+
+  RUN_VM_SSH_STEP ssh -q -p "$SSH_VM_PORT" "$USER@$IP" rm -rf "$LOCAL_FILES/user-scripts" || return $?
+  echo -e "\n*** User scripts finished ***\n"
+  return 0
 }
 
 # Script-only mode is enabled by placing a .script-only marker next to the
@@ -1055,39 +1136,57 @@ SCRIPT_ONLY_VM () {
 
 # Extras
 EXTRAS () {
+  local step_status
+
   if [[ "$EXTRA_GLOBAL" != true ]]; then
     echo -e "\n${OR:-}--- Skip Extra Updates because of the user settings ---${CL:-}\n"
+    return 0
   elif EFFECTIVE_HEADLESS && [[ "$EXTRA_IN_HEADLESS" == false ]]; then
     echo -e "\n${OR:-}--- Skip Extra Updates because of Headless Mode or user settings ---${CL:-}\n"
-  else
-    echo -e "\n${OR:-}--- Searching for extra updates ---${CL:-}"
-    if [[ "$SSH_CONNECTION" != true ]]; then
-      pct exec "$CONTAINER" -- bash -c "mkdir -p $LOCAL_FILES/"
-      pct push "$CONTAINER" -- $LOCAL_FILES/update-extras.sh $LOCAL_FILES/update-extras.sh
-      pct push "$CONTAINER" -- $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf
-      pct exec "$CONTAINER" -- bash -c "LOCAL_FILES='$LOCAL_FILES' chmod +x '$LOCAL_FILES/update-extras.sh' && \
-                                        LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh' && \
-                                        rm -rf $LOCAL_FILES || true"
-      USER_SCRIPTS
-    # Extras in VMS with SSH_CONNECTION
-    elif [[ "$USER" != root ]]; then
-      echo -e "${RD:-}--- You need root user for extra updates - maybe in later relaeses possible ---${CL:-}"
-    else
-      ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" mkdir -p $LOCAL_FILES/
-      scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
-      scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
-      ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "LOCAL_FILES='$LOCAL_FILES' chmod +x '$LOCAL_FILES/update-extras.sh' && \
-                LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh' && \
-                rm -rf $LOCAL_FILES || true"
-      USER_SCRIPTS_VM
-    fi
-    echo -e "${GN:-}---   Finished extra updates    ---${CL:-}"
-    if [[ $WILL_STOP != true && $WELCOME_SCREEN != true ]]; then
-      echo
-    elif [[ "$WELCOME_SCREEN" == true ]]; then
-      echo
-    fi
+    return 0
   fi
+
+  echo -e "\n${OR:-}--- Searching for extra updates ---${CL:-}"
+  if [[ "$SSH_CONNECTION" != true ]]; then
+    RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "mkdir -p '$LOCAL_FILES'" || return $?
+    RUN_LXC_STEP pct push "$CONTAINER" -- "$LOCAL_FILES/update-extras.sh" "$LOCAL_FILES/update-extras.sh" || return $?
+    RUN_LXC_STEP pct push "$CONTAINER" -- "$LOCAL_FILES/update.conf" "$LOCAL_FILES/update.conf" || return $?
+    RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c \
+      'chmod +x "$1/update-extras.sh" && LOCAL_FILES="$1" "$1/update-extras.sh"' _ "$LOCAL_FILES" || {
+      step_status=$?
+      pct exec "$CONTAINER" -- bash -c "rm -rf '$LOCAL_FILES'" >/dev/null 2>&1 || true
+      return "$step_status"
+    }
+    RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "rm -rf '$LOCAL_FILES'" || return $?
+    USER_SCRIPTS || return $?
+  elif [[ "$USER" != root ]]; then
+    ERROR_CODE=2
+    ID="$VM"
+    NAME="${NAME:-VM $VM}"
+    ERROR_MSG="Root is required for VM extra updates."
+    ERROR
+    return 2
+  else
+    RUN_VM_SSH_STEP ssh -q -p "$SSH_VM_PORT" "$USER@$IP" mkdir -p "$LOCAL_FILES" || return $?
+    RUN_VM_SSH_STEP scp -q -P "$SSH_VM_PORT" "$LOCAL_FILES/update-extras.sh" "$USER@$IP:$LOCAL_FILES/update-extras.sh" || return $?
+    RUN_VM_SSH_STEP scp -q -P "$SSH_VM_PORT" "$LOCAL_FILES/update.conf" "$USER@$IP:$LOCAL_FILES/update.conf" || return $?
+    RUN_VM_SSH_STEP ssh -q -p "$SSH_VM_PORT" -tt "$USER@$IP" \
+      "chmod +x '$LOCAL_FILES/update-extras.sh' && LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh'" || {
+      step_status=$?
+      ssh -q -p "$SSH_VM_PORT" "$USER@$IP" rm -rf "$LOCAL_FILES" >/dev/null 2>&1 || true
+      return "$step_status"
+    }
+    RUN_VM_SSH_STEP ssh -q -p "$SSH_VM_PORT" "$USER@$IP" rm -rf "$LOCAL_FILES" || return $?
+    USER_SCRIPTS_VM || return $?
+  fi
+
+  echo -e "${GN:-}---   Finished extra updates    ---${CL:-}"
+  if [[ $WILL_STOP != true && $WELCOME_SCREEN != true ]]; then
+    echo
+  elif [[ "$WELCOME_SCREEN" == true ]]; then
+    echo
+  fi
+  return 0
 }
 
 # Trim Filesystem
@@ -1100,19 +1199,32 @@ TRIM_FILESYSTEM() {
     if [[ ${#LVS[@]} -gt 0 ]] && [[ "$ROOT_FS" == "ext4" ]]; then
       echo -e "${OR:-}--- Trimming filesystem ---${CL:-}"
       echo -e "${RD:-}Data before trim: ${LVS[*]}%${CL:-}"
-      pct fstrim "$CONTAINER" --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT"
+      RUN_LXC_STEP pct fstrim "$CONTAINER" --ignore-mountpoints "$FSTRIM_WITH_MOUNTPOINT" || return $?
       local LVS_AFTER
       mapfile -t LVS_AFTER < <(lvs | awk -F '[[:space:]]+' 'NR>1 && (/Data%|'"vm-$CONTAINER"'/) {gsub(/%/, "", $7); print $7}')
       echo -e "${GN:-}Data after trim: ${LVS_AFTER[*]}%${CL:-}\n"
       sleep 1.5
     fi
   fi
+  return 0
 }
 
 # Dist Upgrade
 DIST_UPGRADE () {
-  # debian 12 -> 13
-  DEB_VERSION=$(pct exec "$CONTAINER" -- bash -c "grep -oP '(?<=^VERSION_ID=).+' /etc/os-release | tr -d '\"'")
+  local version_output probe_rc available_output
+
+  if version_output=$(pct exec "$CONTAINER" -- bash -c "grep -oP '(?<=^VERSION_ID=).+' /etc/os-release | tr -d '\"'" 2>&1); then
+    DEB_VERSION=$version_output
+  else
+    probe_rc=$?
+    ERROR_CODE=$probe_rc
+    ID=$CONTAINER
+    NAME="${NAME:-LXC $CONTAINER}"
+    ERROR_MSG="$version_output"
+    ERROR
+    return "$probe_rc"
+  fi
+
   if [[ "$DEB_VERSION" == "12" ]]; then
     echo -e "${OR:-}✅ Debian 12 detected, want to upgrade to Debian 13?${CL:-}"
     read -p "Type [Y/y] for yes - anything else will skip: " -r
@@ -1129,16 +1241,27 @@ DIST_UPGRADE () {
         return 1
       fi
       echo -e "${GR:-}⏩ Upgrade to Debian 13 (Trixie) now:${CL:-}"
-      echo -e "${OR:-}--- Enable stop on error ---\n${CL:-}"
-      set -e
       echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
-      pct exec "$CONTAINER" -- bash -c "apt-get update -y"
+      RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "apt-get update -y" || return $?
       echo -e "${OR:-}--- APT UPGRADE ---${CL:-}"
-      pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING dist-upgrade -y"
+      RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || return $?
       echo -e "${OR:-}--- Cleaning ---${CL:-}"
-      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y"
+      RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y && apt-get autoclean -y" || return $?
       echo -e "\n${OR:-}--- Need 5Gig on root folder for upgrade - check it now ---${CL:-}"
-      if [[ $(pct exec "$CONTAINER" -- bash -c "df --output=avail -BG / | tail -1 | sed 's/G//'") -gt 5 ]]; then
+
+      if available_output=$(pct exec "$CONTAINER" -- bash -c "df --output=avail -BG / | tail -1 | sed 's/G//'" 2>&1); then
+        available_output=${available_output//[[:space:]]/}
+      else
+        probe_rc=$?
+        ERROR_CODE=$probe_rc
+        ID=$CONTAINER
+        NAME="${NAME:-LXC $CONTAINER}"
+        ERROR_MSG="$available_output"
+        ERROR
+        return "$probe_rc"
+      fi
+
+      if [[ "$available_output" =~ ^[0-9]+$ ]] && (( available_output > 5 )); then
         echo -e "✅ OK\n"
         echo -e "${OR:-}⚠  This is the last step! !!! After all, check your repos !!!${CL:-}"
         echo -e "'sudo apt modernize-sources' could help you here."
@@ -1146,33 +1269,35 @@ DIST_UPGRADE () {
         read -p "Type [Y/y] for yes - anything else will skip: " -r
         if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
           echo -e "${OR:-}--- Change Repo to Trixie ---\n${CL:-}"
-          pct exec "$CONTAINER" -- bash -c "sed -i 's/bookworm/trixie/g' /etc/apt/sources.list"
-          pct exec "$CONTAINER" -- bash -c "find /etc/apt/sources.list.d -type f -exec sed -i 's/bookworm/trixie/g' {} \;"
+          RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "sed -i 's/bookworm/trixie/g' /etc/apt/sources.list" || return $?
+          RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "find /etc/apt/sources.list.d -type f -exec sed -i 's/bookworm/trixie/g' {} \\;" || return $?
           echo -e "${OR:-}--- APT UPDATE for Trixie ---${CL:-}"
-          pct exec "$CONTAINER" -- bash -c "apt-get update -y"
+          RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "apt-get update -y" || return $?
           echo -e "${OR:-}--- APT UPGRADE for Trixie ---${CL:-}"
-          pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING dist-upgrade -y"
+          RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || return $?
           echo -e "\n${GR:-}✅ UPGRADE to Trixie done ${CL:-}"
           echo -e "\n${OR:-}--- Restart the container now for you ---${CL:-}"
-          pct exec "$CONTAINER" -- bash -c "reboot"
+          RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "reboot" || return $?
           echo
           return 0
-        else
-          echo -e "❌${BL:-} skipped\n${CL:-}"
-          return 0
         fi
-      else
-        echo -e "❌${RD:-} need more space, pls clean up or resize disk, by yourself\n${CL:-}"
-        exit 100
+        echo -e "❌${BL:-} skipped\n${CL:-}"
+        return 0
       fi
-    else
-      echo -e "❌${BL:-} skipped\n${CL:-}"
-      return 0
+
+      ERROR_CODE=100
+      ID=$CONTAINER
+      NAME="${NAME:-LXC $CONTAINER}"
+      ERROR_MSG="At least 6 GiB free on the root filesystem is required for the distribution upgrade"
+      ERROR
+      return 100
     fi
-  else
-    echo -e "❌${BL:-} no Debian 12 detected\n${CL:-}"
+    echo -e "❌${BL:-} skipped\n${CL:-}"
     return 0
   fi
+
+  echo -e "❌${BL:-} no Debian 12 detected\n${CL:-}"
+  return 0
 }
 
 # Check Updates for Welcome-Screen
@@ -1418,29 +1543,27 @@ UPDATE_HOST () {
 
 # shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
-  echo -e "${OR:-}--- PVE UPDATE ---${CL:-}" && pveupdate || true
+  echo -e "${OR:-}--- PVE UPDATE ---${CL:-}"
+  RUN_HOST_STEP pveupdate || return $?
+
   if EFFECTIVE_HEADLESS; then
-    echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}" && \
-    APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y 2>&1); ERROR; }
-    if [[ $ERROR_CODE != "" ]]; then return; fi
+    echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}"
+    RUN_HOST_STEP APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y || return $?
+  elif [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+    echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
+    RUN_HOST_STEP APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y || return $?
   else
-    if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-      echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}" && \
-      APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y 2>&1); ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
-    else
-      echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}" && \
-      APT_COMMAND "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(APT_COMMAND "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y 2>&1); ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
-    fi
+    echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
+    RUN_HOST_STEP APT_COMMAND "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y || return $?
   fi
-  echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}" && \
-  APT_COMMAND --purge autoremove -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(APT_COMMAND --purge autoremove -y 2>&1); ERROR; }
-  if [[ $ERROR_CODE != "" ]]; then return; fi
+
+  echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
+  RUN_HOST_STEP APT_COMMAND --purge autoremove -y || return $?
   echo
   CHOST="true"
-  UPDATE_CHECK
+  UPDATE_CHECK || { local rc=$?; CHOST=""; return "$rc"; }
   CHOST=""
+  return 0
 }
 
 ############################
@@ -1555,16 +1678,19 @@ UPDATE_CONTAINER () {
   fi
   if SCRIPT_ONLY_ENABLED "$CONTAINER"; then
     SCRIPT_ONLY_LXC || {
-      ERROR_CODE=$?
+      local script_status=$?
+      ERROR_CODE=$script_status
       ID=$CONTAINER
       ERROR_MSG="${SCRIPT_ONLY_ERROR:-Script-only user scripts failed or were not found}"
       ERROR
+      CCONTAINER=""
+      return "$script_status"
     }
-    if [[ -z "${ERROR_CODE:-}" ]] && declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
+    if declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
       STATUS_MODEL_UPDATE_RESULT "$CONTAINER" success 0 || true
     fi
     CCONTAINER=""
-    return
+    return 0
   fi
   # Run dist-upgrade
   if [[ $CHECK_DIST == true && $OS =~ debian ]]; then
@@ -1583,78 +1709,64 @@ UPDATE_CONTAINER () {
     return 0
   fi
   # Run update
-  # shellcheck disable=SC2015
   if [[ "${OS,,}" =~ ubuntu|debian|devuan ]]; then
     echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
     # Check APT in Container for Unifi before update
     if pct exec "$CONTAINER" -- bash -c "grep -rnw /etc/apt -e unifi >/dev/null 2>&1"; then
       UNIFI="true"
       # --allow-releaseinfo-change needed because Unifi regularly changes repository metadata between versions
-      pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update --allow-releaseinfo-change" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update --allow-releaseinfo-change" 2>&1); ERROR; }
+      RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update --allow-releaseinfo-change" || return $?
     else
-      pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update" 2>&1); ERROR; }
+      UNIFI=""
+      RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update" || return $?
     fi
-    if [[ $ERROR_CODE != "" ]]; then return; fi
-    # Check END
+
     if EFFECTIVE_HEADLESS; then
       echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}"
-      pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" 2>&1); ERROR; }
-      UNIFI=""
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || return $?
     elif [[ "$UNIFI" == true ]]; then
       echo -e "\n${OR:-}--- APT UPGRADE HEADLESS (Unifi) ---${CL:-}"
-      # Use --force-confdef/--force-confold to suppress Unifi interactive prompts
-      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" 2>&1); ERROR; }
-      UNIFI=""
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || return $?
+    elif [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+      echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
+      RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || return $?
     else
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
-      if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-        pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
-      else
-        pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
-      fi
+      RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" || return $?
     fi
-      echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
-      pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get --purge autoremove -y" 2>&1); ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
-      pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get autoclean -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get autoclean -y" 2>&1); ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
-      EXTRAS
-      TRIM_FILESYSTEM
-      UPDATE_CHECK
+    UNIFI=""
+
+    echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
+    RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get --purge autoremove -y" || return $?
+    RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get autoclean -y" || return $?
+    EXTRAS || return $?
+    TRIM_FILESYSTEM || return $?
+    UPDATE_CHECK || return $?
   elif [[ "$OS" =~ fedora ]]; then
-    echo -e "\n${OR:-}--- DNF UPGRATE ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" 2>&1); ERROR; }
-    if [[ $ERROR_CODE != "" ]]; then return; fi
+    echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
+    RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" || return $?
     echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" 2>&1); ERROR; }
-    if [[ $ERROR_CODE != "" ]]; then return; fi
-    EXTRAS
-    TRIM_FILESYSTEM
-    UPDATE_CHECK
+    RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" || return $?
+    EXTRAS || return $?
+    TRIM_FILESYSTEM || return $?
+    UPDATE_CHECK || return $?
   elif [[ "$OS" =~ archlinux ]]; then
     echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm" 2>&1); ERROR; }
-    if [[ $ERROR_CODE != "" ]]; then return; fi
-    EXTRAS
-    TRIM_FILESYSTEM
-    UPDATE_CHECK
+    RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm" || return $?
+    EXTRAS || return $?
+    TRIM_FILESYSTEM || return $?
+    UPDATE_CHECK || return $?
   elif [[ "$OS" =~ alpine ]]; then
     echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
-    pct exec "$CONTAINER" -- ash -c "apk -U upgrade" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- ash -c "apk -U upgrade" 2>&1); ERROR; }
-    if [[ $ERROR_CODE != "" ]]; then return; fi
+    RUN_LXC_STEP pct exec "$CONTAINER" -- ash -c "apk -U upgrade" || return $?
     if [[ "$WILL_STOP" != true ]]; then echo; fi
     echo
   elif [[ "$OS" =~ centos ]]; then
     echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "yum -y update" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "yum -y update" 2>&1); ERROR; }
-    if [[ $ERROR_CODE != "" ]]; then return; fi
-    EXTRAS
-    TRIM_FILESYSTEM
-    UPDATE_CHECK
+    RUN_LXC_STEP pct exec "$CONTAINER" -- bash -c "yum -y update" || return $?
+    EXTRAS || return $?
+    TRIM_FILESYSTEM || return $?
+    UPDATE_CHECK || return $?
   else
     echo -e "${OR:-}The system could not be idetified.${CL:-}"
   fi
@@ -1662,6 +1774,7 @@ UPDATE_CONTAINER () {
     STATUS_MODEL_UPDATE_RESULT "$CONTAINER" success 0 || true
   fi
   CCONTAINER=""
+  return 0
 }
 
 ############################
@@ -1751,13 +1864,16 @@ UPDATE_VM () {
   echo
   if SCRIPT_ONLY_ENABLED "$VM"; then
     SCRIPT_ONLY_VM || {
-      ERROR_CODE=$?
+      local script_status=$?
+      ERROR_CODE=$script_status
       ID=$VM
       ERROR_MSG="${SCRIPT_ONLY_ERROR:-Script-only user scripts failed or were not found}"
       ERROR
+      CVM=""
+      return "$script_status"
     }
     CVM=""
-    return
+    return 0
   fi
   # Read SSH config file - check how update is possible
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
@@ -1795,27 +1911,25 @@ UPDATE_VM () {
       # Free-BSD
       if [[ $KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true ]]; then
         echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
+        RUN_VM_SSH_STEP ssh -tt -q -p "$SSH_VM_PORT" "$USER@$IP" pkg update || return $?
         echo -e "\n${OR:-}--- PKG UPGRADE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg upgrade -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg upgrade -y 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
+        RUN_VM_SSH_STEP ssh -tt -q -p "$SSH_VM_PORT" "$USER@$IP" pkg upgrade -y || return $?
         echo -e "\n${OR:-}--- PKG CLEANING ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg autoremove -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg autoremove -y 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
+        RUN_VM_SSH_STEP ssh -tt -q -p "$SSH_VM_PORT" "$USER@$IP" pkg autoremove -y || return $?
         echo
-        return
+        return 0
       elif [[ "$KERNEL" =~ FreeBSD ]]; then
         echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
-        return
+        return 0
       # Debian Base
       elif [[ "${OS,,}" =~ debian|ubuntu|mint|kali|neon|devuan ]]; then
         # Check Internet connection
-        if ! ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
+        if ! ssh -q -p "$SSH_VM_PORT" "$USER@$IP" "$CHECK_URL_EXE" -c1 "$CHECK_URL" &>/dev/null; then
           echo -e "${OR:-} ❌ Internet check fail - skip this VM${CL:-}\n"
           UPDATE_FAILURE=true
-          return
+          return 1
         fi
+        UPDATE_USER=""
         if [[ "$USER" != root ]]; then
           UPDATE_USER="sudo "
         fi
@@ -1828,63 +1942,47 @@ UPDATE_VM () {
           fi
         fi
         echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get update -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get update -y" 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
+        RUN_VM_SSH_STEP ssh -q -p "$SSH_VM_PORT" -tt "$USER@$IP" "${apt_prefix}apt-get update -y" || return $?
         echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
         if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-          ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} upgrade -y" 2>&1); ERROR; }
-          if [[ $ERROR_CODE != "" ]]; then return; fi
+          RUN_VM_SSH_STEP ssh -tt -q -p "$SSH_VM_PORT" "$USER@$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} upgrade -y" || return $?
         else
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" 2>&1); ERROR; }
-          if [[ $ERROR_CODE != "" ]]; then return; fi
+          RUN_VM_SSH_STEP ssh -q -p "$SSH_VM_PORT" -tt "$USER@$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" || return $?
         fi
         echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get --purge autoremove -y" 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get autoclean -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get autoclean -y" 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
-        UPDATE_CHECK
+        RUN_VM_SSH_STEP ssh -q -p "$SSH_VM_PORT" -tt "$USER@$IP" "${apt_prefix}apt-get --purge autoremove -y" || return $?
+        RUN_VM_SSH_STEP ssh -q -p "$SSH_VM_PORT" -tt "$USER@$IP" "${apt_prefix}apt-get autoclean -y" || return $?
+        EXTRAS || return $?
+        UPDATE_CHECK || return $?
       # Fedora
       elif [[ "$OS" =~ Fedora ]]; then
         echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y upgrade || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y upgrade 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
+        RUN_VM_SSH_STEP ssh -tt -q -p "$SSH_VM_PORT" "$USER@$IP" dnf -y upgrade || return $?
         echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
-        ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
-        UPDATE_CHECK
+        RUN_VM_SSH_STEP ssh -q -p "$SSH_VM_PORT" "$USER@$IP" dnf -y --purge autoremove || return $?
+        EXTRAS || return $?
+        UPDATE_CHECK || return $?
       # Arch
       elif [[ "$OS" =~ Arch ]]; then
         echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pacman -Su --noconfirm || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pacman -Su --noconfirm 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
-        UPDATE_CHECK
+        RUN_VM_SSH_STEP ssh -tt -q -p "$SSH_VM_PORT" "$USER@$IP" pacman -Su --noconfirm || return $?
+        EXTRAS || return $?
+        UPDATE_CHECK || return $?
       # Alpine
       elif [[ "$OS" =~ Alpine ]]; then
         echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" apk -U upgrade || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" apk -U upgrade 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
+        RUN_VM_SSH_STEP ssh -tt -q -p "$SSH_VM_PORT" "$USER@$IP" apk -U upgrade || return $?
       # Cent OS
       elif [[ "$OS" =~ CentOS ]]; then
         echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" yum -y update || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" yum -y update 2>&1); ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
-        UPDATE_CHECK
-      # Windows ( WindowsUpdate need admin rights, ...)
-#      elif [[ $OS_BASE == "win10" || $OS_BASE == "win11" ]]; then
-#        # check updates
-#        ssh -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command Get-WindowsUpdate"
-#        # install updates
-#        ssh -p "$SSH_VM_PORT" "$USER@$IP" "powershell.exe -Command Install-WindowsUpdate -AcceptAll -IgnoreReboot"
+        RUN_VM_SSH_STEP ssh -tt -q -p "$SSH_VM_PORT" "$USER@$IP" yum -y update || return $?
+        EXTRAS || return $?
+        UPDATE_CHECK || return $?
       else
         echo -e "${RD:-}  ❌ The system is not supported.\n  Maybe with later version ;)\n${CL:-}"
         echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
       fi
-      return
+      return 0
     fi
   else
     UPDATE_VM_QEMU
@@ -1913,71 +2011,59 @@ UPDATE_VM_QEMU () {
     # Run Update
     if [[ $KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true ]]; then
       echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
-      RUN_QEMU_COMMAND "$VM" -- tcsh -c "pkg update" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_COMMAND "$VM" -- tcsh -c "pkg update" || return $?
       echo -e "\n${OR:-}--- PKG UPGRADE ---${CL:-}"
-      RUN_QEMU_COMMAND "$VM" -- tcsh -c "pkg upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_COMMAND "$VM" -- tcsh -c "pkg upgrade -y" || return $?
       echo -e "\n${OR:-}--- PKG CLEANING ---${CL:-}"
-      RUN_QEMU_COMMAND "$VM" -- tcsh -c "pkg autoremove -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_COMMAND "$VM" -- tcsh -c "pkg autoremove -y" || return $?
       echo
-      UPDATE_CHECK
-      return
+      UPDATE_CHECK || return $?
+      return 0
     elif [[ "$KERNEL" =~ FreeBSD ]]; then
       echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
-      return
+      return 0
     elif [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
       # Check Internet connection
-      if ! (RUN_QEMU_COMMAND "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"); then
+      if ! RUN_QEMU_COMMAND "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"; then
         echo -e "${OR:-} ❌ Internet is not reachable - skip the update${CL:-}\n"
-        return
+        UPDATE_FAILURE=true
+        return 1
       fi
       echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
-      RUN_QEMU_COMMAND "$VM" --timeout 120 -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get update -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_COMMAND "$VM" --timeout 120 -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get update -y" || return $?
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-        RUN_QEMU_DURABLE "$VM" --timeout 120 -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
+        RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_DURABLE "$VM" --timeout 120 -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING upgrade -y" || return $?
       else
-        RUN_QEMU_DURABLE "$VM" --timeout 120 -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-        if [[ $ERROR_CODE != "" ]]; then return; fi
+        RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_DURABLE "$VM" --timeout 120 -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" || return $?
       fi
       echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
-      RUN_QEMU_COMMAND "$VM" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
-      RUN_QEMU_COMMAND "$VM" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get autoclean -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_COMMAND "$VM" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get --purge autoremove -y" || return $?
+      RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_COMMAND "$VM" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get autoclean -y" || return $?
       echo
-      UPDATE_CHECK
+      UPDATE_CHECK || return $?
     elif [[ "$OS" =~ Fedora ]]; then
       echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
-      RUN_QEMU_COMMAND "$VM" -- bash -c "dnf -y upgrade" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_COMMAND "$VM" -- bash -c "dnf -y upgrade" || return $?
       echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
-      RUN_QEMU_COMMAND "$VM" -- bash -c "dnf -y --purge autoremove" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_COMMAND "$VM" -- bash -c "dnf -y --purge autoremove" || return $?
       echo
-      UPDATE_CHECK
+      UPDATE_CHECK || return $?
     elif [[ "$OS" =~ Arch ]]; then
       echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
-      RUN_QEMU_COMMAND "$VM" -- bash -c "pacman -Su --noconfirm" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_COMMAND "$VM" -- bash -c "pacman -Su --noconfirm" || return $?
       echo
-      UPDATE_CHECK
+      UPDATE_CHECK || return $?
     elif [[ "$OS" =~ Alpine ]]; then
       echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
-      RUN_QEMU_COMMAND "$VM" -- ash -c "apk -U upgrade" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_COMMAND "$VM" -- ash -c "apk -U upgrade" || return $?
     elif [[ "$OS" =~ CentOS ]]; then
       echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
-      RUN_QEMU_COMMAND "$VM" -- bash -c "yum -y update" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
-      if [[ $ERROR_CODE != "" ]]; then return; fi
+      RUN_UPDATE_STEP "$VM" "${NAME:-VM $VM}" RUN_QEMU_COMMAND "$VM" -- bash -c "yum -y update" || return $?
       echo
-      UPDATE_CHECK
+      UPDATE_CHECK || return $?
     elif [[ "${OS,,}" =~ windows ]]; then
-      UPDATE_VM_QEMU_WINDOWS
+      UPDATE_VM_QEMU_WINDOWS || return $?
     else
       echo -e "${RD:-}  The system is not supported.\n  Maybe with later version ;)\n${CL:-}"
       echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
@@ -1991,8 +2077,11 @@ UPDATE_VM_QEMU () {
     ID=$VM
     ERROR_MSG="${QGA_ERROR:-SSH or QEMU guest agent is not initialized on VM $VM}"
     ERROR
+    CVM=""
+    return 1
   fi
   CVM=""
+  return 0
 }
 
 UPDATE_VM_QEMU_WINDOWS () {
@@ -2004,7 +2093,7 @@ UPDATE_VM_QEMU_WINDOWS () {
     ERROR_MSG="Windows update helper is not installed"
     declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
     ERROR
-    return
+    return 1
   fi
 
   if ! encoded=$(WINDOWS_POWERSHELL_ENCODE install); then
@@ -2013,18 +2102,22 @@ UPDATE_VM_QEMU_WINDOWS () {
     ERROR_MSG="Could not encode the Windows Update PowerShell command"
     declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
     ERROR
-    return
+    return 1
   fi
 
   echo -e "${OR:-}--- WINDOWS UPDATE ---${CL:-}"
   QEMU_GUEST_EXEC "$VM" --timeout 180 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
-    ERROR_CODE=${QEMU_EXEC_EXITCODE:-1}
+    if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
+      ERROR_CODE=$QEMU_EXEC_TRANSPORT_RC
+    else
+      ERROR_CODE=${QEMU_EXEC_EXITCODE:-1}
+    fi
     ID=$VM
     ERROR_MSG="${QEMU_EXEC_OUTPUT:-Windows Update command failed}"
     declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
     ERROR
-    return
+    return "$ERROR_CODE"
   fi
 
   result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | tail -n 1)
@@ -2036,7 +2129,7 @@ UPDATE_VM_QEMU_WINDOWS () {
     ERROR_MSG="Invalid Windows Update response: $result"
     declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
     ERROR
-    return
+    return 1
   fi
 
   echo "Windows updates processed: $processed"
@@ -2044,6 +2137,7 @@ UPDATE_VM_QEMU_WINDOWS () {
   if [[ "$reboot" == true ]]; then
     echo -e "${OR:-}Reboot required; no automatic reboot was performed.${CL:-}"
   fi
+  return 0
 }
 
 ## General ##
@@ -2086,15 +2180,17 @@ CLEAN_LOGFILE () {
 
 # Error handling
 ERROR () {
+  local error_status="${ERROR_CODE:-1}"
   UPDATE_FAILURE=true
   if [[ "${CCONTAINER:-}" == true && "${ID:-}" =~ ^[0-9]+$ ]] &&
     declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
-    STATUS_MODEL_UPDATE_RESULT "$ID" failed "${ERROR_CODE:-1}" || true
+    STATUS_MODEL_UPDATE_RESULT "$ID" failed "$error_status" || true
   fi
   echo -e "$ID : $NAME" | tee -a "$ERROR_LOG_FILE" >/dev/null 2>&1
-  echo -e "Error code:   $ERROR_CODE" | tee -a "$ERROR_LOG_FILE" >/dev/null 2>&1
+  echo -e "Error code:   $error_status" | tee -a "$ERROR_LOG_FILE" >/dev/null 2>&1
   echo -e "Error output: $ERROR_MSG\n" | tee -a "$ERROR_LOG_FILE" >/dev/null 2>&1
   echo
+  return "$error_status"
 }
 
 UPDATE_FINAL_RC() {
