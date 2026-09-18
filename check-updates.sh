@@ -1620,7 +1620,7 @@ CHECK_VM () {
           "pkg count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      if ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" sh -c "$package_count_command"); then
+      if ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$package_count_command"); then
         STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error PACKAGE_COUNT_FAILED \
           "Could not determine pkg update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
@@ -1646,7 +1646,7 @@ CHECK_VM () {
           "APT count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      if ! APT_OUTPUT=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" bash -c "$apt_count_command"); then
+      if ! APT_OUTPUT=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$apt_count_command"); then
         STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
           "Could not determine APT update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
@@ -1677,7 +1677,7 @@ CHECK_VM () {
           "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      if ! rpm_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" bash -c "$rpm_count_command"); then
+      if ! rpm_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$rpm_count_command"); then
         STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
           "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
@@ -1695,7 +1695,7 @@ CHECK_VM () {
     elif [[ "$OS" =~ Arch ]]; then
       local package_count_command package_count_result
       if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pacman) ||
-        ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" sh -c "$package_count_command") ||
+        ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$package_count_command") ||
         ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
         STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pacman "null" "null" error PACKAGE_COUNT_FAILED \
           "Could not determine Pacman update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -1709,7 +1709,7 @@ CHECK_VM () {
     elif [[ "$OS" =~ Alpine ]]; then
       local package_count_command package_count_result
       if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND apk) ||
-        ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" sh -c "$package_count_command") ||
+        ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$package_count_command") ||
         ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
         STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apk "null" "null" error PACKAGE_COUNT_FAILED \
           "Could not determine APK update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -1727,7 +1727,7 @@ CHECK_VM () {
           "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      if ! rpm_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" bash -c "$rpm_count_command"); then
+      if ! rpm_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$rpm_count_command"); then
         STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
           "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1

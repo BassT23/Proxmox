@@ -73,7 +73,7 @@ INTERNAL_SSH_USE_IDENTITY() { :; }
 INTERNAL_SSH_RESOLVE_VM() { source "$PWD/internal-ssh.sh"; INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "$4"; }
 RUN_SSH_COMMAND() {
   printf 'ssh:%s\n' "$*" >> "$LOG"
-  if [[ "$4" == sh && "${6-}" == : ]]; then
+  if [[ "$4" == : ]]; then
     printf 'UU_PACKAGE_COUNTS|ok|pkg|1|null|null|false\n'
     return 0
   fi

@@ -19,6 +19,7 @@ Improved:
 - QEMU Guest Agent failures are now classified from protocol state and return codes instead of human-readable guest-agent output
 
 Fixed:
+- SSH-based guest checks now execute generated package-count commands directly without an extra remote shell wrapper
 - remote cluster QGA checks now stage matching guest helpers, and Windows checks use canonical OS metadata with structured result parsing
 - total-only package managers no longer advertise separate normal/security update counts unless security metadata is available
 - remote cluster node checks now pass the status-record and target-selection files to their correct runtime variables
