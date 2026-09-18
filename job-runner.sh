@@ -780,7 +780,7 @@ run_global_job() {
   if [[ "$exit_code" -eq 0 ]]; then
     printf 'Post-update status refresh started for all systems.\n'
     if [[ -x "$CHECK_CLI" ]]; then
-      UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check </dev/null || post_check_rc=$?
+      UU_CHECK_JOB_EXECUTION=true UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check </dev/null || post_check_rc=$?
       post_check_message="post-update full status refresh rc=$post_check_rc"
     else
       post_check_rc=127
