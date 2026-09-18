@@ -47,6 +47,85 @@ RUN_SSH_COMMAND() {
   timeout "${UU_SSH_COMMAND_TIMEOUT:-120}" ssh "${ssh_options[@]}" -p "$port" "$user@$host" "$@"
 }
 
+# Execute a mutating update step exactly once while keeping its combined
+# stdout/stderr available to both the user and the updater error model.
+RUN_CAPTURED_COMMAND() {
+  local output_file command_rc tee_rc had_errexit=false command_text
+  local -a pipeline_status
+
+  COMMAND_CAPTURE_OUTPUT=""
+  COMMAND_CAPTURE_STATUS=1
+
+  output_file=$(mktemp "${TMPDIR:-/tmp}/ultimate-updater-step.XXXXXX") || {
+    COMMAND_CAPTURE_OUTPUT="Unable to create temporary output file for update step."
+    COMMAND_CAPTURE_STATUS=1
+    return 1
+  }
+
+  if [[ $- == *e* ]]; then
+    had_errexit=true
+    set +e
+  fi
+
+  "$@" 2>&1 | tee "$output_file"
+  pipeline_status=("${PIPESTATUS[@]}")
+
+  if [[ "$had_errexit" == true ]]; then
+    set -e
+  fi
+
+  command_rc=${pipeline_status[0]:-1}
+  tee_rc=${pipeline_status[1]:-0}
+  if (( command_rc == 0 && tee_rc != 0 )); then
+    command_rc=$tee_rc
+  fi
+
+  COMMAND_CAPTURE_OUTPUT=$(<"$output_file")
+  rm -f -- "$output_file"
+
+  COMMAND_CAPTURE_STATUS=$command_rc
+  if (( command_rc != 0 && ${#COMMAND_CAPTURE_OUTPUT} == 0 )); then
+    printf -v command_text '%q ' "$@"
+    COMMAND_CAPTURE_OUTPUT="Command failed without output: ${command_text% }"
+  fi
+
+  return "$command_rc"
+}
+
+RUN_UPDATE_STEP() {
+  local target_id="$1" target_name="$2" rc
+  shift 2
+
+  if RUN_CAPTURED_COMMAND "$@"; then
+    return 0
+  else
+    rc=$?
+  fi
+
+  ERROR_CODE=$rc
+  ID="$target_id"
+  NAME="$target_name"
+  ERROR_MSG="$COMMAND_CAPTURE_OUTPUT"
+  if declare -F ERROR >/dev/null 2>&1; then
+    ERROR
+  else
+    printf '%s\n' "$ERROR_MSG" >&2
+  fi
+  return "$rc"
+}
+
+RUN_HOST_STEP() {
+  RUN_UPDATE_STEP "${HOSTNAME:-HOST}" "${HOSTNAME:-HOST}" "$@"
+}
+
+RUN_LXC_STEP() {
+  RUN_UPDATE_STEP "${CONTAINER:-LXC}" "${NAME:-LXC ${CONTAINER:-unknown}}" "$@"
+}
+
+RUN_VM_SSH_STEP() {
+  RUN_UPDATE_STEP "${VM:-VM}" "${NAME:-VM ${VM:-unknown}}" "$@"
+}
+
 READ_APT_UPDATE_COUNTS() {
   local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
   local result
