@@ -1063,8 +1063,7 @@ SCRIPT_ONLY_SSH_VM () {
   done
   ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "rm -rf $LOCAL_FILES/user-scripts"
   [[ $SCRIPT_ONLY_STATUS -ne 0 ]] && return "$SCRIPT_ONLY_STATUS"
-  echo -e "\n*** User scripts finished ***\n"
-  return 0
+  echo -e "\n${GN:-}Script-only user scripts finished${CL:-}\n"
 }
 SCRIPT_ONLY_QEMU_VM () {
   SCRIPT_ONLY_FILES "$USER_SCRIPTS/$VM"
