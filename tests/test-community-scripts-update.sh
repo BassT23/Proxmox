@@ -98,7 +98,10 @@ if grep -Fq 'timeout 1800s' "$ROOT_DIR/update-extras.sh"; then
   echo 'community update must not use a hard timeout' >&2
   exit 1
 fi
+# These assertions intentionally match literal shell syntax in update-extras.sh.
+# shellcheck disable=SC2016
 grep -Fq 'COMMUNITY_PIPE_STATUS=("${PIPESTATUS[@]}")' "$ROOT_DIR/update-extras.sh"
+# shellcheck disable=SC2016
 grep -Fq 'COMMUNITY_UPDATE_EXIT=${COMMUNITY_PIPE_STATUS[0]:-1}' "$ROOT_DIR/update-extras.sh"
 grep -Fq "COMMUNITY_UPDATE_COMMAND=\"\${UU_COMMUNITY_UPDATE_COMMAND:-update}\"" "$ROOT_DIR/update-extras.sh"
 
