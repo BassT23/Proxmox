@@ -892,7 +892,7 @@ VM_BACKUP () {
       fi
       echo -e "💾${OR:-} Create a backup for the VM (this will take some time - please wait)${CL:-}"
       if RUN_PROXMOX_COMMAND vzdump "$VM" --mode "$MODE" --storage "$STORAGE" --compress zstd; then
-        echo -e "✅${GN:-} Backup created${CL:-}\n"
+        echo -e "✅${GN:-} Backup created${CL:-}"
       else
         echo -e "❌${RD:-} Backup of VM $VM failed - skipping update${CL:-}"
         return 1
@@ -1063,7 +1063,8 @@ SCRIPT_ONLY_SSH_VM () {
   done
   ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "rm -rf $LOCAL_FILES/user-scripts"
   [[ $SCRIPT_ONLY_STATUS -ne 0 ]] && return "$SCRIPT_ONLY_STATUS"
-  echo -e "\n${GN:-}Script-only user scripts finished${CL:-}\n"
+  echo -e "\n*** User scripts finished ***\n"
+  return 0
 }
 SCRIPT_ONLY_QEMU_VM () {
   SCRIPT_ONLY_FILES "$USER_SCRIPTS/$VM"
@@ -2319,7 +2320,7 @@ trap EXIT EXIT
 
 # Check Cluster Mode
 if [[ -f "/etc/corosync/corosync.conf" ]]; then
-  HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/pve/corosync.conf")
+  HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
   MODE="Cluster "
 else
   MODE="  Host  "
