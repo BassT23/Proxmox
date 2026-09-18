@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2002,SC2015,SC2086,SC2317
+# shellcheck disable=SC2002,SC2015,SC2016,SC2034,SC2086,SC2317,SC2329
 
 ##########
 # Update #
@@ -892,7 +892,7 @@ VM_BACKUP () {
       fi
       echo -e "💾${OR:-} Create a backup for the VM (this will take some time - please wait)${CL:-}"
       if RUN_PROXMOX_COMMAND vzdump "$VM" --mode "$MODE" --storage "$STORAGE" --compress zstd; then
-        echo -e "✅${GN:-} Backup created${CL:-}"
+        echo -e "✅${GN:-} Backup created${CL:-}\n"
       else
         echo -e "❌${RD:-} Backup of VM $VM failed - skipping update${CL:-}"
         return 1
@@ -2319,7 +2319,7 @@ trap EXIT EXIT
 
 # Check Cluster Mode
 if [[ -f "/etc/corosync/corosync.conf" ]]; then
-  HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/corosync/corosync.conf")
+  HOSTS=$(awk '/ring0_addr/{print $2}' "/etc/pve/corosync.conf")
   MODE="Cluster "
 else
   MODE="  Host  "
