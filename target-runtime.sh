@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2034 # shared runtime globals are consumed by sourced callers
 
 # Small shared runtime helpers for the Target -> Transport -> Updater split.
 # These wrappers only select an existing transport; they do not add retries,
