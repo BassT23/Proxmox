@@ -1411,6 +1411,15 @@ UPDATE_HOST () {
     REMOTE_UPDATE_STATUS=$?
   fi
   if [[ "$HOST" != "$START_HOST" ]]; then
+    # Collect the updated welcome-screen state from the remote node using the
+    # already trusted controller -> node SSH direction. Requiring the remote
+    # node to initiate a reverse SCP can fail when the controller host key is
+    # not present in the remote root user's known_hosts.
+    if [[ "$WELCOME_SCREEN" == true ]]; then
+      if ! scp "$HOST:$LOCAL_FILES/check-output" "$LOCAL_FILES/check-output"; then
+        echo -e "${RD:-}⚠ Could not retrieve check-output from remote host $HOST${CL:-}" >&2
+      fi
+    fi
     ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf.uu-backup ]]; then mv -f $LOCAL_FILES/update.conf.uu-backup $LOCAL_FILES/update.conf; else rm -f $LOCAL_FILES/update.conf; fi"
   fi
   return "${REMOTE_UPDATE_STATUS:-0}"
@@ -2166,7 +2175,9 @@ EXIT () {
   if [[ -f "$TEMP_STATE_DIR/exec_host" ]]; then
     EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' "$TEMP_STATE_DIR/exec_host")
   fi
-  if [[ "$WELCOME_SCREEN" == true && -n "$EXEC_HOST" ]]; then
+  # Avoid copying check-output back to the same host. Remote cluster
+  # updates are collected by the initiating node after the remote run.
+  if [[ "$WELCOME_SCREEN" == true && -n "$EXEC_HOST" && "$HOSTNAME" != "$EXEC_HOST" ]]; then
     scp "$LOCAL_FILES"/check-output "$EXEC_HOST":"$LOCAL_FILES"/check-output
   fi
   if [[ "${INITIAL_INVENTORY_CLI:-false}" == true ]]; then
