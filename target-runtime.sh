@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2034 # shared runtime globals are consumed by sourced callers
 
 # Small shared runtime helpers for the Target -> Transport -> Updater split.
 # These wrappers only select an existing transport; they do not add retries,
@@ -45,6 +46,152 @@ RUN_SSH_COMMAND() {
     ssh_options+=(-o IdentitiesOnly=yes -i "$identity_file")
   fi
   timeout "${UU_SSH_COMMAND_TIMEOUT:-120}" ssh "${ssh_options[@]}" -p "$port" "$user@$host" "$@"
+}
+
+# Execute a mutating update step exactly once while preserving the caller's
+# terminal contract. Fully interactive external commands are executed through
+# a PTY so stdin/stdout/stderr remain TTYs while their combined output is still
+# streamed and captured. Mixed-TTY states and shell functions are executed
+# directly because wrapping either would change their observable environment.
+RUN_CAPTURED_COMMAND() {
+  local output_file command_rc tee_rc had_errexit=false command_text
+  local any_tty=false all_tty=false use_pty_capture=false
+  local -a pipeline_status
+
+  COMMAND_CAPTURE_OUTPUT=""
+  COMMAND_CAPTURE_STATUS=1
+
+  if [[ -t 0 || -t 1 || -t 2 ]]; then
+    any_tty=true
+  fi
+  if [[ -t 0 && -t 1 && -t 2 ]]; then
+    all_tty=true
+  fi
+
+  # A shell function has to run in this shell to preserve its state. Likewise,
+  # mixed terminal/non-terminal descriptors must be left untouched. In those
+  # cases the live output remains visible (and is still covered by the normal
+  # updater logger), while the exact command status is propagated unchanged.
+  if [[ "$any_tty" == true && ( "$all_tty" != true || $(type -t -- "${1:-}") == function ) ]]; then
+    if [[ $- == *e* ]]; then
+      had_errexit=true
+      set +e
+    fi
+    "$@"
+    command_rc=$?
+    if [[ "$had_errexit" == true ]]; then
+      set -e
+    fi
+    COMMAND_CAPTURE_STATUS=$command_rc
+    if (( command_rc != 0 )); then
+      printf -v command_text '%q ' "$@"
+      COMMAND_CAPTURE_OUTPUT="Interactive command failed with exit code $command_rc: ${command_text% }"
+    fi
+    return "$command_rc"
+  fi
+
+  if [[ "$all_tty" == true && $(type -t -- "${1:-}") != function ]]; then
+    if command -v script >/dev/null 2>&1; then
+      use_pty_capture=true
+    else
+      # Do not silently trade terminal semantics for capture when util-linux
+      # script is unavailable.
+      if [[ $- == *e* ]]; then
+        had_errexit=true
+        set +e
+      fi
+      "$@"
+      command_rc=$?
+      if [[ "$had_errexit" == true ]]; then
+        set -e
+      fi
+      COMMAND_CAPTURE_STATUS=$command_rc
+      if (( command_rc != 0 )); then
+        printf -v command_text '%q ' "$@"
+        COMMAND_CAPTURE_OUTPUT="Interactive command failed with exit code $command_rc: ${command_text% }"
+      fi
+      return "$command_rc"
+    fi
+  fi
+
+  output_file=$(mktemp "${TMPDIR:-/tmp}/ultimate-updater-step.XXXXXX") || {
+    COMMAND_CAPTURE_OUTPUT="Unable to create temporary output file for update step."
+    COMMAND_CAPTURE_STATUS=1
+    return 1
+  }
+
+  if [[ $- == *e* ]]; then
+    had_errexit=true
+    set +e
+  fi
+
+  if [[ "$use_pty_capture" == true ]]; then
+    # util-linux script provides a child PTY and --return (-e) preserves the
+    # child's exit status. Its own stdout is piped to tee; the child itself
+    # still sees real TTY descriptors.
+    script -qef /dev/null -- "$@" 2>&1 | tee "$output_file"
+  else
+    "$@" 2>&1 | tee "$output_file"
+  fi
+  pipeline_status=("${PIPESTATUS[@]}")
+
+  if [[ "$had_errexit" == true ]]; then
+    set -e
+  fi
+
+  command_rc=${pipeline_status[0]:-1}
+  tee_rc=${pipeline_status[1]:-0}
+  if (( command_rc == 0 && tee_rc != 0 )); then
+    command_rc=$tee_rc
+  fi
+
+  COMMAND_CAPTURE_OUTPUT=$(<"$output_file")
+  rm -f -- "$output_file"
+  # PTY output commonly contains CRLF. Keep diagnostic text stable without
+  # changing what was displayed live on the terminal.
+  COMMAND_CAPTURE_OUTPUT=${COMMAND_CAPTURE_OUTPUT//$'\r'/}
+
+  COMMAND_CAPTURE_STATUS=$command_rc
+  if (( command_rc != 0 && ${#COMMAND_CAPTURE_OUTPUT} == 0 )); then
+    printf -v command_text '%q ' "$@"
+    COMMAND_CAPTURE_OUTPUT="Command failed without output: ${command_text% }"
+  fi
+
+  return "$command_rc"
+}
+
+RUN_UPDATE_STEP() {
+  local target_id="$1" target_name="$2" rc
+  shift 2
+
+  if RUN_CAPTURED_COMMAND "$@"; then
+    return 0
+  else
+    rc=$?
+  fi
+
+  ERROR_CODE=$rc
+  ID="$target_id"
+  NAME="$target_name"
+  ERROR_MSG="$COMMAND_CAPTURE_OUTPUT"
+  if declare -F ERROR >/dev/null 2>&1; then
+    ERROR
+  else
+    printf '%s\n' "$ERROR_MSG" >&2
+  fi
+  return "$rc"
+}
+
+RUN_HOST_STEP() {
+  RUN_UPDATE_STEP "${HOSTNAME:-HOST}" "${HOSTNAME:-HOST}" "$@"
+}
+
+RUN_LXC_STEP() {
+  RUN_UPDATE_STEP "${CONTAINER:-LXC}" "${NAME:-LXC ${CONTAINER:-unknown}}" "$@"
+}
+
+RUN_VM_SSH_STEP() {
+  RUN_UPDATE_STEP "${VM:-VM}" "${NAME:-VM ${VM:-unknown}}" "$@"
 }
 
 READ_APT_UPDATE_COUNTS() {

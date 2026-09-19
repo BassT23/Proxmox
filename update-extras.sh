@@ -8,6 +8,20 @@
 
 VERSION="3.1"
 
+set -Eeo pipefail
+
+EXTRA_ERROR() {
+  local rc=$?
+  local line_number="$1"
+  local failed_command="$2"
+
+  trap - ERR
+  printf 'ERROR: Extra update failed at line %s while running: %s (exit code: %s)\n' \
+    "$line_number" "$failed_command" "$rc" >&2
+  exit "$rc"
+}
+trap 'EXTRA_ERROR "$LINENO" "$BASH_COMMAND"' ERR
+
 # Variables
 LOCAL_FILES="${LOCAL_FILES:-/etc/ultimate-updater}"
 CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-$LOCAL_FILES/update.conf}"
@@ -148,12 +162,25 @@ if [[ -n "$COMMUNITY_UPDATE_PATH" ]] && grep -q "community-scripts" "$COMMUNITY_
   # terminal become their stdin: nested terminal ioctls such as `stty sane`
   # must not be able to stop the helper's background process group with
   # SIGTTOU.  stdout/stderr remain attached to tee for live output.
+  trap - ERR
+  set +e
   env PHS_SILENT=1 "$COMMUNITY_UPDATE_COMMAND" </dev/null 2>&1 | tee "$COMMUNITY_UPDATE_LOG"
-  COMMUNITY_UPDATE_EXIT=${PIPESTATUS[0]}
-  if [[ $COMMUNITY_UPDATE_EXIT == 0 ]]; then
-    echo -e "✅ Update process completed\n"
-  else
-    echo -e "⚠️ Community-Scripts update failed with exit code $COMMUNITY_UPDATE_EXIT"
+  COMMUNITY_PIPE_STATUS=("${PIPESTATUS[@]}")
+  set -e
+  trap 'EXTRA_ERROR "$LINENO" "$BASH_COMMAND"' ERR
+
+  COMMUNITY_UPDATE_EXIT=${COMMUNITY_PIPE_STATUS[0]:-1}
+  COMMUNITY_TEE_EXIT=${COMMUNITY_PIPE_STATUS[1]:-0}
+  if [[ $COMMUNITY_UPDATE_EXIT -ne 0 ]]; then
+    echo -e "⚠️ Community-Scripts update failed with exit code $COMMUNITY_UPDATE_EXIT" >&2
+    rm -f "$COMMUNITY_UPDATE_LOG"
+    exit "$COMMUNITY_UPDATE_EXIT"
+  elif [[ $COMMUNITY_TEE_EXIT -ne 0 ]]; then
+    echo -e "⚠️ Community-Scripts output capture failed with exit code $COMMUNITY_TEE_EXIT" >&2
+    rm -f "$COMMUNITY_UPDATE_LOG"
+    exit "$COMMUNITY_TEE_EXIT"
   fi
+
+  echo -e "✅ Update process completed\n"
   rm -f "$COMMUNITY_UPDATE_LOG"
 fi

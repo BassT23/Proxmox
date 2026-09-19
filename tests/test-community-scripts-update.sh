@@ -22,6 +22,9 @@ case "${COMMUNITY_TEST_MODE:-success}" in
     exit 0
     ;;
   failure)
+    if [[ -n "${COMMUNITY_TEST_COUNT_FILE:-}" ]]; then
+      printf '%s\n' "$PPID" >> "$COMMUNITY_TEST_COUNT_FILE"
+    fi
     printf 'helper error\n' >&2
     exit 7
     ;;
@@ -64,11 +67,13 @@ grep -Fq 'helper output' <<<"$success_output"
 grep -Fq '✅ Update process completed' <<<"$success_output"
 [[ $(wc -l < "$count_file") == 1 ]]
 
+: > "$count_file"
 set +e
-failure_output=$(run_helper failure 2>&1)
+failure_output=$(COMMUNITY_TEST_COUNT_FILE="$count_file" run_helper failure 2>&1)
 failure_rc=$?
 set -e
-[[ $failure_rc == 0 ]]
+[[ $failure_rc == 7 ]]
+[[ $(wc -l < "$count_file") == 1 ]]
 grep -Fq 'helper error' <<<"$failure_output"
 grep -Fq 'exit code 7' <<<"$failure_output"
 if grep -Fq '✅ Update process completed' <<<"$failure_output"; then
@@ -93,7 +98,11 @@ if grep -Fq 'timeout 1800s' "$ROOT_DIR/update-extras.sh"; then
   echo 'community update must not use a hard timeout' >&2
   exit 1
 fi
-grep -Fq "COMMUNITY_UPDATE_EXIT=\${PIPESTATUS[0]}" "$ROOT_DIR/update-extras.sh"
+# These assertions intentionally match literal shell syntax in update-extras.sh.
+# shellcheck disable=SC2016
+grep -Fq 'COMMUNITY_PIPE_STATUS=("${PIPESTATUS[@]}")' "$ROOT_DIR/update-extras.sh"
+# shellcheck disable=SC2016
+grep -Fq 'COMMUNITY_UPDATE_EXIT=${COMMUNITY_PIPE_STATUS[0]:-1}' "$ROOT_DIR/update-extras.sh"
 grep -Fq "COMMUNITY_UPDATE_COMMAND=\"\${UU_COMMUNITY_UPDATE_COMMAND:-update}\"" "$ROOT_DIR/update-extras.sh"
 
 echo 'Community-Scripts update handling tests: PASS'
