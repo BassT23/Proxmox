@@ -481,7 +481,7 @@ SHOW_UPDATE_NOTICE () {
   if ! EFFECTIVE_HEADLESS; then
     echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
     read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
-    if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
       RUN_BRANCH_UPDATE "$target_branch"
     fi
     echo
@@ -892,9 +892,9 @@ VM_BACKUP () {
       fi
       echo -e "💾${OR:-} Create a backup for the VM (this will take some time - please wait)${CL:-}"
       if RUN_PROXMOX_COMMAND vzdump "$VM" --mode "$MODE" --storage "$STORAGE" --compress zstd; then
-        echo -e "✅${GN:-} Backup created${CL:-}\n"
+        echo -e "✅${GN:-} Backup created${CL:-}"
       else
-        echo -e "❌${RD:-} Backup of VM $VM failed - skipping update${CL:-}\n"
+        echo -e "❌${RD:-} Backup of VM $VM failed - skipping update${CL:-}"
         return 1
       fi
     fi
@@ -1370,6 +1370,7 @@ WAIT_FOR_BOOTUP_SSH () {
     return 1
   fi
 }
+
 # QEMU Guest Agent readiness
 WAIT_FOR_QGA () {
   local QGA_MAX_WAIT=180
@@ -1486,7 +1487,7 @@ UPDATE_HOST () {
   HOST=$1
   local remote_update_env=""
   [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_update_env="UU_INTERNAL_SKIP_HOST_TARGET=true "
-  START_HOST=$(hostname -i | cut -d' ' -f1)
+  START_HOST=$(hostname -i | cut -d ' ' -f1)
   if [[ "$HOST" != "$START_HOST" ]]; then
     ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
     ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf ]]; then cp -p $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf.uu-backup; else rm -f $LOCAL_FILES/update.conf.uu-backup; fi"
