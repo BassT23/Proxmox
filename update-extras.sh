@@ -8,20 +8,6 @@
 
 VERSION="3.1"
 
-set -Eeo pipefail
-
-EXTRA_ERROR() {
-  local rc=$?
-  local line_number="$1"
-  local failed_command="$2"
-
-  trap - ERR
-  printf 'ERROR: Extra update failed at line %s while running: %s (exit code: %s)\n' \
-    "$line_number" "$failed_command" "$rc" >&2
-  exit "$rc"
-}
-trap 'EXTRA_ERROR "$LINENO" "$BASH_COMMAND"' ERR
-
 # Variables
 LOCAL_FILES="${LOCAL_FILES:-/etc/ultimate-updater}"
 CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-$LOCAL_FILES/update.conf}"
@@ -158,16 +144,16 @@ COMMUNITY_UPDATE_PATH=$(command -v "$COMMUNITY_UPDATE_COMMAND" 2>/dev/null || tr
 if [[ -n "$COMMUNITY_UPDATE_PATH" ]] && grep -q "community-scripts" "$COMMUNITY_UPDATE_PATH" 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]]; then
   echo -e "\n*** Updating Community-Scripts ***"
   COMMUNITY_UPDATE_LOG=$(mktemp)
-  # Community helpers are automated update tools.  Do not let a controlling
+  # Community helpers are automated update tools. Do not let a controlling
   # terminal become their stdin: nested terminal ioctls such as `stty sane`
   # must not be able to stop the helper's background process group with
-  # SIGTTOU.  stdout/stderr remain attached to tee for live output.
-  trap - ERR
-  set +e
+  # SIGTTOU. stdout/stderr remain attached to tee for live output.
+  #
+  # Keep failure handling local to this helper path. Other extras retain their
+  # historical best-effort semantics, while the helper's exact pipeline status
+  # is propagated so a real application/helper failure cannot become success.
   env PHS_SILENT=1 "$COMMUNITY_UPDATE_COMMAND" </dev/null 2>&1 | tee "$COMMUNITY_UPDATE_LOG"
   COMMUNITY_PIPE_STATUS=("${PIPESTATUS[@]}")
-  set -e
-  trap 'EXTRA_ERROR "$LINENO" "$BASH_COMMAND"' ERR
 
   COMMUNITY_UPDATE_EXIT=${COMMUNITY_PIPE_STATUS[0]:-1}
   COMMUNITY_TEE_EXIT=${COMMUNITY_PIPE_STATUS[1]:-0}
