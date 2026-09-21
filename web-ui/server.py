@@ -25,7 +25,9 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urlencode, unquote, urlsplit
+from urllib.request import Request, build_opener, ProxyHandler
 
 try:
     from pam_auth import authenticate as pam_authenticate
@@ -124,6 +126,7 @@ TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 JOB_RE = re.compile(r"^ultimate-updater-(?:update|check|reboot)-[A-Za-z0-9_.-]+$")
 HOST_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 USER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
+REALM_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
 INTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 SCHEDULER_ID_RE = re.compile(r"^[a-f0-9]{12}$")
 SCHEDULER_NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,80}$")
@@ -842,7 +845,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
 </head>
 <body>
   <section id="auth-loading" class="modal-backdrop open" aria-live="polite"><div class="modal auth-loading"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><p>Loading…</p></div></section>
-  <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Please use your current root account to sign in.</p><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
+  <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Sign in with your Proxmox administrator account.</p><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><label>Domain<select name="realm" id="login-realm" autocomplete="off" required><option value="">Loading authentication domains…</option></select></label><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
   <main class="app-main" id="dashboard" hidden>
     <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p id="page-subtitle" class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta"><span id="generated">Loading status…</span><button id="job-running-indicator" class="job-running-indicator" type="button" hidden aria-controls="jobs"><span class="job-running-dot" aria-hidden="true"></span><span id="job-running-label">Job running</span></button><button id="updater-version-indicator" class="updater-update-indicator" type="button" hidden>Updater update available</button><button id="logout" type="button">Log out</button></div></div><nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav><section class="summary dashboard-kpis" hidden><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
     <div id="notice" hidden></div>
@@ -865,8 +868,10 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const date=v=>{if(!v)return'Unknown';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleString()}; const statusLabel=v=>labels[v]||['Unknown','neutral']; const set=(id,v)=>document.getElementById(id).textContent=v;
     const LOG_BOTTOM_TOLERANCE=10;
     let currentStatus={targets:[]}, jobs=[], pollTimer, openJobLogId=null, logAutoFollow=true, logScrollTop=0, suppressLogScroll=false, finalLogLoaded=new Set(), logLoading=new Set(), csrfToken=null;
-    function setLoginLoading(loading){const form=document.getElementById('login-form'),button=form.querySelector('button[type="submit"]');form.classList.toggle('is-loading',loading);form.dataset.submitting=loading?'true':'false';button.disabled=loading;button.textContent=loading?'Signing in…':'Sign in';form.querySelectorAll('input').forEach(input=>{input.disabled=loading})}
-    function showLogin(message=''){window.__uu_authenticated=false;setLoginLoading(false);document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null}
+    let authRealmsReady=false;
+    function setLoginLoading(loading){const form=document.getElementById('login-form'),button=form.querySelector('button[type="submit"]');form.classList.toggle('is-loading',loading);form.dataset.submitting=loading?'true':'false';button.disabled=loading||!authRealmsReady;button.textContent=loading?'Signing in…':'Sign in';form.querySelectorAll('input,select').forEach(input=>{input.disabled=loading||(!loading&&input.id==='login-realm'&&!authRealmsReady)})}
+    async function loadAuthRealms(){const select=document.getElementById('login-realm');if(!select)return;authRealmsReady=false;setLoginLoading(false);try{const response=await fetch('/api/auth/realms',{cache:'no-store'}),data=await response.json();if(!response.ok||!Array.isArray(data.realms)||!data.realms.length)throw new Error('Proxmox authentication realms are unavailable.');select.replaceChildren(...data.realms.map(item=>{const option=document.createElement('option');option.value=item.realm;option.textContent=item.comment?`${item.comment} (${item.realm})`:item.realm;return option}));select.value=data.default_realm||data.realms[0].realm;authRealmsReady=true;setLoginLoading(false)}catch(error){select.replaceChildren(new Option('Authentication domains unavailable',''));select.value='';setLoginLoading(false);const status=document.getElementById('login-message');status.className='management-message error';status.textContent='Proxmox authentication realms are unavailable.'}}
+    function showLogin(message=''){window.__uu_authenticated=false;setLoginLoading(false);document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null;loadAuthRealms()}
     function showDashboard(){window.__uu_authenticated=true;document.getElementById('auth-loading').classList.remove('open');document.getElementById('login-screen').classList.remove('open');document.getElementById('dashboard').hidden=false;window.dispatchEvent(new Event('uu-auth-ready'))}
     function applyPageRoute(push=false,requestedPage=null){let page=requestedPage|| (location.pathname==='/settings'?'settings':location.pathname==='/scheduler'?'scheduler':'overview');if(push)history.pushState({},'',page==='overview'?'/':`/${page}`);const subtitles={overview:'A clear overview of updates across your systems.',settings:'Manage configuration without leaving your authenticated session.',scheduler:''};document.querySelectorAll('.page-nav a').forEach(link=>{const active=link.dataset.page===page;link.classList.toggle('active',active);link.setAttribute('aria-current',active?'page':'false')});document.getElementById('page-subtitle').textContent=subtitles[page];document.querySelector('.dashboard-kpis').hidden=page!=='overview';document.getElementById('overview-page').hidden=page!=='overview';document.getElementById('settings-page').hidden=page!=='settings';document.getElementById('scheduler-page').hidden=page!=='scheduler';if(page==='settings')loadConfig()}
     const nav=document.querySelector('.page-nav'),navToggle=document.querySelector('.nav-toggle');
@@ -902,7 +907,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function scheduleUpdaterVersionCheck(){clearTimeout(versionStartupTimer);clearTimeout(versionRetryTimer);versionRetryUsed=false;versionStartupTimer=setTimeout(async()=>{const data=await loadUpdaterVersion();if(data.state==='unavailable'&&!versionRetryUsed){versionRetryUsed=true;versionRetryTimer=setTimeout(()=>loadUpdaterVersion(),7000)}},2500)}
     function openUpdaterVersion(){document.getElementById('updater-version-modal').classList.add('open')}
     document.getElementById('updater-version-indicator').onclick=openUpdaterVersion;document.getElementById('updater-version-footer').onclick=openUpdaterVersion;document.getElementById('updater-version-close').onclick=()=>document.getElementById('updater-version-modal').classList.remove('open');document.getElementById('updater-version-check').onclick=()=>loadUpdaterVersion(true);document.getElementById('updater-version-update').onclick=async()=>{if(!updaterVersion?.branch||updaterVersion.update_available!==true)return;const button=document.getElementById('updater-version-update');button.disabled=true;try{const data=await api('/api/updater-update',{method:'POST',body:JSON.stringify({branch:updaterVersion.branch})});document.getElementById('updater-version-message').textContent=data.message||'Updater self-update job started.';await loadJobs()}catch(error){document.getElementById('updater-version-message').textContent=error.message;document.getElementById('updater-version-message').className='management-message error';button.disabled=false}};
-    document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true')return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value})});const d=await r.json();if(!r.ok)throw new Error('Login failed');csrfToken=d.csrf;form.reset();message.className='management-message success';message.textContent='Login successful';await Promise.all([loadStatus(),loadJobs(),loadTargets(),loadTargetSelection()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent='Login failed'}};
+    document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true'||!authRealmsReady)return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value,realm:form.elements.realm.value})});const d=await r.json();if(!r.ok){const error=new Error(d.error?.message||'Login failed');error.code=d.error?.code;throw error}csrfToken=d.csrf;form.reset();message.className='management-message success';message.textContent='Login successful';await Promise.all([loadStatus(),loadJobs(),loadTargets(),loadTargetSelection()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent=error.message||'Login failed'}};
     const logout=async()=>{try{await api('/api/logout',{method:'POST',body:'{}'})}catch(_error){}showLogin('You have been signed out.')};document.getElementById('logout').onclick=logout;document.getElementById('logout-menu')?.addEventListener('click',logout);
   </script>
   <div id="target-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="target-modal-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="target-modal-title">External system</h3><button type="button" class="modal-close" id="target-modal-cancel">Close</button></div><div class="management-form open"><label>Name<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"></label><label>Host / IP<input name="host" required pattern="[A-Za-z0-9_.:-]+"></label><label>SSH user<input name="user" required pattern="[A-Za-z_][A-Za-z0-9_.-]*"></label><label>SSH port<input name="port" type="number" min="1" max="65535" value="22" required></label><label>Identity file (optional)<input name="identity_file" placeholder="/root/.ssh/key"></label><div class="form-actions"><button type="submit" class="primary">Save</button><button type="button" id="target-modal-test">Test connection</button></div><div id="target-modal-message" class="management-message form-wide" role="status"></div></div></form></div>
@@ -1160,7 +1165,7 @@ PAGE = PAGE.replace("</body></html>", """<script>
 PAGE = PAGE.replace('<span id="generated">Loading status…</span>', '')
 PAGE = PAGE.replace('<h2>Ultimate Updater</h2>', '')
 PAGE = PAGE.replace('<p class="hint">Sign in to access system status and actions.</p>', '')
-PAGE = PAGE.replace('<p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Please use your current root account to sign in.</p>', '<p class="login-account-hint">Sign in with the local Proxmox root account.</p>')
+PAGE = PAGE.replace('<p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p>', '')
 PAGE = PAGE.replace('<label>Name<input name="id"', '<label>Name *<input name="id"')
 PAGE = PAGE.replace('<button type="button" id="target-modal-test">Test connection</button>', '<button type="button" id="target-modal-test" disabled>Test connection</button>')
 PAGE = PAGE.replace('<section class="management-panel" id="settings-entry"><div class="section-title"><div><h2>Configuration</h2><span class="hint">Manage Ultimate Updater settings</span></div><a class="button primary" href="/settings">Open settings</a></div></section>', '')
@@ -2469,6 +2474,169 @@ def locked_atomic_update(path, updater):
             os.close(directory_fd)
 
 
+class ProxmoxAuthError(Exception):
+    def __init__(self, message="Proxmox authentication failed.", tfa=False):
+        super().__init__(message)
+        self.tfa = tfa
+
+
+class ProxmoxAuth:
+    API_URL = "http://127.0.0.1:85/api2/json"
+    TIMEOUT = 3
+    AUTHORIZATION_TTL = 30
+
+    def __init__(self):
+        self._opener = build_opener(ProxyHandler({}))
+        self._realm_cache = None
+        self._authorization_cache = {}
+        self._administrator_privileges_cache = None
+        self._authorization_lock = threading.Lock()
+
+    def _request(self, path, fields=None):
+        data = urlencode(fields).encode("utf-8") if fields is not None else None
+        request = Request(self.API_URL + path, data=data, method="POST" if data else "GET")
+        if data:
+            request.add_header("Content-Type", "application/x-www-form-urlencoded")
+        try:
+            with self._opener.open(request, timeout=self.TIMEOUT) as response:
+                payload = json.loads(response.read(1024 * 1024).decode("utf-8"))
+        except HTTPError as error:
+            try:
+                payload = json.loads(error.read(1024 * 1024).decode("utf-8"))
+            except (OSError, UnicodeError, ValueError):
+                raise ProxmoxAuthError() from error
+            raise ProxmoxAuthError("Proxmox authentication failed.", self._has_tfa(payload)) from error
+        except (OSError, UnicodeError, ValueError, URLError) as error:
+            raise ProxmoxAuthError() from error
+        if not isinstance(payload, dict) or "data" not in payload:
+            raise ProxmoxAuthError("Malformed Proxmox API response.")
+        return payload["data"]
+
+    @staticmethod
+    def _has_tfa(payload):
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            return False
+        if any(data.get(key) for key in ("need_tfa", "NeedTFA", "tfa_challenge", "challenge")):
+            return True
+        return ProxmoxAuth._is_partial_ticket(data.get("ticket"))
+
+    @staticmethod
+    def _is_partial_ticket(ticket):
+        return isinstance(ticket, str) and ticket.startswith("PVE:!tfa!")
+
+    def realms(self):
+        now = time.monotonic()
+        if self._realm_cache and now - self._realm_cache[0] < 30:
+            return self._realm_cache[1]
+        data = self._request("/access/domains")
+        if not isinstance(data, list):
+            raise ProxmoxAuthError("Malformed Proxmox realm response.")
+        realms = []
+        for item in data:
+            if not isinstance(item, dict):
+                raise ProxmoxAuthError("Malformed Proxmox realm response.")
+            realm = item.get("realm")
+            if not isinstance(realm, str) or not REALM_RE.fullmatch(realm):
+                raise ProxmoxAuthError("Malformed Proxmox realm response.")
+            comment = item.get("comment", "")
+            if not isinstance(comment, str):
+                raise ProxmoxAuthError("Malformed Proxmox realm response.")
+            realms.append({"realm": realm, "comment": comment, "type": str(item.get("type", ""))})
+        if not realms:
+            raise ProxmoxAuthError("No Proxmox authentication realms are configured.")
+        default_realm = next((item["realm"] for item in realms if item["realm"] == "pam"), realms[0]["realm"])
+        result = {"realms": realms, "default_realm": default_realm}
+        self._realm_cache = (now, result)
+        return result
+
+    def _pvesh_json(self, args):
+        command = ["pvesh", *args, "--output-format", "json"]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True,
+                                    timeout=self.TIMEOUT, check=False)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise ProxmoxAuthError("Proxmox authorization is unavailable.") from error
+        if result.returncode:
+            raise ProxmoxAuthError("Proxmox authorization is unavailable.")
+        try:
+            return json.loads(result.stdout)
+        except (TypeError, ValueError) as error:
+            raise ProxmoxAuthError("Malformed Proxmox authorization response.") from error
+
+    def _administrator_privileges(self, now):
+        cached = self._administrator_privileges_cache
+        if cached and cached[0] > now:
+            return cached[1]
+        roles = self._pvesh_json(["get", "/access/roles"])
+        if not isinstance(roles, list):
+            raise ProxmoxAuthError("Malformed Proxmox role response.")
+        administrator = next((item for item in roles
+                              if isinstance(item, dict) and item.get("roleid") == "Administrator"), None)
+        privileges = administrator.get("privs") if administrator else None
+        if not isinstance(privileges, str) or not privileges:
+            raise ProxmoxAuthError("Proxmox Administrator role is unavailable.")
+        result = {privilege for privilege in privileges.split(",") if privilege}
+        self._administrator_privileges_cache = (now + self.AUTHORIZATION_TTL, result)
+        return result
+
+    def authorized(self, userid):
+        if (not isinstance(userid, str) or not 1 <= len(userid) <= 256
+                or any(ord(character) < 0x20 or ord(character) == 0x7f for character in userid)):
+            return False
+        username, separator, realm = userid.rpartition("@")
+        if not separator or not username or not REALM_RE.fullmatch(realm):
+            return False
+        now = time.monotonic()
+        with self._authorization_lock:
+            cached = self._authorization_cache.get(userid)
+            if cached and cached[0] > now:
+                return cached[1]
+            permissions = self._pvesh_json(["get", "/access/permissions", "--path", "/",
+                                            "--userid", userid])
+            if not isinstance(permissions, dict) or not isinstance(permissions.get("/"), dict):
+                raise ProxmoxAuthError("Malformed Proxmox permission response.")
+            effective = {key for key, value in permissions["/"].items() if value}
+            result = self._administrator_privileges(now).issubset(effective)
+            self._authorization_cache[userid] = (now + self.AUTHORIZATION_TTL, result)
+            return result
+
+    @staticmethod
+    def _valid_username(username):
+        return (isinstance(username, str) and 0 < len(username) <= 128
+                and all(0x20 <= ord(character) != 0x7f for character in username))
+
+    def authenticate(self, username, password, realm):
+        if not self._valid_username(username):
+            return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+        if not isinstance(realm, str):
+            return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+        try:
+            available = self.realms()
+            if realm not in {item["realm"] for item in available["realms"]}:
+                return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+            data = self._request("/access/ticket", {"username": username, "password": password, "realm": realm})
+            if self._has_tfa({"data": data}):
+                return {"ok": False, "code": "TFA_REQUIRED",
+                        "message": "Two-factor authentication is required but not supported by this login flow."}
+            if not isinstance(data, dict) or not isinstance(data.get("ticket"), str) or not data["ticket"]:
+                return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+            if self._is_partial_ticket(data["ticket"]):
+                return {"ok": False, "code": "TFA_REQUIRED",
+                        "message": "Two-factor authentication is required but not supported by this login flow."}
+            userid = data.get("username")
+            if not isinstance(userid, str):
+                userid = f"{username}@{realm}"
+            if not self.authorized(userid):
+                return {"ok": False, "code": "LOGIN_UNAUTHORIZED", "message": "This Proxmox account is not authorized for Ultimate Updater."}
+            return {"ok": True, "user": userid}
+        except ProxmoxAuthError as error:
+            if error.tfa:
+                return {"ok": False, "code": "TFA_REQUIRED",
+                        "message": "Two-factor authentication is required but not supported by this login flow."}
+            return {"ok": False, "code": "LOGIN_FAILED", "message": "Proxmox authentication is unavailable."}
+
+
 class AuthStore:
     SESSION_SECONDS = 8 * 60 * 60
 
@@ -2476,7 +2644,9 @@ class AuthStore:
         self.path = path
         self.sessions = {}
         self.failed_logins = {}
-        self.backend = os.environ.get("UU_AUTH_BACKEND", "pam").strip().lower()
+        configured_backend = os.environ.get("UU_AUTH_BACKEND", "").strip().lower()
+        self.backend = configured_backend or "proxmox"
+        self.proxmox = ProxmoxAuth()
         configured_user = os.environ.get("WEB_UI_PAM_USER")
         if configured_user is None:
             self.pam_user = "root"
@@ -2487,6 +2657,12 @@ class AuthStore:
 
     @property
     def configured(self):
+        if self.backend == "proxmox":
+            try:
+                self.proxmox.realms()
+                return True
+            except ProxmoxAuthError:
+                return False
         if self.backend == "pam":
             return (self.pam_user is not None and pam_authenticate is not None
                     and Path("/etc/pam.d/login").is_file())
@@ -2498,7 +2674,20 @@ class AuthStore:
         except (OSError, ValueError, TypeError):
             return False
 
+    def realms(self):
+        if self.backend == "proxmox":
+            return self.proxmox.realms()
+        if self.backend == "internal":
+            return {"realms": [{"realm": "internal", "comment": "Ultimate Updater internal authentication", "type": "internal"}],
+                    "default_realm": "internal"}
+        if self.backend == "pam":
+            return {"realms": [{"realm": "pam", "comment": "Linux PAM standard authentication", "type": "pam"}],
+                    "default_realm": "pam"}
+        raise ProxmoxAuthError("Unsupported authentication backend.")
+
     def verify(self, username, password):
+        if self.backend == "proxmox":
+            return False
         if self.backend == "pam":
             return (self.pam_user is not None and username == self.pam_user
                     and pam_authenticate is not None
@@ -2517,21 +2706,37 @@ class AuthStore:
         except (OSError, ValueError, TypeError, KeyError):
             return False
 
-    def login(self, username, password, client):
+    def login(self, username, password, realm, client):
         now = time.time()
         attempts, window = self.failed_logins.get(client, (0, now))
         if now - window >= 60:
             attempts, window = 0, now
         if attempts >= 5:
-            return None
-        if not self.verify(username, password):
-            self.failed_logins[client] = (attempts + 1, window)
-            return None
+            return {"ok": False, "code": "LOGIN_RATE_LIMITED", "message": "Too many login attempts."}
+        if self.backend == "proxmox":
+            result = self.proxmox.authenticate(username, password, realm)
+            if not result.get("ok"):
+                self.failed_logins[client] = (attempts + 1, window)
+                return result
+            authenticated_user = result["user"]
+        else:
+            authenticated_user = username
+            try:
+                if realm not in {item["realm"] for item in self.realms()["realms"]}:
+                    self.failed_logins[client] = (attempts + 1, window)
+                    return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+            except ProxmoxAuthError:
+                self.failed_logins[client] = (attempts + 1, window)
+                return {"ok": False, "code": "LOGIN_FAILED", "message": "Authentication configuration is unavailable."}
+            if not self.verify(username, password):
+                self.failed_logins[client] = (attempts + 1, window)
+                return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
         self.failed_logins.pop(client, None)
         token = secrets.token_urlsafe(32)
         csrf = secrets.token_urlsafe(32)
-        self.sessions[token] = {"user": username, "csrf": csrf, "expires": time.time() + self.SESSION_SECONDS}
-        return token, csrf
+        self.sessions[token] = {"user": authenticated_user, "csrf": csrf,
+                                "expires": time.time() + self.SESSION_SECONDS}
+        return {"ok": True, "token": token, "csrf": csrf, "user": authenticated_user}
 
     def session(self, token):
         item = self.sessions.get(token)
@@ -2540,6 +2745,14 @@ class AuthStore:
         if item["expires"] <= time.time():
             self.sessions.pop(token, None)
             return None
+        if self.backend == "proxmox":
+            try:
+                if not self.proxmox.authorized(item["user"]):
+                    self.sessions.pop(token, None)
+                    return None
+            except ProxmoxAuthError:
+                self.sessions.pop(token, None)
+                return None
         item["expires"] = time.time() + self.SESSION_SECONDS
         return item
 
@@ -3809,6 +4022,13 @@ class StatusHandler(BaseHTTPRequestHandler):
                                 "tag": None, "update_available": None, "components": [],
                                 "update_state": "unavailable"})
             return
+        if path == "/api/auth/realms":
+            try:
+                self.send_json(self.server.auth.realms())
+            except ProxmoxAuthError:
+                self.send_json(error_payload("AUTH_REALMS_UNAVAILABLE", "Proxmox authentication realms are unavailable."),
+                               HTTPStatus.SERVICE_UNAVAILABLE)
+            return
         if path == "/api/session":
             session = self.current_session()
             if not self.server.auth.configured:
@@ -3994,14 +4214,17 @@ class StatusHandler(BaseHTTPRequestHandler):
                 return
             username = payload.get("username") if isinstance(payload, dict) else None
             password = payload.get("password") if isinstance(payload, dict) else None
-            if not isinstance(username, str) or not isinstance(password, str) or len(username) > 128 or len(password) > 1024:
+            realm = payload.get("realm") if isinstance(payload, dict) else None
+            if (not isinstance(username, str) or not isinstance(password, str) or not isinstance(realm, str)
+                    or len(username) > 128 or len(password) > 1024 or len(realm) > 64):
                 self.send_json(error_payload("LOGIN_FAILED", "Invalid credentials."), HTTPStatus.UNAUTHORIZED)
                 return
-            login = self.server.auth.login(username, password, self.client_address[0])
-            if not login:
-                self.send_json(error_payload("LOGIN_FAILED", "Invalid credentials."), HTTPStatus.UNAUTHORIZED)
+            login = self.server.auth.login(username, password, realm, self.client_address[0])
+            if not login.get("ok"):
+                self.send_json(error_payload(login.get("code", "LOGIN_FAILED"), login.get("message", "Login failed.")),
+                               HTTPStatus.UNAUTHORIZED)
                 return
-            token, csrf = login
+            token, csrf = login["token"], login["csrf"]
             secure = "; Secure" if getattr(self.server, "tls_enabled", False) or self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
             cookie = f"UU_SESSION={token}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; HttpOnly; SameSite=Lax{secure}"
             self.send_json_with_cookie({"authenticated": True, "username": username, "csrf": csrf}, cookie)

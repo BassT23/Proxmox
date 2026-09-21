@@ -114,9 +114,11 @@ started from target details.
 
 ## Authentication and service control
 
-Normal Proxmox installations authenticate the local administrator through PAM.
-The service is root-owned because the existing CLI and job runner need local
-permissions. Useful service commands are:
+The Web UI uses Proxmox authentication by default. The login domain list is
+read from Proxmox, credentials are checked by its local API, and access is
+granted only when the account has the full built-in `Administrator` effective
+privileges at `/`. The service is root-owned because the existing CLI and job
+runner need local permissions. Useful service commands are:
 
 ```bash
 systemctl status ultimate-updater-web
@@ -124,19 +126,26 @@ systemctl restart ultimate-updater-web
 journalctl -u ultimate-updater-web
 ```
 
-The PAM Web UI administrator is `root` by default. To authorize a different
-local PAM user without enabling root password login, add the following setting
-to the root-owned `/etc/ultimate-updater/web-ui.conf` and restart the service:
+The normal login does not require a separate Ultimate Updater user. For
+example, an existing `alice@pam` or `admin@pve` Proxmox administrator can use
+the corresponding domain and their existing password. Proxmox remains
+authoritative for authentication, account status, realms, and authorization;
+Ultimate Updater does not create or modify Proxmox users, groups, roles, or
+ACLs.
+
+The existing `UU_AUTH_BACKEND=internal` mode remains available as an explicit
+fallback/development backend. The earlier `UU_AUTH_BACKEND=pam` plus
+`WEB_UI_PAM_USER=admin` mode remains a legacy compatibility path; it is not the
+default and does not provide Proxmox realm or RBAC authorization.
 
 ```text
+UU_AUTH_BACKEND=pam
 WEB_UI_PAM_USER=admin
 ```
 
-Only the configured username is accepted by the Web UI, and PAM still checks
-that user's password and account status. Other local PAM users, including
-`root` when another user is configured, are not granted Web UI access. An
-invalid explicit username configuration fails closed. This setting does not
-store passwords or change the PAM configuration.
+Two-factor authentication challenges from Proxmox are rejected by this login
+flow unless a complete ticket is returned; a password-only success is never
+treated as sufficient. Passwords and Proxmox tickets are not stored.
 
 The interface is responsive on narrow displays. The dashboard can also show
 an expanded external-system section when target details are needed.

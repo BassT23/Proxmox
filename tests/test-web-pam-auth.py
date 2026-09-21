@@ -20,7 +20,7 @@ def check_pam_user(configured, username, pam_result, expected):
             os.environ.pop("WEB_UI_PAM_USER", None)
         else:
             os.environ["WEB_UI_PAM_USER"] = configured
-        os.environ.pop("UU_AUTH_BACKEND", None)
+        os.environ["UU_AUTH_BACKEND"] = "pam"
         calls = []
         old_pam = server.pam_authenticate
         server.pam_authenticate = lambda user, password: (calls.append((user, password)) or pam_result)
