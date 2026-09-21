@@ -2483,10 +2483,14 @@ class ProxmoxAuthError(Exception):
 class ProxmoxAuth:
     API_URL = "http://127.0.0.1:85/api2/json"
     TIMEOUT = 3
+    AUTHORIZATION_TTL = 30
 
     def __init__(self):
         self._opener = build_opener(ProxyHandler({}))
         self._realm_cache = None
+        self._authorization_cache = {}
+        self._administrator_privileges_cache = None
+        self._authorization_lock = threading.Lock()
 
     def _request(self, path, fields=None):
         data = urlencode(fields).encode("utf-8") if fields is not None else None
@@ -2511,9 +2515,15 @@ class ProxmoxAuth:
     @staticmethod
     def _has_tfa(payload):
         data = payload.get("data") if isinstance(payload, dict) else None
-        return isinstance(data, dict) and any(
-            data.get(key) for key in ("need_tfa", "tfa_challenge", "challenge")
-        )
+        if not isinstance(data, dict):
+            return False
+        if any(data.get(key) for key in ("need_tfa", "NeedTFA", "tfa_challenge", "challenge")):
+            return True
+        return ProxmoxAuth._is_partial_ticket(data.get("ticket"))
+
+    @staticmethod
+    def _is_partial_ticket(ticket):
+        return isinstance(ticket, str) and ticket.startswith("PVE:!tfa!")
 
     def realms(self):
         now = time.monotonic()
@@ -2554,7 +2564,10 @@ class ProxmoxAuth:
         except (TypeError, ValueError) as error:
             raise ProxmoxAuthError("Malformed Proxmox authorization response.") from error
 
-    def _administrator_privileges(self):
+    def _administrator_privileges(self, now):
+        cached = self._administrator_privileges_cache
+        if cached and cached[0] > now:
+            return cached[1]
         roles = self._pvesh_json(["get", "/access/roles"])
         if not isinstance(roles, list):
             raise ProxmoxAuthError("Malformed Proxmox role response.")
@@ -2563,21 +2576,38 @@ class ProxmoxAuth:
         privileges = administrator.get("privs") if administrator else None
         if not isinstance(privileges, str) or not privileges:
             raise ProxmoxAuthError("Proxmox Administrator role is unavailable.")
-        return {privilege for privilege in privileges.split(",") if privilege}
+        result = {privilege for privilege in privileges.split(",") if privilege}
+        self._administrator_privileges_cache = (now + self.AUTHORIZATION_TTL, result)
+        return result
 
     def authorized(self, userid):
-        match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_.-]*)@([A-Za-z][A-Za-z0-9_.-]*)", userid or "")
-        if not match:
+        if (not isinstance(userid, str) or not 1 <= len(userid) <= 256
+                or any(ord(character) < 0x20 or ord(character) == 0x7f for character in userid)):
             return False
-        permissions = self._pvesh_json(["get", "/access/permissions", "--path", "/",
-                                        "--userid", userid])
-        if not isinstance(permissions, dict) or not isinstance(permissions.get("/"), dict):
-            raise ProxmoxAuthError("Malformed Proxmox permission response.")
-        effective = {key for key, value in permissions["/"].items() if value}
-        return self._administrator_privileges().issubset(effective)
+        username, separator, realm = userid.rpartition("@")
+        if not separator or not username or not REALM_RE.fullmatch(realm):
+            return False
+        now = time.monotonic()
+        with self._authorization_lock:
+            cached = self._authorization_cache.get(userid)
+            if cached and cached[0] > now:
+                return cached[1]
+            permissions = self._pvesh_json(["get", "/access/permissions", "--path", "/",
+                                            "--userid", userid])
+            if not isinstance(permissions, dict) or not isinstance(permissions.get("/"), dict):
+                raise ProxmoxAuthError("Malformed Proxmox permission response.")
+            effective = {key for key, value in permissions["/"].items() if value}
+            result = self._administrator_privileges(now).issubset(effective)
+            self._authorization_cache[userid] = (now + self.AUTHORIZATION_TTL, result)
+            return result
+
+    @staticmethod
+    def _valid_username(username):
+        return (isinstance(username, str) and 0 < len(username) <= 128
+                and all(0x20 <= ord(character) != 0x7f for character in username))
 
     def authenticate(self, username, password, realm):
-        if not isinstance(username, str) or not USER_RE.fullmatch(username):
+        if not self._valid_username(username):
             return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
         if not isinstance(realm, str):
             return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
@@ -2591,6 +2621,9 @@ class ProxmoxAuth:
                         "message": "Two-factor authentication is required but not supported by this login flow."}
             if not isinstance(data, dict) or not isinstance(data.get("ticket"), str) or not data["ticket"]:
                 return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+            if self._is_partial_ticket(data["ticket"]):
+                return {"ok": False, "code": "TFA_REQUIRED",
+                        "message": "Two-factor authentication is required but not supported by this login flow."}
             userid = data.get("username")
             if not isinstance(userid, str):
                 userid = f"{username}@{realm}"
@@ -2679,7 +2712,7 @@ class AuthStore:
         if now - window >= 60:
             attempts, window = 0, now
         if attempts >= 5:
-            return None
+            return {"ok": False, "code": "LOGIN_RATE_LIMITED", "message": "Too many login attempts."}
         if self.backend == "proxmox":
             result = self.proxmox.authenticate(username, password, realm)
             if not result.get("ok"):
