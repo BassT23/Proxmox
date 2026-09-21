@@ -187,7 +187,14 @@ EOF
     esac
   fi
 fi
-printf 'UU_RESULT|ok|%s|%s|%s|%s|%s|||\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}" "$updates" "$reboot" "$updater"
+if [ "$updater" = apt ]; then
+  printf 'UU_RESULT|ok|%s|%s|%s|%s|%s|||%s|%s|true\n' \
+    "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}" "$updates" "$reboot" "$updater" \
+    "$apt_normal" "$apt_security"
+else
+  printf 'UU_RESULT|ok|%s|%s|%s|%s|%s|||null|null|false\n' \
+    "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}" "$updates" "$reboot" "$updater"
+fi
 REMOTE_CHECK
 }
 
@@ -198,6 +205,7 @@ record_check_error() {
 
 check_target() {
   local result rc marker check_status os_name os_version updates reboot updater code message
+  local normal_updates security_updates security_split_supported
   result=$(remote_check 2>&1)
   rc=$?
   if [[ $rc -ne 0 && "$result" != UU_RESULT\|* ]]; then
@@ -210,7 +218,8 @@ check_target() {
     printf 'external-linux: %s: %s\n' "$EXTERNAL_TARGET" "$result" >&2
     return 1
   fi
-  IFS='|' read -r marker check_status os_name os_version updates reboot updater code message <<< "$result"
+  IFS='|' read -r marker check_status os_name os_version updates reboot updater code message \
+    normal_updates security_updates security_split_supported <<< "$result"
   if [[ "$marker" != UU_RESULT ]]; then
     record_check_error true error REMOTE_CHECK_FAILED "Unexpected remote check response"
     return 1
@@ -219,7 +228,8 @@ check_target() {
     ok)
       local state=ok
       [[ "$updates" -gt 0 || "$reboot" == true ]] && state=updates_available
-      STATUS_MODEL_UPSERT "$EXTERNAL_TARGET" external ssh true "$os_name" "$os_version" "$updater" "$updates" "$reboot" "$state" "" ""
+      STATUS_MODEL_UPSERT "$EXTERNAL_TARGET" external ssh true "$os_name" "$os_version" "$updater" \
+        "$updates" "$reboot" "$state" "" "" "$normal_updates" "$security_updates" "$security_split_supported"
       printf '%s: %s, %s updates, reboot_required=%s\n' "$EXTERNAL_TARGET" "$os_name" "$updates" "$reboot"
       ;;
     unsupported|error)

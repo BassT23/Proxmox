@@ -363,6 +363,8 @@ STATUS_MODEL_UPSERT() {
   local os_name="$5" os_version="$6" updater="$7" updates="$8"
   local reboot_required="$9" check_status="${10}" error_code="${11:-}"
   local error_message="${12:-}"
+  local normal_updates="${13:-null}" security_updates="${14:-null}"
+  local security_split_supported="${15:-false}"
 
   local status_lock_file="${status_file}.lock" status_lock_fd
   exec {status_lock_fd}>"$status_lock_file" || return 1
@@ -373,7 +375,8 @@ STATUS_MODEL_UPSERT() {
 
   python3 - "$status_file" "$target_id" "$target_type" "$transport" \
     "$reachable" "$os_name" "$os_version" "$updater" "$updates" \
-    "$reboot_required" "$check_status" "$error_code" "$error_message" <<'PY'
+    "$reboot_required" "$check_status" "$error_code" "$error_message" \
+    "$normal_updates" "$security_updates" "$security_split_supported" <<'PY'
 import json
 import os
 import sys
@@ -382,7 +385,7 @@ from datetime import datetime, timezone
 
 (status_file, target_id, target_type, transport, reachable, os_name,
  os_version, updater, updates, reboot_required, check_status, error_code,
- error_message) = sys.argv[1:]
+ error_message, normal_updates, security_updates, security_split_supported) = sys.argv[1:]
 
 try:
     with open(status_file, encoding="utf-8") as source:
@@ -419,12 +422,14 @@ record.update({
     "os_version": os_version or None,
     "updater": updater or None,
     "updates": {"available": nullable_int(updates)},
+    "normal_updates": nullable_int(normal_updates),
+    "security_updates": nullable_int(security_updates),
     "reboot_required": nullable_bool(reboot_required),
     "last_check": generated_at,
     "check_status": check_status or "not_checked",
     "error": ({"code": error_code or None, "message": error_message or None}
               if error_code or error_message else None),
-    "security_split_supported": updater == "apt",
+    "security_split_supported": nullable_bool(security_split_supported),
 })
 record.setdefault("last_update", {"status": "unknown", "timestamp": None})
 
