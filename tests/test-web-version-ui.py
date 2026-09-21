@@ -104,6 +104,11 @@ assert 'name="username"' in login_markup
 assert 'name="password"' in login_markup
 assert 'name="realm"' in login_markup
 assert 'id="login-realm"' in login_markup
+assert '<label>Domain<select name="realm" id="login-realm"' in login_markup
+assert '.modal label input,.modal label select' in module.PAGE
+assert '.modal label select { appearance:none;' in module.PAGE
+assert 'Authentication required.' not in login_markup
+assert 'id="login-message"' in login_markup
 assert '>Sign in</button>' in login_markup
 assert login_markup.index('login-branding') < login_markup.index('login-account-hint') < login_markup.index('name="username"')
 
