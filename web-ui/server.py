@@ -2477,11 +2477,19 @@ class AuthStore:
         self.sessions = {}
         self.failed_logins = {}
         self.backend = os.environ.get("UU_AUTH_BACKEND", "pam").strip().lower()
+        configured_user = os.environ.get("WEB_UI_PAM_USER")
+        if configured_user is None:
+            self.pam_user = "root"
+        elif USER_RE.fullmatch(configured_user):
+            self.pam_user = configured_user
+        else:
+            self.pam_user = None
 
     @property
     def configured(self):
         if self.backend == "pam":
-            return pam_authenticate is not None and Path("/etc/pam.d/login").is_file()
+            return (self.pam_user is not None and pam_authenticate is not None
+                    and Path("/etc/pam.d/login").is_file())
         if self.backend != "internal":
             return False
         try:
@@ -2492,7 +2500,9 @@ class AuthStore:
 
     def verify(self, username, password):
         if self.backend == "pam":
-            return username == "root" and pam_authenticate is not None and pam_authenticate(username, password)
+            return (self.pam_user is not None and username == self.pam_user
+                    and pam_authenticate is not None
+                    and pam_authenticate(username, password))
         if self.backend != "internal":
             return False
         try:

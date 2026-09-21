@@ -124,6 +124,20 @@ systemctl restart ultimate-updater-web
 journalctl -u ultimate-updater-web
 ```
 
+The PAM Web UI administrator is `root` by default. To authorize a different
+local PAM user without enabling root password login, add the following setting
+to the root-owned `/etc/ultimate-updater/web-ui.conf` and restart the service:
+
+```text
+WEB_UI_PAM_USER=admin
+```
+
+Only the configured username is accepted by the Web UI, and PAM still checks
+that user's password and account status. Other local PAM users, including
+`root` when another user is configured, are not granted Web UI access. An
+invalid explicit username configuration fails closed. This setting does not
+store passwords or change the PAM configuration.
+
 The interface is responsive on narrow displays. The dashboard can also show
 an expanded external-system section when target details are needed.
 
