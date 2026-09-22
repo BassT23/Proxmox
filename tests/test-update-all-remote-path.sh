@@ -133,4 +133,14 @@ assert targets["201"]["last_update"] == {"status": "failed", "timestamp": "2026-
 assert targets["external-linux"]["last_update"]["status"] == "success"
 PY
 
+notification=$(STATUS_MODEL_FILE="$WORK_DIR/local/status.json" \
+  STATUS_MODEL_RENDER_NOTIFICATION "$WORK_DIR/local/status.json" update)
+grep -Fq 'node2' <<<"$notification"
+grep -Fq 'vm-200' <<<"$notification"
+grep -Fq 'ct-201' <<<"$notification"
+grep -Fq 'external-linux' <<<"$notification"
+if grep -Fq 'Result unavailable' <<<"$notification"; then
+  exit 1
+fi
+
 echo 'real update-all remote path regression: PASS'
