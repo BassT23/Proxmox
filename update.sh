@@ -1360,11 +1360,23 @@ HOST_UPDATE_START () {
 # Host Update
 UPDATE_HOST () {
   HOST=$1
-  local remote_update_env=""
+  local remote_update_env="" remote_handoff_env=""
+  local remote_workspace="" remote_job_unit="" remote_state_dir=""
+  local remote_started_at="" remote_finished_at="" remote_state=""
+  local remote_finalize_command="" remote_handoff_rc=0
+  local apt_count_file rpm_count_file package_count_file source
   [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_update_env="UU_INTERNAL_SKIP_HOST_TARGET=true "
   START_HOST=$(hostname -i | cut -d ' ' -f1)
   if [[ "$HOST" != "$START_HOST" ]]; then
+    remote_workspace="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
+    remote_job_unit="ultimate-updater-update-node-${HOST_NODE:-remote}-$$-$RANDOM"
+    remote_state_dir="${UU_REMOTE_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
+    remote_started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    printf -v remote_handoff_env \
+      'UU_REMOTE_NODE_HANDOFF=true UU_REMOTE_WORK_DIR=%q UU_REMOTE_STATE_DIR=%q UU_REMOTE_JOB_UNIT=%q WELCOME_SCREEN=true ' \
+      "$remote_workspace" "$remote_state_dir" "$remote_job_unit"
     ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
+    ssh -q -p "$SSH_PORT" "$HOST" "mkdir -p $(printf '%q' "$remote_workspace") $(printf '%q' "$remote_state_dir")"
     ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf ]]; then cp -p $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf.uu-backup; else rm -f $LOCAL_FILES/update.conf.uu-backup; fi"
     scp "$0" "$HOST":$LOCAL_FILES/update
     scp $LOCAL_FILES/update-extras.sh "$HOST":$LOCAL_FILES/update-extras.sh
@@ -1372,9 +1384,19 @@ UPDATE_HOST () {
     if [[ -f $LOCAL_FILES/update.conf.dist ]]; then
       scp $LOCAL_FILES/update.conf.dist "$HOST":$LOCAL_FILES/update.conf.dist
     fi
-    if [[ "$WELCOME_SCREEN" == true ]]; then
-      scp $LOCAL_FILES/check-updates.sh "$HOST":$LOCAL_FILES/check-updates.sh
-      scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
+    apt_count_file="$LOCAL_FILES/apt-count.py"
+    rpm_count_file="$LOCAL_FILES/rpm-count.py"
+    package_count_file="$LOCAL_FILES/package-count.sh"
+    [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+    [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
+    [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
+    for source in "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/status-model.sh" \
+      "$apt_count_file" "$rpm_count_file" "$package_count_file"; do
+      [[ -f "$source" ]] || continue
+      scp "$source" "$HOST:$LOCAL_FILES/$(basename -- "$source")"
+    done
+    if [[ -f "$LOCAL_FILES/check-output" ]]; then
+      scp "$LOCAL_FILES/check-output" "$HOST:$LOCAL_FILES/check-output"
     fi
     scp /etc/ultimate-updater/temp/exec_host "$HOST":/etc/ultimate-updater/temp
     scp -r $LOCAL_FILES/VMs/ "$HOST":$LOCAL_FILES/
@@ -1401,16 +1423,37 @@ UPDATE_HOST () {
     fi
   fi
   if EFFECTIVE_HEADLESS; then
-    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}bash -s" < "$0" -- "-s -c host"
+    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}${remote_handoff_env}bash -s" < "$0" -- "-s -c host"
     REMOTE_UPDATE_STATUS=$?
   elif [[ "$WELCOME_SCREEN" == true ]]; then
-    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}bash -s" < "$0" -- "-c -w host"
+    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}${remote_handoff_env}bash -s" < "$0" -- "-c -w host"
     REMOTE_UPDATE_STATUS=$?
   else
-    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}bash -s" < "$0" -- "-c host"
+    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}${remote_handoff_env}bash -s" < "$0" -- "-c host"
     REMOTE_UPDATE_STATUS=$?
   fi
   if [[ "$HOST" != "$START_HOST" ]]; then
+    if [[ -n "$remote_workspace" ]]; then
+      remote_finished_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+      [[ "$REMOTE_UPDATE_STATUS" -eq 0 ]] && remote_state=completed || remote_state=failed
+      printf -v remote_finalize_command \
+        'set -e; [[ -s %q/status.json ]] || exit 86; cp -- %q/status.json %q/status.json; printf %%s\\n %q > %q/post-update-status.rc; { printf %%s\\n schema_version=1; printf %%s\\n unit=%q; printf %%s\\n target=%q; printf %%s\\n state=%q; printf %%s\\n started_at=%q; printf %%s\\n finished_at=%q; printf %%s\\n exit_code=%q; printf %%s\\n type=update; printf %%s\\n source=remote; printf %%s\\n interactive=false; } > %q/%q.state' \
+        "$LOCAL_FILES" "$LOCAL_FILES" "$remote_workspace" "$REMOTE_UPDATE_STATUS" \
+        "$remote_workspace" "$remote_job_unit" "node-${HOST_NODE:-remote}" "$remote_state" \
+        "$remote_started_at" "$remote_finished_at" "$REMOTE_UPDATE_STATUS" \
+        "$remote_state_dir" "$remote_job_unit"
+      if ! ssh -q -p "$SSH_PORT" "$HOST" "$remote_finalize_command"; then
+        remote_handoff_rc=1
+      elif [[ -x "$LOCAL_FILES/job-runner.sh" ]] &&
+        ! "$LOCAL_FILES/job-runner.sh" record-remote "$remote_job_unit" \
+          "node-${HOST_NODE:-remote}" "${HOST_NODE:-remote}" "$HOST" "$SSH_PORT" "$remote_workspace"; then
+        remote_handoff_rc=1
+      fi
+      if [[ "$remote_handoff_rc" -ne 0 ]]; then
+        echo -e "${RD:-}⚠ Could not register structured remote update result for $HOST${CL:-}" >&2
+        UPDATE_FAILURE=true
+      fi
+    fi
     # Collect the updated welcome-screen state from the remote node using the
     # already trusted controller -> node SSH direction. Requiring the remote
     # node to initiate a reverse SCP can fail when the controller host key is
