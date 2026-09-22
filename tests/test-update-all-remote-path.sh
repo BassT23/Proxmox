@@ -38,6 +38,8 @@ cat > "$WORK_DIR/remote-status.json" <<'JSON'
   {"id":"host:node2","type":"host","node":"node2","name":"node2","os":"Proxmox","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:05Z","exit_code":0}},
   {"id":"200","type":"vm","node":"node2","name":"vm-200","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:06Z","exit_code":0}},
   {"id":"201","type":"lxc","node":"node2","name":"ct-201","check_status":"error","reachable":true,"updates":{"available":null},"last_update":{"status":"failed","timestamp":"2026-09-22T10:00:07Z","exit_code":42}},
+  {"id":"250","type":"vm","node":"node2","name":"stale-vm-250","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-21T10:00:08Z","exit_code":0}},
+  {"id":"251","type":"vm","node":"node2","name":"noninventory-vm-251","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:08Z","exit_code":0}},
   {"id":"999","type":"vm","node":"node3","name":"foreign","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:08Z","exit_code":0}}
 ]}
 JSON
@@ -111,6 +113,8 @@ import json
 import sys
 path = sys.argv[1]
 payload = json.load(open(path, encoding="utf-8"))
+fresh_ids = {"host:node1", "101", "host:node2", "200", "201", "external-linux"}
+payload["targets"] = [item for item in payload["targets"] if item["id"] in fresh_ids]
 for item in payload["targets"]:
     if item["id"] in {"host:node1", "101", "external-linux"}:
         item.pop("last_update", None)
@@ -127,6 +131,9 @@ import sys
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 targets = {item["id"]: item for item in payload["targets"]}
 assert set(targets) == {"host:node1", "101", "host:node2", "200", "201", "external-linux"}
+assert "250" not in targets
+assert "251" not in targets
+assert "999" not in targets
 assert targets["host:node2"]["last_update"]["status"] == "success"
 assert targets["200"]["last_update"]["status"] == "success"
 assert targets["201"]["last_update"] == {"status": "failed", "timestamp": "2026-09-22T10:00:07Z", "exit_code": 42}
@@ -143,4 +150,4 @@ if grep -Fq 'Result unavailable' <<<"$notification"; then
   exit 1
 fi
 
-echo 'real update-all remote path regression: PASS'
+echo 'UPDATE_HOST remote handoff integration: PASS'

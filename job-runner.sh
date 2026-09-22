@@ -807,6 +807,11 @@ run_global_job() {
     return 130
   fi
   if [[ "$exit_code" -eq 0 ]]; then
+    # Import completed remote-node artifacts before taking the update-result
+    # snapshot. The following full check is the inventory authority and must
+    # be allowed to prune stale targets without a later import resurrecting
+    # them.
+    list_jobs >/dev/null 2>&1 || true
     if [[ -f "$STATUS_MODEL_FILE" ]]; then
       update_result_snapshot=$(mktemp "${STATUS_MODEL_FILE}.update-results.XXXXXX")
       cp -- "$STATUS_MODEL_FILE" "$update_result_snapshot"
@@ -824,11 +829,6 @@ run_global_job() {
     else
       printf 'Post-update status refresh completed successfully.\n'
     fi
-    # Import completed remote-node artifacts before the final update
-    # notification.  The full check above intentionally rebuilds the local
-    # observation set and therefore cannot be the authority for remote-node
-    # update results.
-    list_jobs >/dev/null 2>&1 || true
     if [[ -n "$update_result_snapshot" ]] && declare -f STATUS_MODEL_PRESERVE_UPDATE_RESULTS >/dev/null 2>&1; then
       STATUS_MODEL_PRESERVE_UPDATE_RESULTS "$update_result_snapshot" "$started" || true
     fi
