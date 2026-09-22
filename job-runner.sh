@@ -268,32 +268,61 @@ mark_remote_status_refresh() {
 
 refresh_remote_target_status() {
   local unit="$1" owner_node="$2" target="$3" refresh_state refresh_rc=0 lock
-  local ref_file workspace local_status_file remote_refresh_rc remote_status_file
+  local ref_file workspace local_status_file remote_refresh_rc remote_status_file filtered_status_file
+  local expected_status_target expected_node
   ref_file=$(remote_ref_file "$unit")
   refresh_state=$(state_value "$ref_file" status_refresh)
   [[ "$refresh_state" == "done" || "$refresh_state" == "failed" ]] && return 0
   lock="$ref_file.refresh.lock"
   mkdir "$lock" 2>/dev/null || return 0
   workspace=$(state_value "$ref_file" workspace)
-  if [[ "$target" =~ ^[0-9]+$ && -n "$workspace" && -x "$CHECK_CLI" ]]; then
+  if [[ ( "$target" =~ ^[0-9]+$ || "$target" == node-* ) && -n "$workspace" && -x "$CHECK_CLI" ]]; then
     local_status_file=$(mktemp)
     remote_status_file="$workspace/status.json"
+    expected_status_target="$target"
+    if [[ "$target" == node-* ]]; then
+      expected_node="${target#node-}"
+      expected_status_target="host:$expected_node"
+      filtered_status_file="${local_status_file}.filtered"
+    fi
     if ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
       "$(state_value "$ref_file" owner_host)" "cat $(printf '%q' "$remote_status_file")" > "$local_status_file" 2>/dev/null &&
-      [[ -s "$local_status_file" ]] &&
-      validate_status_target "$local_status_file" "$target" &&
-      "$CHECK_CLI" status-import "$local_status_file" </dev/null &&
-      validate_status_target "$STATUS_MODEL_FILE" "$target"; then
-      remote_refresh_rc=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
-        "$(state_value "$ref_file" owner_host)" "cat $(printf '%q' "$workspace/post-update-status.rc")" 2>/dev/null || printf '0')
-      [[ "$remote_refresh_rc" =~ ^[0-9]+$ ]] || remote_refresh_rc=1
-      refresh_rc="$remote_refresh_rc"
-      ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
-        "$(state_value "$ref_file" owner_host)" "rm -rf -- $(printf '%q' "$workspace")" >/dev/null 2>&1 || true
+      [[ -s "$local_status_file" ]]; then
+      if [[ "$target" == node-* ]]; then
+        python3 - "$local_status_file" "$filtered_status_file" "$expected_node" <<'PY'
+import json
+import sys
+
+source, destination, node = sys.argv[1:]
+with open(source, encoding="utf-8") as handle:
+    payload = json.load(handle)
+targets = [item for item in payload.get("targets", [])
+           if isinstance(item, dict) and
+           (str(item.get("id")) == f"host:{node}" or item.get("node") == node)]
+if not any(str(item.get("id")) == f"host:{node}" for item in targets):
+    raise SystemExit(1)
+with open(destination, "w", encoding="utf-8") as handle:
+    json.dump({"schema_version": payload.get("schema_version", 1), "targets": targets}, handle)
+PY
+        mv -- "$filtered_status_file" "$local_status_file"
+      fi
+      if validate_status_target "$local_status_file" "$expected_status_target" &&
+        "$CHECK_CLI" status-import "$local_status_file" </dev/null &&
+        validate_status_target "$STATUS_MODEL_FILE" "$expected_status_target"; then
+        remote_refresh_rc=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
+          "$(state_value "$ref_file" owner_host)" "cat $(printf '%q' "$workspace/post-update-status.rc")" 2>/dev/null || printf '0')
+        [[ "$remote_refresh_rc" =~ ^[0-9]+$ ]] || remote_refresh_rc=1
+        refresh_rc="$remote_refresh_rc"
+        ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
+          "$(state_value "$ref_file" owner_host)" "rm -rf -- $(printf '%q' "$workspace")" >/dev/null 2>&1 || true
+      else
+        refresh_rc=1
+      fi
     else
       refresh_rc=1
     fi
     rm -f -- "$local_status_file"
+    [[ -z "$filtered_status_file" ]] || rm -f -- "$filtered_status_file"
   elif [[ -x "$CHECK_CLI" ]]; then
     if [[ "$target" == node-* ]]; then
       UU_CHECK_JOB_EXECUTION=true UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check-node "$owner_node" </dev/null || refresh_rc=$?
@@ -752,7 +781,7 @@ run_job() {
 
 run_global_job() {
   local unit="$1" update_script="$2" target=all-systems file started exit_code lock_file
-  local post_check_rc=0 post_check_message=""
+  local post_check_rc=0 post_check_message="" update_result_snapshot=""
   valid_unit "$unit" || return 2
   valid_global_target "$target" || return 2
   file=$(state_file "$unit")
@@ -778,6 +807,10 @@ run_global_job() {
     return 130
   fi
   if [[ "$exit_code" -eq 0 ]]; then
+    if [[ -f "$STATUS_MODEL_FILE" ]]; then
+      update_result_snapshot=$(mktemp "${STATUS_MODEL_FILE}.update-results.XXXXXX")
+      cp -- "$STATUS_MODEL_FILE" "$update_result_snapshot"
+    fi
     printf 'Post-update status refresh started for all systems.\n'
     if [[ -x "$CHECK_CLI" ]]; then
       UU_CHECK_JOB_EXECUTION=true UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check </dev/null || post_check_rc=$?
@@ -791,6 +824,15 @@ run_global_job() {
     else
       printf 'Post-update status refresh completed successfully.\n'
     fi
+    # Import completed remote-node artifacts before the final update
+    # notification.  The full check above intentionally rebuilds the local
+    # observation set and therefore cannot be the authority for remote-node
+    # update results.
+    list_jobs >/dev/null 2>&1 || true
+    if [[ -n "$update_result_snapshot" ]] && declare -f STATUS_MODEL_PRESERVE_UPDATE_RESULTS >/dev/null 2>&1; then
+      STATUS_MODEL_PRESERVE_UPDATE_RESULTS "$update_result_snapshot" "$started" || true
+    fi
+    [[ -z "$update_result_snapshot" ]] || rm -f -- "$update_result_snapshot"
     send_update_notification "$STATUS_MODEL_FILE"
   else
     send_update_notification "$STATUS_MODEL_FILE"

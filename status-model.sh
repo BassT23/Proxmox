@@ -456,6 +456,78 @@ PY
   return "$result"
 }
 
+STATUS_MODEL_PRESERVE_UPDATE_RESULTS() {
+  local source_file="$1" started_at="$2"
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  local status_lock_file="${status_file}.lock" status_lock_fd
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$source_file" "$status_file" "$started_at" <<'PY'
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime
+
+source_file, status_file, started_at = sys.argv[1:]
+try:
+    with open(source_file, encoding="utf-8") as source:
+        before = json.load(source)
+    with open(status_file, encoding="utf-8") as source:
+        current = json.load(source)
+    started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+before_targets = before.get("targets") if isinstance(before, dict) else None
+current_targets = current.get("targets") if isinstance(current, dict) else None
+if not isinstance(before_targets, list) or not isinstance(current_targets, list):
+    raise SystemExit(1)
+
+current_by_id = {
+    str(item.get("id")): item for item in current_targets
+    if isinstance(item, dict) and item.get("id")
+}
+for item in before_targets:
+    if not isinstance(item, dict):
+        continue
+    last_update = item.get("last_update")
+    target_id = str(item.get("id") or "")
+    timestamp = last_update.get("timestamp") if isinstance(last_update, dict) else None
+    if not target_id or not isinstance(last_update, dict) or not timestamp:
+        continue
+    try:
+        update_time = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        continue
+    if update_time >= started and target_id in current_by_id:
+        current_by_id[target_id]["last_update"] = last_update
+
+directory = os.path.dirname(os.path.abspath(status_file)) or "."
+fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(current, output, indent=2)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, status_file)
+except Exception:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
+}
+
 STATUS_MODEL_UPDATE_RESULT() {
   local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
   local target_id="$1" update_status="$2" exit_code="$3"

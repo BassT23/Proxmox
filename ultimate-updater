@@ -744,11 +744,15 @@ remote_update_job() {
   local legacy_profile="$LOCAL_FILES/VMs/$target"
   local user="${REMOTE_NODE_USER:-root}" output job_unit command remote_update_dir source scope_env=''
   local apt_count_file="$LOCAL_FILES/apt-count.py"
+  local rpm_count_file="$LOCAL_FILES/rpm-count.py"
+  local package_count_file="$LOCAL_FILES/package-count.sh"
   local target_selection_file="${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}"
   local interactive_env=''
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
   remote_update_dir="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
   [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+  [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
+  [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
   if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "mkdir -p -- '$remote_update_dir'"; then
     printf 'Could not prepare remote update workspace on %s.\n' "$node" >&2
     return 6
@@ -760,7 +764,7 @@ remote_update_job() {
     "$LOCAL_FILES/job-pty-bridge.py" \
     "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/ultimate-updater" \
     "$LOCAL_FILES/qga-guest-exec.sh" \
-    "$LOCAL_FILES/target-runtime.sh" "$apt_count_file" "$LOCAL_FILES/cluster-target.sh" \
+    "$LOCAL_FILES/target-runtime.sh" "$apt_count_file" "$rpm_count_file" "$package_count_file" "$LOCAL_FILES/cluster-target.sh" \
     "$LOCAL_FILES/internal-ssh.sh" "$LOCAL_FILES/update-extras.sh" \
     "$LOCAL_FILES/windows-update.sh" "$package_count_file"; do
     [[ -f "$source" ]] || continue
