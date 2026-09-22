@@ -806,12 +806,13 @@ run_global_job() {
     cleanup_interactive_runtime "$unit" || true
     return 130
   fi
+  # Collect every completed remote result before deciding whether the global
+  # update follows the success refresh path or the failure notification path.
+  # This must not alter the authoritative global exit code.
+  list_jobs >/dev/null 2>&1 || true
   if [[ "$exit_code" -eq 0 ]]; then
-    # Import completed remote-node artifacts before taking the update-result
-    # snapshot. The following full check is the inventory authority and must
-    # be allowed to prune stale targets without a later import resurrecting
-    # them.
-    list_jobs >/dev/null 2>&1 || true
+    # The following full check is the inventory authority and must be allowed
+    # to prune stale targets without a later import resurrecting them.
     if [[ -f "$STATUS_MODEL_FILE" ]]; then
       update_result_snapshot=$(mktemp "${STATUS_MODEL_FILE}.update-results.XXXXXX")
       cp -- "$STATUS_MODEL_FILE" "$update_result_snapshot"
