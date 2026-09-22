@@ -1189,7 +1189,7 @@ UPDATE_CHECK () {
       STATUS_MODEL_PARTIAL=true "$LOCAL_FILES/check-updates.sh" -u ccontainer "$CONTAINER" | tee -a "$LOCAL_FILES/check-output"
       status_target="$CONTAINER"
     elif [[ "$CVM" == true ]]; then
-      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u cvm \"$VM\"" | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" "STATUS_MODEL_PARTIAL=true \"$LOCAL_FILES/check-updates.sh\" -u cvm \"$VM\"" | tee -a $LOCAL_FILES/check-output
       status_target="$VM"
     fi
     if [[ -n "$status_target" ]] && declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
