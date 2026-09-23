@@ -1437,10 +1437,19 @@ UPDATE_HOST () {
       remote_finished_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
       [[ "$REMOTE_UPDATE_STATUS" -eq 0 ]] && remote_state=completed || remote_state=failed
       printf -v remote_finalize_command \
-        'set -e; [[ -s %q/status.json ]] || exit 86; cp -- %q/status.json %q/status.json; printf %%s\\n %q > %q/post-update-status.rc; { printf %%s\\n schema_version=1; printf %%s\\n unit=%q; printf %%s\\n target=%q; printf %%s\\n state=%q; printf %%s\\n started_at=%q; printf %%s\\n finished_at=%q; printf %%s\\n exit_code=%q; printf %%s\\n type=update; printf %%s\\n source=remote; printf %%s\\n interactive=false; } > %q/%q.state' \
-        "$LOCAL_FILES" "$LOCAL_FILES" "$remote_workspace" "$REMOTE_UPDATE_STATUS" \
-        "$remote_workspace" "$remote_job_unit" "node-${HOST_NODE:-remote}" "$remote_state" \
-        "$remote_started_at" "$remote_finished_at" "$REMOTE_UPDATE_STATUS" \
+        'set -e; [[ -s %q/status.json ]] || exit 86; cp -- %q/status.json %q/status.json; printf %q %q > %q/post-update-status.rc; { printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; } > %q/%q.state' \
+        "$LOCAL_FILES" "$LOCAL_FILES" "$remote_workspace" \
+        '%s\n' "$REMOTE_UPDATE_STATUS" "$remote_workspace" \
+        '%s\n' schema_version=1 \
+        '%s\n' "unit=$remote_job_unit" \
+        '%s\n' "target=node-${HOST_NODE:-remote}" \
+        '%s\n' "state=$remote_state" \
+        '%s\n' "started_at=$remote_started_at" \
+        '%s\n' "finished_at=$remote_finished_at" \
+        '%s\n' "exit_code=$REMOTE_UPDATE_STATUS" \
+        '%s\n' type=update \
+        '%s\n' source=remote \
+        '%s\n' interactive=false \
         "$remote_state_dir" "$remote_job_unit"
       if ! ssh -q -p "$SSH_PORT" "$HOST" "$remote_finalize_command"; then
         remote_handoff_rc=1
