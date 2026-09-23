@@ -24,6 +24,31 @@ REMOTE_JOB_STATE_DIR="${UU_REMOTE_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 SYSTEMD_LOG_FILTER_ARGS=()
 
+# Remote job handback must use the same node-specific SSH policy as the
+# forward update path.  Keep the helper optional for legacy installations
+# that do not ship internal-ssh.sh.
+REMOTE_INTERNAL_SSH_FILE="${UU_INTERNAL_SSH_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/internal-ssh.sh}"
+if [[ -f "$REMOTE_INTERNAL_SSH_FILE" ]]; then
+  # shellcheck disable=SC2034
+  INTERNAL_SSH_CONFIG_FILE="${UU_INTERNAL_SSH_CONFIG_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/internal-ssh.conf}"
+  # shellcheck disable=SC1090
+  source "$REMOTE_INTERNAL_SSH_FILE"
+fi
+
+remote_node_ssh() {
+  local owner_node="$1" owner_host="$2" port="$3" remote_command="$4"
+  if declare -f INTERNAL_SSH_RESOLVE_NODE >/dev/null 2>&1; then
+    INTERNAL_SSH_RESOLVE_NODE "$owner_node" "$owner_host" "$port" || return 1
+    [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
+    INTERNAL_SSH_USE_IDENTITY || return 1
+    ssh -q "${INTERNAL_SSH_ARGS[@]}" -p "$INTERNAL_SSH_PORT" \
+      "${INTERNAL_SSH_USER}@${INTERNAL_SSH_HOST}" "$remote_command"
+  else
+    ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" \
+      "$owner_host" "$remote_command"
+  fi
+}
+
 usage() {
   printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list | show UNIT\n' "$0"
 }
@@ -285,8 +310,9 @@ refresh_remote_target_status() {
       expected_status_target="host:$expected_node"
       filtered_status_file="${local_status_file}.filtered"
     fi
-    if ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
-      "$(state_value "$ref_file" owner_host)" "cat $(printf '%q' "$remote_status_file")" > "$local_status_file" 2>/dev/null &&
+    if remote_node_ssh "$(state_value "$ref_file" owner_node)" \
+      "$(state_value "$ref_file" owner_host)" "$(state_value "$ref_file" port)" \
+      "cat $(printf '%q' "$remote_status_file")" > "$local_status_file" 2>/dev/null &&
       [[ -s "$local_status_file" ]]; then
       if [[ "$target" == node-* ]]; then
         python3 - "$local_status_file" "$filtered_status_file" "$expected_node" <<'PY'
@@ -309,12 +335,14 @@ PY
       if validate_status_target "$local_status_file" "$expected_status_target" &&
         "$CHECK_CLI" status-import "$local_status_file" </dev/null &&
         validate_status_target "$STATUS_MODEL_FILE" "$expected_status_target"; then
-        remote_refresh_rc=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
-          "$(state_value "$ref_file" owner_host)" "cat $(printf '%q' "$workspace/post-update-status.rc")" 2>/dev/null || printf '0')
+        remote_refresh_rc=$(remote_node_ssh "$(state_value "$ref_file" owner_node)" \
+          "$(state_value "$ref_file" owner_host)" "$(state_value "$ref_file" port)" \
+          "cat $(printf '%q' "$workspace/post-update-status.rc")" 2>/dev/null || printf '0')
         [[ "$remote_refresh_rc" =~ ^[0-9]+$ ]] || remote_refresh_rc=1
         refresh_rc="$remote_refresh_rc"
-        ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
-          "$(state_value "$ref_file" owner_host)" "rm -rf -- $(printf '%q' "$workspace")" >/dev/null 2>&1 || true
+        remote_node_ssh "$(state_value "$ref_file" owner_node)" \
+          "$(state_value "$ref_file" owner_host)" "$(state_value "$ref_file" port)" \
+          "rm -rf -- $(printf '%q' "$workspace")" >/dev/null 2>&1 || true
       else
         refresh_rc=1
       fi
@@ -390,7 +418,7 @@ remote_state_line() {
   registered_at=$(state_value "$ref_file" registered_at)
   printf -v remote_command 'if [[ -f %q ]]; then cat %q; else exit 1; fi' \
     "$remote_state_file" "$remote_state_file"
-  if output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" \
+  if output=$(remote_node_ssh "$owner_node" "$owner_host" "$port" \
       "$remote_command" 2>/dev/null); then
     remote_line=$(awk -F= -v owner="$owner_node" '
       { values[$1]=$0; sub(/^[^=]*=/, "", values[$1]) }
@@ -1174,7 +1202,7 @@ remote_log() {
   ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
   IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
   printf -v remote_command 'journalctl -u %q -n 200 --no-pager -o cat' "$unit"
-  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
+  remote_node_ssh "$owner_node" "$owner_host" "$port" "$remote_command"
 }
 
 remote_log_full() {
@@ -1182,7 +1210,7 @@ remote_log_full() {
   ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
   IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
   printf -v remote_command 'journalctl -u %q --no-pager -o cat' "$unit"
-  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
+  remote_node_ssh "$owner_node" "$owner_host" "$port" "$remote_command"
 }
 
 remote_log_follow() {
@@ -1193,7 +1221,7 @@ remote_log_follow() {
   if [[ -n "$cursor" ]]; then
     printf -v remote_command '%s --after-cursor %q' "$remote_command" "$cursor"
   fi
-  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
+  remote_node_ssh "$owner_node" "$owner_host" "$port" "$remote_command"
 }
 
 remote_attach() {
@@ -1216,7 +1244,7 @@ remote_attach() {
   else
     printf -v remote_command 'exec %q attach %q' "$runner" "$unit"
   fi
-  exec ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
+  remote_node_ssh "$owner_node" "$owner_host" "$port" "$remote_command"
 }
 
 attach_job() {
