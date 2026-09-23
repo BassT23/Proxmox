@@ -7,7 +7,11 @@ WORK_DIR=$(mktemp -d)
 trap 'rm -rf -- "$WORK_DIR"' EXIT
 
 grep -Fq '"${UU_GLOBAL_CHECK:-false}" == true' "$ROOT_DIR/check-updates.sh"
-grep -Fq 'MODE" =~ Cluster || "${UU_GLOBAL_CHECK:-false}" == true' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'RUN_AUTOMATIC_CHECK_DISPATCH () {' "$ROOT_DIR/check-updates.sh"
+if grep -Fq 'MODE" =~ Cluster || "${UU_GLOBAL_CHECK:-false}" == true' "$ROOT_DIR/check-updates.sh"; then
+  echo 'aggregate scope must not select cluster topology' >&2
+  exit 1
+fi
 
 sed -n '/^HOST_CHECK_START () {/,/^# Host Check/p' "$ROOT_DIR/check-updates.sh" \
   | sed '$d' > "$WORK_DIR/host-loop.sh"

@@ -2321,16 +2321,20 @@ else
   exit 2
 fi
 
+RUN_AUTOMATIC_CHECK_DISPATCH () {
+  if [[ "$MODE" =~ Cluster ]]; then HOST_CHECK_START; else
+    if [[ "$WITH_HOST" == true ]] && { [[ "${UU_CHECK_SCOPE:-}" == host || "$USE_INTERNAL_TARGET_SELECTION" != true ]] || TARGET_SELECTION_ALLOWS check "host:$(hostname -s 2>/dev/null || hostname)" "host:$(hostname -s 2>/dev/null || hostname)"; }; then CHECK_HOST_ITSELF; fi
+    if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
+    if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
+  fi
+}
+
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true && "$RDU" == true ]]; then
   OUTPUT_TO_FILE
 elif [[ "$COMMAND" != true ]]; then
   OUTPUT_TO_FILE
-  if [[ "$MODE" =~ Cluster || "${UU_GLOBAL_CHECK:-false}" == true ]]; then HOST_CHECK_START; else
-    if [[ "$WITH_HOST" == true ]] && { [[ "${UU_CHECK_SCOPE:-}" == host || "$USE_INTERNAL_TARGET_SELECTION" != true ]] || TARGET_SELECTION_ALLOWS check "host:$(hostname -s 2>/dev/null || hostname)" "host:$(hostname -s 2>/dev/null || hostname)"; }; then CHECK_HOST_ITSELF; fi
-    if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
-    if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
-  fi
+  RUN_AUTOMATIC_CHECK_DISPATCH
 fi
 
 # Refresh the local MOTD version cache without making the login path depend on GitHub.
