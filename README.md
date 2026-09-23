@@ -7,10 +7,6 @@ Status: Beta / release candidate for validation. Not a stable release.
 Central, safety-conscious updates and checks for Proxmox hosts, LXC
 containers, VMs, and selected external systems.
 
-**Ultimate Updater helps you update everything from one place — without giving up control.**
-
-Automation is supported, but control stays with you.
-
 <img src="https://github.com/user-attachments/assets/df181f9c-683b-4e9b-9234-80c158c7da98"
        style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
 
@@ -38,6 +34,10 @@ from Proxmox Server Solutions GmbH.
 **YOU HAVE BEEN WARNED!**
 
 </div>
+
+**Ultimate Updater helps you update everything from one place — without giving up control.**
+
+Automation is supported, but control stays with you.
 
 ## What it does
 
