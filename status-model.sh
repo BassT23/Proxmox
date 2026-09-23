@@ -1116,8 +1116,6 @@ def update_line(target):
 
 if run_type == "update":
     hosts = []
-    guest_current = 0
-    guest_current_targets = []
     guest_success = []
     guest_failed = []
     guest_offline = []
@@ -1147,8 +1145,7 @@ if run_type == "update":
             if target.get("reboot_required") is True:
                 guest_reboot.append(target)
             elif isinstance(available, int) and not isinstance(available, bool) and available == 0:
-                guest_current += 1
-                guest_current_targets.append(target)
+                guest_success.append(target)
             else:
                 guest_success.append(target)
 
@@ -1178,10 +1175,6 @@ if run_type == "update":
         lines.extend(["", "Skipped checks:"])
         for target in guest_skipped:
             lines.extend([f"💤 {target_icon(target)} {target_name(target)}", f"   {check_skip_message(target)}"])
-    if guest_current_targets:
-        lines.extend(["", "Guests:"])
-        for target in guest_current_targets:
-            lines.extend([f"✅ {target_icon(target)} {target_name(target)}", "   Up to date"])
     print("STATE=issues" if any(update_status(target) == "failed" for target in hosts + guest_failed) or guest_offline else "STATE=updates")
     print("\n".join(lines))
     raise SystemExit(0)
