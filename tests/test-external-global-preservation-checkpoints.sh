@@ -50,6 +50,13 @@ with open(path, "w", encoding="utf-8") as output:
 PY
 echo "EXTERNAL_AFTER_FULL_REFRESH_STATUS=$(status_value)"
 
+# The external check may recreate/update the observation record after the core
+# full check.  Preserve the same target ID and verify the current-run result
+# still wins over its transient unknown state.
+LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
+  bash -c 'source "$1"; STATUS_MODEL_UPSERT ext01 external ssh true Debian 12 apt 2 false ok "" "" 2 0 true' \
+  _ "$ROOT_DIR/status-model.sh"
+
 # Checkpoint 4: current-run preservation restores only the matching fresh
 # external record, and the renderer consumes that final model.
 LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
