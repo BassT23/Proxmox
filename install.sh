@@ -355,20 +355,68 @@ INFORMATION () {
   fi
 }
 
+ensure_scheduled_check_cron() {
+  local cron_file="${1:-/etc/crontab}" create_if_missing="${2:-true}" temp
+  [[ -f "$cron_file" ]] || : > "$cron_file" || return 1
+  temp=$(mktemp "${cron_file}.uu.XXXXXX") || return 1
+  awk '
+    function is_uu_check(line) {
+      return line !~ /^[[:space:]]*#/ &&
+        (line ~ /(^|[[:space:]])\/usr\/local\/sbin\/update[[:space:]]+-check([[:space:]]|$)/ ||
+         line ~ /(^|[[:space:]])[^[:space:]]*check-updates[.]sh([[:space:]]|$)/)
+    }
+    function add_scheduler(line) {
+      if (line ~ /\/usr\/local\/sbin\/update[[:space:]]+-check/) {
+        sub(/\/usr\/local\/sbin\/update[[:space:]]+-check/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler &", line)
+      } else {
+        sub(/[^[:space:]]*check-updates[.]sh/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler &", line)
+      }
+      return line
+    }
+    function add_headless(line) {
+      if (line ~ /\/usr\/local\/sbin\/update[[:space:]]+-check/) {
+        sub(/\/usr\/local\/sbin\/update[[:space:]]+-check/, "RUN_FROM_CRON=true &", line)
+      } else {
+        sub(/[^[:space:]]*check-updates[.]sh/, "RUN_FROM_CRON=true &", line)
+      }
+      return line
+    }
+    {
+      if (is_uu_check($0)) {
+        if ($0 !~ /UU_JOB_SOURCE=scheduler/) {
+          if ($0 ~ /RUN_FROM_CRON=true/) {
+            sub(/RUN_FROM_CRON=true/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler")
+          } else {
+            $0 = add_scheduler($0)
+          }
+        }
+        if ($0 !~ /RUN_FROM_CRON=true/) $0 = add_headless($0)
+      }
+      print
+    }
+  ' "$cron_file" > "$temp" || { rm -f -- "$temp"; return 1; }
+  chmod --reference="$cron_file" "$temp" 2>/dev/null || true
+  mv -f -- "$temp" "$cron_file"
+  if ! grep -Eq '(^|[[:space:]])(\/usr\/local\/sbin\/update[[:space:]]+-check|[^[:space:]]*check-updates[.]sh)([[:space:]]|$)' "$cron_file"; then
+    [[ "$create_if_missing" == true ]] || return 0
+    printf '%s\n' '00 06   * * *   root RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler /usr/local/sbin/update -check >/dev/null 2>&1' >> "$cron_file"
+  fi
+}
+
 OLD_FILESYSTEM_CHECK () {
   if [[ -d /root/Proxmox-Updater/ ]]; then
     mv /root/Proxmox-Updater/ $LOCAL_FILES/
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv /etc/crontab /etc/crontab.bak_name_change
       cp /etc/crontab.bak /etc/crontab
-      echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
+      echo "00 07,19 * * *  root    RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler $LOCAL_FILES/check-updates.sh" >> /etc/crontab
     fi
   fi
   if [[ -d /root/Ultimative-Updater/ ]]; then
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv /etc/crontab /etc/crontab.bak_name_change
       cp /etc/crontab.bak /etc/crontab
-      echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
+      echo "00 07,19 * * *  root    RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler $LOCAL_FILES/check-updates.sh" >> /etc/crontab
     fi
   fi
   if [ -d "/root/Ultimative-Update-Scripts" ]; then
@@ -805,16 +853,7 @@ UPDATE () {
           apt-get install screenfetch -y || true
         fi
       fi
-      # change crontab entry
-      CRON_FILE="/etc/crontab"
-      BACKUP="/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
-      if grep -Eq "check-updates\.sh|update -check" "$CRON_FILE"; then
-        if ! grep -q "RUN_FROM_CRON=true.*update -check" "$CRON_FILE"; then
-          cp "$CRON_FILE" "$BACKUP"
-          sed -i '/check-updates\.sh/d; /update -check/d' "$CRON_FILE"
-          echo "00 06   * * *   root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> "$CRON_FILE"
-        fi
-      fi
+      ensure_scheduled_check_cron /etc/crontab false
     else
       rm -rf "$TEMP_FILES"/welcome-screen.sh || true
       rm -rf "$TEMP_FILES"/check-updates.sh || true
@@ -1006,9 +1045,7 @@ WELCOME_SCREEN_INSTALL () {
   fi
   chmod +x /etc/update-motd.d/01-welcome-screen
   if ! [[ -f $LOCAL_FILES/check-output ]]; then touch $LOCAL_FILES/check-output; fi
-  if ! grep -Eq "check-updates\.sh|update -check" /etc/crontab; then
-    echo "00 06   * * *   root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> /etc/crontab
-  fi
+  ensure_scheduled_check_cron /etc/crontab
   # Fetch tool install (neofetch or screenfetch)
   if ! command -v neofetch >/dev/null 2>&1 && ! command -v screenfetch >/dev/null 2>&1; then
     echo -e "${OR:-}  Install neofetch or screenfetch?${CL:-}"
