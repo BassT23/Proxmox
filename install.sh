@@ -356,20 +356,21 @@ INFORMATION () {
 }
 
 ensure_scheduled_check_cron() {
-  local cron_file="${1:-/etc/crontab}" create_if_missing="${2:-true}" temp
+  local cron_file="${1:-/etc/crontab}" create_if_missing="${2:-true}"
+  local backup_dir="${UU_CRON_BACKUP_DIR:-}" temp backup timestamp suffix
   [[ -f "$cron_file" ]] || : > "$cron_file" || return 1
   temp=$(mktemp "${cron_file}.uu.XXXXXX") || return 1
   awk '
     function is_uu_check(line) {
       return line !~ /^[[:space:]]*#/ &&
         (line ~ /(^|[[:space:]])\/usr\/local\/sbin\/update[[:space:]]+-check([[:space:]]|$)/ ||
-         line ~ /(^|[[:space:]])[^[:space:]]*check-updates[.]sh([[:space:]]|$)/)
+         line ~ /(^|[[:space:]])\/etc\/ultimate-updater\/check-updates[.]sh([[:space:]]|$)/)
     }
     function add_scheduler(line) {
       if (line ~ /\/usr\/local\/sbin\/update[[:space:]]+-check/) {
         sub(/\/usr\/local\/sbin\/update[[:space:]]+-check/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler &", line)
       } else {
-        sub(/[^[:space:]]*check-updates[.]sh/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler &", line)
+        sub(/\/etc\/ultimate-updater\/check-updates[.]sh/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler &", line)
       }
       return line
     }
@@ -377,7 +378,7 @@ ensure_scheduled_check_cron() {
       if (line ~ /\/usr\/local\/sbin\/update[[:space:]]+-check/) {
         sub(/\/usr\/local\/sbin\/update[[:space:]]+-check/, "RUN_FROM_CRON=true &", line)
       } else {
-        sub(/[^[:space:]]*check-updates[.]sh/, "RUN_FROM_CRON=true &", line)
+        sub(/\/etc\/ultimate-updater\/check-updates[.]sh/, "RUN_FROM_CRON=true &", line)
       }
       return line
     }
@@ -395,12 +396,34 @@ ensure_scheduled_check_cron() {
       print
     }
   ' "$cron_file" > "$temp" || { rm -f -- "$temp"; return 1; }
+  if ! grep -Eq '(^|[[:space:]])(\/usr\/local\/sbin\/update[[:space:]]+-check|\/etc\/ultimate-updater\/check-updates[.]sh)([[:space:]]|$)' "$cron_file"; then
+    if [[ "$create_if_missing" != true ]]; then
+      rm -f -- "$temp"
+      return 0
+    fi
+    printf '%s\n' '00 06   * * *   root RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler /usr/local/sbin/update -check >/dev/null 2>&1' >> "$temp"
+  fi
+  if cmp -s "$temp" "$cron_file"; then
+    rm -f -- "$temp"
+    return 0
+  fi
+  if [[ "$cron_file" == /etc/crontab || -n "$backup_dir" ]]; then
+    timestamp=$(date -u '+%Y%m%d-%H%M%S')
+    if [[ "$cron_file" == /etc/crontab ]]; then
+      backup="${cron_file}.bak.${timestamp}"
+    else
+      mkdir -p -- "$backup_dir" || { rm -f -- "$temp"; return 1; }
+      backup="$backup_dir/$(basename -- "$cron_file").bak.${timestamp}"
+    fi
+    suffix=0
+    while [[ -e "$backup" ]]; do
+      suffix=$((suffix + 1))
+      backup="${backup_dir:-$(dirname -- "$cron_file")}/$(basename -- "$cron_file").bak.${timestamp}.${suffix}"
+    done
+    cp -p -- "$cron_file" "$backup" || { rm -f -- "$temp"; return 1; }
+  fi
   chmod --reference="$cron_file" "$temp" 2>/dev/null || true
   mv -f -- "$temp" "$cron_file"
-  if ! grep -Eq '(^|[[:space:]])(\/usr\/local\/sbin\/update[[:space:]]+-check|[^[:space:]]*check-updates[.]sh)([[:space:]]|$)' "$cron_file"; then
-    [[ "$create_if_missing" == true ]] || return 0
-    printf '%s\n' '00 06   * * *   root RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler /usr/local/sbin/update -check >/dev/null 2>&1' >> "$cron_file"
-  fi
 }
 
 OLD_FILESYSTEM_CHECK () {
