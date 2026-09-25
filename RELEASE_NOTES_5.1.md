@@ -1,6 +1,45 @@
-# Ultimate Updater 5.1.3 Beta 4
+# Ultimate Updater 5.1.3 Beta 6
 
 Status: Beta / release candidate for validation.
+
+## Beta 6
+
+- Native interactive update execution preserves the real terminal, while
+  headless jobs capture output and retain the exact command result.
+- Mutating update steps and extra updaters execute once and propagate their
+  actual failures without replacing them with false success.
+- Community-Scripts execution is isolated from controlling-terminal
+  SIGTTOU/SIGTTIN hangs, including nested `/dev/tty` reads, while live output
+  and cancellation remain available.
+- Informational commands no longer produce update-summary notifications.
+- Installer cron checks now carry the scheduler source marker, preserve custom
+  schedules, and migrate known legacy entries safely.
+- Standalone local-node actions and aggregate checks use the correct local
+  dispatch, while cluster node actions retain their remote behavior.
+- Remote update results and guest failures are handed back into the central
+  status model with current-inventory and stale-result protection.
+- External update preservation, status refresh, and summary rendering remain
+  important validation targets; the External `update-all` field case is not
+  claimed as confirmed fixed yet.
+
+These Beta 6 changes are for validation and are not a stable 5.1.3 release.
+
+## Beta 5
+
+- SSH guest package-count commands now work without an extra remote shell
+  wrapper, with deterministic package-count handling across supported managers.
+- Proxmox-native and configured administrator authentication support was added
+  for the Web UI.
+- External APT normal/security counts, cluster status handback, QGA/Windows
+  checks, LXC backup fallback, and Community-Scripts terminal isolation were
+  hardened.
+- The Welcome Screen now presents structured, compact update and check
+  summaries, including Home Assistant OS/Core QGA checks.
+- Interactive and headless job execution, remote terminal reconnects, target
+  selection context, and locale-independent status/count handling were
+  improved.
+
+These Beta 5 changes are for validation and are not a stable 5.1.3 release.
 
 ## Beta 4
 

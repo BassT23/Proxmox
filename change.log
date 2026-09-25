@@ -3,39 +3,62 @@ Changelog:
 
 **Unreleased**
 
+No changes yet.
+
+**v5.1.3 Beta 6** (beta / release candidate for validation)
+
 Added:
-- read-only Home Assistant OS and Home Assistant Core update checks through QGA
-- running jobs can be stopped from the Web UI after explicit confirmation, with clear mobile controls and preserved cancellation state
+- native interactive update runtime regression coverage, preserving terminal
+  input/output semantics alongside deterministic headless execution
 
 Improved:
-- Welcome Screen update summaries now use a compact node-grouped dashboard with MOTD-only colors and only show positive updates from the effective check scope
-- manually started jobs now use the interactive terminal by default, while scheduler and cron runs remain non-interactive
-- remote interactive jobs now retain their live terminal and output across cluster nodes, including reconnects, close/reopen, PTY runtime transfer, and remote journal streaming
-- remote update and terminal actions preserve the authoritative target-selection context and resolve jobs directly on their owner node
-- APT update counts are now derived from structured package metadata instead of parsing localized package-manager output
-- DNF/YUM update counts are now derived from deterministic package metadata queries instead of parsing localized package-manager output
-- Pacman, APK, and FreeBSD pkg update counts now use deterministic package queries instead of line-counting human-readable output
-- SSH transport failures are now classified from stable return codes instead of localized OpenSSH error messages
-- QEMU Guest Agent failures are now classified from protocol state and return codes instead of human-readable guest-agent output
+- mutating update steps and extra updaters now execute once and propagate
+  their real failures through the existing result model
+- Community-Scripts execution is isolated from controlling-terminal SIGTTOU
+  and SIGTTIN suspension, including nested `/dev/tty` reads
+- installer cron migration recognizes known updater entries, preserves custom
+  schedules, and creates a backup before changing the real crontab
+- standalone local-node actions and aggregate checks remain on the local path
+  while clustered node dispatch remains remote
 
 Fixed:
-- SSH-based guest checks now execute generated package-count commands directly without an extra remote shell wrapper
-- remote cluster QGA checks now stage matching guest helpers, and Windows checks use canonical OS metadata with structured result parsing
-- total-only package managers no longer advertise separate normal/security update counts unless security metadata is available
-- remote cluster node checks now pass the status-record and target-selection files to their correct runtime variables
-- LXC mount-point backup fallback now runs when a configured snapshot is unsupported, and failed configured protection blocks the guest update
-- check warning exit codes and completed-with-warnings results are preserved through job finalization
-- explicit remote single-target updates no longer fall back to legacy Proxmox exclude tags or report unrelated guests as skipped
-- remote interactive jobs now start and attach with the same temporary runtime, PTY bridge, and workspace context
-- remote terminal attach failures and update-start failures now produce visible, safe Web UI errors instead of silent or generic failures
-- duplicate update-check notifications are avoided and check-only runs skip update finalization while preserving their original result
-- installer startup tolerates a missing or unsuitable `TERM`, and installer failures are no longer masked as successful exits
-- the compact Welcome Screen now renders update summaries from structured status data instead of parsing package-manager output
-- security-only notification decisions now use structured security-update counts instead of raw check output
-- Community-Scripts helper updates no longer inherit a controlling terminal on the automated update path, preventing terminal job-control suspension during nested terminal operations
+- informational help/version commands no longer enter update-summary
+  finalization
+- remote update results, guest failures, and current-inventory filtering are
+  preserved through global status refresh and notification rendering
+- scheduler-originated cron checks carry `UU_JOB_SOURCE=scheduler` while
+  retaining `RUN_FROM_CRON=true`
+
+Validation target:
+- External result preservation during the combined remote-node plus
+  `update-all` lifecycle remains a field-validation concern; no final fix is
+  claimed here.
+
+**v5.1.3 Beta 5** (beta / release candidate for validation)
+
+Added:
+- structured package metadata counts for APT, DNF/YUM, Pacman, APK, and
+  FreeBSD pkg paths
+- Home Assistant OS/Core QGA checks and hardened QGA/Windows result handling
+
+Improved:
+- interactive/headless job execution, remote terminal reconnects, target
+  selection context, locale-independent status handling, and the compact
+  structured Welcome Screen summary
+- Community-Scripts and remote cluster checks use safer runtime/helper
+  handling, with improved backup fallback and warning-state propagation
+
+Fixed:
+- SSH guest package-count commands no longer add a broken nested shell
+  wrapper (#342)
+- Proxmox-native/configured Web UI administrator authentication was added
+  (#344)
+- External normal/security counts, remote node handback (#338), LXC backup
+  fallback (#334), and related check/runtime regressions were corrected
 
 Security/Safety:
-- browser disconnects, terminal close/reopen, and remote stream failures remain independent from the running job and do not stop it
+- browser disconnects, terminal close/reopen, and remote stream failures
+  remain independent from running jobs
 
 **v5.1.3 Beta 4** (beta / release candidate for validation)
 

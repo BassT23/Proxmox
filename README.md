@@ -1,6 +1,6 @@
 <div align="center">
 
-# Ultimate Updater 5.1.3 Beta 4
+# Ultimate Updater 5.1.3 Beta 6
 
 Status: Beta / release candidate for validation. Not a stable release.
 
