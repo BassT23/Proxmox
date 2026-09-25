@@ -1078,6 +1078,7 @@ SCRIPT_ONLY_VM () {
 
 # Extras
 EXTRAS () {
+  local extra_rc
   if [[ "$EXTRA_GLOBAL" != true ]]; then
     echo -e "\n${OR:-}--- Skip Extra Updates because of the user settings ---${CL:-}\n"
   elif EFFECTIVE_HEADLESS && [[ "$EXTRA_IN_HEADLESS" == false ]]; then
@@ -1089,8 +1090,10 @@ EXTRAS () {
       pct push "$CONTAINER" -- $LOCAL_FILES/update-extras.sh $LOCAL_FILES/update-extras.sh
       pct push "$CONTAINER" -- $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf
       pct exec "$CONTAINER" -- bash -c "LOCAL_FILES='$LOCAL_FILES' chmod +x '$LOCAL_FILES/update-extras.sh' && \
-                                        LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh' && \
-                                        rm -rf $LOCAL_FILES || true"
+                                        LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh'; \
+                                        extra_rc=\$?; rm -rf '$LOCAL_FILES'; exit \$extra_rc"
+      extra_rc=$?
+      [[ "$extra_rc" -eq 0 ]] || return "$extra_rc"
       USER_SCRIPTS
     # Extras in VMS with SSH_CONNECTION
     elif [[ "$USER" != root ]]; then
@@ -1100,8 +1103,10 @@ EXTRAS () {
       scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
       scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
       ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "LOCAL_FILES='$LOCAL_FILES' chmod +x '$LOCAL_FILES/update-extras.sh' && \
-                LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh' && \
-                rm -rf $LOCAL_FILES || true"
+                LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh'; \
+                extra_rc=\$?; rm -rf '$LOCAL_FILES'; exit \$extra_rc"
+      extra_rc=$?
+      [[ "$extra_rc" -eq 0 ]] || return "$extra_rc"
       USER_SCRIPTS_VM
     fi
     echo -e "${GN:-}---   Finished extra updates    ---${CL:-}"
@@ -1708,7 +1713,7 @@ UPDATE_CONTAINER () {
       if [[ $ERROR_CODE != "" ]]; then return; fi
       RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get autoclean -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
-      EXTRAS
+      EXTRAS || return $?
       TRIM_FILESYSTEM
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
@@ -1718,14 +1723,14 @@ UPDATE_CONTAINER () {
     echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
     RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     if [[ $ERROR_CODE != "" ]]; then return; fi
-    EXTRAS
+    EXTRAS || return $?
     TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ archlinux ]]; then
     echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
     RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     if [[ $ERROR_CODE != "" ]]; then return; fi
-    EXTRAS
+    EXTRAS || return $?
     TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ alpine ]]; then
@@ -1738,7 +1743,7 @@ UPDATE_CONTAINER () {
     echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
     RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "yum -y update" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     if [[ $ERROR_CODE != "" ]]; then return; fi
-    EXTRAS
+    EXTRAS || return $?
     TRIM_FILESYSTEM
     UPDATE_CHECK
   else
@@ -1931,7 +1936,7 @@ UPDATE_VM () {
         if [[ $ERROR_CODE != "" ]]; then return; fi
         RUN_UPDATE_COMMAND ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get autoclean -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
+        EXTRAS || return $?
         UPDATE_CHECK
       # Fedora
       elif [[ "$OS" =~ Fedora ]]; then
@@ -1941,14 +1946,14 @@ UPDATE_VM () {
         echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
         RUN_UPDATE_COMMAND ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
+        EXTRAS || return $?
         UPDATE_CHECK
       # Arch
       elif [[ "$OS" =~ Arch ]]; then
         echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
         RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pacman -Su --noconfirm || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
+        EXTRAS || return $?
         UPDATE_CHECK
       # Alpine
       elif [[ "$OS" =~ Alpine ]]; then
@@ -1960,7 +1965,7 @@ UPDATE_VM () {
         echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
         RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" yum -y update || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
+        EXTRAS || return $?
         UPDATE_CHECK
       # Windows ( WindowsUpdate need admin rights, ...)
 #      elif [[ $OS_BASE == "win10" || $OS_BASE == "win11" ]]; then

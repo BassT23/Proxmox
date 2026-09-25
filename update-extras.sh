@@ -141,6 +141,7 @@ fi
 
 # Community / Helper Scripts
 COMMUNITY_UPDATE_PATH=$(command -v "$COMMUNITY_UPDATE_COMMAND" 2>/dev/null || true)
+COMMUNITY_UPDATE_EXIT=0
 if [[ -n "$COMMUNITY_UPDATE_PATH" ]] && grep -q "community-scripts" "$COMMUNITY_UPDATE_PATH" 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]]; then
   echo -e "\n*** Updating Community-Scripts ***"
   COMMUNITY_UPDATE_LOG=$(mktemp)
@@ -158,3 +159,4 @@ if [[ -n "$COMMUNITY_UPDATE_PATH" ]] && grep -q "community-scripts" "$COMMUNITY_
   fi
   rm -f "$COMMUNITY_UPDATE_LOG"
 fi
+exit "$COMMUNITY_UPDATE_EXIT"

@@ -77,7 +77,7 @@ set +e
 failure_output=$(run_helper failure 2>&1)
 failure_rc=$?
 set -e
-[[ $failure_rc == 0 ]]
+[[ $failure_rc == 7 ]]
 grep -Fq 'helper error' <<<"$failure_output"
 grep -Fq 'exit code 7' <<<"$failure_output"
 if grep -Fq '✅ Update process completed' <<<"$failure_output"; then
