@@ -422,12 +422,12 @@ def test_live_output_and_terminal_stop_control_require_confirmation():
     assert '>Cancel<' in WEB.PAGE
     assert '>Stop job<' in WEB.PAGE
     assert "mode:'interactive'" in WEB.PAGE
-    assert "state.mode==='output'" in WEB.PAGE
+    assert "mode:'output'" in WEB.PAGE
     assert "state.inputClosed=true" in WEB.PAGE
     assert "api(`/api/jobs/${encodeURIComponent(state.unit)}/cancel`" in WEB.PAGE
     assert "interactiveStopModal.classList.add('open')" in WEB.PAGE
     assert "interactiveStopCancel?.addEventListener" in WEB.PAGE
-    assert "state.stopping?'Stopping…':'Stop job'" in WEB.PAGE
+    assert "state?.stopping?'Stopping…':'Stop job'" in WEB.PAGE
     assert "Close window" in WEB.PAGE
     assert "Close terminal" not in WEB.PAGE
     assert "Only running interactive jobs can be stopped here." not in source
