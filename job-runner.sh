@@ -440,10 +440,17 @@ remote_state_line() {
 
 sync_remote_last_update() {
   local target="$1" state="$2" finished="$3" exit_code="$4"
+  local status_file="${UU_STATUS_MODEL_FILE:-/etc/ultimate-updater/status.json}"
+  local status_lock_file="${status_file}.lock" status_lock_fd
   [[ "$state" == completed || "$state" == failed || "$state" == interrupted ]] || return 0
   [[ "$target" =~ ^[0-9]+$ ]] || return 0
   [[ "$exit_code" =~ ^[0-9]+$ ]] || exit_code=1
-  python3 - "${UU_STATUS_MODEL_FILE:-/etc/ultimate-updater/status.json}" \
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$status_file" \
     "$target" "$state" "$finished" "$exit_code" <<'PY'
 import json
 import os
@@ -489,6 +496,9 @@ except Exception:
         pass
     raise
 PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
 }
 
 target_running() {
