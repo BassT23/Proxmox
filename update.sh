@@ -15,6 +15,10 @@ SAFETY_FAILURE=false
 UPDATE_FAILURE=false
 SINGLE_TARGET_EXECUTED=false
 TARGET_SELECTION_RUNTIME_ERROR=false
+# Informational commands share the normal EXIT trap so that their cleanup and
+# exit-code handling remain centralized, but they are not update runs and must
+# never emit an update summary.
+NON_UPDATE_COMMAND=false
 
 # Variable / Function
 LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
@@ -296,8 +300,8 @@ ARGUMENTS () {
         CONTAINER_UPDATE_START
         VM_UPDATE_START
         ;;
-      -h|--help) USAGE; exit 0 ;;
-      -v|--version) VERSION_CHECK; exit 0 ;;
+      -h|--help) NON_UPDATE_COMMAND=true; USAGE; exit 0 ;;
+      -v|--version) NON_UPDATE_COMMAND=true; VERSION_CHECK; exit 0 ;;
       -s|--silent) HEADLESS=true ;;
       -c) RICM=true ;;
       -w) WELCOME_SCREEN=true ;;
@@ -2240,6 +2244,11 @@ EXIT () {
   # Check-only runs own their notification and final status handling.
   if [[ "${CHECK_ONLY_RUN:-false}" == true ]]; then
     :
+  # Help/version and other informational commands use the shared EXIT trap
+  # only for cleanup; they are not update runs and must not mark a target or
+  # emit update completion/error handling.
+  elif [[ "${NON_UPDATE_COMMAND:-false}" == true ]]; then
+    :
   # Exit without echo
   elif [[ "$EXIT_CODE" == 2 ]]; then
     exit
@@ -2251,7 +2260,7 @@ EXIT () {
         echo -e "Please checkout $ERROR_LOG_FILE"
         echo
         CLEAN_LOGFILE
-        if [[ "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
+        if [[ "${NON_UPDATE_COMMAND:-false}" != true && "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
           UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null || true
         fi
       else
@@ -2259,7 +2268,7 @@ EXIT () {
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
         if [[ "$EMAIL_ONLY_ERROR" != true ]]; then
-          if [[ "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
+          if [[ "${NON_UPDATE_COMMAND:-false}" != true && "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
             UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
           fi
         fi
@@ -2271,7 +2280,7 @@ EXIT () {
       echo -e "${RD:-}⚠  Error during update --- Exit Code: $EXIT_CODE${CL:-}\n"
       "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
-      if [[ "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
+      if [[ "${NON_UPDATE_COMMAND:-false}" != true && "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
         UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
       fi
     fi
