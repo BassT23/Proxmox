@@ -562,7 +562,16 @@ if record is None:
     record = {"id": target_id, "type": "external", "transport": "ssh"}
     targets.append(record)
 timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-record["last_update"] = {"status": update_status, "timestamp": timestamp, "exit_code": int(exit_code)}
+pending_before = None
+existing_updates = record.get("updates")
+if isinstance(existing_updates, dict):
+    candidate = existing_updates.get("available")
+    if isinstance(candidate, int) and not isinstance(candidate, bool):
+        pending_before = candidate
+last_update = {"status": update_status, "timestamp": timestamp, "exit_code": int(exit_code)}
+if pending_before is not None:
+    last_update["pending_before"] = pending_before
+record["last_update"] = last_update
 payload["generated_at"] = timestamp
 directory = os.path.dirname(os.path.abspath(status_file)) or "."
 os.makedirs(directory, exist_ok=True)
@@ -1105,10 +1114,14 @@ def update_line(target):
         return "⚠️", "Result unavailable"
     if target.get("reboot_required") is True:
         return "⚠️", "Updated – reboot required"
-    values = target.get("updates")
-    available = values.get("available") if isinstance(values, dict) else None
-    if isinstance(available, int) and not isinstance(available, bool) and available == 0:
-        return "✅", "Up to date"
+    pending_before = result.get("pending_before")
+    if isinstance(pending_before, int) and not isinstance(pending_before, bool):
+        if pending_before == 0:
+            return "✅", "Up to date"
+        updated = result.get("updated_packages")
+        if isinstance(updated, int) and not isinstance(updated, bool) and updated >= 0:
+            return "✅", f"{updated} packages updated"
+        return "✅", "Successfully updated"
     updated = result.get("updated_packages")
     if isinstance(updated, int) and not isinstance(updated, bool) and updated >= 0:
         return "✅", f"{updated} packages updated"

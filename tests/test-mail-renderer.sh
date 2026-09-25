@@ -111,13 +111,13 @@ PY
 
 cat > "$WORK_DIR/update-status.json" <<'JSON'
 {"targets":[
-  {"id":"host:Proxmox-Test-1","type":"host","node":"Proxmox-Test-1","name":"Proxmox-Test-1","check_status":"updates_available","reachable":true,"updates":{"available":12},"last_update":{"status":"success","exit_code":0,"updated_packages":12}},
-  {"id":"host:Proxmox-Test-2","type":"host","node":"Proxmox-Test-2","name":"Proxmox-Test-2","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0}},
+  {"id":"host:Proxmox-Test-1","type":"host","node":"Proxmox-Test-1","name":"Proxmox-Test-1","check_status":"updates_available","reachable":true,"updates":{"available":12},"last_update":{"status":"success","exit_code":0,"updated_packages":12,"pending_before":12}},
+  {"id":"host:Proxmox-Test-2","type":"host","node":"Proxmox-Test-2","name":"Proxmox-Test-2","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0,"pending_before":0}},
   {"id":"host:Proxmox-Test-3","type":"host","node":"Proxmox-Test-3","name":"Proxmox-Test-3","check_status":"offline","reachable":false,"updates":{"available":null}},
-  {"id":"guest:984","type":"lxc","node":"Proxmox-Test-1","name":"unifi","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0}},
-  {"id":"guest:985","type":"lxc","node":"Proxmox-Test-2","name":"985","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0}},
+  {"id":"guest:984","type":"lxc","node":"Proxmox-Test-1","name":"unifi","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0,"pending_before":0}},
+  {"id":"guest:985","type":"lxc","node":"Proxmox-Test-2","name":"985","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0,"pending_before":0}},
   {"id":"guest:986","type":"lxc","node":"Proxmox-Test-2","name":"broken","check_status":"error","reachable":true,"updates":{"available":3},"last_update":{"status":"failed","exit_code":17}},
-  {"id":"guest:987","type":"lxc","node":"Proxmox-Test-2","name":"needs-reboot","check_status":"ok","reachable":true,"updates":{"available":1},"reboot_required":true,"last_update":{"status":"success","exit_code":0}}
+  {"id":"guest:987","type":"lxc","node":"Proxmox-Test-2","name":"needs-reboot","check_status":"ok","reachable":true,"updates":{"available":1},"reboot_required":true,"last_update":{"status":"success","exit_code":0,"pending_before":1}}
 ]}
 JSON
 STATUS_MODEL_RENDER_NOTIFICATION "$WORK_DIR/update-status.json" update > "$WORK_DIR/update-status-mail"
@@ -188,9 +188,9 @@ fi
 
 cat > "$WORK_DIR/all-current-status.json" <<'JSON'
 {"targets":[
-  {"id":"host:Proxmox-Test-1","type":"host","node":"Proxmox-Test-1","name":"Proxmox-Test-1","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0}},
-  {"id":"host:Proxmox-Test-2","type":"host","node":"Proxmox-Test-2","name":"Proxmox-Test-2","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0}},
-  {"id":"host:Proxmox-Test-3","type":"host","node":"Proxmox-Test-3","name":"Proxmox-Test-3","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0}}
+  {"id":"host:Proxmox-Test-1","type":"host","node":"Proxmox-Test-1","name":"Proxmox-Test-1","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0,"pending_before":0}},
+  {"id":"host:Proxmox-Test-2","type":"host","node":"Proxmox-Test-2","name":"Proxmox-Test-2","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0,"pending_before":0}},
+  {"id":"host:Proxmox-Test-3","type":"host","node":"Proxmox-Test-3","name":"Proxmox-Test-3","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0,"pending_before":0}}
 ]}
 JSON
 STATUS_MODEL_RENDER_NOTIFICATION "$WORK_DIR/all-current-status.json" update > "$WORK_DIR/all-current-mail"

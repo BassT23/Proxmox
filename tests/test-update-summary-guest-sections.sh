@@ -7,9 +7,9 @@ trap 'rm -rf -- "$WORK_DIR"' EXIT
 
 cat > "$WORK_DIR/status.json" <<'JSON'
 {"targets":[
-  {"id":"110","type":"vm","node":"node1","name":"vm01","check_status":"ok","reachable":true,"updates":{"available":2},"last_update":{"status":"success"}},
-  {"id":"101","type":"lxc","node":"node1","name":"ct01","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success"}},
-  {"id":"102","type":"lxc","node":"node1","name":"ct02","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success"}}
+  {"id":"110","type":"vm","node":"node1","name":"vm01","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","pending_before":2}},
+  {"id":"101","type":"lxc","node":"node1","name":"ct01","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","pending_before":0}},
+  {"id":"102","type":"lxc","node":"node1","name":"ct02","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","pending_before":0}}
 ]}
 JSON
 

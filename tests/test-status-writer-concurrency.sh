@@ -58,10 +58,10 @@ run_sync() {
 }
 
 run_update_result() {
-  local file="$1"
+  local file="$1" status="${2:-success}" code="${3:-0}"
   LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$file" \
-    bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT ext01 success 0' \
-    _ "$SOURCE_ROOT/status-model.sh"
+    bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT ext01 "$2" "$3"' \
+    _ "$SOURCE_ROOT/status-model.sh" "$status" "$code"
 }
 
 wait_ready() {
@@ -128,5 +128,33 @@ touch "$WORK_DIR/release"
 wait "$sync_pid"
 wait "$second_sync_pid"
 assert_results "$WORK_DIR/status.json" 201 202
+
+# A remote sync must not erase a current failed External result either.
+write_status "$WORK_DIR/status.json"
+rm -f -- "$WORK_DIR/ready" "$WORK_DIR/release"
+PYTHONPATH="$WORK_DIR" UU_TEST_PAUSE_DESTINATION="$WORK_DIR/status.json" \
+  UU_TEST_READY="$WORK_DIR/ready" UU_TEST_RELEASE="$WORK_DIR/release" \
+  STATUS_MODEL_FILE="$WORK_DIR/status.json" UU_STATUS_MODEL_FILE="$WORK_DIR/status.json" \
+  bash -c 'source "$1"; sync_remote_last_update 201 completed 2026-09-25T10:04:00Z 0' \
+  _ "$WORK_DIR/sync.sh" &
+sync_pid=$!
+wait_ready
+run_update_result "$WORK_DIR/status.json" failed 42 &
+update_pid=$!
+sleep 0.1
+touch "$WORK_DIR/release"
+wait "$sync_pid"
+wait "$update_pid"
+python3 - "$WORK_DIR/status.json" <<'PY'
+import json
+import sys
+
+targets = {item["id"]: item for item in json.load(open(sys.argv[1], encoding="utf-8"))["targets"]}
+assert targets["ext01"]["last_update"] == {
+    "status": "failed", "timestamp": targets["ext01"]["last_update"]["timestamp"],
+    "exit_code": 42, "pending_before": 5,
+}
+assert targets["201"]["last_update"]["status"] == "success"
+PY
 
 echo 'status writer concurrency regression: PASS'

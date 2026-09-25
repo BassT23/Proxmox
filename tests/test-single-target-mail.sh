@@ -8,8 +8,8 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 cat > "$WORK_DIR/status.json" <<'JSON'
 {"targets":[
   {"id":"guest:900","type":"lxc","name":"pihole","check_status":"error","reachable":true,"error":{"code":"CHECK_COMMAND_FAILED","message":"apt failed"},"last_update":{"status":"failed","exit_code":1}},
-  {"id":"guest:920","type":"lxc","name":"debian","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0}},
-  {"id":"host:Proxmox-Test-1","type":"host","node":"Proxmox-Test-1","name":"Proxmox-Test-1","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0}}
+  {"id":"guest:920","type":"lxc","name":"debian","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0,"pending_before":0}},
+  {"id":"host:Proxmox-Test-1","type":"host","node":"Proxmox-Test-1","name":"Proxmox-Test-1","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","exit_code":0,"pending_before":0}}
 ]}
 JSON
 cat > "$WORK_DIR/update.conf" <<'EOF'
