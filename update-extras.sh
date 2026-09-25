@@ -144,11 +144,12 @@ COMMUNITY_UPDATE_PATH=$(command -v "$COMMUNITY_UPDATE_COMMAND" 2>/dev/null || tr
 if [[ -n "$COMMUNITY_UPDATE_PATH" ]] && grep -q "community-scripts" "$COMMUNITY_UPDATE_PATH" 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]]; then
   echo -e "\n*** Updating Community-Scripts ***"
   COMMUNITY_UPDATE_LOG=$(mktemp)
-  # Community helpers are automated update tools.  Do not let a controlling
-  # terminal become their stdin: nested terminal ioctls such as `stty sane`
-  # must not be able to stop the helper's background process group with
-  # SIGTTOU.  stdout/stderr remain attached to tee for live output.
-  env PHS_SILENT=1 "$COMMUNITY_UPDATE_COMMAND" </dev/null 2>&1 | tee "$COMMUNITY_UPDATE_LOG"
+  # Community helpers are automated update tools.  Detach them from the
+  # controlling terminal as well as stdin: nested terminal ioctls such as
+  # `stty sane` and reads from `/dev/tty` must not stop a background process
+  # group with SIGTTOU/SIGTTIN.  stdout/stderr remain attached to tee for live
+  # output, and --wait preserves the helper's exact exit status.
+  setsid --wait env PHS_SILENT=1 "$COMMUNITY_UPDATE_COMMAND" </dev/null 2>&1 | tee "$COMMUNITY_UPDATE_LOG"
   COMMUNITY_UPDATE_EXIT=${PIPESTATUS[0]}
   if [[ $COMMUNITY_UPDATE_EXIT == 0 ]]; then
     echo -e "✅ Update process completed\n"

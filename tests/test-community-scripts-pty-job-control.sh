@@ -128,7 +128,7 @@ print(f"POST_FIX_STTY_RC={new_values['stty_rc']} POST_FIX_STATE={new_state}")
 PY
 
 # shellcheck disable=SC2016 # assert the literal product command.
-grep -Fq '"$COMMUNITY_UPDATE_COMMAND" </dev/null 2>&1 | tee' "$ROOT_DIR/update-extras.sh"
+grep -Fq 'setsid --wait env PHS_SILENT=1 "$COMMUNITY_UPDATE_COMMAND" </dev/null 2>&1 | tee' "$ROOT_DIR/update-extras.sh"
 if grep -Fq 'timeout 1800s' "$ROOT_DIR/update-extras.sh"; then
   echo 'community helper path must not reintroduce the old hard timeout' >&2
   exit 1

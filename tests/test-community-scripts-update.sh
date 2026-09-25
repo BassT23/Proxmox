@@ -44,6 +44,15 @@ case "${COMMUNITY_TEST_MODE:-success}" in
     printf 'HELPER_AFTER_STTY=YES\n'
     exit 0
     ;;
+  tty-read)
+    if read -r -t 1 value </dev/tty; then
+      printf 'HELPER_DEV_TTY_READ=SUCCESS\n'
+    else
+      printf 'HELPER_DEV_TTY_READ=FAILED\n'
+    fi
+    printf 'HELPER_AFTER_DEV_TTY=YES\n'
+    exit 0
+    ;;
 esac
 EOF
 chmod 750 "$WORK_DIR/bin/update"
@@ -88,6 +97,12 @@ grep -Fq 'long job finished' <<<"$long_output"
 tty_output=$(script -qec "PATH='$WORK_DIR/bin:$PATH' LOCAL_FILES='$WORK_DIR' UU_UPDATE_CONFIG_FILE='$WORK_DIR/update.conf' UU_COMMUNITY_UPDATE_COMMAND=update COMMUNITY_TEST_MODE=tty bash '$ROOT_DIR/update-extras.sh'" /dev/null)
 grep -Fq 'HELPER_STDIN_IS_TTY=NO' <<<"$tty_output"
 grep -Fq 'HELPER_AFTER_STTY=YES' <<<"$tty_output"
+
+# A helper may try to open /dev/tty itself.  Session isolation must make that
+# operation fail normally instead of stopping the helper with SIGTTIN.
+tty_read_output=$(timeout 5s script -qec "PATH='$WORK_DIR/bin:$PATH' LOCAL_FILES='$WORK_DIR' UU_UPDATE_CONFIG_FILE='$WORK_DIR/update.conf' UU_COMMUNITY_UPDATE_COMMAND=update COMMUNITY_TEST_MODE=tty-read bash '$ROOT_DIR/update-extras.sh'" /dev/null)
+grep -Fq 'HELPER_DEV_TTY_READ=FAILED' <<<"$tty_read_output"
+grep -Fq 'HELPER_AFTER_DEV_TTY=YES' <<<"$tty_read_output"
 
 if grep -Fq 'timeout 1800s' "$ROOT_DIR/update-extras.sh"; then
   echo 'community update must not use a hard timeout' >&2
