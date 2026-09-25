@@ -474,11 +474,17 @@ if record is None:
     raise SystemExit(0)
 
 status = "success" if job_state == "completed" and exit_code == "0" else "failed"
-record["last_update"] = {
+last_update = record.get("last_update")
+if not isinstance(last_update, dict):
+    last_update = {}
+else:
+    last_update = dict(last_update)
+last_update.update({
     "status": status,
     "timestamp": finished or None,
     "exit_code": int(exit_code),
-}
+})
+record["last_update"] = last_update
 directory = os.path.dirname(os.path.abspath(status_file)) or "."
 fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
 try:

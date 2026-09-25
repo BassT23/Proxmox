@@ -157,4 +157,34 @@ assert targets["ext01"]["last_update"] == {
 assert targets["201"]["last_update"]["status"] == "success"
 PY
 
+# Remote synchronization updates the authoritative result fields without
+# discarding metadata imported from the remote status artifact.
+write_status "$WORK_DIR/status.json"
+python3 - "$WORK_DIR/status.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as source:
+    payload = json.load(source)
+for target in payload["targets"]:
+    if target["id"] == "201":
+        target["last_update"] = {
+            "status": "success", "timestamp": "2026-09-25T10:05:00Z",
+            "exit_code": 0, "pending_before": 5,
+        }
+with open(path, "w", encoding="utf-8") as output:
+    json.dump(payload, output)
+    output.write("\n")
+PY
+run_sync "$WORK_DIR/status.json" 201 completed 2026-09-25T10:06:00Z
+python3 - "$WORK_DIR/status.json" <<'PY'
+import json
+import sys
+
+targets = {item["id"]: item for item in json.load(open(sys.argv[1], encoding="utf-8"))["targets"]}
+assert targets["201"]["last_update"]["pending_before"] == 5
+assert targets["201"]["last_update"]["status"] == "success"
+PY
+
 echo 'status writer concurrency regression: PASS'
