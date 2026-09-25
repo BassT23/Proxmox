@@ -707,6 +707,84 @@ PY
   return "$result"
 }
 
+# Optional, run-scoped diagnostics for the External update-all lifecycle.
+# Disabled by default and deliberately limited to status metadata; this never
+# changes the authoritative status model.
+STATUS_MODEL_TRACE_EVENT() {
+  [[ "${UU_EXTERNAL_LIFECYCLE_TRACE:-false}" == true ]] || return 0
+  local trace_file="${UU_EXTERNAL_LIFECYCLE_TRACE_FILE:-}"
+  local checkpoint="${1:-}" target_id="${2:-}" helper_rc="${3:-}"
+  [[ -n "$trace_file" && -n "$checkpoint" ]] || return 0
+  local trace_lock="${trace_file}.lock" trace_lock_fd
+  mkdir -p -- "$(dirname -- "$trace_file")" 2>/dev/null || return 1
+  exec {trace_lock_fd}>"$trace_lock" || return 1
+  if ! flock -x "$trace_lock_fd"; then
+    exec {trace_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$trace_file" "$checkpoint" "$target_id" "$helper_rc" \
+    "${STATUS_MODEL_FILE:-${LOCAL_FILES:-/etc/ultimate-updater}/status.json}" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+trace_file, checkpoint, requested_target, helper_rc, status_file = sys.argv[1:]
+try:
+    real_status = os.path.realpath(status_file)
+except OSError:
+    real_status = status_file
+event_time = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+base = {
+    "timestamp": event_time,
+    "checkpoint": checkpoint,
+    "status_file": status_file,
+    "realpath": real_status,
+    "helper_rc": int(helper_rc) if helper_rc.lstrip("-").isdigit() else (helper_rc or None),
+}
+try:
+    stat = os.stat(status_file)
+    base.update({"device": stat.st_dev, "inode": stat.st_ino, "size": stat.st_size,
+                 "mtime": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()})
+except OSError:
+    base.update({"device": None, "inode": None, "size": None, "mtime": None})
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError):
+    payload = {}
+targets = payload.get("targets") if isinstance(payload, dict) else []
+if not isinstance(targets, list):
+    targets = []
+selected = [item for item in targets if isinstance(item, dict) and
+            ((not requested_target and item.get("type") == "external") or
+             (requested_target and item.get("id") == requested_target))]
+if not selected:
+    selected = [{}]
+for item in selected:
+    result = item.get("last_update") if isinstance(item.get("last_update"), dict) else {}
+    updates = item.get("updates") if isinstance(item.get("updates"), dict) else {}
+    event = dict(base)
+    event.update({
+        "target_id": item.get("id") or requested_target or None,
+        "generated_at": payload.get("generated_at") if isinstance(payload, dict) else None,
+        "last_update_status": result.get("status"),
+        "last_update_timestamp": result.get("timestamp"),
+        "exit_code": result.get("exit_code"),
+        "pending_before": result.get("pending_before"),
+        "updates_available": updates.get("available"),
+        "check_status": item.get("check_status"),
+    })
+    with open(trace_file, "a", encoding="utf-8") as output:
+        json.dump(event, output, sort_keys=True)
+        output.write("\n")
+        output.flush()
+PY
+  local result=$?
+  exec {trace_lock_fd}>&-
+  return "$result"
+}
+
 # Return success only when the structured status model contains a positive
 # security-update count in the notification scope.  Unknown, failed, and
 # unreachable targets are not converted to zero by this gate.

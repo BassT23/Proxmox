@@ -565,6 +565,18 @@ apply_pre_update_counts() {
       _ "$STATUS_MODEL_SCRIPT" "$baseline_file" "$started_at"
 }
 
+trace_external_event() {
+  [[ "${UU_EXTERNAL_LIFECYCLE_TRACE:-false}" == true ]] || return 0
+  local checkpoint="$1" helper_rc="${2:-}" target_id="${3:-}"
+  [[ -f "$STATUS_MODEL_SCRIPT" ]] || return 0
+  LOCAL_FILES=$(dirname -- "$STATUS_MODEL_FILE") \
+    STATUS_MODEL_FILE="$STATUS_MODEL_FILE" \
+    UU_EXTERNAL_LIFECYCLE_TRACE=true \
+    UU_EXTERNAL_LIFECYCLE_TRACE_FILE="${UU_EXTERNAL_LIFECYCLE_TRACE_FILE:-}" \
+    bash -c 'source "$1" && STATUS_MODEL_TRACE_EVENT "$2" "$3" "$4"' \
+      _ "$STATUS_MODEL_SCRIPT" "$checkpoint" "$target_id" "$helper_rc" || true
+}
+
 send_check_notification() {
   local status_file="${1:-$STATUS_MODEL_FILE}"
   [[ -f "$STATUS_MODEL_SCRIPT" && -f "$status_file" ]] || return 0
@@ -710,6 +722,10 @@ start_global_job() {
   fi
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}all-systems-$timestamp-$BASHPID"
+  if [[ "${UU_EXTERNAL_LIFECYCLE_TRACE:-false}" == true ]]; then
+    systemd_env+=("--setenv=UU_EXTERNAL_LIFECYCLE_TRACE=true" \
+      "--setenv=UU_EXTERNAL_LIFECYCLE_TRACE_FILE=$JOB_STATE_DIR/$unit.external-lifecycle-trace.jsonl")
+  fi
   prepare_systemd_log_filters
   if [[ "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_INTERACTIVE:-false}" == true ]] && ! configured_headless_enabled; then
     [[ -x "$PTY_BRIDGE" ]] || { printf 'Interactive job bridge is not available: %s\n' "$PTY_BRIDGE" >&2; return 1; }
@@ -864,6 +880,7 @@ run_global_job() {
   fi
   UU_DEFER_UPDATE_MAIL=true "$update_script"
   exit_code=$?
+  trace_external_event after_global_dispatch "$exit_code"
   if cancel_requested "$unit"; then
     [[ -z "$pre_update_snapshot" ]] || rm -f -- "$pre_update_snapshot"
     write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." || return 1
@@ -874,15 +891,19 @@ run_global_job() {
   # update follows the success refresh path or the failure notification path.
   # This must not alter the authoritative global exit code.
   list_jobs >/dev/null 2>&1 || true
+  trace_external_event after_remote_sync
   [[ -z "$pre_update_snapshot" ]] || apply_pre_update_counts "$STATUS_MODEL_FILE" "$pre_update_snapshot" "$started" || true
   if [[ "$exit_code" -eq 0 ]]; then
     # The following full check is the inventory authority and must be allowed
     # to prune stale targets without a later import resurrecting them.
     if [[ -f "$STATUS_MODEL_FILE" ]]; then
+      trace_external_event before_result_snapshot
       update_result_snapshot=$(mktemp "${STATUS_MODEL_FILE}.update-results.XXXXXX")
       cp -- "$STATUS_MODEL_FILE" "$update_result_snapshot"
+      trace_external_event after_result_snapshot
     fi
     printf 'Post-update status refresh started for all systems.\n'
+    trace_external_event before_post_check
     if [[ -x "$CHECK_CLI" ]]; then
       UU_CHECK_JOB_EXECUTION=true UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check </dev/null || post_check_rc=$?
       post_check_message="post-update full status refresh rc=$post_check_rc"
@@ -899,9 +920,13 @@ run_global_job() {
       STATUS_MODEL_PRESERVE_UPDATE_RESULTS "$update_result_snapshot" "$started" || true
     fi
     [[ -z "$pre_update_snapshot" ]] || apply_pre_update_counts "$STATUS_MODEL_FILE" "$pre_update_snapshot" "$started" || true
+    trace_external_event after_post_check "$post_check_rc"
+    trace_external_event after_preserve
     [[ -z "$update_result_snapshot" ]] || rm -f -- "$update_result_snapshot"
+    trace_external_event before_update_notification
     send_update_notification "$STATUS_MODEL_FILE" "$started"
   else
+    trace_external_event before_update_notification
     send_update_notification "$STATUS_MODEL_FILE" "$started"
   fi
   [[ -z "$pre_update_snapshot" ]] || rm -f -- "$pre_update_snapshot"

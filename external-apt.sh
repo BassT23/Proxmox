@@ -326,22 +326,38 @@ update_target() {
     printf 'External update blocked: backup safety component is unavailable.\n' >&2
     return 42
   }
+  STATUS_MODEL_TRACE_EVENT external_before_update "$EXTERNAL_TARGET" "" || true
   "${safety_args[@]}" || return $?
   output=$(remote_update 2>&1)
   rc=$?
   if [[ $rc -eq 0 ]]; then
     if [[ "$output" == *EXTERNAL_FILTERED* ]]; then
-      STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" skipped 0 || true
+      STATUS_MODEL_TRACE_EVENT external_before_result_write "$EXTERNAL_TARGET" "" || true
+      STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" skipped 0
+      local result_rc=$?
+      STATUS_MODEL_TRACE_EVENT external_result_write_rc "$EXTERNAL_TARGET" "$result_rc" || true
+      STATUS_MODEL_TRACE_EVENT external_after_result_write "$EXTERNAL_TARGET" "" || true
       printf '%s: update skipped by local External filter\n' "$EXTERNAL_TARGET"
+      STATUS_MODEL_TRACE_EVENT external_returned "$EXTERNAL_TARGET" 0 || true
       return 0
     fi
-    STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" success 0 || true
+    STATUS_MODEL_TRACE_EVENT external_before_result_write "$EXTERNAL_TARGET" "" || true
+    STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" success 0
+    local result_rc=$?
+    STATUS_MODEL_TRACE_EVENT external_result_write_rc "$EXTERNAL_TARGET" "$result_rc" || true
+    STATUS_MODEL_TRACE_EVENT external_after_result_write "$EXTERNAL_TARGET" "" || true
     printf '%s: update completed successfully\n' "$EXTERNAL_TARGET"
+    STATUS_MODEL_TRACE_EVENT external_returned "$EXTERNAL_TARGET" 0 || true
     return 0
   fi
   code=$(CLASSIFY_SSH_EXIT "$rc")
-  STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" failed "$rc" || true
+  STATUS_MODEL_TRACE_EVENT external_before_result_write "$EXTERNAL_TARGET" "" || true
+  STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" failed "$rc"
+  local result_rc=$?
+  STATUS_MODEL_TRACE_EVENT external_result_write_rc "$EXTERNAL_TARGET" "$result_rc" || true
+  STATUS_MODEL_TRACE_EVENT external_after_result_write "$EXTERNAL_TARGET" "" || true
   printf 'external-linux: %s: update failed (%s): %s\n' "$EXTERNAL_TARGET" "$code" "$output" >&2
+  STATUS_MODEL_TRACE_EVENT external_returned "$EXTERNAL_TARGET" "$rc" || true
   return "$rc"
 }
 

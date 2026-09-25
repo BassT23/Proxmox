@@ -68,6 +68,29 @@ Repeat after a fix at least three times from a clean fixture reset. A genuine
 target failure must remain failed with its real exit code; a non-zero global
 job does not by itself mean remote handback failed.
 
+## One-shot External lifecycle trace
+
+When a real update-all run still loses an External result, enable the
+diagnostic gate for one run:
+
+```text
+UU_EXTERNAL_LIFECYCLE_TRACE=true ultimate-updater update-all
+```
+
+The global job passes the gate into its systemd worker and writes one
+run-scoped JSONL artifact beside the job state:
+
+```text
+/var/lib/ultimate-updater/jobs/<global-unit>.external-lifecycle-trace.jsonl
+```
+
+The artifact records only checkpoint names, sanitized status-model metadata,
+target IDs, timestamps, file identity, result fields, and helper return codes.
+It contains no credentials or arbitrary environment dump. Collect only that
+trace together with the job ID and relevant sanitized External status record;
+do not send private keys, passwords, mail configuration, or unrelated system
+journal data. Trace mode is off by default and does not alter status semantics.
+
 ## Reset and cleanup
 
 After validation, restore the original updater configuration and status model,
