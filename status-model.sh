@@ -528,6 +528,117 @@ PY
   return "$result"
 }
 
+# Apply the update counts observed before a global update to terminal results
+# produced by that run. Update commands commonly perform a post-update check
+# before recording their result, so reading the live model at result time can
+# incorrectly turn a real update into "Up to date". The baseline is only
+# metadata for current-run results; it never creates or resurrects targets.
+STATUS_MODEL_APPLY_PRE_UPDATE_COUNTS() {
+  local baseline_file="$1" started_at="$2"
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  local status_lock_file="${status_file}.lock" status_lock_fd
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$baseline_file" "$status_file" "$started_at" <<'PY'
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime
+
+baseline_file, status_file, started_at = sys.argv[1:]
+try:
+    with open(baseline_file, encoding="utf-8") as source:
+        baseline = json.load(source)
+    with open(status_file, encoding="utf-8") as source:
+        current = json.load(source)
+    started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+baseline_targets = baseline.get("targets") if isinstance(baseline, dict) else None
+current_targets = current.get("targets") if isinstance(current, dict) else None
+if not isinstance(baseline_targets, list) or not isinstance(current_targets, list):
+    raise SystemExit(1)
+
+def candidates(target_id):
+    value = str(target_id or "")
+    return {value, value.removeprefix("host:"), value.removeprefix("guest:"),
+            value.removeprefix("external:")}
+
+baseline_by_id = {}
+for item in baseline_targets:
+    if isinstance(item, dict) and item.get("id"):
+        for candidate in candidates(item["id"]):
+            if candidate:
+                baseline_by_id[candidate] = item
+
+changed = False
+for item in current_targets:
+    if not isinstance(item, dict) or not item.get("id"):
+        continue
+    result = item.get("last_update")
+    if not isinstance(result, dict) or str(result.get("status")) not in {
+        "success", "completed", "failed", "interrupted"
+    }:
+        continue
+    timestamp = result.get("timestamp")
+    if not timestamp:
+        continue
+    try:
+        update_time = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        continue
+    if update_time < started:
+        continue
+    before = None
+    for candidate in candidates(item["id"]):
+        if candidate in baseline_by_id:
+            before = baseline_by_id[candidate]
+            break
+    if not isinstance(before, dict):
+        continue
+    updates = before.get("updates")
+    pending = updates.get("available") if isinstance(updates, dict) else None
+    normal = before.get("normal_updates")
+    security = before.get("security_updates")
+    if isinstance(normal, int) and not isinstance(normal, bool) and \
+       isinstance(security, int) and not isinstance(security, bool):
+        pending = normal + security
+    if not isinstance(pending, int) or isinstance(pending, bool) or pending < 0:
+        continue
+    if result.get("pending_before") != pending:
+        result["pending_before"] = pending
+        changed = True
+
+if not changed:
+    raise SystemExit(0)
+
+directory = os.path.dirname(os.path.abspath(status_file)) or "."
+fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(current, output, indent=2)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, status_file)
+except Exception:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
+}
+
 STATUS_MODEL_UPDATE_RESULT() {
   local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
   local target_id="$1" update_status="$2" exit_code="$3"
@@ -915,6 +1026,7 @@ STATUS_MODEL_SEND_NOTIFICATION() {
 STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-${LOCAL_FILES:-/etc/ultimate-updater}/status.json}}"
   local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
+  local run_started_at="${3:-}"
   local email_user email_sender email_only_error email_single_runs notification state body
 
   email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
@@ -934,7 +1046,7 @@ STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
     render_kind="${UU_SINGLE_TARGET_KIND:-target}"
   fi
 
-  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file" update "$render_target" "$render_kind") || return 1
+  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file" update "$render_target" "$render_kind" "$run_started_at") || return 1
   state=${notification%%$'\n'*}
   state=${state#STATE=}
   body=${notification#*$'\n'}
@@ -961,15 +1073,17 @@ STATUS_MODEL_RENDER_NOTIFICATION() {
   local run_type="${2:-check}"
   local scope_target="${3:-}"
   local scope_kind="${4:-}"
+  local run_started_at="${5:-}"
   case "$run_type" in
     check|update) ;;
     *) return 2 ;;
   esac
-  python3 - "$status_file" "$run_type" "$scope_target" "$scope_kind" <<'PY'
+  python3 - "$status_file" "$run_type" "$scope_target" "$scope_kind" "$run_started_at" <<'PY'
 import json
 import sys
+from datetime import datetime
 
-status_file, run_type, scope_target, scope_kind = sys.argv[1:]
+status_file, run_type, scope_target, scope_kind, run_started_at = sys.argv[1:]
 try:
     with open(status_file, encoding="utf-8") as source:
         payload = json.load(source)
@@ -979,6 +1093,23 @@ except (OSError, ValueError):
 targets = payload.get("targets")
 if not isinstance(targets, list):
     raise SystemExit(1)
+
+try:
+    started = datetime.fromisoformat(run_started_at.replace("Z", "+00:00")) if run_started_at else None
+except (TypeError, ValueError):
+    started = None
+
+def current_update_result(target):
+    if run_type != "update" or started is None:
+        return True
+    result = target.get("last_update")
+    timestamp = result.get("timestamp") if isinstance(result, dict) else None
+    if not timestamp:
+        return False
+    try:
+        return datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")) >= started
+    except (TypeError, ValueError):
+        return False
 
 def target_matches_scope(target):
     if not scope_target:
@@ -1092,6 +1223,8 @@ def update_result(target):
     return result if isinstance(result, dict) else {}
 
 def update_status(target):
+    if not current_update_result(target):
+        return "unknown"
     result = update_result(target)
     status = str(result.get("status") or "").lower()
     if status in ("failed", "interrupted"):

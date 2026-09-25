@@ -548,11 +548,21 @@ job_unit_active() {
 
 send_update_notification() {
   local status_file="${1:-$STATUS_MODEL_FILE}"
+  local run_started_at="${2:-}"
   [[ -f "$STATUS_MODEL_SCRIPT" && -f "$status_file" ]] || return 0
   LOCAL_FILES=$(dirname -- "$status_file") \
     STATUS_MODEL_FILE="$status_file" \
-    bash -c 'source "$1" && STATUS_MODEL_SEND_UPDATE_NOTIFICATION "$2" "$3"' \
-      _ "$STATUS_MODEL_SCRIPT" "$status_file" "$UPDATE_CONFIG_FILE" || true
+    bash -c 'source "$1" && STATUS_MODEL_SEND_UPDATE_NOTIFICATION "$2" "$3" "$4"' \
+      _ "$STATUS_MODEL_SCRIPT" "$status_file" "$UPDATE_CONFIG_FILE" "$run_started_at" || true
+}
+
+apply_pre_update_counts() {
+  local status_file="${1:-$STATUS_MODEL_FILE}" baseline_file="$2" started_at="$3"
+  [[ -f "$STATUS_MODEL_SCRIPT" && -f "$status_file" && -f "$baseline_file" ]] || return 0
+  LOCAL_FILES=$(dirname -- "$status_file") \
+    STATUS_MODEL_FILE="$status_file" \
+    bash -c 'source "$1" && STATUS_MODEL_APPLY_PRE_UPDATE_COUNTS "$2" "$3"' \
+      _ "$STATUS_MODEL_SCRIPT" "$baseline_file" "$started_at"
 }
 
 send_check_notification() {
@@ -825,7 +835,7 @@ run_job() {
 
 run_global_job() {
   local unit="$1" update_script="$2" target=all-systems file started exit_code lock_file
-  local post_check_rc=0 post_check_message="" update_result_snapshot=""
+  local post_check_rc=0 post_check_message="" update_result_snapshot="" pre_update_snapshot=""
   valid_unit "$unit" || return 2
   valid_global_target "$target" || return 2
   file=$(state_file "$unit")
@@ -843,9 +853,19 @@ run_global_job() {
     write_state "$unit" "$target" failed "$started" "$(now)" 75 "another global update is running"
     return 75
   fi
+  if [[ -f "$STATUS_MODEL_FILE" ]]; then
+    pre_update_snapshot=$(mktemp "${STATUS_MODEL_FILE}.pre-update.XXXXXX") || pre_update_snapshot=""
+    if [[ -n "$pre_update_snapshot" ]]; then
+      cp -- "$STATUS_MODEL_FILE" "$pre_update_snapshot" || {
+        rm -f -- "$pre_update_snapshot"
+        pre_update_snapshot=""
+      }
+    fi
+  fi
   UU_DEFER_UPDATE_MAIL=true "$update_script"
   exit_code=$?
   if cancel_requested "$unit"; then
+    [[ -z "$pre_update_snapshot" ]] || rm -f -- "$pre_update_snapshot"
     write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." || return 1
     cleanup_interactive_runtime "$unit" || true
     return 130
@@ -854,6 +874,7 @@ run_global_job() {
   # update follows the success refresh path or the failure notification path.
   # This must not alter the authoritative global exit code.
   list_jobs >/dev/null 2>&1 || true
+  [[ -z "$pre_update_snapshot" ]] || apply_pre_update_counts "$STATUS_MODEL_FILE" "$pre_update_snapshot" "$started" || true
   if [[ "$exit_code" -eq 0 ]]; then
     # The following full check is the inventory authority and must be allowed
     # to prune stale targets without a later import resurrecting them.
@@ -877,11 +898,13 @@ run_global_job() {
     if [[ -n "$update_result_snapshot" ]] && declare -f STATUS_MODEL_PRESERVE_UPDATE_RESULTS >/dev/null 2>&1; then
       STATUS_MODEL_PRESERVE_UPDATE_RESULTS "$update_result_snapshot" "$started" || true
     fi
+    [[ -z "$pre_update_snapshot" ]] || apply_pre_update_counts "$STATUS_MODEL_FILE" "$pre_update_snapshot" "$started" || true
     [[ -z "$update_result_snapshot" ]] || rm -f -- "$update_result_snapshot"
-    send_update_notification "$STATUS_MODEL_FILE"
+    send_update_notification "$STATUS_MODEL_FILE" "$started"
   else
-    send_update_notification "$STATUS_MODEL_FILE"
+    send_update_notification "$STATUS_MODEL_FILE" "$started"
   fi
+  [[ -z "$pre_update_snapshot" ]] || rm -f -- "$pre_update_snapshot"
   cleanup_interactive_runtime "$unit" || true
   if [[ "$exit_code" -eq 0 ]]; then
     write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
