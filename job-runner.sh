@@ -565,6 +565,15 @@ apply_pre_update_counts() {
       _ "$STATUS_MODEL_SCRIPT" "$baseline_file" "$started_at"
 }
 
+preserve_update_results() {
+  local status_file="${1:-$STATUS_MODEL_FILE}" snapshot_file="$2" started_at="$3"
+  [[ -f "$STATUS_MODEL_SCRIPT" && -f "$status_file" && -f "$snapshot_file" ]] || return 1
+  LOCAL_FILES=$(dirname -- "$status_file") \
+    STATUS_MODEL_FILE="$status_file" \
+    bash -c 'source "$1" && STATUS_MODEL_PRESERVE_UPDATE_RESULTS "$2" "$3"' \
+      _ "$STATUS_MODEL_SCRIPT" "$snapshot_file" "$started_at"
+}
+
 trace_external_event() {
   [[ "${UU_EXTERNAL_LIFECYCLE_TRACE:-false}" == true ]] || return 0
   local checkpoint="$1" helper_rc="${2:-}" target_id="${3:-}"
@@ -851,7 +860,7 @@ run_job() {
 
 run_global_job() {
   local unit="$1" update_script="$2" target=all-systems file started exit_code lock_file
-  local post_check_rc=0 post_check_message="" update_result_snapshot="" pre_update_snapshot=""
+  local post_check_rc=0 preserve_rc=0 post_check_message="" update_result_snapshot="" pre_update_snapshot=""
   valid_unit "$unit" || return 2
   valid_global_target "$target" || return 2
   file=$(state_file "$unit")
@@ -916,12 +925,19 @@ run_global_job() {
     else
       printf 'Post-update status refresh completed successfully.\n'
     fi
-    if [[ -n "$update_result_snapshot" ]] && declare -f STATUS_MODEL_PRESERVE_UPDATE_RESULTS >/dev/null 2>&1; then
-      STATUS_MODEL_PRESERVE_UPDATE_RESULTS "$update_result_snapshot" "$started" || true
+    trace_external_event after_post_check "$post_check_rc"
+    preserve_rc=0
+    trace_external_event before_preserve
+    if [[ -n "$update_result_snapshot" ]]; then
+      preserve_update_results "$STATUS_MODEL_FILE" "$update_result_snapshot" "$started" || preserve_rc=$?
+    else
+      preserve_rc=1
+    fi
+    if [[ "$preserve_rc" -ne 0 ]]; then
+      printf 'Post-update result preservation failed (exit code %s).\n' "$preserve_rc" >&2
     fi
     [[ -z "$pre_update_snapshot" ]] || apply_pre_update_counts "$STATUS_MODEL_FILE" "$pre_update_snapshot" "$started" || true
-    trace_external_event after_post_check "$post_check_rc"
-    trace_external_event after_preserve
+    trace_external_event after_preserve "$preserve_rc"
     [[ -z "$update_result_snapshot" ]] || rm -f -- "$update_result_snapshot"
     trace_external_event before_update_notification
     send_update_notification "$STATUS_MODEL_FILE" "$started"
