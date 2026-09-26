@@ -9,7 +9,7 @@
   "mutation_range": "900-999",
   "fixtures": [
     {"id": 900, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian", "role": "community-script", "state": "stopped", "classification": "KEEP"},
-    {"id": 910, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian 12", "role": "apt/check/filter", "state": "stopped", "classification": "KEEP_AND_STANDARDIZE"},
+    {"id": 910, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian 12", "role": "apt/check/filter", "state": "stopped", "classification": "KEEP"},
     {"id": 911, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian", "role": "docker-compose/lifecycle", "state": "stopped", "classification": "KEEP"},
     {"id": 912, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian", "role": "docker-compose/lifecycle", "state": "stopped", "classification": "KEEP"},
     {"id": 913, "type": "lxc", "node": "Proxmox-Test-1", "os": "Ubuntu", "role": "community-script", "state": "stopped", "classification": "KEEP"},
@@ -33,7 +33,7 @@
     {"id": 972, "type": "vm", "node": "Proxmox-Test-1", "os": "Ubuntu", "role": "template", "state": "stopped", "template": true, "classification": "KEEP"},
     {"id": 973, "type": "vm", "node": "Proxmox-Test-1", "os": "unknown", "role": "incomplete-clone", "state": "stopped", "classification": "UNKNOWN_DO_NOT_TOUCH"},
     {"id": 974, "type": "vm", "node": "Proxmox-Test-1", "os": "unknown", "role": "qemu/other", "state": "stopped", "classification": "UNKNOWN_DO_NOT_TOUCH"},
-    {"id": 978, "type": "vm", "node": "Proxmox-Test-1", "os": "Ubuntu", "role": "ssh-qga-reference", "state": "stopped", "qga_enabled": true, "classification": "KEEP_AND_STANDARDIZE"},
+    {"id": 978, "type": "vm", "node": "Proxmox-Test-1", "os": "Ubuntu", "role": "ssh-qga-reference", "state": "stopped", "qga_enabled": true, "classification": "KEEP"},
     {"id": 980, "type": "vm", "node": "Proxmox-Test-1", "os": "Rocky Linux 10", "role": "rocky-qga-256", "state": "stopped", "classification": "KEEP"},
     {"id": 983, "type": "vm", "node": "Proxmox-Test-2", "os": "Debian 12", "role": "remote-vm-qga", "state": "stopped", "qga_enabled": true, "classification": "KEEP"},
     {"id": 984, "type": "lxc", "node": "Proxmox-Test-1", "os": "Rocky/CentOS", "role": "rpm-dnf/external-candidate", "state": "stopped", "classification": "KEEP"}
