@@ -212,9 +212,17 @@ RUN_DOWNLOADED_INSTALLER() {
 
 
 
+SHOULD_CLEAR_UPDATE_HEADER() {
+  [[ -t 1 && "${TERM:-}" != "" && "${TERM:-}" != dumb ]] || return 1
+  [[ "${UU_MANAGED_OUTPUT:-false}" != true ]] || return 1
+  [[ "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_SOURCE:-}" != scheduler ]]
+}
+
 # Header
 HEADER_INFO () {
-  clear
+  if SHOULD_CLEAR_UPDATE_HEADER; then
+    clear >/dev/null 2>&1 || true
+  fi
   echo -e "\n \
     https://github.com/BassT23/Proxmox\n"
   cat <<'EOF'
@@ -599,7 +607,7 @@ UPDATE () {
     return $?
   fi
   RUN_DOWNLOADED_INSTALLER "https://raw.githubusercontent.com/BassT23/Proxmox/refs/heads/$BRANCH/install.sh?uu_cache=$cache_buster" \
-    UU_TARGET_BRANCH="$BRANCH" UU_UPGRADE_INTERACTIVE=true UU_NONINTERACTIVE=true update
+    UU_TARGET_BRANCH="$BRANCH" UU_UPGRADE_INTERACTIVE=true UU_INTERACTIVE_INSTALLER=true UU_NONINTERACTIVE=true update
   return $?
 }
 

@@ -161,6 +161,15 @@ FORMAT_ARCHIVE_IDENTITY() {
   UU_FORMAT_BUILD_IDENTITY "$ARCHIVE_VERSION" "$BRANCH" "$ARCHIVE_BETA" "$ARCHIVE_COMMIT"
 }
 
+SHOULD_CLEAR_INSTALLER_HEADER() {
+  [[ -t 1 && "${TERM:-}" != "" && "${TERM:-}" != dumb ]] || return 1
+  [[ "${UU_MANAGED_OUTPUT:-false}" != true ]] || return 1
+  if [[ "${UU_INTERACTIVE_INSTALLER:-false}" == true ]]; then
+    return 0
+  fi
+  [[ "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_SOURCE:-}" != scheduler ]]
+}
+
 WRITE_BUILD_METADATA() {
   local branch="$1" commit="${2:-}" tag="${3:-}" version="${4:-$PRODUCT_VERSION}" beta="${5:-}" temporary
   [[ "$branch" =~ ^(master|beta|develop)$ ]] || branch="unknown"
@@ -184,7 +193,7 @@ CL="\e[0m"
 
 #Header
 HEADER_INFO () {
-  if [[ -n "${TERM:-}" && "${TERM:-}" != "dumb" && -t 1 ]]; then
+  if SHOULD_CLEAR_INSTALLER_HEADER; then
     clear >/dev/null 2>&1 || true
   fi
   echo -e "\n \
@@ -524,7 +533,6 @@ INSTALL () {
       rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
       SET_TEMP_FILES || exit 1
       READ_PAYLOAD_METADATA || exit 1
-      printf 'Installing: %s\n' "$(FORMAT_ARCHIVE_IDENTITY)"
     # Copy files
     cp "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
@@ -682,7 +690,6 @@ UPDATE () {
     rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
     SET_TEMP_FILES || return 1
     READ_PAYLOAD_METADATA || return 1
-    printf 'Installing: %s\n' "$(FORMAT_ARCHIVE_IDENTITY)"
     installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
     target_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$TEMP_FILES/update.sh" 2>/dev/null || true)
     installed_major=''
