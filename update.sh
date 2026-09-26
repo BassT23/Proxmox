@@ -560,9 +560,19 @@ VERSION_CHECK () {
 }
 
 # Update The Ultimate Updater
+SAME_INSTALLED_TARGET_IDENTITY() {
+  [[ "$INSTALLED_BRANCH" == "$BRANCH" ]] || return 1
+  [[ "$INSTALLED_VERSION" == "$target_version" ]] || return 1
+  [[ "$installed_commit" =~ ^[0-9a-f]{40}$ && "$target_commit" == "$installed_commit" ]] || return 1
+  if [[ "$BRANCH" == beta ]]; then
+    [[ "$target_beta" =~ ^[0-9]+$ && "$INSTALLED_BETA" == "$target_beta" ]] || return 1
+  fi
+  return 0
+}
+
 UPDATE () {
   SELF_UPDATE_RUN=true
-  local installed_version target_version target_commit installed_commit cache_buster
+  local installed_version target_version target_commit installed_commit target_beta cache_buster
   cache_buster=$(date +%s)
   installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
   if ! target_version=$(FETCH_REMOTE_VERSION "$BRANCH" update.sh); then
@@ -571,9 +581,10 @@ UPDATE () {
   fi
   installed_commit=$(awk -F'"' '/^commit=/ {print $2; exit}' "$BUILD_METADATA_FILE" 2>/dev/null || true)
   target_commit=$(FETCH_REMOTE_COMMIT "$BRANCH" || true)
-  if [[ "$installed_commit" =~ ^[0-9a-f]{40}$ && "$target_commit" == "$installed_commit" ]]; then
+  target_beta=$(FETCH_REMOTE_BETA "$BRANCH" || true)
+  if SAME_INSTALLED_TARGET_IDENTITY; then
     echo -e "${GN:-}       The Ultimate Updater is UpToDate${CL:-}"
-    echo -e "                 Version: $installed_version"
+    echo -e "                 Ultimate Updater $INSTALLED_BUILD_IDENTITY"
     return 0
   fi
   if version_is_less "$target_version" "$installed_version"; then
