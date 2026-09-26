@@ -3,22 +3,39 @@ Changelog:
 
 **Unreleased**
 
+No changes yet.
+
+**v5.1.3 Beta 7** (beta / release candidate for validation)
+
 Improved:
-- installer, CLI and Web UI version displays now use the actual installed
-  Ultimate Updater product/build identity instead of exposing an internal
-  installer script version
-- beta builds show their Beta number, while beta and develop builds include
-  their short Git commit for unambiguous identification
-- global update result handling now serializes status writes and preserves
-  External and remote update metadata through the final status refresh
-- update summaries distinguish targets that performed update work from targets
-  that were already up to date, and only attribute results to the current run
+- installer, CLI, and Web UI version displays now identify the installed
+  Ultimate Updater build; beta and develop builds include their branch,
+  Beta number, and short commit where applicable
+- Web UI version details separate product version, channel, Beta information,
+  and installed/available commits without repeating compact identity strings
+- global update summaries serialize status writes, preserve External and
+  remote metadata through final refreshes, distinguish actual update work from
+  already-current targets, and remain scoped to the current run
+- installer and self-update output is cleaner while the final installed build
+  identity remains visible
 
 Fixed:
+- legacy installed clients can discover current 5.1.3 payloads through the
+  literal `VERSION` bootstrap compatibility path
+- explicit branch changes are honored even when source and target branches
+  point to the same commit
+- interactive installer and self-update clearing reaches the controlling
+  terminal, while headless, scheduler, and managed output remain free of
+  terminal control sequences
 - completed External and remote results are restored after a full post-update
   refresh without resurrecting stale or non-inventory targets
-- minimal Alpine LXCs can be checked without Bash; generic PCT connectivity
-  and boot probes now use the portable guest shell
+- minimal Alpine LXCs can be checked without Bash; APK remains total-only when
+  security splitting is unsupported
+
+Validation target:
+- External result preservation during the combined remote-node plus
+  `update-all` lifecycle remains subject to field confirmation; no additional
+  field-validation claim is made here.
 
 **v5.1.3 Beta 6** (beta / release candidate for validation)
 

@@ -1,6 +1,31 @@
-# Ultimate Updater 5.1.3 Beta 6
+# Ultimate Updater 5.1.3 Beta 7
 
 Status: Beta / release candidate for validation.
+
+## Beta 7
+
+- Installer, CLI, and Web UI build identity now reflects the installed
+  Ultimate Updater product, including Beta/develop branch and short commit
+  information where applicable.
+- Legacy installed clients retain the literal `VERSION` bootstrap path needed
+  to discover current 5.1.3 self-update payloads.
+- Installer and self-update output no longer repeats an intermediate
+  `Installing:` identity; the final installed build identity remains visible.
+- The Web UI version dialog separates product version, channel/Beta details,
+  and installed/available commits without redundant compact identity strings.
+- Explicit branch changes are honored even when source and target branches
+  point to the same commit.
+- Interactive installer clearing reaches the controlling terminal, while
+  headless, scheduler, and managed output remain free of terminal controls.
+- Global update result preservation and current-run summary scoping retain
+  External and remote metadata through final refreshes without resurrecting
+  stale or non-inventory results.
+- Minimal Alpine LXCs can be checked without Bash, and APK remains total-only
+  where security splitting is unsupported.
+
+Beta 7 remains a release candidate for validation. The combined External
+`update-all` result-preservation scenario remains a field-validation target;
+this section does not claim reporter confirmation for that scenario.
 
 ## Beta 6
 
