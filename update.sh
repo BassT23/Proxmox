@@ -5,6 +5,12 @@
 # Update #
 ##########
 
+# Legacy bootstrap compatibility mirror.  Pre-metadata clients discover the
+# product version by parsing this literal line from update.sh.  Runtime code
+# uses product-metadata.sh as the canonical source and tests must keep these
+# values aligned.
+VERSION="5.1.3"
+
 # A protection failure must make the overall update job fail, even when the
 # configured continue-on-error mode allows other guests to be processed.
 SAFETY_FAILURE=false
