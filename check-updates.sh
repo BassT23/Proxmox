@@ -449,7 +449,7 @@ GUEST_INTERNET_PREFLIGHT_PCT() {
   local command
   command=$(GUEST_INTERNET_PREFLIGHT_COMMAND) || return 1
   UU_CHECK_PCT_COMMAND_TIMEOUT="${UU_GUEST_PREFLIGHT_TIMEOUT:-5}" \
-    RUN_PCT_COMMAND "$1" bash -c "$command"
+    RUN_PCT_COMMAND "$1" sh -c "$command"
 }
 
 GUEST_INTERNET_PREFLIGHT_SSH() {
@@ -473,7 +473,7 @@ WAIT_FOR_BOOTUP_LXC () {
   COUNT=1
   sleep "$LXC_START_DELAY"
   while [ $COUNT -le $MAX_RETRIES ]; do
-    if timeout 10 pct exec "$CONTAINER" -- bash -c "exit" >/dev/null 2>&1; then
+    if timeout 10 pct exec "$CONTAINER" -- sh -c "exit" >/dev/null 2>&1; then
       break
     else
       sleep "$LXC_START_DELAY"

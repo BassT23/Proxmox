@@ -93,7 +93,7 @@ RUN_PCT_COMMAND() {
   if [[ "${1:-}" == hostname ]]; then
     return 1
   fi
-  if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == *ping* ]]; then
+  if [[ "${1:-}" == sh && "${2:-}" == -c && "${3:-}" == *ping* ]]; then
     return 0
   fi
   if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == : ]]; then
@@ -151,7 +151,7 @@ RUN_PCT_COMMAND() {
     printf 'iobroker\n'
     return 0
   fi
-  if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == *ping* ]]; then
+  if [[ "${1:-}" == sh && "${2:-}" == -c && "${3:-}" == *ping* ]]; then
     return 0
   fi
   if [[ "${1:-}" == sh && "${2:-}" == -c && "${3:-}" == "cat /etc/os-release" ]]; then
