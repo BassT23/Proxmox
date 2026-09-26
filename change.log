@@ -3,7 +3,17 @@ Changelog:
 
 **Unreleased**
 
-No changes yet.
+Improved:
+- global update result handling now serializes status writes and preserves
+  External and remote update metadata through the final status refresh
+- update summaries distinguish targets that performed update work from targets
+  that were already up to date, and only attribute results to the current run
+
+Fixed:
+- completed External and remote results are restored after a full post-update
+  refresh without resurrecting stale or non-inventory targets
+- minimal Alpine LXCs can be checked without Bash; generic PCT connectivity
+  and boot probes now use the portable guest shell
 
 **v5.1.3 Beta 6** (beta / release candidate for validation)
 
