@@ -1,0 +1,41 @@
+{
+  "cluster": "Test-Cluster",
+  "verified_on": "2026-09-26",
+  "nodes": [
+    {"name": "Proxmox-Test-1", "address": "192.168.10.101", "role": "controller"},
+    {"name": "Proxmox-Test-2", "address": "192.168.10.102", "role": "remote-node"},
+    {"name": "Proxmox-Test-3", "address": "192.168.10.103", "role": "quorum/additional-node", "ssh_verified": false}
+  ],
+  "mutation_range": "900-999",
+  "fixtures": [
+    {"id": 900, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian", "role": "community-script", "state": "stopped", "classification": "KEEP"},
+    {"id": 910, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian 12", "role": "apt/check/filter", "state": "stopped", "classification": "KEEP_AND_STANDARDIZE"},
+    {"id": 911, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian", "role": "docker-compose/lifecycle", "state": "stopped", "classification": "KEEP"},
+    {"id": 912, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian", "role": "docker-compose/lifecycle", "state": "stopped", "classification": "KEEP"},
+    {"id": 913, "type": "lxc", "node": "Proxmox-Test-1", "os": "Ubuntu", "role": "community-script", "state": "stopped", "classification": "KEEP"},
+    {"id": 914, "type": "lxc", "node": "Proxmox-Test-1", "os": "Alpine", "role": "apk", "state": "stopped", "classification": "KEEP"},
+    {"id": 915, "type": "vm", "node": "Proxmox-Test-1", "os": "FreeBSD", "role": "unsupported/other", "state": "stopped", "classification": "UNKNOWN_DO_NOT_TOUCH"},
+    {"id": 916, "type": "lxc", "node": "Proxmox-Test-1", "os": "Arch", "role": "pacman", "state": "stopped", "classification": "KEEP"},
+    {"id": 917, "type": "lxc", "node": "Proxmox-Test-1", "os": "CentOS", "role": "rpm/investigation", "state": "stopped", "classification": "UNKNOWN_DO_NOT_TOUCH"},
+    {"id": 918, "type": "lxc", "node": "Proxmox-Test-1", "os": "Fedora", "role": "dnf", "state": "stopped", "classification": "KEEP"},
+    {"id": 919, "type": "vm", "node": "Proxmox-Test-1", "os": "unknown", "role": "suspended-lifecycle", "state": "stopped", "classification": "UNKNOWN_DO_NOT_TOUCH"},
+    {"id": 920, "type": "lxc", "node": "Proxmox-Test-2", "os": "Debian", "role": "remote-node-guest", "state": "stopped", "classification": "KEEP"},
+    {"id": 921, "type": "lxc", "node": "Proxmox-Test-1", "os": "Ubuntu", "role": "intentional-failure", "state": "stopped", "classification": "KEEP"},
+    {"id": 922, "type": "lxc", "node": "Proxmox-Test-1", "os": "Ubuntu", "role": "apt/filter", "state": "stopped", "classification": "KEEP"},
+    {"id": 923, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian", "role": "community-script", "state": "stopped", "classification": "KEEP"},
+    {"id": 924, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian", "role": "community-script", "state": "stopped", "classification": "KEEP"},
+    {"id": 925, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian 11", "role": "apt/legacy", "state": "stopped", "classification": "KEEP"},
+    {"id": 926, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian 13", "role": "template", "state": "stopped", "template": true, "classification": "KEEP"},
+    {"id": 927, "type": "lxc", "node": "Proxmox-Test-1", "os": "Debian 13", "role": "external-ssh-apt", "state": "stopped", "classification": "KEEP_AND_STANDARDIZE"},
+    {"id": 928, "type": "lxc", "node": "Proxmox-Test-2", "os": "Debian", "role": "remote-apt-guest", "state": "stopped", "classification": "KEEP_AND_STANDARDIZE"},
+    {"id": 930, "type": "lxc", "node": "Proxmox-Test-3", "os": "Debian", "role": "additional-node-guest", "state": "stopped", "ssh_verified": false, "classification": "UNKNOWN_DO_NOT_TOUCH"},
+    {"id": 971, "type": "vm", "node": "Proxmox-Test-1", "os": "Ubuntu", "role": "linux-qga", "state": "stopped", "qga_enabled": true, "classification": "KEEP"},
+    {"id": 972, "type": "vm", "node": "Proxmox-Test-1", "os": "Ubuntu", "role": "template", "state": "stopped", "template": true, "classification": "KEEP"},
+    {"id": 973, "type": "vm", "node": "Proxmox-Test-1", "os": "unknown", "role": "incomplete-clone", "state": "stopped", "classification": "UNKNOWN_DO_NOT_TOUCH"},
+    {"id": 974, "type": "vm", "node": "Proxmox-Test-1", "os": "unknown", "role": "qemu/other", "state": "stopped", "classification": "UNKNOWN_DO_NOT_TOUCH"},
+    {"id": 978, "type": "vm", "node": "Proxmox-Test-1", "os": "Ubuntu", "role": "ssh-qga-reference", "state": "stopped", "qga_enabled": true, "classification": "KEEP_AND_STANDARDIZE"},
+    {"id": 980, "type": "vm", "node": "Proxmox-Test-1", "os": "Rocky Linux 10", "role": "rocky-qga-256", "state": "stopped", "classification": "KEEP"},
+    {"id": 983, "type": "vm", "node": "Proxmox-Test-2", "os": "Debian 12", "role": "remote-vm-qga", "state": "stopped", "qga_enabled": true, "classification": "KEEP"},
+    {"id": 984, "type": "lxc", "node": "Proxmox-Test-1", "os": "Rocky/CentOS", "role": "rpm-dnf/external-candidate", "state": "stopped", "classification": "KEEP"}
+  ]
+}

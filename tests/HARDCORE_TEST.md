@@ -10,6 +10,12 @@ Try to break Ultimate Updater systematically for **4–6 hours**. The minimum
 matrix below is not a ceiling: logs, failures, unusual combinations and newly
 observed behaviour may create additional tests during the run.
 
+The canonical live-lab inventory and reset procedure is
+[`tests/e2e/TEST_LAB.md`](e2e/TEST_LAB.md); the machine-readable inventory is
+[`tests/e2e/test-lab-inventory.json`](e2e/test-lab-inventory.json). This file
+defines the broader Hardcore-Test policy, while the canonical lab document
+defines which fixtures currently exist.
+
 The workflow is:
 
 1. Read this file and re-verify every live fixture and safety boundary.
@@ -37,7 +43,8 @@ An all-green result after 60–90 minutes is not a completed Hardcore-Test.
   threshold.
 - Never reboot Proxmox-Test-1 and Proxmox-Test-2 simultaneously. Check quorum,
   reboot sequentially, and verify the first node is healthy before touching
-  the second. Proxmox-Test-3 may remain the offline fixture.
+  the second. Proxmox-Test-3 is a cluster member and is not required for
+  ordinary tests; direct SSH currently remains unverified.
 - Do not patch PVE core/UI, alter cluster membership, firewalls or production
   networking, or use production systems as fixtures.
 - Work only on `develop`; no `master` changes, merge, tag, release or version
@@ -92,21 +99,24 @@ capability and intended purpose.
 
 | Candidate | Intended use | Safety/state note |
 | --- | --- | --- |
-| CT910 | Debian/APT, running LXC, filters | Re-check lifecycle before use |
+| CT910 | Debian/APT, filters | Re-check lifecycle before use |
 | CT911/912 | Debian/APT, stopped/lifecycle/Compose | Restore original state |
-| CT917 | CentOS/DNF investigation | Do not repair automatically |
+| CT917 | CentOS/DNF investigation | Unknown; do not repair automatically |
 | CT918 | Fedora/DNF | Re-check OS and lifecycle |
 | CT920 | remote Node2/cluster target | Re-check Node2 reachability |
 | CT921 | intentional failure/error aggregation | **DO NOT REPAIR** |
-| CT922/925/927 | Ubuntu/Debian/filter and External APT fixtures | Re-check actual role |
-| CT984 | Rocky/DNF External fixture | Re-check helper/user/config |
+| CT922/925 | Ubuntu/Debian/filter fixtures | Re-check actual role |
+| CT927 | Debian 13 External-only APT | Keep stopped; reset package fixture |
+| CT928 | Debian remote guest on Node2 | Keep stopped; reset package fixture |
+| CT930 | Debian Node3 guest | SSH currently unverified; do not mutate casually |
+| CT984 | Rocky/CentOS DNF candidate | Re-check helper/user/config |
 | VM978 | healthy Ubuntu SSH/QGA reference | Keep stopped when unused |
 | VM980 | Rocky/QGA investigation | Do not alter Issue #256 setup casually |
 | VM983 | Debian/QGA/remote Node2 | Keep lifecycle reversible |
 
-Current known topology also includes CT914 Alpine, CT916 Arch, CT923/924
-community fixtures, CT926/972 templates, CT915/919/971/973/974 VMs and CT930
-on offline Node3. Discover all 900–999 guests before use; templates and
+Current known topology also includes CT900/913/923/924 community fixtures,
+CT914 Alpine, CT916 Arch, CT926/972 templates, CT915/919/971/973/974 VMs and
+CT930 on Node3. Discover all 900–999 guests before use; templates and
 non-purpose guests are not automatically suitable for destructive tests.
 
 ## Test phases and minimum matrix

@@ -1,5 +1,9 @@
 # Real global-update E2E lab
 
+See [`TEST_LAB.md`](TEST_LAB.md) for the canonical live-cluster inventory,
+safety boundary and fixture reset instructions. This file remains the focused
+#350 global-update procedure.
+
 This document describes the disposable lab used to validate the complete
 controller → remote node/guest → External SSH → `update-all` lifecycle. A
 green synthetic test suite is not sufficient evidence for a global update
