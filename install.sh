@@ -162,12 +162,17 @@ FORMAT_ARCHIVE_IDENTITY() {
 }
 
 SHOULD_CLEAR_INSTALLER_HEADER() {
-  [[ -t 1 && "${TERM:-}" != "" && "${TERM:-}" != dumb ]] || return 1
+  [[ -t 0 && -e /dev/tty && -w /dev/tty && "${TERM:-}" != "" && "${TERM:-}" != dumb ]] || return 1
   [[ "${UU_MANAGED_OUTPUT:-false}" != true ]] || return 1
   if [[ "${UU_INTERACTIVE_INSTALLER:-false}" == true ]]; then
     return 0
   fi
-  [[ "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_SOURCE:-}" != scheduler ]]
+  [[ -t 1 && "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_SOURCE:-}" != scheduler ]]
+}
+
+CLEAR_INSTALLER_HEADER() {
+  SHOULD_CLEAR_INSTALLER_HEADER || return 0
+  clear > /dev/tty 2>/dev/null || true
 }
 
 WRITE_BUILD_METADATA() {
@@ -193,9 +198,7 @@ CL="\e[0m"
 
 #Header
 HEADER_INFO () {
-  if SHOULD_CLEAR_INSTALLER_HEADER; then
-    clear >/dev/null 2>&1 || true
-  fi
+  CLEAR_INSTALLER_HEADER
   echo -e "\n \
       https://github.com/BassT23/Proxmox\n"
   cat <<'EOF'
