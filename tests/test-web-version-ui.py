@@ -79,6 +79,14 @@ assert "<td>Local" not in source
 assert "<td>Server" not in source
 assert "versionFooterDisplay" in source
 assert "function versionDisplay" in source
+assert "function versionDialogRows" in source
+assert "data.branch==='develop'?'Target Beta':'Beta'" in source
+assert "Installed commit" in source
+assert "Available commit" in source
+assert "data.commit!==data.available_commit" in source
+assert "if(data.tag)rows.push" in source
+assert "${esc(data.installed||'Unavailable')}" in source
+assert "${esc(data.available||'Unavailable')}" in source
 assert "Beta ${betaValue}" in source
 assert "shortCommit" in source
 assert "data.update_available===true" in source
