@@ -899,10 +899,10 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function isStatusRefreshJob(job){return job?.type==='check'||job?.type==='update'}
     async function loadJobs(){try{const d=await api('/api/jobs',{cache:'no-store'}),previous=new Map(jobs.map(job=>[job.unit,job.state]));jobs=sortJobs(Array.isArray(d.jobs)?d.jobs:[]);const statusRefreshJobFinished=jobs.some(job=>isStatusRefreshJob(job)&&['completed','completed_with_warnings','failed','interrupted','cancelled'].includes(job.state)&&['running','pending','starting'].includes(previous.get(job.unit)));renderJobs();reorderJobDom();if(statusRefreshJobFinished)await loadStatus();clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,10000)}}
     let updaterVersion=null,versionRetryTimer=null,versionStartupTimer=null,versionRetryUsed=false;
-    function versionDisplay(data,value,includeBranch=false){return value&&includeBranch&&data?.branch?`${value} · ${data.branch}`:(value||'Unavailable')}
+    function versionDisplay(data,value,commitValue,betaValue){if(!value)return 'Unavailable';let display=value;if(data?.branch==='beta'&&Number.isInteger(betaValue))display+=` Beta ${betaValue}`;else if(data?.branch==='develop')display+=' develop';if((data?.branch==='beta'||data?.branch==='develop')&&/^[0-9a-f]{40}$/.test(commitValue||''))display+=` · ${commitValue.slice(0,7)}`;return display}
     const shortCommit=value=>value&&/^[0-9a-f]{40}$/.test(value)?value.slice(0,7):(value||'Unknown');
-    const versionFooterDisplay=data=>data?.state==='ok'?`${versionDisplay(data,data.installed,true)} · ${shortCommit(data.commit)}`:'version unavailable';
-    function renderUpdaterVersion(data){updaterVersion=data;const label=document.getElementById('updater-version-label'),indicator=document.getElementById('updater-version-indicator'),updateButton=document.getElementById('updater-version-update');label.textContent=versionFooterDisplay(data);indicator.hidden=!(data.state==='ok'&&data.update_available===true);updateButton.disabled=!(data.state==='ok'&&data.update_available===true&&data.branch);updateButton.textContent=data.state==='ok'&&data.update_available===true?'Update now':'Up to date';const content=document.getElementById('updater-version-content');if(data.state!=='ok'){content.innerHTML='<p class="hint">Version check unavailable. Try again later.</p>';return}let rows=(data.components||[]).map(c=>`<tr><th>${esc(c.name)}</th><td>${esc(c.installed??c.local??'Unknown')}</td><td>${esc(c.available??c.server??'Unknown')}</td></tr>`).join('');content.innerHTML=`<div class="detail-grid"><div><span>Installed version</span><strong>${esc(versionDisplay(data,data.installed))}</strong></div><div><span>Available version</span><strong>${esc(versionDisplay(data,data.available))}</strong></div><div><span>Branch</span><strong>${esc(data.branch||'Unknown')}</strong></div><div><span>Commit</span><strong>${esc(shortCommit(data.commit))}</strong></div><div><span>Tag</span><strong>${esc(data.tag||'—')}</strong></div></div><table class="version-components"><thead><tr><th>Component</th><th>Installed</th><th>Available</th></tr></thead><tbody>${rows||'<tr><td colspan="3">No component details available.</td></tr>'}</tbody></table>`}
+    const versionFooterDisplay=data=>data?.state==='ok'?versionDisplay(data,data.installed,data.commit,data.beta):'version unavailable';
+    function renderUpdaterVersion(data){updaterVersion=data;const label=document.getElementById('updater-version-label'),indicator=document.getElementById('updater-version-indicator'),updateButton=document.getElementById('updater-version-update');label.textContent=versionFooterDisplay(data);indicator.hidden=!(data.state==='ok'&&data.update_available===true);updateButton.disabled=!(data.state==='ok'&&data.update_available===true&&data.branch);updateButton.textContent=data.state==='ok'&&data.update_available===true?'Update now':'Up to date';const content=document.getElementById('updater-version-content');if(data.state!=='ok'){content.innerHTML='<p class="hint">Version check unavailable. Try again later.</p>';return}let rows=(data.components||[]).map(c=>`<tr><th>${esc(c.name)}</th><td>${esc(c.installed??c.local??'Unknown')}</td><td>${esc(c.available??c.server??'Unknown')}</td></tr>`).join('');content.innerHTML=`<div class="detail-grid"><div><span>Installed version</span><strong>${esc(versionDisplay(data,data.installed,data.commit,data.beta))}</strong></div><div><span>Available version</span><strong>${esc(versionDisplay(data,data.available,data.available_commit,data.available_beta))}</strong></div><div><span>Branch</span><strong>${esc(data.branch||'Unknown')}</strong></div><div><span>Beta</span><strong>${esc(Number.isInteger(data.beta)?data.beta:'—')}</strong></div><div><span>Commit</span><strong>${esc(shortCommit(data.commit))}</strong></div><div><span>Tag</span><strong>${esc(data.tag||'—')}</strong></div></div><table class="version-components"><thead><tr><th>Component</th><th>Installed</th><th>Available</th></tr></thead><tbody>${rows||'<tr><td colspan="3">No component details available.</td></tr>'}</tbody></table>`}
     async function loadUpdaterVersion(force=false){try{const data=await api(`/api/updater-version${force?'?force=1':''}`,{cache:'no-store'});renderUpdaterVersion(data);return data}catch(_error){const data={state:'unavailable',update_available:false,components:[]};renderUpdaterVersion(data);return data}}
     function scheduleUpdaterVersionCheck(){clearTimeout(versionStartupTimer);clearTimeout(versionRetryTimer);versionRetryUsed=false;versionStartupTimer=setTimeout(async()=>{const data=await loadUpdaterVersion();if(data.state==='unavailable'&&!versionRetryUsed){versionRetryUsed=true;versionRetryTimer=setTimeout(()=>loadUpdaterVersion(),7000)}},2500)}
     function openUpdaterVersion(){document.getElementById('updater-version-modal').classList.add('open')}
@@ -1129,11 +1129,9 @@ PAGE = PAGE.replace('</style>', '<style>.dashboard-kpis .metric { display:flex; 
 PAGE = PAGE.replace("</body></html>", """<script>
     let loginVersionTimer=null;
     function loginVersionText(data){
-      const version=data?.installed||'version unavailable';
-      const branch=data?.branch?` · ${data.branch}`:'';
-      const commit=data?.commit&&/^[0-9a-f]{40}$/.test(data.commit)?` · ${data.commit.slice(0,7)}`:'';
+      const version=versionDisplay(data,data?.installed,data?.commit,data?.beta);
       const state=data?.update_state==='checking'?'Checking for updates…':data?.update_state==='available'?'Update available':data?.update_state==='up_to_date'?'Up to date':data?.update_state==='unavailable'?'Update status unavailable':'';
-      return `Ultimate Updater ${version}${branch}${commit}${state?' · '+state:''}`;
+      return `Ultimate Updater ${version}${state?' · '+state:''}`;
     }
     function applyPublicVersion(data){
       const login=document.getElementById('login-version');
@@ -1687,10 +1685,15 @@ def parse_updater_version_output(output):
     branch = branch_match.group(1).lower() if branch_match else None
     installed_commit_match = re.search(r"^Installed commit:\s*(\S+)", clean, re.MULTILINE | re.IGNORECASE)
     available_commit_match = re.search(r"^Available commit:\s*(\S+)", clean, re.MULTILINE | re.IGNORECASE)
+    installed_product_match = re.search(r"^Installed product version:\s*(\S+)", clean, re.MULTILINE | re.IGNORECASE)
+    installed_beta_match = re.search(r"^Installed beta:\s*(\d+)", clean, re.MULTILINE | re.IGNORECASE)
+    available_beta_match = re.search(r"^Available beta:\s*(\d+)", clean, re.MULTILINE | re.IGNORECASE)
     tag_match = re.search(r"^Installed tag:\s*(\S+)", clean, re.MULTILINE | re.IGNORECASE)
     installed_commit = installed_commit_match.group(1) if installed_commit_match else "unknown"
     available_commit = available_commit_match.group(1) if available_commit_match else "unknown"
     installed_tag = tag_match.group(1) if tag_match and tag_match.group(1) not in {"—", "-"} else None
+    installed_beta = int(installed_beta_match.group(1)) if installed_beta_match else None
+    available_beta = int(available_beta_match.group(1)) if available_beta_match else None
     components = []
     for line in clean.splitlines():
         match = re.match(r"^\s*(Updater|Extras|Config|Welcome|Check)\s+(\S+)\s+(\S+)\s*$", line)
@@ -1699,6 +1702,7 @@ def parse_updater_version_output(output):
                                "installed": match.group(2), "available": match.group(3)})
     updater = next((item for item in components if item["name"] == "Updater"), None)
     installed = updater["local"] if updater else None
+    installed = installed_product_match.group(1) if installed_product_match else installed
     available = updater["server"] if updater else None
     numeric = lambda value: tuple(int(part) for part in value.split(".") if part.isdigit()) if value and re.fullmatch(r"\d+(?:\.\d+)*", value) else None
     local_numbers, remote_numbers = numeric(installed), numeric(available)
@@ -1714,6 +1718,8 @@ def parse_updater_version_output(output):
         "commit": installed_commit,
         "available_commit": available_commit,
         "tag": installed_tag,
+        "beta": installed_beta,
+        "available_beta": available_beta,
         "update_available": version_update or commit_update,
         "components": components,
     }
@@ -2892,6 +2898,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         installed = None
         commit = "unknown"
         tag = None
+        beta = None
+        version = None
         try:
             config = self.config_content()
             match = re.search(r'^USED_BRANCH="(master|beta|develop)"', config, re.MULTILINE)
@@ -2900,6 +2908,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             if self.server.update_script.is_file():
                 match = re.search(r'^VERSION="([^"]+)"', self.server.update_script.read_text(encoding="utf-8"), re.MULTILINE)
                 installed = match.group(1) if match else None
+                version = installed
             metadata = self.server.update_script.parent / "build-metadata"
             if metadata.is_file():
                 content = metadata.read_text(encoding="utf-8")
@@ -2909,12 +2918,19 @@ class StatusHandler(BaseHTTPRequestHandler):
                 match = re.search(r'^tag="([A-Za-z0-9._/-]+)"', content, re.MULTILINE)
                 if match:
                     tag = match.group(1)
+                match = re.search(r'^version="([0-9]+(?:\.[0-9]+)*)"', content, re.MULTILINE)
+                if match:
+                    version = match.group(1)
+                match = re.search(r'^beta="([0-9]+)"', content, re.MULTILINE)
+                if match:
+                    beta = int(match.group(1))
         except (OSError, UnicodeError):
             pass
         return {
-            "state": "local", "branch": branch, "installed": installed,
+            "state": "local", "branch": branch, "installed": version or installed,
             "available": None, "commit": commit, "available_commit": "unknown",
-            "tag": tag, "update_available": None, "components": [],
+            "tag": tag, "beta": beta, "available_beta": None,
+            "update_available": None, "components": [],
             "update_state": "checking",
         }
 

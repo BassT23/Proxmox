@@ -5,8 +5,6 @@
 # Update #
 ##########
 
-VERSION="5.1.3"
-
 # A protection failure must make the overall update job fail, even when the
 # configured continue-on-error mode allows other guests to be processed.
 SAFETY_FAILURE=false
@@ -22,6 +20,17 @@ NON_UPDATE_COMMAND=false
 
 # Variable / Function
 LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
+PRODUCT_METADATA_FILE="${UU_PRODUCT_METADATA_FILE:-$LOCAL_FILES/product-metadata.sh}"
+if [[ ! -f "$PRODUCT_METADATA_FILE" ]]; then
+  PRODUCT_METADATA_FILE="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/product-metadata.sh"
+fi
+if [[ -f "$PRODUCT_METADATA_FILE" ]]; then
+  # shellcheck disable=SC1090
+  . "$PRODUCT_METADATA_FILE"
+fi
+PRODUCT_VERSION="${PRODUCT_VERSION:-5.1.3}"
+BETA_VERSION="${BETA_VERSION:-}"
+VERSION="$PRODUCT_VERSION"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 TEMP_STATE_DIR="${UU_TEMP_STATE_DIR:-$LOCAL_FILES/temp}"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
@@ -93,12 +102,19 @@ esac
 BUILD_METADATA_FILE="${UU_BUILD_METADATA_FILE:-$LOCAL_FILES/build-metadata}"
 INSTALLED_COMMIT=""
 INSTALLED_TAG=""
+INSTALLED_VERSION="$VERSION"
+INSTALLED_BETA=""
 if [[ -r "$BUILD_METADATA_FILE" ]]; then
+  INSTALLED_VERSION=$(awk -F'"' '/^version=/ {print $2; exit}' "$BUILD_METADATA_FILE")
+  INSTALLED_BETA=$(awk -F'"' '/^beta=/ {print $2; exit}' "$BUILD_METADATA_FILE")
   INSTALLED_COMMIT=$(awk -F'"' '/^commit=/ {print $2; exit}' "$BUILD_METADATA_FILE")
   INSTALLED_TAG=$(awk -F'"' '/^tag=/ {print $2; exit}' "$BUILD_METADATA_FILE")
 fi
+[[ "$INSTALLED_VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]] || INSTALLED_VERSION="$VERSION"
+[[ "$INSTALLED_BETA" =~ ^[0-9]+$ ]] || INSTALLED_BETA=""
 [[ "$INSTALLED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || INSTALLED_COMMIT="unknown"
 [[ "$INSTALLED_TAG" =~ ^[A-Za-z0-9._/-]+$ ]] || INSTALLED_TAG=""
+INSTALLED_BUILD_IDENTITY=$(UU_FORMAT_BUILD_IDENTITY "$INSTALLED_VERSION" "$INSTALLED_BRANCH" "$INSTALLED_BETA" "$INSTALLED_COMMIT")
 # USED_BRANCH describes the installed source only. A bare -up is always the
 # stable master target; beta/develop require an explicit selector.
 BRANCH=master
@@ -461,10 +477,12 @@ RUN_BRANCH_UPDATE () {
 }
 
 SHOW_UPDATE_NOTICE () {
-  local target_branch=$1 remote_version=$2
+  local target_branch=$1 remote_version=$2 remote_commit=${3:-} remote_beta=${4:-}
+  local available_identity
+  available_identity=$(UU_FORMAT_BUILD_IDENTITY "$remote_version" "$target_branch" "$remote_beta" "$remote_commit")
 
   echo -e "${OR:-}*** A newer version is available ***${CL:-}\n\
-       Installed: $LOCAL_VERSION / $target_branch: $remote_version"
+       Installed: $INSTALLED_BUILD_IDENTITY\n       Available: $available_identity"
   if ! EFFECTIVE_HEADLESS; then
     echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
     read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
@@ -476,18 +494,18 @@ SHOW_UPDATE_NOTICE () {
 }
 
 VERSION_CHECK () {
-  local candidate remote_version remote_available=false
+  local candidate remote_version remote_available=false current_commit remote_beta
   local -a candidates
   local branch_for_status=${INSTALLED_BRANCH:-master}
 
-  LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh")
+  LOCAL_VERSION="$INSTALLED_VERSION"
   case "$branch_for_status" in
     master) candidates=(master) ;;
     beta) candidates=(master beta) ;;
     develop) candidates=(master beta develop) ;;
     *)
       echo -e "${OR:-}The configured branch '$branch_for_status' is not active; use master, beta, or develop.${CL:-}"
-      echo -e "                 Version: $VERSION"
+      echo -e "                 Ultimate Updater $INSTALLED_BUILD_IDENTITY"
       return 0
       ;;
   esac
@@ -511,11 +529,19 @@ VERSION_CHECK () {
     fi
   done
   if [[ "$VERSION_NOT_SHOW" != true && "$remote_available" == true ]]; then
+    current_commit=$(FETCH_REMOTE_COMMIT "$branch_for_status" || true)
+    if [[ "$branch_for_status" != master && "$current_commit" =~ ^[0-9a-f]{40}$ && "$current_commit" != "$INSTALLED_COMMIT" ]]; then
+      remote_beta=$(FETCH_REMOTE_BETA "$branch_for_status" || true)
+      SHOW_UPDATE_NOTICE "$branch_for_status" "$INSTALLED_VERSION" "$current_commit" "$remote_beta"
+      VERSION_NOT_SHOW=true
+    fi
+  fi
+  if [[ "$VERSION_NOT_SHOW" != true && "$remote_available" == true ]]; then
     echo -e "${GN:-}       The Ultimate Updater is UpToDate${CL:-}"
-    echo -e "                 Version: $VERSION"
+    echo -e "                 Ultimate Updater $INSTALLED_BUILD_IDENTITY"
   elif [[ "$VERSION_NOT_SHOW" != true ]]; then
     echo -e "${OR:-}       Unable to verify the remote version${CL:-}"
-    echo -e "                 Version: $VERSION"
+    echo -e "                 Ultimate Updater $INSTALLED_BUILD_IDENTITY"
   fi
 }
 
@@ -607,9 +633,17 @@ FETCH_REMOTE_COMMIT() {
     awk -F'"' '/"sha"[[:space:]]*:/ {print $4; exit}'
 }
 
+FETCH_REMOTE_BETA() {
+  local branch="$1"
+  [[ "$branch" =~ ^(beta|develop)$ ]] || return 1
+  curl -4 -sS --connect-timeout 5 --max-time 15 \
+    "https://raw.githubusercontent.com/BassT23/Proxmox/$branch/product-metadata.sh" 2>/dev/null |
+    awk -F'"' '/^BETA_VERSION=/ {print $2; exit}'
+}
+
 # Get Server Versions
 STATUS () {
-  local branch_for_status=${INSTALLED_BRANCH:-master} component label local_file local_version remote_version remote_commit
+  local branch_for_status=${INSTALLED_BRANCH:-master} component label local_file local_version remote_version remote_commit remote_beta
   local -a components=(
     "Updater|update.sh|$LOCAL_FILES/update.sh"
     "Extras|update-extras.sh|$LOCAL_FILES/update-extras.sh"
@@ -625,11 +659,16 @@ STATUS () {
     return 1
   fi
 
+  printf 'Ultimate Updater %s\n\n' "$INSTALLED_BUILD_IDENTITY"
   echo -e "${OR:-}  Version overview ($branch_for_status)${CL:-}\n"
+  printf 'Installed product version: %s\n' "$INSTALLED_VERSION"
+  printf 'Installed beta: %s\n' "${INSTALLED_BETA:-—}"
   printf 'Installed commit: %s\n' "${INSTALLED_COMMIT:-unknown}"
   remote_commit=$(FETCH_REMOTE_COMMIT "$branch_for_status" || true)
   [[ "$remote_commit" =~ ^[0-9a-f]{40}$ ]] || remote_commit="unavailable"
+  remote_beta=$(FETCH_REMOTE_BETA "$branch_for_status" || true)
   printf 'Available commit: %s\n' "$remote_commit"
+  printf 'Available beta: %s\n' "${remote_beta:-—}"
   printf 'Installed tag: %s\n\n' "${INSTALLED_TAG:-—}"
   printf '%-12s %-9s %-9s\n' "Component" "Local" "Server"
   printf '%-12s %-9s %-9s\n' "---------" "-----" "------"

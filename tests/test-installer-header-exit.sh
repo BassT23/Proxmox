@@ -21,7 +21,11 @@ run_help() {
   set -e
   [[ "$rc" -eq 0 ]]
   assert_contains "$output" "*** Install and/or Update ***"
-  assert_contains "$output" "Version :   2.1"
+  assert_contains "$output" "Ultimate Updater"
+  if grep -Fq "Version :   2.1" "$output"; then
+    echo "internal installer version leaked into product banner" >&2
+    exit 1
+  fi
 }
 
 cp "$INSTALLER" "$WORK_DIR/success.sh"

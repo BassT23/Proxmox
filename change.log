@@ -4,6 +4,11 @@ Changelog:
 **Unreleased**
 
 Improved:
+- installer, CLI and Web UI version displays now use the actual installed
+  Ultimate Updater product/build identity instead of exposing an internal
+  installer script version
+- beta builds show their Beta number, while beta and develop builds include
+  their short Git commit for unambiguous identification
 - global update result handling now serializes status writes and preserves
   External and remote update metadata through the final status refresh
 - update summaries distinguish targets that performed update work from targets

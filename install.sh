@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="2.1"
+INSTALLER_VERSION="2.1"
 
 # Branch
 
@@ -14,6 +14,16 @@ BRANCH="${UU_TARGET_BRANCH:-master}"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
+PRODUCT_METADATA_FILE="$LOCAL_FILES/product-metadata.sh"
+if [[ ! -f "$PRODUCT_METADATA_FILE" ]]; then
+  PRODUCT_METADATA_FILE="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/product-metadata.sh"
+fi
+if [[ -f "$PRODUCT_METADATA_FILE" ]]; then
+  # shellcheck disable=SC1090
+  . "$PRODUCT_METADATA_FILE"
+fi
+PRODUCT_VERSION="${PRODUCT_VERSION:-5.1.3}"
+BETA_VERSION="${BETA_VERSION:-}"
 case "$BRANCH" in
   master|beta|develop) ;;
   *) echo "Unsupported update branch: $BRANCH" >&2; exit 2 ;;
@@ -30,6 +40,8 @@ SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 BUILD_METADATA_FILE="$LOCAL_FILES/build-metadata"
 ARCHIVE_COMMIT=""
 ARCHIVE_TAG=""
+ARCHIVE_VERSION=""
+ARCHIVE_BETA=""
 
 DOWNLOAD_FILE() {
   local url="$1" destination="$2" kind="${3:-text}" temporary headers http_code retry_after listing
@@ -83,6 +95,8 @@ DOWNLOAD_ARCHIVE() {
   local archive="$TEMP_FOLDER/ultimate-updater.tar.gz" release_json asset_url archive_root release_tag
   ARCHIVE_COMMIT=""
   ARCHIVE_TAG=""
+  ARCHIVE_VERSION=""
+  ARCHIVE_BETA=""
   if [[ "$BRANCH" == master ]]; then
     release_json="$TEMP_FOLDER/release.json"
     DOWNLOAD_FILE "https://api.github.com/repos/BassT23/Proxmox/releases/latest" "$release_json" text || return 1
@@ -126,19 +140,37 @@ SET_TEMP_FILES() {
   return 1
 }
 
-WRITE_BUILD_METADATA() {
-  local branch="$1" commit="${2:-}" tag="${3:-}" temporary
-  [[ "$branch" =~ ^(master|beta|develop)$ ]] || branch="unknown"
-  if [[ "$branch" != unknown && ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
-    commit=$(curl -4 -sS --connect-timeout 5 --max-time 15 \
-      "https://api.github.com/repos/BassT23/Proxmox/commits/$branch" 2>/dev/null |
-      awk -F'"' '/"sha"[[:space:]]*:/ {print $4; exit}' || true)
+READ_PAYLOAD_METADATA() {
+  local metadata_file="$TEMP_FILES/product-metadata.sh" payload_version payload_beta
+  if [[ -f "$metadata_file" ]]; then
+    # shellcheck disable=SC1090
+    . "$metadata_file"
   fi
+  payload_version=$(awk -F'"' '/^PRODUCT_VERSION=/ {print $2; exit}' "$metadata_file" 2>/dev/null || true)
+  payload_beta=$(awk -F'"' '/^BETA_VERSION=/ {print $2; exit}' "$metadata_file" 2>/dev/null || true)
+  if [[ ! "$payload_version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+    payload_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$TEMP_FILES/update.sh" 2>/dev/null || true)
+  fi
+  [[ "$payload_version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1
+  [[ "$payload_beta" =~ ^[0-9]+$ ]] || payload_beta=""
+  ARCHIVE_VERSION="$payload_version"
+  ARCHIVE_BETA="$payload_beta"
+}
+
+FORMAT_ARCHIVE_IDENTITY() {
+  UU_FORMAT_BUILD_IDENTITY "$ARCHIVE_VERSION" "$BRANCH" "$ARCHIVE_BETA" "$ARCHIVE_COMMIT"
+}
+
+WRITE_BUILD_METADATA() {
+  local branch="$1" commit="${2:-}" tag="${3:-}" version="${4:-$PRODUCT_VERSION}" beta="${5:-}" temporary
+  [[ "$branch" =~ ^(master|beta|develop)$ ]] || branch="unknown"
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || commit="unknown"
   [[ "$tag" =~ ^[A-Za-z0-9._/-]+$ ]] || tag=""
   temporary=$(mktemp "${BUILD_METADATA_FILE}.XXXXXX") || return 1
-  printf 'schema_version=1\nbranch="%s"\ncommit="%s"\ntag="%s"\n' \
-    "$branch" "$commit" "$tag" > "$temporary"
+  [[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || version="$PRODUCT_VERSION"
+  [[ "$beta" =~ ^[0-9]+$ ]] || beta=""
+  printf 'schema_version=2\nversion="%s"\nbranch="%s"\nbeta="%s"\ncommit="%s"\ntag="%s"\n' \
+    "$version" "$branch" "$beta" "$commit" "$tag" > "$temporary"
   install -m 0644 "$temporary" "$BUILD_METADATA_FILE"
   rm -f -- "$temporary"
 }
@@ -172,7 +204,7 @@ HEADER_INFO () {
 EOF
   echo -e "\n \
       *** Install and/or Update *** \n \
-      ***   Version :   $VERSION   *** \n"
+      ***   Ultimate Updater   *** \n"
   CHECK_ROOT
 }
 
@@ -491,9 +523,13 @@ INSTALL () {
       tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || exit 1
       rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
       SET_TEMP_FILES || exit 1
+      READ_PAYLOAD_METADATA || exit 1
+      printf 'Installing: %s\n' "$(FORMAT_ARCHIVE_IDENTITY)"
     # Copy files
     cp "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
+    cp "$TEMP_FILES"/product-metadata.sh $LOCAL_FILES/product-metadata.sh
+    chmod 644 $LOCAL_FILES/product-metadata.sh
     ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
     cp "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
     cp "$TEMP_FILES"/exit/* $LOCAL_FILES/exit/
@@ -612,12 +648,12 @@ INSTALL () {
     else
       cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf.dist
     fi
-    WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" || exit 1
+    WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" "$ARCHIVE_VERSION" "$ARCHIVE_BETA" || exit 1
     cp "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     SETUP_WEB_SERVICE start
     START_INITIAL_INVENTORY
     echo -e "✅${GN:-} Ultimate Updater installed successfully.${CL:-}"
-    echo -e "   Installed: $BRANCH"
+    echo -e "   Installed: $(FORMAT_ARCHIVE_IDENTITY)"
     echo -e "${OR:-}Also want to install the Welcome-Screen?${CL:-}"
     read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
@@ -645,6 +681,8 @@ UPDATE () {
     tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || return 1
     rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
     SET_TEMP_FILES || return 1
+    READ_PAYLOAD_METADATA || return 1
+    printf 'Installing: %s\n' "$(FORMAT_ARCHIVE_IDENTITY)"
     installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
     target_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$TEMP_FILES/update.sh" 2>/dev/null || true)
     installed_major=''
@@ -854,6 +892,10 @@ UPDATE () {
     fi
     mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod +x $LOCAL_FILES/check-updates.sh
+    if [[ -f "$TEMP_FILES/product-metadata.sh" ]]; then
+      mv "$TEMP_FILES"/product-metadata.sh $LOCAL_FILES/product-metadata.sh
+      chmod 644 $LOCAL_FILES/product-metadata.sh
+    fi
     if [[ -f "$TEMP_FILES"/qga-guest-exec.sh ]]; then
       mv "$TEMP_FILES"/qga-guest-exec.sh $LOCAL_FILES/qga-guest-exec.sh
       chmod 750 "$LOCAL_FILES"/qga-guest-exec.sh
@@ -882,7 +924,7 @@ UPDATE () {
       rm -rf "$TEMP_FILES"/check-updates.sh || true
     fi
     cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
-    WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" || return 1
+    WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" "$ARCHIVE_VERSION" "$ARCHIVE_BETA" || return 1
     rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
     # targets.conf is runtime inventory and must not be replaced by the
     # repository template after legacy migration or user edits.
@@ -945,7 +987,7 @@ UPDATE () {
     fi
     rm -rf $TEMP_FOLDER || true
     echo -e "✅${GN:-} Ultimate Updater updated successfully.${CL:-}"
-    echo -e "   Installed: $BRANCH"
+    echo -e "   Installed: $(FORMAT_ARCHIVE_IDENTITY)"
     if [[ "$UPGRADE_RESTART_REQUIRED" == true ]]; then
       echo -e "${OR:-}⚠ A restart of this Proxmox host is required to fully complete the Ultimate Updater migration.\n  The host remains usable, but some Ultimate Updater components may not work reliably until it has been restarted.\n  Please restart the host when it is safe to do so.${CL:-}\n"
     elif [[ $NEED_REBOOT == true ]]; then
