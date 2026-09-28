@@ -2,6 +2,11 @@
 
 Status: Beta / release candidate for validation.
 
+5.1.3 is primarily a stability, correctness, and hardening release following
+the existing 5.1 Web UI generation. The Beta 7 changes below focus on
+reliability across update execution, checks, remote operation, result
+handling, installer/self-update behavior, and terminal handling.
+
 ## Beta 7
 
 - Installer, CLI, and Web UI build identity now reflects the installed

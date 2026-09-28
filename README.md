@@ -39,6 +39,31 @@ containers, VMs, and selected external systems.
 
 Automation is supported, but control stays with you.
 
+## Roadmap
+
+### 5.1.3
+
+5.1.3 is a stability, correctness, and hardening release focused on reliable
+update execution, checks, remote operation, notifications, result handling,
+installer/self-update behavior, and terminal handling.
+
+### 5.2
+
+The next development cycle is planned to focus on broader system support and
+continued UI evolution:
+
+- Web UI evolution, including theme and skin support while preserving Ultimate
+  Updater's independent visual identity.
+- More mature Windows integration through the existing QGA and PowerShell
+  direction, including update detection, execution, reboot-required state,
+  capability handling, and production-quality validation.
+- More complete first-class External system support, with consistent checks,
+  updates, package-manager capabilities, status integration, notifications,
+  and stronger APT/RPM handling.
+
+These are planned focus areas, not guarantees of specific 5.2 scope or
+ordering.
+
 ## What it does
 
 Ultimate Updater is installed once on a Proxmox cluster and gives you one
@@ -84,10 +109,10 @@ The authenticated Web UI is served by `ultimate-updater-web.service` on port
 checks, updates, settings, Internal SSH management, persistent jobs/logs, and
 version/build information. See [Web UI](docs/web-ui.md).
 
-![Ultimate Updater 5.1.2 dashboard](docs/images/web-ui/dashboard.png)
+![Ultimate Updater Web UI dashboard](docs/images/web-ui/dashboard.png)
 
-> Current 5.1.2 dashboard from a dedicated test environment. More Web UI views
-> are shown in the [Web UI guide](docs/web-ui.md).
+> Web UI dashboard from a dedicated test environment. More views are shown in
+> the [Web UI guide](docs/web-ui.md).
 
 ## Supported systems
 
