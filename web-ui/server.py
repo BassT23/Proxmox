@@ -1354,6 +1354,68 @@ PAGE = PAGE.replace('</head>', '<style>.interactive-controls{grid-column:1/-1;di
 PAGE = PAGE.replace('</head>', '<style>.scheduler-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.scheduler-head p{margin:5px 0 0;color:var(--muted);font-size:.78rem}.scheduler-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}.scheduler-summary>div{padding:13px 14px;border:1px solid #159cf055;border-radius:12px;background:#0b172acc}.scheduler-summary span{display:block;color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em}.scheduler-summary strong{display:block;margin-top:5px;font-size:.9rem}.scheduler-list{display:grid;gap:10px}.scheduler-card{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 16px;border:1px solid var(--line);border-radius:14px;background:#0e162b99}.scheduler-card-main{min-width:0}.scheduler-card-title{display:flex;align-items:center;gap:9px}.scheduler-card-title strong{font-size:.92rem;overflow-wrap:anywhere}.scheduler-card-main>.hint{display:block;margin-top:5px}.scheduler-card-main small{display:block;margin-top:9px;color:var(--muted);line-height:1.55}.schedule-state{padding:3px 7px;border-radius:999px;font-size:.65rem;font-weight:700}.schedule-state.enabled{color:var(--good);background:#55d39a1f}.schedule-state.disabled{color:var(--muted);background:#aab7cf1f}.scheduler-card-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px;flex:0 0 auto}.scheduler-card-actions button{padding:7px 9px;font-size:.72rem}.scheduler-empty{padding:30px;border:1px dashed var(--line);border-radius:14px;text-align:center;color:var(--muted)}.scheduler-modal{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:18px;background:#00000088}.scheduler-modal[hidden]{display:none}.scheduler-modal form{width:min(520px,100%);display:grid;grid-template-columns:1fr 1fr;gap:12px}.scheduler-modal .section-title,.scheduler-modal input[type=hidden],.scheduler-modal .scheduler-warning,.scheduler-modal .scheduler-form-actions{grid-column:1 / -1}.scheduler-modal label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:.72rem}.scheduler-modal input,.scheduler-modal select{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:8px;color:var(--text);background:#081426;font:inherit}.scheduler-modal .schedule-enabled{flex-direction:row;align-items:center;gap:7px}.scheduler-modal .schedule-enabled input{width:auto}.scheduler-warning{margin:0;padding:10px 12px;border:1px solid #f0a83a66;border-radius:9px;color:var(--warn);background:#f0a83a12;font-size:.74rem;line-height:1.45}.scheduler-form-actions{display:flex;justify-content:flex-end;gap:8px}@media(max-width:720px){.scheduler-head{align-items:flex-start;flex-direction:column}.scheduler-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.scheduler-card{align-items:stretch;flex-direction:column}.scheduler-card-actions{justify-content:flex-start}.scheduler-modal form{grid-template-columns:1fr}}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.scheduler-modal form{width:min(920px,100%);max-height:calc(100vh - 36px);overflow:auto}.schedule-days{grid-column:1 / -1;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px}.schedule-days legend{padding:0 5px;color:var(--muted);font-size:.72rem}.day-toggles{display:flex;flex-wrap:wrap;gap:6px}.day-toggles label{display:block}.day-toggles input{position:absolute;opacity:0;pointer-events:none}.day-toggles input:disabled+span{cursor:not-allowed;opacity:.45}.day-toggles span{display:block;padding:7px 11px;border:1px solid var(--line);border-radius:7px;color:var(--muted);cursor:pointer;font-size:.75rem}.day-toggles input:checked+span{color:#fff;border-color:#159cf0aa;background:#087ecb66}.schedule-day-hint{display:block;margin-top:9px;font-size:.7rem}.schedule-targets{grid-column:1 / -1;min-width:0;padding:14px;border:1px solid #159cf055;border-radius:12px;background:#08172aaa}.schedule-targets[hidden]{display:none}.schedule-targets-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.schedule-targets h3{margin:0;font-size:.88rem}.schedule-target-tools{display:flex;flex-wrap:wrap;gap:7px}.schedule-target-tools button{font-size:.72rem;padding:6px 8px}.schedule-target-search{display:block!important;margin:10px 0}.schedule-target-table{width:100%;border-collapse:collapse;font-size:.73rem}.schedule-target-table th,.schedule-target-table td{padding:8px 7px;border-bottom:1px solid #159cf033;text-align:left;white-space:nowrap}.schedule-target-table th{position:sticky;top:0;z-index:1;color:var(--muted);background:#0a1b31}.schedule-target-table td:first-child,.schedule-target-table th:first-child{width:28px;text-align:center}.schedule-target-table input{width:16px;height:16px}.schedule-table-wrap{max-height:360px;overflow:auto;border:1px solid #159cf044;border-radius:8px}.schedule-selected{margin-top:9px;color:#8fd2ff;font-size:.75rem;font-weight:700}.schedule-missing{margin:8px 0;padding:8px 10px;border:1px solid #ed6b7a88;border-radius:8px;color:#ff9aaa;background:#ed6b7a12;font-size:.73rem}.schedule-missing[hidden]{display:none}.schedule-enabled{grid-column:1 / -1;width:max-content}.scheduler-modal .scheduler-warning{grid-column:1 / -1}@media(max-width:720px){.scheduler-modal form{width:100%;grid-template-columns:1fr}.schedule-targets-head{align-items:flex-start;flex-direction:column}.schedule-table-wrap{overflow-x:auto}.schedule-target-table{min-width:650px}}</style></head>', 1)
 
+# Classic's final surface pass deliberately overrides the later dashboard and
+# navigation skin rules above.  Keep this scoped to the theme so the accepted
+# Modern appearance remains byte-for-byte unaffected.
+PAGE = PAGE.replace('</head>', '''<style>
+html[data-theme="classic"] .dashboard-header-top,
+html[data-theme="classic"] .overview-actions-card,
+html[data-theme="classic"] .global-actions,
+html[data-theme="classic"] .systems-panel,
+html[data-theme="classic"] .jobs,
+html[data-theme="classic"] .details,
+html[data-theme="classic"] .management-panel,
+html[data-theme="classic"] .scheduler-placeholder {
+    border-color:#69737b;
+    border-radius:4px;
+    background:#2b3238;
+    box-shadow:none;
+}
+html[data-theme="classic"] .dashboard-header-top { padding:18px 20px 16px; }
+html[data-theme="classic"] .dashboard-kpis,
+html[data-theme="classic"] .overview-actions-card .dashboard-kpis { background:#30373d; }
+html[data-theme="classic"] .overview-actions-card h2,
+html[data-theme="classic"] .systems-panel > .section-title h2,
+html[data-theme="classic"] .jobs h2 { color:var(--text); letter-spacing:normal; }
+html[data-theme="classic"] .global-actions { border-top-color:#69737b; }
+html[data-theme="classic"] .global-action,
+html[data-theme="classic"] .managed-actions button,
+html[data-theme="classic"] .row-actions button,
+html[data-theme="classic"] .scheduler-card-actions button,
+html[data-theme="classic"] .schedule-target-tools button,
+html[data-theme="classic"] .details-close { background:#3a4248; border-color:#69737b; color:var(--text); }
+html[data-theme="classic"] .global-action.update-all { background:#5b7482; border-color:#9db5c1; }
+html[data-theme="classic"] .global-action.check-all { background:#3f6554; border-color:#77c99b99; }
+html[data-theme="classic"] .job-running-indicator,
+html[data-theme="classic"] .updater-update-indicator { box-shadow:none; }
+html[data-theme="classic"] .dashboard-meta .nav-toggle { border-radius:4px; color:#d1d9dd; }
+html[data-theme="classic"] .dashboard-meta .page-nav { border-radius:4px; }
+html[data-theme="classic"] .dashboard-meta .page-nav a.active { background:#566d7a; }
+html[data-theme="classic"] .guest-panel,
+html[data-theme="classic"] .guest-panel-title { border-color:#69737b; background:#30373d; }
+html[data-theme="classic"] .guest-panel-title { color:var(--text); }
+html[data-theme="classic"] .node-group .group-header,
+html[data-theme="classic"] .external-group .group-header { min-height:78px; }
+html[data-theme="classic"] .node-group .group-toggle,
+html[data-theme="classic"] .external-group .group-toggle { width:32px; height:32px; }
+html[data-theme="classic"] .schedule-targets,
+html[data-theme="classic"] .schedule-table-wrap,
+html[data-theme="classic"] .check-update-matrix,
+html[data-theme="classic"] .schedule-days { border-color:#69737b; border-radius:4px; background:#30373d; }
+html[data-theme="classic"] .schedule-target-table th { background:#394249; }
+html[data-theme="classic"] .schedule-target-table th,
+html[data-theme="classic"] .schedule-target-table td { border-color:#69737b; }
+html[data-theme="classic"] .scheduler-card,
+html[data-theme="classic"] .scheduler-summary>div { border-color:#69737b; border-radius:4px; background:#30373d; box-shadow:none; }
+html[data-theme="classic"] .scheduler-empty,
+html[data-theme="classic"] .notice,
+html[data-theme="classic"] .empty { border-color:#69737b; border-radius:4px; box-shadow:none; }
+html[data-theme="classic"] #login-screen .modal,
+html[data-theme="classic"] #auth-loading .modal { border-color:#69737b; border-radius:4px; background:#30373d; box-shadow:none; }
+html[data-theme="classic"] .interactive-terminal-dialog { border-color:#69737b; background:#252b30; box-shadow:none; }
+html[data-theme="classic"] .interactive-terminal { border-color:#69737b; }
+</style></head>''', 1)
+
 
 def error_payload(code, message):
     return {"error": {"code": code, "message": message}}
