@@ -22,7 +22,7 @@ if [[ -f "$PRODUCT_METADATA_FILE" ]]; then
   # shellcheck disable=SC1090
   . "$PRODUCT_METADATA_FILE"
 fi
-PRODUCT_VERSION="${PRODUCT_VERSION:-5.1.3}"
+PRODUCT_VERSION="${PRODUCT_VERSION:-5.2}"
 BETA_VERSION="${BETA_VERSION:-}"
 case "$BRANCH" in
   master|beta|develop) ;;

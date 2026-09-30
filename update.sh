@@ -9,7 +9,7 @@
 # product version by parsing this literal line from update.sh.  Runtime code
 # uses product-metadata.sh as the canonical source and tests must keep these
 # values aligned.
-VERSION="5.1.3"
+VERSION="5.2"
 
 # A protection failure must make the overall update job fail, even when the
 # configured continue-on-error mode allows other guests to be processed.
@@ -34,7 +34,7 @@ if [[ -f "$PRODUCT_METADATA_FILE" ]]; then
   # shellcheck disable=SC1090
   . "$PRODUCT_METADATA_FILE"
 fi
-PRODUCT_VERSION="${PRODUCT_VERSION:-5.1.3}"
+PRODUCT_VERSION="${PRODUCT_VERSION:-5.2}"
 BETA_VERSION="${BETA_VERSION:-}"
 VERSION="$PRODUCT_VERSION"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"

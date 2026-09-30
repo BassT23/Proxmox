@@ -11,19 +11,19 @@ legacy_parse_version() {
 }
 
 current_version=$(legacy_parse_version "$ROOT_DIR/update.sh")
-[[ "$current_version" == "5.1.3" ]]
+[[ "$current_version" == "5.2" ]]
 
 work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT
 for branch in master beta develop; do
-  printf '#!/bin/bash\nVERSION="5.1.3"\n' > "$work_dir/$branch-update.sh"
-  [[ "$(legacy_parse_version "$work_dir/$branch-update.sh")" == "5.1.3" ]]
+  printf '#!/bin/bash\nVERSION="5.2"\n' > "$work_dir/$branch-update.sh"
+  [[ "$(legacy_parse_version "$work_dir/$branch-update.sh")" == "5.2" ]]
 done
 
 metadata_version=$(awk -F'"' '/^PRODUCT_VERSION=/ {print $2; exit}' "$ROOT_DIR/product-metadata.sh")
 metadata_beta=$(awk -F'"' '/^BETA_VERSION=/ {print $2; exit}' "$ROOT_DIR/product-metadata.sh")
 [[ "$metadata_version" == "$current_version" ]]
-[[ "$metadata_beta" == 7 ]]
+[[ "$metadata_beta" == 1 ]]
 
 # Keep the exact pre-0575441 parser contract visible in the test itself.
 git show b70e219:tag-filter.sh | grep -Fq '/^VERSION=/ {print $2; exit}'

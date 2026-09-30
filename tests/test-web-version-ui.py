@@ -12,14 +12,14 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 sample = """Version overview (beta)
-Installed product version: 5.1.3
-Installed beta: 7
+Installed product version: 5.2
+Installed beta: 1
 Installed commit: 0123456789abcdef0123456789abcdef01234567
-Available beta: 8
+Available beta: 2
 Available commit: 89abcdef0123456789abcdef0123456789abcdef
 Installed tag: —
 Component    Local     Server
-Updater      5.1       5.2
+Updater      5.2       5.2
 Extras       3.1       3.1
 Config       2.1       2.1
 Welcome      3.0       3.0
@@ -28,9 +28,9 @@ Check        2.1       2.1
 parsed = module.parse_updater_version_output(sample)
 assert parsed["state"] == "ok"
 assert parsed["branch"] == "beta"
-assert parsed["installed"] == "5.1.3"
-assert parsed["beta"] == 7
-assert parsed["available_beta"] == 8
+assert parsed["installed"] == "5.2"
+assert parsed["beta"] == 1
+assert parsed["available_beta"] == 2
 assert parsed["available"] == "5.2"
 assert parsed["update_available"] is True
 assert parsed["commit"] == "0123456789abcdef0123456789abcdef01234567"
@@ -148,20 +148,20 @@ with tempfile.TemporaryDirectory() as directory:
     )
     assert local["beta"] is None
     (root_dir / "build-metadata").write_text(
-        'schema_version=2\nversion="5.1.3"\nbranch="beta"\nbeta="7"\n'
+        'schema_version=2\nversion="5.2"\nbranch="beta"\nbeta="1"\n'
         'commit="0123456789abcdef0123456789abcdef01234567"\ntag=""\n',
         encoding="utf-8",
     )
     modern_local = handler.local_version()
     assert (modern_local["installed"], modern_local["beta"], modern_local["branch"]) == (
-        "5.1.3", 7, "beta"
+        "5.2", 1, "beta"
     )
     handler.start_version_refresh = lambda: setattr(handler.server, "refresh_started", True)
     handler.server.version_last_data = None
     public = handler.public_version()
-    assert public["installed"] == "5.1.3"
+    assert public["installed"] == "5.2"
     assert public["branch"] == "beta"
-    assert public["beta"] == 7
+    assert public["beta"] == 1
     assert public["update_state"] == "checking"
     assert handler.server.refresh_started is True
     handler.server.version_last_data = {
@@ -169,8 +169,8 @@ with tempfile.TemporaryDirectory() as directory:
         "installed": None, "branch": None, "commit": "unknown",
     }
     offline = handler.public_version()
-    assert offline["installed"] == "5.1.3"
+    assert offline["installed"] == "5.2"
     assert offline["branch"] == "beta"
-    assert offline["beta"] == 7
+    assert offline["beta"] == 1
     assert offline["update_state"] == "unavailable"
 print("web updater version/self-update tests: PASS")
