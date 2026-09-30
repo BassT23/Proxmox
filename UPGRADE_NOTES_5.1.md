@@ -1,18 +1,13 @@
-# Upgrade notes: 5.0 → 5.1.3 Beta 7
-
-> **Beta 7 notice:** The `beta` branch contains the pre-release 5.1.3 Beta 7
-> validation build. Select it explicitly with `update beta -up`; existing
-> 5.1.x configuration is preserved, and no separate 5.1.x migration reboot is
-> required for this beta.
+# Upgrade notes: 5.0 → 5.1.3
 
 Use the normal installer/self-update path on the existing central Proxmox
 cluster installation. Ultimate Updater is installed once per cluster; do not
 install a second administrative instance on every node.
 
-To move an existing installation to the 5.1.3 Beta 7 validation build, run:
+To move an existing installation to the published 5.1.3 release, run:
 
 ```bash
-update beta -up
+update master -up
 ```
 
 Stable maintenance uses `update master -up`. The bare `update -up` still
@@ -29,7 +24,7 @@ The optional Web UI target-selection rules in
 `/etc/ultimate-updater/target-selection.json` are persistent user configuration
 and are preserved across Beta 3 self-updates and deployments. The feature is
 opt-in; legacy Proxmox tag selection remains the default.
-An existing 5.1 installation can use the same command to move to Beta 7; no
+An existing 5.1 installation can use the same command to move to 5.1.3; no
 separate migration or SSH reconfiguration is required. Older installed
 versions retain the literal `VERSION` bootstrap compatibility needed to
 discover the 5.1.3 self-update payload before the new build metadata is

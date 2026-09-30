@@ -5,6 +5,29 @@ Changelog:
 
 No changes yet.
 
+**v5.1.3** (30.09.2026)
+
+5.1.3 is a stability, correctness, and hardening release following the
+existing 5.1 Web UI generation.
+
+Improved:
+- update and check execution, status handling, result preservation, remote
+  and cluster operation, notifications, and current-run summaries
+- installer/self-update reliability and accurate installed build identity,
+  including legacy bootstrap compatibility and explicit branch transitions
+- Web UI version details and compact build identities for product, branch,
+  Beta/build, and installed/available commit information
+
+Fixed:
+- External and remote result handling through final status refreshes without
+  stale or non-inventory target resurrection
+- interactive installer terminal clearing and cleaner self-update output,
+  while headless and managed output remain log-safe
+- minimal Alpine LXC checks without a Bash dependency and correct total-only
+  semantics for package managers without security splitting
+- authentication, backup/snapshot, scheduler, package-manager, and terminal
+  safety regressions across the 5.1.3 cycle
+
 **v5.1.3 Beta 7** (beta / release candidate for validation)
 
 This cycle is primarily a stability, correctness, and hardening release

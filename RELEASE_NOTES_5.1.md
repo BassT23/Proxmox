@@ -1,11 +1,31 @@
-# Ultimate Updater 5.1.3 Beta 7
+# Ultimate Updater 5.1.3
 
-Status: Beta / release candidate for validation.
+Status: Stable release.
 
-5.1.3 is primarily a stability, correctness, and hardening release following
-the existing 5.1 Web UI generation. The Beta 7 changes below focus on
-reliability across update execution, checks, remote operation, result
-handling, installer/self-update behavior, and terminal handling.
+5.1.3 is a stability, correctness, and hardening release following the
+existing 5.1 Web UI generation. It focuses on reliability across update
+execution, checks, remote operation, result handling, installer/self-update
+behavior, notifications, and terminal handling.
+
+## 5.1.3
+
+- Update and check execution, status handling, result preservation, remote and
+  cluster operation, notifications, and current-run summaries were hardened.
+- External and remote results remain correctly attributed through final status
+  refreshes without resurrecting stale or non-inventory targets.
+- Installer and self-update behavior now preserves legacy bootstrap
+  compatibility, reports the actual installed build identity, honors explicit
+  same-commit branch changes, and presents cleaner interactive output.
+- Web UI version details and compact build identities distinguish product
+  version, branch, Beta/build information, and installed/available commits.
+- Alpine minimal-LXC checks no longer require Bash, and total-only package
+  managers are kept out of unsupported security splits.
+- The wider 5.1.3 cycle also includes authentication, backup/snapshot,
+  package-manager, scheduler, and terminal-safety hardening documented in the
+  historical Beta sections below.
+
+The following Beta 7 section records the release-candidate validation history;
+the final release incorporates its approved changes.
 
 ## Beta 7
 
@@ -28,9 +48,9 @@ handling, installer/self-update behavior, and terminal handling.
 - Minimal Alpine LXCs can be checked without Bash, and APK remains total-only
   where security splitting is unsupported.
 
-Beta 7 remains a release candidate for validation. The combined External
-`update-all` result-preservation scenario remains a field-validation target;
-this section does not claim reporter confirmation for that scenario.
+During Beta 7 validation, the combined External `update-all`
+result-preservation scenario remained a field-validation target; this
+historical note does not change the stable release scope above.
 
 ## Beta 6
 

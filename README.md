@@ -1,8 +1,8 @@
 <div align="center">
 
-# Ultimate Updater 5.1.3 Beta 7
+# Ultimate Updater 5.1.3
 
-Status: Beta / release candidate for validation. Not a stable release.
+Status: Stable release.
 
 <img src="https://github.com/user-attachments/assets/df181f9c-683b-4e9b-9234-80c158c7da98"
        style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
