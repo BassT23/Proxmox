@@ -48,14 +48,114 @@ RUN_SSH_COMMAND() {
 }
 
 READ_APT_UPDATE_COUNTS() {
-  local apt_output="$1"
-  local apt_total
-  SECURITY_APT_UPDATES=$(printf '%s\n' "$apt_output" | grep -ci '^inst.*security' || true)
-  apt_total=$(printf '%s\n' "$apt_output" | grep -ci '^inst.' || true)
-  # The total install count includes security updates.  Keep the status
-  # fields disjoint so normal + security never double-counts packages.
+  local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+  local result
+  result=$(python3 "$script") || {
+    SECURITY_APT_UPDATES=null
+    NORMAL_APT_UPDATES=null
+    APT_COUNTS_TOTAL=null
+    return 1
+  }
+  PARSE_APT_UPDATE_COUNTS "$result"
+}
+
+PARSE_APT_UPDATE_COUNTS() {
+  local result="$1" total normal security known
+  IFS='|' read -r _ total normal security known _ <<<"$result"
+  if [[ ! "$total" =~ ^[0-9]+$ || ! "$normal" =~ ^[0-9]+$ ||
+    ! "$security" =~ ^[0-9]+$ || "$known" != true ]]; then
+    SECURITY_APT_UPDATES=null
+    NORMAL_APT_UPDATES=null
+    APT_COUNTS_TOTAL=null
+    return 1
+  fi
   # shellcheck disable=SC2034
-  NORMAL_APT_UPDATES=$((apt_total - SECURITY_APT_UPDATES))
+  APT_COUNTS_TOTAL="$total"
+  # shellcheck disable=SC2034
+  NORMAL_APT_UPDATES="$normal"
+  # shellcheck disable=SC2034
+  SECURITY_APT_UPDATES="$security"
+  [[ $((normal + security)) -eq $total ]]
+}
+
+APT_COUNT_REMOTE_COMMAND() {
+  local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+  local encoded
+  encoded=$(base64 -w0 "$script") || return 1
+  printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
+}
+
+READ_RPM_UPDATE_COUNTS() {
+  local script="${RPM_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/rpm-count.py}"
+  local result
+  result=$(python3 "$script") || {
+    RPM_COUNTS_TOTAL=null
+    RPM_SECURITY_UPDATES=null
+    RPM_NORMAL_UPDATES=null
+    return 1
+  }
+  PARSE_RPM_UPDATE_COUNTS "$result"
+}
+
+PARSE_RPM_UPDATE_COUNTS() {
+  local result="$1" marker status total normal security known
+  IFS='|' read -r marker status total normal security known _ <<<"$result"
+  if [[ "$marker" != UU_RPM_COUNTS || "$status" != ok ||
+    ! "$total" =~ ^[0-9]+$ || "$normal" != null || "$security" != null ||
+    "$known" != false ]]; then
+    RPM_COUNTS_TOTAL=null
+    RPM_SECURITY_UPDATES=null
+    RPM_NORMAL_UPDATES=null
+    return 1
+  fi
+  # shellcheck disable=SC2034
+  RPM_COUNTS_TOTAL="$total"
+  # shellcheck disable=SC2034
+  RPM_SECURITY_UPDATES=null
+  # shellcheck disable=SC2034
+  RPM_NORMAL_UPDATES=null
+}
+
+RPM_COUNT_REMOTE_COMMAND() {
+  local script="${RPM_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/rpm-count.py}"
+  local encoded
+  encoded=$(base64 -w0 "$script") || return 1
+  printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
+}
+
+PARSE_PACKAGE_UPDATE_COUNTS() {
+  local result="$1" marker status manager total normal security known
+  IFS='|' read -r marker status manager total normal security known _ <<<"$result"
+  if [[ "$marker" != UU_PACKAGE_COUNTS || "$status" != ok ||
+    ! "$total" =~ ^[0-9]+$ || "$normal" != null || "$security" != null ||
+    "$known" != false ]]; then
+    PACKAGE_COUNTS_TOTAL=null
+    PACKAGE_NORMAL_UPDATES=null
+    PACKAGE_SECURITY_UPDATES=null
+    return 1
+  fi
+  # shellcheck disable=SC2034
+  PACKAGE_COUNTS_TOTAL="$total"
+  # shellcheck disable=SC2034
+  PACKAGE_NORMAL_UPDATES=null
+  # shellcheck disable=SC2034
+  PACKAGE_SECURITY_UPDATES=null
+}
+
+PACKAGE_COUNT_REMOTE_COMMAND() {
+  local manager="$1" script="${PACKAGE_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/package-count.sh}"
+  local encoded
+  encoded=$(base64 -w0 "$script") || return 1
+  printf 'printf %%s %q | base64 -d | sh -s -- %q' "$encoded" "$manager"
+}
+
+CLASSIFY_SSH_EXIT() {
+  case "$1" in
+    0) printf 'SSH_OK' ;;
+    124) printf 'SSH_TIMEOUT' ;;
+    255) printf 'SSH_CONNECTION_FAILED' ;;
+    *) printf 'REMOTE_COMMAND_FAILED' ;;
+  esac
 }
 
 # Proxmox commands are noisy because the API prints task/UPID progress. Keep

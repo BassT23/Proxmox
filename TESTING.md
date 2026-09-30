@@ -1,63 +1,49 @@
-# Ultimate Updater test environment
+# Ultimate Updater test environments
 
-This document describes the dedicated test guests. Guests marked `DO NOT
-REPAIR` are intentional failure fixtures and must remain in their prepared
-state.
+The canonical reusable real-cluster lab is documented in
+[`tests/e2e/TEST_LAB.md`](tests/e2e/TEST_LAB.md), with the verified fixture
+inventory in [`tests/e2e/test-lab-inventory.json`](tests/e2e/test-lab-inventory.json).
+Run [`tests/e2e/test-lab-audit.sh`](tests/e2e/test-lab-audit.sh) on
+`Proxmox-Test-1` for a read-only live audit.
 
-## Proxmox test nodes
+## Safety
 
-| Node | Role | Notes |
-| --- | --- | --- |
-| `updater-test-single` | Single-node tests | PVE 8.4.11, CT 901/902 |
-| `updater-test-node1` | Main cluster test node | PVE 9.1.9, cluster `Test-Cluster` |
-| `updater-test-node2` | Remote cluster test node | PVE 9.0.5, CT 920 |
+- The dedicated cluster is `Test-Cluster`: `.101` Test-1, `.102` Test-2 and
+  `.103` Test-3.
+- Automatic or destructive guest changes are restricted to VMID/CTID 900–999.
+- Verify cluster identity and quorum before every mutation.
+- Production (`192.168.3.0/24`), PBS, pfSense, Mediacenter, HMC and bridge
+  infrastructure are forbidden.
+- Keep fixtures stopped unless a test requires them and restore their state.
+- CT921 is an intentional failure fixture: **DO NOT REPAIR**.
+- CT930 and several older guests are currently `UNKNOWN_DO_NOT_TOUCH` until
+  their purpose or connectivity is re-established.
 
-The test cluster is quorate with node1 and node2. Node3 is intentionally
-reserved for special failure tests and is not required for normal coverage.
+## Current lab facts
 
-## VM and LXC fixtures
+The 2026-09-26 audit found 29 stopped 9xx guests across the three-node
+cluster. The most important reusable roles are:
 
-| VMID | Name | OS/type | Purpose | State |
-| --- | --- | --- | --- | --- |
-| 978 | `ultimate-updater-ref` | Ubuntu 22.04.5 VM | Healthy SSH and QEMU Guest Agent reference; SSH/QGA and script-only paths | Keep stopped when unused |
-| 980 | `ultimate-updater-rocky10` | Rocky Linux 10 GenericCloud VM | Issue #256 QEMU Guest Agent investigation | Initial boot currently blocked under TCG; keep as dedicated fixture |
-| 901/902 | Debian 13/12 LXC | APT, snapshot and backup tests | Normal fixtures | Keep original state |
-| 910/911/912/927 | Debian LXC | APT, Compose, snapshot/backup and bind-mount tests | Normal fixtures | Keep original state |
-| 914 | Alpine LXC | APK tests | Distribution fixture | Keep original state |
-| 916 | Arch LXC | Pacman tests | Distribution fixture | Keep original state |
-| 917 | CentOS LXC | YUM/DNF investigation | Special distribution fixture | Do not repair automatically |
-| 918 | Fedora LXC | DNF tests | Distribution fixture | Keep original state |
-| 921 | `ubuntu-failure` LXC | Intentional failure fixture | Error logging and continuation tests | **DO NOT REPAIR** |
-| 922 | Ubuntu LXC | APT, filters and script-only tests | Normal fixture | Keep original state |
-| 920 | Debian LXC on node2 | Cluster/remote-node tests | Remote fixture | Keep original state |
+| Fixture | Role |
+| --- | --- |
+| CT910 | Debian APT/check/filter |
+| CT914 | Alpine APK |
+| CT916 | Arch Pacman |
+| CT918 | Fedora DNF |
+| CT920 | Test-2 remote-node Debian guest |
+| CT921 | intentional failure |
+| CT927 | External-only Debian 13 APT |
+| CT928 | Test-2 remote Debian APT guest |
+| CT930 | Test-3 additional-node guest; SSH currently unverified |
+| VM971/978 | Linux QGA; 978 is the healthy SSH/QGA reference |
+| VM980 | Rocky 10 / #256 investigation; not a passing reference |
+| VM983 | Test-2 Debian VM/QGA |
+| CT984 | Rocky/CentOS DNF candidate |
 
-## VM 978 reference requirements
+Templates are CT926 and VM972. Community-Scripts fixtures include CT900,
+CT913, CT923 and CT924. No guest was deleted during the audit because unique,
+stopped and legacy fixtures could not all be classified with sufficient
+confidence.
 
-VM 978 is the healthy VM reference and must provide:
-
-- test-network address `192.168.10.104`
-- SSH access using the dedicated test key
-- Proxmox QEMU Guest Agent enabled
-- working `qm agent <VMID> ping`, `get-osinfo` and `qm guest exec`
-- Ubuntu/Debian package management
-- no intentional failure state
-
-The VM runs with `kvm=0` because the test Proxmox nodes are nested. Slow boot
-and package operations are expected.
-
-## Rocky Linux 10 fixture
-
-VM 980 uses the official Rocky Linux 10 GenericCloud image and test address
-`192.168.10.105`. The image checksum was verified before import. The initial
-TCG boot reached the bootloader but did not yet expose QEMU Guest Agent or
-network access in the available test window. Do not enable special QGA RPC
-allowlists or otherwise alter the guest before documenting a reproduction of
-Issue #256.
-
-## Cleanup rules
-
-- Restore guests to their original running/stopped state after each test.
-- Remove temporary scripts, markers, snapshots and backups after use.
-- Keep VM 978 stopped when not actively testing it.
-- Do not start node3 for ordinary tests.
-- Never use production nodes or the `192.168.3.x` network for write tests.
+For the complete reset procedure, External-only selection rules, capability
+gaps, cleanup policy and addition/removal rules, use TEST_LAB.md.

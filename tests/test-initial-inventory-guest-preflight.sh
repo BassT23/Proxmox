@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2016
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -64,11 +65,16 @@ if grep -Fq 'PACKAGE_MANAGER_CALLED' "$LOG_FILE"; then
   exit 1
 fi
 
-# Normal checks retain their existing package-manager behavior.
+# Normal checks preserve the first connectivity failure and do not continue
+# into the package manager with a misleading apt error.
 : > "$LOG_FILE"
 INITIAL_INVENTORY=false
 CHECK_CONTAINER 912 || true
-grep -Fq 'PACKAGE_MANAGER_CALLED' "$LOG_FILE"
+grep -Fq 'CONNECTIVITY_FAILED' "$LOG_FILE"
+if grep -Fq 'PACKAGE_MANAGER_CALLED' "$LOG_FILE"; then
+  echo 'package manager was called after failed guest preflight' >&2
+  exit 1
+fi
 HARNESS
 chmod 750 "$WORK_DIR/harness.sh"
 
@@ -77,6 +83,7 @@ chmod 750 "$WORK_DIR/harness.sh"
 grep -Fq 'UU_JOB_SOURCE=initial-inventory REMOTE_JOB_SOURCE=initial-inventory REMOTE_INITIAL_INVENTORY=true' "$ROOT_DIR/check-updates.sh"
 grep -Fq "REMOTE_JOB_SOURCE=\${UU_JOB_SOURCE} REMOTE_INITIAL_INVENTORY=\$INITIAL_INVENTORY" "$ROOT_DIR/check-updates.sh"
 grep -Fq 'GUEST_INTERNET_PREFLIGHT_PCT' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'RUN_PCT_COMMAND "$1" sh -c "$command"' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'GUEST_INTERNET_PREFLIGHT_SSH' "$ROOT_DIR/check-updates.sh"
 grep -Fq 'GUEST_INTERNET_PREFLIGHT_QGA' "$ROOT_DIR/check-updates.sh"
 

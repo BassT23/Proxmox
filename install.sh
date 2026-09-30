@@ -6,7 +6,7 @@
 
 # shellcheck disable=SC2034
 
-VERSION="2.1"
+INSTALLER_VERSION="2.1"
 
 # Branch
 
@@ -14,6 +14,16 @@ BRANCH="${UU_TARGET_BRANCH:-master}"
 
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
+PRODUCT_METADATA_FILE="$LOCAL_FILES/product-metadata.sh"
+if [[ ! -f "$PRODUCT_METADATA_FILE" ]]; then
+  PRODUCT_METADATA_FILE="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/product-metadata.sh"
+fi
+if [[ -f "$PRODUCT_METADATA_FILE" ]]; then
+  # shellcheck disable=SC1090
+  . "$PRODUCT_METADATA_FILE"
+fi
+PRODUCT_VERSION="${PRODUCT_VERSION:-5.1.3}"
+BETA_VERSION="${BETA_VERSION:-}"
 case "$BRANCH" in
   master|beta|develop) ;;
   *) echo "Unsupported update branch: $BRANCH" >&2; exit 2 ;;
@@ -30,6 +40,8 @@ SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
 BUILD_METADATA_FILE="$LOCAL_FILES/build-metadata"
 ARCHIVE_COMMIT=""
 ARCHIVE_TAG=""
+ARCHIVE_VERSION=""
+ARCHIVE_BETA=""
 
 DOWNLOAD_FILE() {
   local url="$1" destination="$2" kind="${3:-text}" temporary headers http_code retry_after listing
@@ -83,6 +95,8 @@ DOWNLOAD_ARCHIVE() {
   local archive="$TEMP_FOLDER/ultimate-updater.tar.gz" release_json asset_url archive_root release_tag
   ARCHIVE_COMMIT=""
   ARCHIVE_TAG=""
+  ARCHIVE_VERSION=""
+  ARCHIVE_BETA=""
   if [[ "$BRANCH" == master ]]; then
     release_json="$TEMP_FOLDER/release.json"
     DOWNLOAD_FILE "https://api.github.com/repos/BassT23/Proxmox/releases/latest" "$release_json" text || return 1
@@ -126,19 +140,51 @@ SET_TEMP_FILES() {
   return 1
 }
 
-WRITE_BUILD_METADATA() {
-  local branch="$1" commit="${2:-}" tag="${3:-}" temporary
-  [[ "$branch" =~ ^(master|beta|develop)$ ]] || branch="unknown"
-  if [[ "$branch" != unknown && ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
-    commit=$(curl -4 -sS --connect-timeout 5 --max-time 15 \
-      "https://api.github.com/repos/BassT23/Proxmox/commits/$branch" 2>/dev/null |
-      awk -F'"' '/"sha"[[:space:]]*:/ {print $4; exit}' || true)
+READ_PAYLOAD_METADATA() {
+  local metadata_file="$TEMP_FILES/product-metadata.sh" payload_version payload_beta
+  if [[ -f "$metadata_file" ]]; then
+    # shellcheck disable=SC1090
+    . "$metadata_file"
   fi
+  payload_version=$(awk -F'"' '/^PRODUCT_VERSION=/ {print $2; exit}' "$metadata_file" 2>/dev/null || true)
+  payload_beta=$(awk -F'"' '/^BETA_VERSION=/ {print $2; exit}' "$metadata_file" 2>/dev/null || true)
+  if [[ ! "$payload_version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+    payload_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$TEMP_FILES/update.sh" 2>/dev/null || true)
+  fi
+  [[ "$payload_version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1
+  [[ "$payload_beta" =~ ^[0-9]+$ ]] || payload_beta=""
+  ARCHIVE_VERSION="$payload_version"
+  ARCHIVE_BETA="$payload_beta"
+}
+
+FORMAT_ARCHIVE_IDENTITY() {
+  UU_FORMAT_BUILD_IDENTITY "$ARCHIVE_VERSION" "$BRANCH" "$ARCHIVE_BETA" "$ARCHIVE_COMMIT"
+}
+
+SHOULD_CLEAR_INSTALLER_HEADER() {
+  [[ -t 0 && -e /dev/tty && -w /dev/tty && "${TERM:-}" != "" && "${TERM:-}" != dumb ]] || return 1
+  [[ "${UU_MANAGED_OUTPUT:-false}" != true ]] || return 1
+  if [[ "${UU_INTERACTIVE_INSTALLER:-false}" == true ]]; then
+    return 0
+  fi
+  [[ -t 1 && "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_SOURCE:-}" != scheduler ]]
+}
+
+CLEAR_INSTALLER_HEADER() {
+  SHOULD_CLEAR_INSTALLER_HEADER || return 0
+  clear > /dev/tty 2>/dev/null || true
+}
+
+WRITE_BUILD_METADATA() {
+  local branch="$1" commit="${2:-}" tag="${3:-}" version="${4:-$PRODUCT_VERSION}" beta="${5:-}" temporary
+  [[ "$branch" =~ ^(master|beta|develop)$ ]] || branch="unknown"
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || commit="unknown"
   [[ "$tag" =~ ^[A-Za-z0-9._/-]+$ ]] || tag=""
   temporary=$(mktemp "${BUILD_METADATA_FILE}.XXXXXX") || return 1
-  printf 'schema_version=1\nbranch="%s"\ncommit="%s"\ntag="%s"\n' \
-    "$branch" "$commit" "$tag" > "$temporary"
+  [[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || version="$PRODUCT_VERSION"
+  [[ "$beta" =~ ^[0-9]+$ ]] || beta=""
+  printf 'schema_version=2\nversion="%s"\nbranch="%s"\nbeta="%s"\ncommit="%s"\ntag="%s"\n' \
+    "$version" "$branch" "$beta" "$commit" "$tag" > "$temporary"
   install -m 0644 "$temporary" "$BUILD_METADATA_FILE"
   rm -f -- "$temporary"
 }
@@ -152,7 +198,7 @@ CL="\e[0m"
 
 #Header
 HEADER_INFO () {
-  clear
+  CLEAR_INSTALLER_HEADER
   echo -e "\n \
       https://github.com/BassT23/Proxmox\n"
   cat <<'EOF'
@@ -170,7 +216,7 @@ HEADER_INFO () {
 EOF
   echo -e "\n \
       *** Install and/or Update *** \n \
-      ***   Version :   $VERSION   *** \n"
+      ***   Ultimate Updater   *** \n"
   CHECK_ROOT
 }
 
@@ -353,20 +399,91 @@ INFORMATION () {
   fi
 }
 
+ensure_scheduled_check_cron() {
+  local cron_file="${1:-/etc/crontab}" create_if_missing="${2:-true}"
+  local backup_dir="${UU_CRON_BACKUP_DIR:-}" temp backup timestamp suffix
+  [[ -f "$cron_file" ]] || : > "$cron_file" || return 1
+  temp=$(mktemp "${cron_file}.uu.XXXXXX") || return 1
+  awk '
+    function is_uu_check(line) {
+      return line !~ /^[[:space:]]*#/ &&
+        (line ~ /(^|[[:space:]])\/usr\/local\/sbin\/update[[:space:]]+-check([[:space:]]|$)/ ||
+         line ~ /(^|[[:space:]])\/etc\/ultimate-updater\/check-updates[.]sh([[:space:]]|$)/)
+    }
+    function add_scheduler(line) {
+      if (line ~ /\/usr\/local\/sbin\/update[[:space:]]+-check/) {
+        sub(/\/usr\/local\/sbin\/update[[:space:]]+-check/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler &", line)
+      } else {
+        sub(/\/etc\/ultimate-updater\/check-updates[.]sh/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler &", line)
+      }
+      return line
+    }
+    function add_headless(line) {
+      if (line ~ /\/usr\/local\/sbin\/update[[:space:]]+-check/) {
+        sub(/\/usr\/local\/sbin\/update[[:space:]]+-check/, "RUN_FROM_CRON=true &", line)
+      } else {
+        sub(/\/etc\/ultimate-updater\/check-updates[.]sh/, "RUN_FROM_CRON=true &", line)
+      }
+      return line
+    }
+    {
+      if (is_uu_check($0)) {
+        if ($0 !~ /UU_JOB_SOURCE=scheduler/) {
+          if ($0 ~ /RUN_FROM_CRON=true/) {
+            sub(/RUN_FROM_CRON=true/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler")
+          } else {
+            $0 = add_scheduler($0)
+          }
+        }
+        if ($0 !~ /RUN_FROM_CRON=true/) $0 = add_headless($0)
+      }
+      print
+    }
+  ' "$cron_file" > "$temp" || { rm -f -- "$temp"; return 1; }
+  if ! grep -Eq '(^|[[:space:]])(\/usr\/local\/sbin\/update[[:space:]]+-check|\/etc\/ultimate-updater\/check-updates[.]sh)([[:space:]]|$)' "$cron_file"; then
+    if [[ "$create_if_missing" != true ]]; then
+      rm -f -- "$temp"
+      return 0
+    fi
+    printf '%s\n' '00 06   * * *   root RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler /usr/local/sbin/update -check >/dev/null 2>&1' >> "$temp"
+  fi
+  if cmp -s "$temp" "$cron_file"; then
+    rm -f -- "$temp"
+    return 0
+  fi
+  if [[ "$cron_file" == /etc/crontab || -n "$backup_dir" ]]; then
+    timestamp=$(date -u '+%Y%m%d-%H%M%S')
+    if [[ "$cron_file" == /etc/crontab ]]; then
+      backup="${cron_file}.bak.${timestamp}"
+    else
+      mkdir -p -- "$backup_dir" || { rm -f -- "$temp"; return 1; }
+      backup="$backup_dir/$(basename -- "$cron_file").bak.${timestamp}"
+    fi
+    suffix=0
+    while [[ -e "$backup" ]]; do
+      suffix=$((suffix + 1))
+      backup="${backup_dir:-$(dirname -- "$cron_file")}/$(basename -- "$cron_file").bak.${timestamp}.${suffix}"
+    done
+    cp -p -- "$cron_file" "$backup" || { rm -f -- "$temp"; return 1; }
+  fi
+  chmod --reference="$cron_file" "$temp" 2>/dev/null || true
+  mv -f -- "$temp" "$cron_file"
+}
+
 OLD_FILESYSTEM_CHECK () {
   if [[ -d /root/Proxmox-Updater/ ]]; then
     mv /root/Proxmox-Updater/ $LOCAL_FILES/
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv /etc/crontab /etc/crontab.bak_name_change
       cp /etc/crontab.bak /etc/crontab
-      echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
+      echo "00 07,19 * * *  root    RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler $LOCAL_FILES/check-updates.sh" >> /etc/crontab
     fi
   fi
   if [[ -d /root/Ultimative-Updater/ ]]; then
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv /etc/crontab /etc/crontab.bak_name_change
       cp /etc/crontab.bak /etc/crontab
-      echo "00 07,19 * * *  root    $LOCAL_FILES/check-updates.sh" >> /etc/crontab
+      echo "00 07,19 * * *  root    RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler $LOCAL_FILES/check-updates.sh" >> /etc/crontab
     fi
   fi
   if [ -d "/root/Ultimative-Update-Scripts" ]; then
@@ -418,9 +535,12 @@ INSTALL () {
       tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || exit 1
       rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
       SET_TEMP_FILES || exit 1
+      READ_PAYLOAD_METADATA || exit 1
     # Copy files
     cp "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
+    cp "$TEMP_FILES"/product-metadata.sh $LOCAL_FILES/product-metadata.sh
+    chmod 644 $LOCAL_FILES/product-metadata.sh
     ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
     cp "$TEMP_FILES"/VMs/example $LOCAL_FILES/VMs/example
     cp "$TEMP_FILES"/exit/* $LOCAL_FILES/exit/
@@ -432,14 +552,22 @@ INSTALL () {
     cp "$TEMP_FILES"/qga-guest-exec.sh $LOCAL_FILES/qga-guest-exec.sh
     chmod 750 "$LOCAL_FILES"/qga-guest-exec.sh
     cp "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
+    cp "$TEMP_FILES"/target-selection.sh $LOCAL_FILES/target-selection.sh
     cp "$TEMP_FILES"/target-inventory.sh $LOCAL_FILES/target-inventory.sh
     chmod 750 $LOCAL_FILES/target-inventory.sh
     cp "$TEMP_FILES"/targets.conf $LOCAL_FILES/targets.conf
     cp "$TEMP_FILES"/status-model.sh $LOCAL_FILES/status-model.sh
     chmod 750 $LOCAL_FILES/status-model.sh
+    chmod 750 $LOCAL_FILES/target-selection.sh
     cp "$TEMP_FILES"/windows-update.sh $LOCAL_FILES/windows-update.sh
     chmod 750 $LOCAL_FILES/windows-update.sh
     cp "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
+    cp "$TEMP_FILES"/apt-count.py $LOCAL_FILES/apt-count.py
+    chmod 750 "$LOCAL_FILES"/apt-count.py
+    cp "$TEMP_FILES"/rpm-count.py $LOCAL_FILES/rpm-count.py
+    chmod 750 "$LOCAL_FILES"/rpm-count.py
+    cp "$TEMP_FILES"/package-count.sh $LOCAL_FILES/package-count.sh
+    chmod 750 "$LOCAL_FILES"/package-count.sh
     cp "$TEMP_FILES"/internal-ssh.sh $LOCAL_FILES/internal-ssh.sh
     chmod 750 $LOCAL_FILES/internal-ssh.sh
     cp "$TEMP_FILES"/config-merge.sh $LOCAL_FILES/config-merge.sh
@@ -492,6 +620,10 @@ INSTALL () {
     fi
     cp "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
     chmod 750 $LOCAL_FILES/job-runner.sh
+    if [[ -f "$TEMP_FILES"/job-pty-bridge.py ]]; then
+      cp "$TEMP_FILES"/job-pty-bridge.py $LOCAL_FILES/job-pty-bridge.py
+      chmod 750 $LOCAL_FILES/job-pty-bridge.py
+    fi
     if [[ -f "$TEMP_FILES"/global-update.sh ]]; then
       cp "$TEMP_FILES"/global-update.sh $LOCAL_FILES/global-update.sh
       chmod 750 $LOCAL_FILES/global-update.sh
@@ -512,6 +644,14 @@ INSTALL () {
         install -m 0644 "$TEMP_FILES/web-ui/assets/$UI_ASSET" "$LOCAL_FILES/web-ui/assets/$UI_ASSET"
       fi
     done
+    if [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.js" && -f "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.css" ]]; then
+      mkdir -p "$LOCAL_FILES/web-ui/assets/vendor/xterm"
+      install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.js" "$LOCAL_FILES/web-ui/assets/vendor/xterm/xterm.js"
+      install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.css" "$LOCAL_FILES/web-ui/assets/vendor/xterm/xterm.css"
+      [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/addon-fit.js" ]] && install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/addon-fit.js" "$LOCAL_FILES/web-ui/assets/vendor/xterm/addon-fit.js"
+      [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/addon-fit.LICENSE" ]] && install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/addon-fit.LICENSE" "$LOCAL_FILES/web-ui/assets/vendor/xterm/addon-fit.LICENSE"
+      [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/LICENSE" ]] && install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/LICENSE" "$LOCAL_FILES/web-ui/assets/vendor/xterm/LICENSE"
+    fi
     install -m 0644 "$TEMP_FILES/$WEB_SERVICE_NAME" "$WEB_SERVICE_PATH"
     cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf
     if [[ -f "$TEMP_FILES"/update.conf.dist ]]; then
@@ -519,16 +659,16 @@ INSTALL () {
     else
       cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf.dist
     fi
-    WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" || exit 1
+    WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" "$ARCHIVE_VERSION" "$ARCHIVE_BETA" || exit 1
     cp "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     SETUP_WEB_SERVICE start
     START_INITIAL_INVENTORY
     echo -e "✅${GN:-} Ultimate Updater installed successfully.${CL:-}"
-    echo -e "   Installed: $BRANCH"
+    echo -e "   Installed: $(FORMAT_ARCHIVE_IDENTITY)"
     echo -e "${OR:-}Also want to install the Welcome-Screen?${CL:-}"
     read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-      WELCOME_SCREEN_INSTALL
+      WELCOME_SCREEN_INSTALL "$TEMP_FILES/welcome-screen.sh" || exit 1
     fi
     rm -rf $TEMP_FOLDER || true
   fi
@@ -552,6 +692,7 @@ UPDATE () {
     tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || return 1
     rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
     SET_TEMP_FILES || return 1
+    READ_PAYLOAD_METADATA || return 1
     installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
     target_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$TEMP_FILES/update.sh" 2>/dev/null || true)
     installed_major=''
@@ -627,6 +768,10 @@ UPDATE () {
     chmod 750 $LOCAL_FILES/update.sh
     mv "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     mv "$TEMP_FILES"/tag-filter.sh $LOCAL_FILES/tag-filter.sh
+    if [[ -f "$TEMP_FILES"/target-selection.sh ]]; then
+      mv "$TEMP_FILES"/target-selection.sh $LOCAL_FILES/target-selection.sh
+      chmod 750 "$LOCAL_FILES/target-selection.sh"
+    fi
     if [[ -f "$TEMP_FILES"/target-inventory.sh ]]; then
       mv "$TEMP_FILES"/target-inventory.sh $LOCAL_FILES/target-inventory.sh
       chmod 750 $LOCAL_FILES/target-inventory.sh
@@ -642,6 +787,18 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/target-runtime.sh ]]; then
       mv "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
       chmod 750 $LOCAL_FILES/target-runtime.sh
+    fi
+    if [[ -f "$TEMP_FILES"/apt-count.py ]]; then
+      mv "$TEMP_FILES"/apt-count.py $LOCAL_FILES/apt-count.py
+      chmod 750 $LOCAL_FILES/apt-count.py
+    fi
+    if [[ -f "$TEMP_FILES"/rpm-count.py ]]; then
+      mv "$TEMP_FILES"/rpm-count.py $LOCAL_FILES/rpm-count.py
+      chmod 750 $LOCAL_FILES/rpm-count.py
+    fi
+    if [[ -f "$TEMP_FILES"/package-count.sh ]]; then
+      mv "$TEMP_FILES"/package-count.sh $LOCAL_FILES/package-count.sh
+      chmod 750 $LOCAL_FILES/package-count.sh
     fi
     if [[ -f "$TEMP_FILES"/internal-ssh.sh ]]; then
       mv "$TEMP_FILES"/internal-ssh.sh $LOCAL_FILES/internal-ssh.sh
@@ -696,6 +853,10 @@ UPDATE () {
       mv "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
       chmod 750 $LOCAL_FILES/job-runner.sh
     fi
+    if [[ -f "$TEMP_FILES"/job-pty-bridge.py ]]; then
+      mv "$TEMP_FILES"/job-pty-bridge.py $LOCAL_FILES/job-pty-bridge.py
+      chmod 750 $LOCAL_FILES/job-pty-bridge.py
+    fi
     if [[ -f "$TEMP_FILES"/global-update.sh ]]; then
       mv "$TEMP_FILES"/global-update.sh $LOCAL_FILES/global-update.sh
       chmod 750 $LOCAL_FILES/global-update.sh
@@ -728,11 +889,23 @@ UPDATE () {
         fi
       done
     fi
+    if [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.js" && -f "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.css" ]]; then
+      mkdir -p "$LOCAL_FILES/web-ui/assets/vendor/xterm"
+      install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.js" "$LOCAL_FILES/web-ui/assets/vendor/xterm/xterm.js"
+      install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/xterm.css" "$LOCAL_FILES/web-ui/assets/vendor/xterm/xterm.css"
+      [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/addon-fit.js" ]] && install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/addon-fit.js" "$LOCAL_FILES/web-ui/assets/vendor/xterm/addon-fit.js"
+      [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/addon-fit.LICENSE" ]] && install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/addon-fit.LICENSE" "$LOCAL_FILES/web-ui/assets/vendor/xterm/addon-fit.LICENSE"
+      [[ -f "$TEMP_FILES/web-ui/assets/vendor/xterm/LICENSE" ]] && install -m 0644 "$TEMP_FILES/web-ui/assets/vendor/xterm/LICENSE" "$LOCAL_FILES/web-ui/assets/vendor/xterm/LICENSE"
+    fi
     if [[ -f "$TEMP_FILES/$WEB_SERVICE_NAME" ]]; then
       install -m 0644 "$TEMP_FILES/$WEB_SERVICE_NAME" "$WEB_SERVICE_PATH"
     fi
     mv "$TEMP_FILES"/check-updates.sh $LOCAL_FILES/check-updates.sh
     chmod +x $LOCAL_FILES/check-updates.sh
+    if [[ -f "$TEMP_FILES/product-metadata.sh" ]]; then
+      mv "$TEMP_FILES"/product-metadata.sh $LOCAL_FILES/product-metadata.sh
+      chmod 644 $LOCAL_FILES/product-metadata.sh
+    fi
     if [[ -f "$TEMP_FILES"/qga-guest-exec.sh ]]; then
       mv "$TEMP_FILES"/qga-guest-exec.sh $LOCAL_FILES/qga-guest-exec.sh
       chmod 750 "$LOCAL_FILES"/qga-guest-exec.sh
@@ -755,26 +928,20 @@ UPDATE () {
           apt-get install screenfetch -y || true
         fi
       fi
-      # change crontab entry
-      CRON_FILE="/etc/crontab"
-      BACKUP="/etc/crontab.bak.$(date +%Y%m%d-%H%M%S)"
-      if grep -Eq "check-updates\.sh|update -check" "$CRON_FILE"; then
-        if ! grep -q "RUN_FROM_CRON=true.*update -check" "$CRON_FILE"; then
-          cp "$CRON_FILE" "$BACKUP"
-          sed -i '/check-updates\.sh/d; /update -check/d' "$CRON_FILE"
-          echo "00 06   * * *   root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> "$CRON_FILE"
-        fi
-      fi
+      ensure_scheduled_check_cron /etc/crontab false
     else
       rm -rf "$TEMP_FILES"/welcome-screen.sh || true
       rm -rf "$TEMP_FILES"/check-updates.sh || true
     fi
     cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
-    WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" || return 1
+    WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" "$ARCHIVE_VERSION" "$ARCHIVE_BETA" || return 1
     rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
     # targets.conf is runtime inventory and must not be replaced by the
     # repository template after legacy migration or user edits.
     rm -f "$TEMP_FILES"/targets.conf
+    # target-selection.json is persistent user-owned state.  It is never a
+    # repository payload and must not enter the generic replacement pass.
+    rm -f "$TEMP_FILES"/target-selection.json
     rm -rf "$TEMP_FILES"/web-ui || true
     rm -f "$TEMP_FILES/$WEB_SERVICE_NAME"
     # Check if files are different
@@ -830,7 +997,7 @@ UPDATE () {
     fi
     rm -rf $TEMP_FOLDER || true
     echo -e "✅${GN:-} Ultimate Updater updated successfully.${CL:-}"
-    echo -e "   Installed: $BRANCH"
+    echo -e "   Installed: $(FORMAT_ARCHIVE_IDENTITY)"
     if [[ "$UPGRADE_RESTART_REQUIRED" == true ]]; then
       echo -e "${OR:-}⚠ A restart of this Proxmox host is required to fully complete the Ultimate Updater migration.\n  The host remains usable, but some Ultimate Updater components may not work reliably until it has been restarted.\n  Please restart the host when it is safe to do so.${CL:-}\n"
     elif [[ $NEED_REBOOT == true ]]; then
@@ -917,7 +1084,9 @@ WELCOME_SCREEN () {
       echo -e "${OR:-} Welcome-Screen is not installed${CL:-}\n"
       read -p "Would you like to install it also? Type [Y/y] or Enter for yes - anything else will skip: " -r
       if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-        WELCOME_SCREEN_INSTALL
+        if ! WELCOME_SCREEN_INSTALL "$TEMP_FOLDER/welcome-screen.sh"; then
+          return 1
+        fi
       fi
     else
       echo -e "${OR:-}  Welcome-Screen is already installed${CL:-}\n"
@@ -937,15 +1106,21 @@ ${BL:-} crontab file restored (old one backed up as crontab.bak)${CL:-}\n"
 }
 
 WELCOME_SCREEN_INSTALL () {
+  local welcome_source="${1:-$TEMP_FOLDER/welcome-screen.sh}"
+  if [[ ! -r "$welcome_source" ]]; then
+    echo "Welcome-Screen asset is missing: $welcome_source" >&2
+    return 1
+  fi
   if [[ -f /etc/motd ]];then mv /etc/motd /etc/motd.bak; fi
   touch /etc/motd
   cp /etc/crontab /etc/crontab.bak
-  cp $TEMP_FOLDER/welcome-screen.sh /etc/update-motd.d/01-welcome-screen
+  if ! cp "$welcome_source" /etc/update-motd.d/01-welcome-screen; then
+    echo "Could not install Welcome-Screen asset: $welcome_source" >&2
+    return 1
+  fi
   chmod +x /etc/update-motd.d/01-welcome-screen
   if ! [[ -f $LOCAL_FILES/check-output ]]; then touch $LOCAL_FILES/check-output; fi
-  if ! grep -Eq "check-updates\.sh|update -check" /etc/crontab; then
-    echo "00 06   * * *   root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1" >> /etc/crontab
-  fi
+  ensure_scheduled_check_cron /etc/crontab
   # Fetch tool install (neofetch or screenfetch)
   if ! command -v neofetch >/dev/null 2>&1 && ! command -v screenfetch >/dev/null 2>&1; then
     echo -e "${OR:-}  Install neofetch or screenfetch?${CL:-}"
@@ -1006,14 +1181,12 @@ ${BL:-} crontab file restored (old one backed up as crontab.bak)${CL:-}\n"
 set -e
 EXIT () {
   EXIT_CODE=$?
-  # Install Finish
-  if  [[ $EXIT_CODE -lt 2 ]]; then
+  if [[ "$EXIT_CODE" -eq 0 ]]; then
     exit 0
-  elif [[ $EXIT_CODE != "0" ]]; then
-    rm -rf $TEMP_FOLDER || true
-    echo -e "❌${RD:-} Error during install --- Exit Code: $EXIT_CODE${CL:-}\n"
-    exit "$EXIT_CODE"
   fi
+  rm -rf "$TEMP_FOLDER" || true
+  echo -e "❌${RD:-} Error during install --- Exit Code: $EXIT_CODE${CL:-}\n"
+  exit "$EXIT_CODE"
 }
 
 # Exit Code

@@ -33,10 +33,58 @@ else
   # shellcheck disable=SC2317,SC2329
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
   READ_APT_UPDATE_COUNTS() {
-    local apt_total
-    SECURITY_APT_UPDATES=$(printf '%s\n' "$1" | grep -ci '^inst.*security' || true)
-    apt_total=$(printf '%s\n' "$1" | grep -ci '^inst.' || true)
-    NORMAL_APT_UPDATES=$((apt_total - SECURITY_APT_UPDATES))
+    local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+    local result
+    result=$(python3 "$script") || {
+      SECURITY_APT_UPDATES=null
+      NORMAL_APT_UPDATES=null
+      APT_COUNTS_TOTAL=null
+      return 1
+    }
+    PARSE_APT_UPDATE_COUNTS "$result"
+  }
+  PARSE_APT_UPDATE_COUNTS() {
+    local result="$1" total normal security known
+    IFS='|' read -r _ total normal security known _ <<<"$result"
+    if [[ ! "$total" =~ ^[0-9]+$ || ! "$normal" =~ ^[0-9]+$ ||
+      ! "$security" =~ ^[0-9]+$ || "$known" != true ]]; then
+      SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
+    fi
+    APT_COUNTS_TOTAL="$total"; NORMAL_APT_UPDATES="$normal"; SECURITY_APT_UPDATES="$security"
+    [[ $((normal + security)) -eq $total ]]
+  }
+  APT_COUNT_REMOTE_COMMAND() {
+    local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}" encoded
+    encoded=$(base64 -w0 "$script") || return 1
+    printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
+  }
+  PARSE_RPM_UPDATE_COUNTS() {
+    local result="$1" marker status total normal security known
+    IFS='|' read -r marker status total normal security known _ <<<"$result"
+    if [[ "$marker" != UU_RPM_COUNTS || "$status" != ok || ! "$total" =~ ^[0-9]+$ ||
+      "$normal" != null || "$security" != null || "$known" != false ]]; then
+      RPM_COUNTS_TOTAL=null; return 1
+    fi
+    RPM_COUNTS_TOTAL="$total"
+  }
+  RPM_COUNT_REMOTE_COMMAND() {
+    local script="${RPM_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/rpm-count.py}" encoded
+    encoded=$(base64 -w0 "$script") || return 1
+    printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
+  }
+  PARSE_PACKAGE_UPDATE_COUNTS() {
+    local result="$1" marker status manager total normal security known
+    IFS='|' read -r marker status manager total normal security known _ <<<"$result"
+    if [[ "$marker" != UU_PACKAGE_COUNTS || "$status" != ok || ! "$total" =~ ^[0-9]+$ ||
+      "$normal" != null || "$security" != null || "$known" != false ]]; then
+      PACKAGE_COUNTS_TOTAL=null; return 1
+    fi
+    PACKAGE_COUNTS_TOTAL="$total"
+  }
+  PACKAGE_COUNT_REMOTE_COMMAND() {
+    local manager="$1" script="${PACKAGE_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/package-count.sh}" encoded
+    encoded=$(base64 -w0 "$script") || return 1
+    printf 'printf %%s %q | base64 -d | sh -s -- %q' "$encoded" "$manager"
   }
   RUN_PROXMOX_COMMAND() { if [[ "${DEBUG:-false}" == true ]]; then "$@"; else "$@" >/dev/null 2>&1; fi; }
   RUN_PROXMOX_CAPTURE() { local rc; PROXMOX_CAPTURE_OUTPUT=$("$@" 2>&1); rc=$?; [[ "${DEBUG:-false}" == true && -n "$PROXMOX_CAPTURE_OUTPUT" ]] && printf '%s\n' "$PROXMOX_CAPTURE_OUTPUT"; return "$rc"; }
@@ -93,12 +141,83 @@ fi
 # unchanged and older consumers continue to work.
 CHECK_HARD_FAILURE_FILE="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}.hard-failure"
 rm -f -- "$CHECK_HARD_FAILURE_FILE"
+CHECK_ZERO_TARGET_FILE="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}.zero-target"
+rm -f -- "$CHECK_ZERO_TARGET_FILE"
+CHECK_RUN_META_FILE="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}.run-meta"
+rm -f -- "$CHECK_RUN_META_FILE"
 if [[ ! -f "$STATUS_MODEL_SCRIPT" ]]; then
   : > "$CHECK_HARD_FAILURE_FILE"
   CHECK_FAILURE=1
 fi
 mark_check_hard_failure() {
   : > "$CHECK_HARD_FAILURE_FILE" 2>/dev/null || true
+}
+
+STATUS_MODEL_GLOBAL_SCOPE_IS_PARTIAL() {
+  [[ "${UU_GLOBAL_CHECK:-false}" == true ]] || return 1
+  [[ -n "${ONLY:-}" || -n "${EXCLUDED:-}" ]] && return 0
+  [[ "${WITH_HOST:-true}" == true && "${WITH_LXC:-true}" == true && "${WITH_VM:-true}" == true ]] || return 0
+  if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true &&
+    -r "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" ]]; then
+    python3 - "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        payload = json.load(source)
+    check = payload.get("check", {}) if isinstance(payload, dict) else {}
+    raise SystemExit(0 if isinstance(check, dict) and bool(check) else 1)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+PY
+    return $?
+  fi
+  return 1
+}
+
+STATUS_MODEL_MARK_ZERO_TARGETS() {
+  : > "$CHECK_ZERO_TARGET_FILE" 2>/dev/null || true
+  CHECK_FAILURE=1
+  mark_check_hard_failure
+}
+
+STATUS_MODEL_WRITE_RUN_META() {
+  [[ "${STATUS_MODEL_PARTIAL:-false}" == true || -e "$CHECK_ZERO_TARGET_FILE" ]] || return 0
+  python3 - "${STATUS_MODEL_RECORD_FILE:-}" "$CHECK_RUN_META_FILE" <<'PY'
+import base64
+import json
+import sys
+
+record_file, meta_file = sys.argv[1:]
+checked = 0
+available = 0
+known = True
+try:
+    records = open(record_file, encoding="utf-8")
+except OSError:
+    records = []
+for line in records:
+    fields = line.rstrip("\n").split("\t")
+    if len(fields) < 7:
+        continue
+    try:
+        value = base64.b64decode(fields[6]).decode()
+    except (ValueError, UnicodeError):
+        continue
+    checked += 1
+    if value in ("", "null"):
+        known = False
+    else:
+        try:
+            available += int(value)
+        except ValueError:
+            known = False
+if records:
+    records.close()
+with open(meta_file, "w", encoding="utf-8") as output:
+    json.dump({"checked": checked, "available": available if known else None}, output)
+PY
 }
 
 STATUS_MODEL_DIAGNOSTIC() {
@@ -122,8 +241,17 @@ CENTRAL_REMOTE_PHASE() {
   fi
 }
 
+# Explicitly opt-in trace for one controlled remote-check run. This records
+# lifecycle metadata only and does not alter execution, retries, or results.
+REMOTE_TRACE() {
+  [[ "${UU_REMOTE_TRACE:-false}" == true ]] || return 0
+  STATUS_MODEL_DIAGNOSTIC "REMOTE_TRACE $*"
+  [[ -n "${STATUS_MODEL_DIAGNOSTICS_FILE:-}" ]] || printf 'REMOTE_TRACE %s\n' "$*" >&2
+}
+
 # Tag filter
 TAG_FILTER_FILE="${TAG_FILTER_FILE:-$LOCAL_FILES/tag-filter.sh}"
+USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
 # shellcheck disable=SC1090,SC1091
 . "$TAG_FILTER_FILE"
 
@@ -170,26 +298,6 @@ else
     QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC
   }
 fi
-
-QEMU_COUNT_RESULT_OK () {
-  local QEMU_COUNT_LABEL="$1"
-  local QEMU_COUNT_ZERO=false
-  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
-    echo -e "${RD}${QEMU_COUNT_LABEL} failed: ${QEMU_EXEC_OUTPUT}${CL}"
-    return 1
-  fi
-  # grep -c returns 1 for zero matches. That is the only non-zero guest
-  # status accepted for numeric update-count commands; all other failures
-  # must remain visible instead of being treated as zero updates.
-  if [[ "$QEMU_EXEC_EXITCODE" -eq 1 && "$QEMU_EXEC_STDOUT" =~ ^[[:space:]]*0[[:space:]]*$ && -z "$QEMU_EXEC_STDERR" ]]; then
-    QEMU_COUNT_ZERO=true
-  fi
-  if [[ "$QEMU_EXEC_EXITCODE" -ne 0 && "$QEMU_COUNT_ZERO" != true ]]; then
-    echo -e "${RD}${QEMU_COUNT_LABEL} failed (guest exit code $QEMU_EXEC_EXITCODE): ${QEMU_EXEC_OUTPUT}${CL}"
-    return 1
-  fi
-  return 0
-}
 
 ARGUMENTS () {
   local check_rc
@@ -247,7 +355,7 @@ ARGUMENTS () {
       host)
         COMMAND=true
         OUTPUT_TO_FILE
-        if [[ "$WITH_HOST" == true ]]; then CHECK_HOST_ITSELF; fi
+        if [[ "$WITH_HOST" == true && "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" != true ]]; then CHECK_HOST_ITSELF; fi
         # An explicit node check is a host observation, even when the
         # global configuration enables guest checks.  The configured guest
         # scope belongs to the full/automatic check path only.
@@ -306,6 +414,8 @@ READ_WRITE_CONFIG () {
   # REBOOT_IF_NEEDED belongs to update.sh; checks only report reboot_required.
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' $CONFIG_FILE)
+  USE_INTERNAL_TARGET_SELECTION=$(awk -F'"' '/^USE_INTERNAL_TARGET_SELECTION=/ {print $2}' "$CONFIG_FILE")
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   CHECK_URL=$(awk -F '"' '/^URL_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
   EXE_FOR_INTERNET_CHECK=$(awk -F '"' '/^EXE_FOR_INTERNET_CHECK=/ {print $2}' $CONFIG_FILE)
   EXE_FOR_INTERNET_CHECK="${EXE_FOR_INTERNET_CHECK:-ping}"
@@ -339,7 +449,7 @@ GUEST_INTERNET_PREFLIGHT_PCT() {
   local command
   command=$(GUEST_INTERNET_PREFLIGHT_COMMAND) || return 1
   UU_CHECK_PCT_COMMAND_TIMEOUT="${UU_GUEST_PREFLIGHT_TIMEOUT:-5}" \
-    RUN_PCT_COMMAND "$1" bash -c "$command"
+    RUN_PCT_COMMAND "$1" sh -c "$command"
 }
 
 GUEST_INTERNET_PREFLIGHT_SSH() {
@@ -363,7 +473,7 @@ WAIT_FOR_BOOTUP_LXC () {
   COUNT=1
   sleep "$LXC_START_DELAY"
   while [ $COUNT -le $MAX_RETRIES ]; do
-    if timeout 10 pct exec "$CONTAINER" -- bash -c "exit" >/dev/null 2>&1; then
+    if timeout 10 pct exec "$CONTAINER" -- sh -c "exit" >/dev/null 2>&1; then
       break
     else
       sleep "$LXC_START_DELAY"
@@ -505,15 +615,53 @@ PY
 }
 
 HOST_CHECK_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
+  local host_selected=true host_id host_only_scope=false host_count=0 host_eligible_ids=""
+  for host in $HOSTS; do host_count=$((host_count + 1)); done
+  REMOTE_TRACE "step=host_candidates count=$host_count"
+  for host in $HOSTS; do
+    REMOTE_TRACE "step=host_candidate host=host:$(CLUSTER_HOST_NODE "$host")"
+  done
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    host_eligible_ids="$(for host in $HOSTS; do printf 'host:%s ' "$(CLUSTER_HOST_NODE "$host")"; done)"
+    UU_FILTER_SCOPE=check UU_FILTER_ELIGIBLE_IDS="$host_eligible_ids" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   for HOST in $HOSTS; do
+    host_selected=true
+    host_only_scope=false
+    host_id="host:$(CLUSTER_HOST_NODE "$HOST")"
+    REMOTE_TRACE "host=$host_id step=host_loop_enter"
+    if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+      # Guest checks below intentionally reuse UU_FILTER_ELIGIBLE_IDS for
+      # their own scope. Keep host eligibility stable across those calls.
+      TARGET_SELECTION_ALLOWS check "host:$(CLUSTER_HOST_NODE "$HOST")" "$host_eligible_ids" || host_selected=false
+      if [[ "$host_selected" != true ]] &&
+        ! TARGET_SELECTION_GUEST_ONLY_REQUIRES_HOST check "$host_id"; then
+        continue
+      fi
+      if [[ "$host_selected" == true ]] &&
+        TARGET_SELECTION_HAS_HOST_ONLY check &&
+        ! TARGET_SELECTION_HAS_GUEST_ONLY check; then
+        host_only_scope=true
+      fi
+    fi
     if HOST_IS_LOCAL "$HOST"; then
-      CHECK_HOST_ITSELF
-      if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
-      if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
+      REMOTE_TRACE "host=$host_id step=host_local_or_remote mode=local"
+      [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
+      [[ "$host_selected" == true ]] && CHECK_HOST_ITSELF
+      if [[ "$host_only_scope" != true && "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
+      if [[ "$host_only_scope" != true && "$WITH_VM" == true ]]; then VM_CHECK_START; fi
+      unset UU_INTERNAL_SKIP_HOST_TARGET
     else
+      REMOTE_TRACE "host=$host_id step=host_local_or_remote mode=remote"
+      [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
+      [[ "$host_only_scope" == true ]] && export UU_INTERNAL_SKIP_GUEST_TARGETS=true
+      REMOTE_TRACE "host=$host_id step=check_host_call"
       if ! CHECK_HOST "$HOST"; then
         CHECK_FAILURE=1
       fi
+      unset UU_INTERNAL_SKIP_HOST_TARGET
+      unset UU_INTERNAL_SKIP_GUEST_TARGETS
     fi
   done
 }
@@ -521,6 +669,7 @@ HOST_CHECK_START () {
 # Host Check
 CHECK_HOST () {
   local HOST=$1 remote_check_dir remote_status remote_status_file remote_done_file
+  local remote_apt_count remote_rpm_count
   local remote_done_value remote_status_attempt HOST_NODE HOST_ID remote_done_error_file remote_status_error_file remote_diagnostics_error_file
   local remote_diagnostics_file remote_diagnostics_local_file remote_diagnostics_attempt
   local remote_done_found=false remote_done_transport_rc=0 remote_status_transport_rc=0
@@ -530,6 +679,7 @@ CHECK_HOST () {
   local remote_job_timeout="${UU_CHECK_REMOTE_JOB_TIMEOUT:-300}"
   local remote_cleanup_state=pending remote_diag_level=success remote_failure_class=none
   HOST_NODE=$(CLUSTER_HOST_NODE "$HOST")
+  REMOTE_TRACE "host=host:$HOST_NODE step=check_host_enter"
   CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_START node=$HOST_NODE host=$HOST"
   if ! INTERNAL_SSH_RESOLVE_NODE "$HOST_NODE" "$HOST" "$SSH_PORT"; then
     CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=resolve"
@@ -546,9 +696,12 @@ CHECK_HOST () {
   # checks overlap or are retried.  Keep the artifact private to this one
   # dispatch and let the remote wrapper signal completion explicitly.
   remote_check_dir="/tmp/ultimate-updater-check-${$}-${RANDOM}-${RANDOM}"
+  remote_apt_count="$remote_check_dir/apt-count.py"
+  remote_rpm_count="$remote_check_dir/rpm-count.py"
   remote_done_file="$remote_check_dir/completed"
   remote_runtime_env=""
   remote_status_env=""
+  [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_status_env=" UU_INTERNAL_SKIP_HOST_TARGET=true"
   remote_status_validation=""
   remote_status_file="/tmp/ultimate-updater-remote-status-$$-$RANDOM.json"
   remote_diagnostics_file="$remote_check_dir/status-diagnostics"
@@ -565,6 +718,21 @@ CHECK_HOST () {
     CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=prepare"
     return 1
   fi
+  if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true && -f "${TARGET_SELECTION_SCRIPT:-}" ]]; then
+    if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$TARGET_SELECTION_SCRIPT" "$HOST:$remote_check_dir/target-selection.sh" >/dev/null 2>&1; then
+      CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare remote target selection helper on host $HOST${CL}"
+      return 1
+    fi
+    if [[ -f "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" ]] &&
+      ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" "$HOST:$remote_check_dir/target-selection.json" >/dev/null 2>&1; then
+      CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare remote target selection state on host $HOST${CL}"
+      return 1
+    fi
+    remote_status_env=" UU_TARGET_SELECTION_SCRIPT='$remote_check_dir/target-selection.sh' UU_TARGET_SELECTION_FILE='$remote_check_dir/target-selection.json'$remote_status_env"
+  fi
+  REMOTE_TRACE "host=host:$HOST_NODE step=helper_prepare rc=0"
   if [[ -f "$TARGET_RUNTIME_FILE" ]]; then
     if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$TARGET_RUNTIME_FILE" "$HOST:$remote_check_dir/target-runtime.sh" >/dev/null 2>&1; then
       CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
@@ -573,7 +741,15 @@ CHECK_HOST () {
       CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=prepare-target-runtime"
       return 1
     fi
-    remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh'"
+    if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
+      "$LOCAL_FILES/apt-count.py" "$HOST:$remote_apt_count" >/dev/null 2>&1 ||
+      ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
+      "$LOCAL_FILES/rpm-count.py" "$HOST:$remote_rpm_count" >/dev/null 2>&1; then
+      CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare package count helpers on remote host $HOST${CL}"
+      return 1
+    fi
+    remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh' APT_COUNT_SCRIPT='$remote_apt_count' RPM_COUNT_SCRIPT='$remote_rpm_count'"
   fi
   if [[ -f "$STATUS_MODEL_SCRIPT" ]]; then
     if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$STATUS_MODEL_SCRIPT" "$HOST:$remote_check_dir/status-model.sh" >/dev/null 2>&1; then
@@ -587,25 +763,71 @@ CHECK_HOST () {
     # filter banner is an execution detail and must not be repeated once per
     # worker in the user's job output.
     remote_status_env=" TAG_OUTPUT=false STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records' STATUS_MODEL_DIAGNOSTICS_FILE='$remote_diagnostics_file'"
+    if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true && -f "${TARGET_SELECTION_SCRIPT:-}" ]]; then
+      remote_status_env=" UU_TARGET_SELECTION_SCRIPT='$remote_check_dir/target-selection.sh' UU_TARGET_SELECTION_FILE='$remote_check_dir/target-selection.json'$remote_status_env"
+    fi
+    [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_status_env=" UU_INTERNAL_SKIP_HOST_TARGET=true$remote_status_env"
+    [[ "${UU_INTERNAL_SKIP_GUEST_TARGETS:-false}" == true ]] && remote_status_env=" UU_CHECK_SCOPE=host$remote_status_env"
     remote_status_validation=" if [[ \"\$remote_rc\" -eq 0 && ! -s '$remote_check_dir/status.json' ]]; then remote_rc=86; elif [[ \"\$remote_rc\" -eq 0 ]] && ! python3 -c 'import json,sys; payload=json.load(open(sys.argv[1], encoding=\"utf-8\")); assert isinstance(payload, dict) and isinstance(payload.get(\"targets\"), list)' '$remote_check_dir/status.json'; then remote_rc=87; fi;"
   fi
+  [[ "${UU_REMOTE_TRACE:-false}" == true ]] && remote_status_env=" UU_REMOTE_TRACE=true$remote_status_env"
+  REMOTE_TRACE "host=host:$HOST_NODE step=helper_copy rc=0"
   if [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]]; then
     # The remote check derives its lifecycle-safe mode from this explicit
     # job context. Never infer it from the command name.
     remote_status_env=" UU_JOB_SOURCE=initial-inventory REMOTE_JOB_SOURCE=initial-inventory REMOTE_INITIAL_INVENTORY=true$remote_status_env"
   fi
+  # Stage guest-specific helpers with the remote worker. The check script
+  # itself is streamed via stdin, so using helpers already installed on the
+  # remote node could mix versions during a cluster-wide check.
+  local remote_guest_helper_env=""
+
+  if [[ -f "$QGA_EXEC_SCRIPT" ]]; then
+    if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
+      "$QGA_EXEC_SCRIPT" "$HOST:$remote_check_dir/qga-guest-exec.sh" >/dev/null 2>&1; then
+      CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 \
+        "$HOST" -p "$SSH_PORT" \
+        "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare QGA helper on remote host $HOST${CL}"
+      STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error \
+        REMOTE_HELPER_TRANSFER_FAILED \
+        "Could not transfer qga-guest-exec.sh to $HOST_NODE" "$HOST_NODE"
+      return 1
+    fi
+    remote_guest_helper_env+=" UU_QGA_EXEC_SCRIPT='$remote_check_dir/qga-guest-exec.sh'"
+  fi
+
+  if [[ -f "$WINDOWS_UPDATE_FILE" ]]; then
+    if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
+      "$WINDOWS_UPDATE_FILE" "$HOST:$remote_check_dir/windows-update.sh" >/dev/null 2>&1; then
+      CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 \
+        "$HOST" -p "$SSH_PORT" \
+        "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      echo -e "${RD}Could not prepare Windows helper on remote host $HOST${CL}"
+      STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error \
+        REMOTE_HELPER_TRANSFER_FAILED \
+        "Could not transfer windows-update.sh to $HOST_NODE" "$HOST_NODE"
+      return 1
+    fi
+    remote_guest_helper_env+=" WINDOWS_UPDATE_FILE='$remote_check_dir/windows-update.sh'"
+  fi
+
+  remote_runtime_env="${remote_runtime_env}${remote_guest_helper_env}"
+
   if CHECK_REMOTE_JOB_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" \
     "printf '%s\\n' \"REMOTE_CHECK_START node=$HOST_NODE\" >> '$remote_diagnostics_file'; UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true TAG_FILTER_FILE='$remote_check_dir/tag-filter.sh'$remote_runtime_env$remote_status_env timeout '$remote_job_timeout' bash -s -- host; remote_rc=\$?; printf '%s\\n' \"REMOTE_CHECK_RETURN node=$HOST_NODE rc=\$remote_rc\" >> '$remote_diagnostics_file'; finish_rc=0; finish_error_file='$remote_check_dir/status-finish.error'; printf '%s\\n' \"STATUS_MODEL_FINISH_START node=$HOST_NODE script=$remote_check_dir/status-model.sh file=$remote_check_dir/status.json records=$remote_check_dir/status.records\" >> '$remote_diagnostics_file'; if [[ -f '$remote_check_dir/status-model.sh' ]]; then STATUS_MODEL_NODE='$HOST_NODE'; STATUS_MODEL_FILE='$remote_check_dir/status.json'; STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records'; . '$remote_check_dir/status-model.sh'; STATUS_MODEL_FINISH >/dev/null 2>\"\$finish_error_file\" || finish_rc=\$?; else finish_rc=1; printf '%s\\n' 'status-model script missing' > \"\$finish_error_file\"; fi; finish_reason=none; if [[ -s \"\$finish_error_file\" ]]; then finish_reason=\$(tr '\\n' ' ' < \"\$finish_error_file\" | cut -c1-500); fi; finish_exists=false; [[ -s '$remote_check_dir/status.json' ]] && finish_exists=true; finish_size=0; [[ -e '$remote_check_dir/status.json' ]] && finish_size=\$(stat -c '%s' '$remote_check_dir/status.json' 2>/dev/null || printf '0'); printf '%s\\n' \"STATUS_MODEL_FINISH_END node=$HOST_NODE rc=\$finish_rc exists=\$finish_exists size=\$finish_size reason=\$finish_reason\" >> '$remote_diagnostics_file'; if [[ \"\$remote_rc\" -eq 0 && \"\$finish_rc\" -ne 0 ]]; then remote_rc=\$finish_rc; fi;$remote_status_validation printf '%s\\n' \"COMPLETION_WRITE node=$HOST_NODE rc=\$remote_rc\" >> '$remote_diagnostics_file'; printf '%s\\n' \"\$remote_rc\" > '$remote_done_file'; rm -f -- \"\$finish_error_file\"; exit \"\$remote_rc\"" < "$0"; then
     remote_status=0
   else
     remote_status=$?
   fi
+  REMOTE_TRACE "host=host:$HOST_NODE step=remote_launch rc=$remote_status"
   CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_SSH_RETURN node=$HOST_NODE rc=$remote_status"
   CENTRAL_REMOTE_PHASE "CENTRAL_COMPLETION_FETCH_START node=$HOST_NODE"
   remote_done_value=""
   for remote_status_attempt in 1 2 3; do
     remote_done_transport_rc=0
     remote_done_value=$(CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "cat -- '$remote_done_file'" 2>"$remote_done_error_file") || remote_done_transport_rc=$?
+    REMOTE_TRACE "host=host:$HOST_NODE step=completion_fetch attempt=$remote_status_attempt rc=$remote_done_transport_rc found=$([[ "$remote_done_value" =~ ^[0-9]+$ ]] && echo true || echo false)"
     if [[ "$remote_done_value" =~ ^[0-9]+$ ]]; then
       remote_done_found=true
       break
@@ -613,35 +835,43 @@ CHECK_HOST () {
     sleep 0.2
   done
   CENTRAL_REMOTE_PHASE "CENTRAL_COMPLETION_FETCH_END node=$HOST_NODE rc=$remote_done_transport_rc found=$remote_done_found value=${remote_done_value:-unknown}"
+  REMOTE_TRACE "host=host:$HOST_NODE step=completion_fetch found=$remote_done_found rc=$remote_done_transport_rc"
   if [[ -n "$remote_done_value" && "$remote_done_value" != "$remote_status" ]]; then
     remote_status="$remote_done_value"
   fi
+  REMOTE_TRACE "host=host:$HOST_NODE step=remote_rc value=${remote_done_value:-$remote_status}"
   CENTRAL_REMOTE_PHASE "CENTRAL_STATUS_FETCH_START node=$HOST_NODE"
   for remote_status_attempt in 1 2 3; do
     remote_status_transport_rc=0
     if CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_check_dir/status.json" "$remote_status_file" > /dev/null 2>"$remote_status_error_file"; then
       remote_status_transport_rc=0
+      REMOTE_TRACE "host=host:$HOST_NODE step=status_fetch attempt=$remote_status_attempt rc=0 found=true"
       break
     fi
     remote_status_transport_rc=$?
+    REMOTE_TRACE "host=host:$HOST_NODE step=status_fetch attempt=$remote_status_attempt rc=$remote_status_transport_rc"
     [[ "$remote_status_attempt" -lt 3 ]] && sleep 0.2
   done
   local remote_status_file_found=false
   [[ -e "$remote_status_file" ]] && remote_status_file_found=true
   CENTRAL_REMOTE_PHASE "CENTRAL_STATUS_FETCH_END node=$HOST_NODE rc=$remote_status_transport_rc found=$remote_status_file_found"
+  REMOTE_TRACE "host=host:$HOST_NODE step=status_fetch found=$remote_status_file_found rc=$remote_status_transport_rc"
   CENTRAL_REMOTE_PHASE "CENTRAL_DIAGNOSTICS_FETCH_START node=$HOST_NODE"
   for remote_diagnostics_attempt in 1 2 3; do
     remote_diagnostics_transport_rc=0
     if CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$HOST:$remote_diagnostics_file" "$remote_diagnostics_local_file" > /dev/null 2>"$remote_diagnostics_error_file"; then
       remote_diagnostics_transport_rc=0
+      REMOTE_TRACE "host=host:$HOST_NODE step=diagnostics_fetch attempt=$remote_diagnostics_attempt rc=0 found=true"
       break
     fi
     remote_diagnostics_transport_rc=$?
+    REMOTE_TRACE "host=host:$HOST_NODE step=diagnostics_fetch attempt=$remote_diagnostics_attempt rc=$remote_diagnostics_transport_rc"
     [[ "$remote_diagnostics_attempt" -lt 3 ]] && sleep 0.2
   done
   local remote_diagnostics_file_found=false
   [[ -e "$remote_diagnostics_local_file" ]] && remote_diagnostics_file_found=true
   CENTRAL_REMOTE_PHASE "CENTRAL_DIAGNOSTICS_FETCH_END node=$HOST_NODE rc=$remote_diagnostics_transport_rc found=$remote_diagnostics_file_found"
+  REMOTE_TRACE "host=host:$HOST_NODE step=diagnostics_fetch found=$remote_diagnostics_file_found rc=$remote_diagnostics_transport_rc"
   if [[ -e "$remote_diagnostics_local_file" ]]; then
     remote_diagnostics_found=true
     remote_diagnostics_size=$(stat -c '%s' "$remote_diagnostics_local_file" 2>/dev/null || printf '0')
@@ -659,6 +889,7 @@ CHECK_HOST () {
       STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_STATUS_IMPORT_FAILED "$HOST_NODE ($HOST): remote check status was invalid and could not be imported" "$HOST_NODE"
     else
       remote_json_result=valid
+      REMOTE_TRACE "host=host:$HOST_NODE step=result_import rc=0"
       if python3 - "$remote_status_file" "$HOST_NODE" <<'PY'
 import json
 import sys
@@ -692,8 +923,6 @@ PY
     if [[ "$remote_done_found" != true ]]; then
       if [[ "$remote_done_transport_rc" -eq 124 ]]; then
         remote_failure_class=timeout
-      elif grep -qiE 'permission denied|access denied' "$remote_done_error_file" 2>/dev/null; then
-        remote_failure_class=permission-denied
       elif [[ "$remote_done_transport_rc" -ne 0 ]]; then
         remote_failure_class=ssh-retrieval-failed
       else
@@ -701,8 +930,6 @@ PY
       fi
     elif [[ "$remote_status_transport_rc" -eq 124 ]]; then
       remote_failure_class=timeout
-    elif grep -qiE 'permission denied|access denied' "$remote_status_error_file" 2>/dev/null; then
-      remote_failure_class=permission-denied
     elif [[ "$remote_status_transport_rc" -ne 0 ]]; then
       remote_failure_class=scp-retrieval-failed
     else
@@ -718,8 +945,6 @@ PY
     remote_diag_level=failure
     if [[ "$remote_done_transport_rc" -eq 124 ]]; then
       remote_failure_class=timeout
-    elif grep -qiE 'permission denied|access denied' "$remote_done_error_file" 2>/dev/null; then
-      remote_failure_class=permission-denied
     elif [[ "$remote_done_transport_rc" -ne 0 ]]; then
       remote_failure_class=ssh-retrieval-failed
     else
@@ -734,7 +959,7 @@ PY
       *) remote_failure_class=remote-rc-nonzero ;;
     esac
   fi
-  if [[ "${DEBUG:-false}" == true && "$remote_diagnostics_found" == true ]]; then
+  if [[ ("${DEBUG:-false}" == true || "${UU_REMOTE_TRACE:-false}" == true) && "$remote_diagnostics_found" == true ]]; then
     while IFS= read -r remote_diagnostic_line; do
       [[ -n "$remote_diagnostic_line" ]] || continue
       printf 'Remote status model: node=%s %s\n' "$HOST_NODE" "$remote_diagnostic_line"
@@ -764,7 +989,9 @@ PY
   if [[ "$remote_status" -ne 0 && "$remote_node_status_ok" != true ]]; then
     STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_CHECK_FAILED "$HOST_NODE ($HOST): remote check exited with $remote_status" "$HOST_NODE"
   fi
+  REMOTE_TRACE "host=host:$HOST_NODE step=result_emitted value=$remote_node_status_ok"
   CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=$remote_status phase=complete cleanup_rc=$remote_cleanup_rc"
+  REMOTE_TRACE "host=host:$HOST_NODE step=check_host_exit rc=$remote_status"
   return "$remote_status"
 }
 
@@ -772,12 +999,13 @@ CHECK_HOST_ITSELF () {
   STATUS_MODEL_GUEST_NAME=""
   REBOOT_REQUIRED=false
   local STATUS_HOST_NAME="${STATUS_MODEL_NODE:-$HOSTNAME}"
-  apt-get update >/dev/null 2>&1
-  local APT_OUTPUT
-  APT_OUTPUT=$(apt-get -s upgrade)
-  # Keep the log and status model on the same package-manager snapshot.  The
-  # shared helper owns the security classification and disjoint split.
-  READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
+  # Counts come from the local structured package metadata.  Checks are
+  # deliberately read-only; refreshing APT lists belongs to update actions.
+  if ! READ_APT_UPDATE_COUNTS; then
+    STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true "" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+      "Could not determine APT update counts from package metadata" "$STATUS_HOST_NAME" "$STATUS_HOST_NAME"
+    return
+  fi
   if [[ $SECURITY_APT_UPDATES != 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
   if [[ -f /var/run/reboot-required || -f /var/run/reboot-required.pkgs ]] ||
     HOST_KERNEL_REBOOT_REQUIRED; then
@@ -844,13 +1072,19 @@ HOST_KERNEL_REBOOT_REQUIRED () {
 ## Container ##
 # Container Check Start
 CONTAINER_CHECK_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   local lifecycle_failure=0 lifecycle_message
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=check UU_FILTER_ELIGIBLE_IDS="$CONTAINERS" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   # Loop through the containers
   if ! [[ -d $LOCAL_FILES/temp/ ]]; then mkdir $LOCAL_FILES/temp/; fi
   for CONTAINER in $CONTAINERS; do
-    if guest_id_matches "$EXCLUDED" "$CONTAINER"; then
+    if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS check "$CONTAINER" "$CONTAINERS"; then
+      continue
+    elif guest_id_matches "$EXCLUDED" "$CONTAINER"; then
       continue
     elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$CONTAINER"; then
       continue
@@ -910,6 +1144,23 @@ CHECK_CONTAINER_FAILURE() {
   return 1
 }
 
+GUEST_CONNECTIVITY_FAILURE() {
+  local kind="$1" target="$2"
+  local message="${3:-Internet connectivity check failed for $kind $target}"
+  local transport="${4:-pct}"
+  if [[ "${INITIAL_INVENTORY:-false}" == true ]]; then
+    STATUS_MODEL_RECORD "$target" "${kind,,}" "$transport" false "${OS:-unknown}" "" "null" "null" \
+      not_checked NETWORK_UNAVAILABLE "$message; package check skipped" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "${STATUS_MODEL_GUEST_NAME:-}"
+    return 0
+  fi
+  STATUS_MODEL_RECORD "$target" "${kind,,}" "$transport" false "${OS:-unknown}" "" "null" "null" \
+    error CONNECTIVITY_FAILED "$message; package check skipped" \
+    "${STATUS_MODEL_NODE:-$HOSTNAME}" "${STATUS_MODEL_GUEST_NAME:-}"
+  CHECK_FAILURE=1
+  return 1
+}
+
 CHECK_CONTAINER () {
   if [[ "$RDU" != true ]]; then
     CONTAINER=$1
@@ -945,13 +1196,9 @@ CHECK_CONTAINER () {
     echo -e "${YL}Could not read hostname for LXC $CONTAINER; using ${NAME} as display name and continuing${CL}"
   fi
   NAME=$(printf '%s' "$NAME" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')
-  if [[ "${INITIAL_INVENTORY:-false}" == true ]] &&
-    ! GUEST_INTERNET_PREFLIGHT_PCT "$CONTAINER"; then
-    STATUS_MODEL_RECORD "$CONTAINER" lxc pct false "$OS" "" "null" "null" \
-      not_checked NETWORK_UNAVAILABLE \
-      "LXC $CONTAINER has no guest internet access; package check skipped" \
-      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-    return 0
+  if ! GUEST_INTERNET_PREFLIGHT_PCT "$CONTAINER"; then
+    GUEST_CONNECTIVITY_FAILURE LXC "$CONTAINER" "Internet connectivity check failed for LXC $CONTAINER" pct
+    return $?
   fi
   if OS_RELEASE=$(RUN_PCT_COMMAND "$CONTAINER" sh -c 'cat /etc/os-release' 2>/dev/null); then
     OS_RELEASE_ID=$(printf '%s\n' "$OS_RELEASE" | awk -F= '/^ID=/{gsub(/^"|"$/, "", $2); print tolower($2); exit}')
@@ -961,15 +1208,19 @@ CHECK_CONTAINER () {
     [[ -z "$OS_DISPLAY" && -n "$OS_RELEASE_ID" ]] && OS_DISPLAY="$OS_RELEASE_ID"
   fi
   if [[ "$OS" =~ ubuntu ]] || [[ "$OS" =~ debian ]] || [[ "$OS" =~ devuan ]]; then
-    if ! RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get update" >/dev/null 2>&1; then
-      CHECK_CONTAINER_FAILURE "apt-get update failed for LXC $CONTAINER"
+    local apt_count_command
+    if ! apt_count_command=$(APT_COUNT_REMOTE_COMMAND); then
+      CHECK_CONTAINER_FAILURE "APT count helper is unavailable for LXC $CONTAINER"
       return
     fi
-    if ! APT_OUTPUT=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "apt-get -s upgrade"); then
-      CHECK_CONTAINER_FAILURE "apt-get -s upgrade failed for LXC $CONTAINER"
+    if ! APT_OUTPUT=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "$apt_count_command"); then
+      CHECK_CONTAINER_FAILURE "Could not determine APT update counts for LXC $CONTAINER"
       return
     fi
-    READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
+    if ! PARSE_APT_UPDATE_COUNTS "$APT_OUTPUT"; then
+      CHECK_CONTAINER_FAILURE "APT update count metadata is unavailable for LXC $CONTAINER"
+      return
+    fi
     CONTAINER_NORMAL_UPDATES=$NORMAL_APT_UPDATES
     CONTAINER_SECURITY_UPDATES=$SECURITY_APT_UPDATES
     if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
@@ -981,56 +1232,94 @@ CHECK_CONTAINER () {
       PRINT_UPDATE_SPLIT "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
     fi
   elif [[ "$OS" =~ fedora ]]; then
-    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "dnf check-update | grep -Ec ' updates$'"); then
-      CHECK_CONTAINER_FAILURE "dnf check-update failed for LXC $CONTAINER"
+    local rpm_count_command rpm_count_result
+    if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+      CHECK_CONTAINER_FAILURE "RPM count helper is unavailable for LXC $CONTAINER"
       return
     fi
-    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
-    CONTAINER_NORMAL_UPDATES=$CONTAINER_UPDATES
-    if [[ "$UPDATES" -gt 0 ]]; then
+    if ! rpm_count_result=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "$rpm_count_command"); then
+      CHECK_CONTAINER_FAILURE "Could not determine RPM update counts for LXC $CONTAINER"
+      return
+    fi
+    if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+      CHECK_CONTAINER_FAILURE "RPM update count metadata is unavailable for LXC $CONTAINER"
+      return
+    fi
+    CONTAINER_UPDATES=$RPM_COUNTS_TOTAL
+    CONTAINER_NORMAL_UPDATES=null
+    CONTAINER_SECURITY_UPDATES=null
+    if [[ "$CONTAINER_UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
-      echo -e "$UPDATES"
+      PRINT_UPDATE_TOTAL "$CONTAINER_UPDATES"
     fi
   elif [[ "$OS" =~ archlinux ]]; then
-    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "pacman -Qu | wc -l"); then
-      CHECK_CONTAINER_FAILURE "pacman query failed for LXC $CONTAINER"
+    local package_count_command package_count_result
+    if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pacman); then
+      CHECK_CONTAINER_FAILURE "Pacman count helper is unavailable for LXC $CONTAINER"
       return
     fi
-    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
-    CONTAINER_NORMAL_UPDATES=$CONTAINER_UPDATES
-    if [[ "$UPDATES" -gt 0 ]]; then
+    if ! package_count_result=$(RUN_PCT_COMMAND "$CONTAINER" sh -c "$package_count_command"); then
+      CHECK_CONTAINER_FAILURE "Could not determine Pacman update counts for LXC $CONTAINER"
+      return
+    fi
+    if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+      CHECK_CONTAINER_FAILURE "Pacman update count metadata is unavailable for LXC $CONTAINER"
+      return
+    fi
+    CONTAINER_UPDATES=$PACKAGE_COUNTS_TOTAL
+    CONTAINER_NORMAL_UPDATES=null
+    CONTAINER_SECURITY_UPDATES=null
+    if [[ "$CONTAINER_UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
-      echo -e "$UPDATES"
+      PRINT_UPDATE_TOTAL "$CONTAINER_UPDATES"
     fi
   elif [[ "$OS" =~ alpine ]]; then
-    if ! RUN_PCT_COMMAND "$CONTAINER" ash -c "apk update" >/dev/null 2>&1; then
+    local package_count_command package_count_result
+    # Preserve the existing Alpine check policy: apk refreshes its local
+    # index before the read-only structured query.
+    if ! RUN_PCT_COMMAND "$CONTAINER" ash -c "apk update"; then
       CHECK_CONTAINER_FAILURE "apk update failed for LXC $CONTAINER"
       return
     fi
-    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" ash -c "apk list -u | wc -l"); then
-      CHECK_CONTAINER_FAILURE "apk query failed for LXC $CONTAINER"
+    if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND apk); then
+      CHECK_CONTAINER_FAILURE "APK count helper is unavailable for LXC $CONTAINER"
       return
     fi
-    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
-    CONTAINER_NORMAL_UPDATES=$CONTAINER_UPDATES
-    if [[ "$UPDATES" -gt 0 ]]; then
+    if ! package_count_result=$(RUN_PCT_COMMAND "$CONTAINER" sh -c "$package_count_command"); then
+      CHECK_CONTAINER_FAILURE "Could not determine APK update counts for LXC $CONTAINER"
+      return
+    fi
+    if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+      CHECK_CONTAINER_FAILURE "APK update count metadata is unavailable for LXC $CONTAINER"
+      return
+    fi
+    CONTAINER_UPDATES=$PACKAGE_COUNTS_TOTAL
+    CONTAINER_NORMAL_UPDATES=null
+    CONTAINER_SECURITY_UPDATES=null
+    if [[ "$CONTAINER_UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
-      echo -e "$UPDATES"
+      PRINT_UPDATE_TOTAL "$CONTAINER_UPDATES"
     fi
   else
-    if ! UPDATES=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "yum -q check-update | wc -l"); then
-      CHECK_CONTAINER_FAILURE "yum check-update failed for LXC $CONTAINER"
+    local rpm_count_command rpm_count_result
+    if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+      CHECK_CONTAINER_FAILURE "RPM count helper is unavailable for LXC $CONTAINER"
       return
     fi
-    CONTAINER_UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-    CONTAINER_UPDATES=${CONTAINER_UPDATES:-0}
-    CONTAINER_NORMAL_UPDATES=$CONTAINER_UPDATES
-    if [[ "$UPDATES" -gt 0 ]]; then
+    if ! rpm_count_result=$(RUN_PCT_COMMAND "$CONTAINER" bash -c "$rpm_count_command"); then
+      CHECK_CONTAINER_FAILURE "Could not determine RPM update counts for LXC $CONTAINER"
+      return
+    fi
+    if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+      CHECK_CONTAINER_FAILURE "RPM update count metadata is unavailable for LXC $CONTAINER"
+      return
+    fi
+    CONTAINER_UPDATES=$RPM_COUNTS_TOTAL
+    CONTAINER_NORMAL_UPDATES=null
+    CONTAINER_SECURITY_UPDATES=null
+    if [[ "$CONTAINER_UPDATES" -gt 0 ]]; then
       echo -e "${GN}LXC ${BL}$CONTAINER${CL} : ${GN}$NAME${CL}"
-      echo -e "$UPDATES"
+      PRINT_UPDATE_TOTAL "$CONTAINER_UPDATES"
     fi
   fi
   [[ "$CONTAINER_UPDATES" -gt 0 ]] && CONTAINER_STATUS=updates_available
@@ -1108,8 +1397,12 @@ CHECK_SINGLE_CONTAINER () {
 ## VM ##
 # VM Check Start
 VM_CHECK_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   # Get the list of VMs
   VMS=$(qm list | tail -n +2 | cut -c -10)
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=check UU_FILTER_ELIGIBLE_IDS="$VMS" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   # Loop through VMs
   for VM in $VMS; do
     local vm_has_internal_ssh=false
@@ -1129,7 +1422,9 @@ VM_CHECK_START () {
       [[ -f $LOCAL_FILES/VMs/"$VM" ]] || [[ "$vm_has_internal_ssh" == true ]]; then
       # Check VM
       PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-      if guest_id_matches "$EXCLUDED" "$VM"; then
+      if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS check "$VM" "$VMS"; then
+        continue
+      elif guest_id_matches "$EXCLUDED" "$VM"; then
         continue
       elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
         continue
@@ -1296,13 +1591,9 @@ CHECK_VM () {
     CHECK_VM_QEMU
     return
   fi
-  if [[ "${INITIAL_INVENTORY:-false}" == true ]] &&
-    ! GUEST_INTERNET_PREFLIGHT_SSH "$IP" "$SSH_VM_PORT" "$USER"; then
-    STATUS_MODEL_RECORD "$VM" vm ssh false "" "" "null" "null" \
-      not_checked NETWORK_UNAVAILABLE \
-      "VM $VM has no guest internet access; package check skipped" \
-      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-    return 0
+  if ! GUEST_INTERNET_PREFLIGHT_SSH "$IP" "$SSH_VM_PORT" "$USER"; then
+    GUEST_CONNECTIVITY_FAILURE VM "$VM" "Internet connectivity check failed for VM $VM; package check skipped" ssh
+    return $?
   fi
   OS_BASE=$(qm config "$VM" | grep ostype || true)
   if [[ "$OS_BASE" =~ l2 ]]; then
@@ -1323,19 +1614,23 @@ CHECK_VM () {
       if [[ "$SSH_UNAME_VERSION" =~ [0-9] ]]; then
         OS="${OS} / ${SSH_UNAME_VERSION}"
       fi
-      if FREEBSD_PKG_LIST=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "pkg version -U -l '<'" 2>/dev/null); then
-        PKG_RC=0
-      else
-        PKG_RC=$?
-      fi
-      if [[ $PKG_RC -ne 0 ]]; then
-        STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error CHECK_COMMAND_FAILED \
-          "pkg version failed for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      local package_count_command package_count_result
+      if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pkg); then
+        STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
+          "pkg count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      UPDATES=$(printf '%s\n' "$FREEBSD_PKG_LIST" | awk '$NF == "<" {count++} END {print count+0}')
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      if ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$package_count_command"); then
+        STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error PACKAGE_COUNT_FAILED \
+          "Could not determine pkg update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pkg "null" "null" error PACKAGE_COUNT_INVALID \
+          "pkg update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$PACKAGE_COUNTS_TOTAL
       [[ "$UPDATES" -gt 0 ]] && echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       STATUS_MODEL_STATUS=ok
@@ -1345,9 +1640,22 @@ CHECK_VM () {
       return 0
     fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
-      RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apt-get update" >/dev/null 2>&1
-      APT_OUTPUT=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apt-get -s upgrade")
-      READ_APT_UPDATE_COUNTS "$APT_OUTPUT"
+      local apt_count_command
+      if ! apt_count_command=$(APT_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "APT count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! APT_OUTPUT=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$apt_count_command"); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "Could not determine APT update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! PARSE_APT_UPDATE_COUNTS "$APT_OUTPUT"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "APT update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
       if RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" stat /var/run/reboot-required.pkgs >/dev/null 2>&1; then
         REBOOT_REQUIRED=true
       fi
@@ -1363,33 +1671,73 @@ CHECK_VM () {
       # Checks only report reboot_required. Reboot execution belongs exclusively
       # to the update runtime and must never occur in this function.
     elif [[ "$OS" =~ Fedora ]]; then
-      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "dnf check-update | grep -Ec ' updates$'")
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local rpm_count_command rpm_count_result
+      if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! rpm_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$rpm_count_command"); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$RPM_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     elif [[ "$OS" =~ Arch ]]; then
-      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "pacman -Qu | wc -l")
-      UPDATES=${UPDATES//[^0-9]/}
-      UPDATES=${UPDATES:-0}
+      local package_count_command package_count_result
+      if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pacman) ||
+        ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$package_count_command") ||
+        ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pacman "null" "null" error PACKAGE_COUNT_FAILED \
+          "Could not determine Pacman update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$PACKAGE_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     elif [[ "$OS" =~ Alpine ]]; then
-      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "apk list -u | wc -l")
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local package_count_command package_count_result
+      if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND apk) ||
+        ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$package_count_command") ||
+        ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apk "null" "null" error PACKAGE_COUNT_FAILED \
+          "Could not determine APK update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$PACKAGE_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     elif [[ "$OS" =~ CentOS ]]; then
-      UPDATES=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "yum -q check-update | wc -l")
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local rpm_count_command rpm_count_result
+      if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! rpm_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$rpm_count_command"); then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$RPM_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -1423,7 +1771,7 @@ CHECK_VM () {
 }
 
 CHECK_VM_QEMU () {
-  local OS_INFO OS_NAME OS_NAME_LOWER OS_VERSION=""
+  local OS_INFO OS_NAME OS_NAME_LOWER OS_VERSION="" OS_INFO_ID=""
   # A successful agent ping proves QGA transport without assuming that the
   # guest contains a Linux executable such as /bin/true.  FreeBSD/pfSense
   # commonly has a working agent but no Linux guest-exec environment.
@@ -1432,12 +1780,52 @@ CHECK_VM_QEMU () {
     return 1
   fi
   OS_INFO=$(qm guest cmd "$VM" get-osinfo 2>/dev/null || true)
+  # Keep the raw name fields for guest-specific handlers such as Windows,
+  # but derive one canonical display name from the QGA JSON.
   OS=$(printf '%s\n' "$OS_INFO" | grep name || true)
-  OS_NAME=${OS#*:}
-  OS_NAME="${OS_NAME#"${OS_NAME%%[![:space:]]*}"}"
-  OS_NAME="${OS_NAME//\"/}"
-  OS_NAME="${OS_NAME//\'/}"
+  OS_NAME=$(printf '%s' "$OS_INFO" | python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except (ValueError, TypeError):
+    raise SystemExit(1)
+
+print(data.get("pretty-name") or data.get("name") or "")
+' 2>/dev/null || true)
+
+  # Compatibility fallback for non-JSON get-osinfo output.
+  if [[ -z "$OS_NAME" ]]; then
+    OS_NAME=$(printf '%s\n' "$OS_INFO" |
+      sed -nE 's/^[[:space:]]*"pretty-name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' |
+      head -n 1)
+  fi
+  if [[ -z "$OS_NAME" ]]; then
+    OS_NAME=$(printf '%s\n' "$OS_INFO" |
+      sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' |
+      head -n 1)
+  fi
   OS_NAME_LOWER="${OS_NAME,,}"
+  OS_INFO_ID=$(printf '%s' "$OS_INFO" | python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except (ValueError, TypeError):
+    raise SystemExit(1)
+
+print(data.get("id") or "")
+' 2>/dev/null || true)
+
+  # Home Assistant OS exposes a stable "id": "haos" through QGA.
+  # Its updates are managed by the HA CLI rather than a Linux package manager.
+  if [[ "$OS_INFO_ID" == haos ]]; then
+    CHECK_VM_QEMU_HAOS
+    return $?
+  fi
+
   # FreeBSD/pfSense commonly exposes its identity through kernel-version
   # rather than the optional QGA `name` field. Checks are read-only and do
   # not depend on the FreeBSD update setting.
@@ -1456,7 +1844,13 @@ CHECK_VM_QEMU () {
     return
   fi
   if [[ "$OS_NAME_LOWER" =~ freebsd|pfsense ]]; then
-    QEMU_GUEST_EXEC "$VM" --timeout 120 -- pkg version -U -l "<"
+    local package_count_command package_count_result
+    if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pkg); then
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" pkg "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
+        "pkg count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 1
+    fi
+    QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
     if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
       STATUS_MODEL_RECORD "$VM" vm qga false "$OS_NAME" pkg "null" "null" \
         error QGA_TRANSPORT "QEMU Guest Agent transport failed during pkg check: ${QEMU_EXEC_OUTPUT}" \
@@ -1469,9 +1863,13 @@ CHECK_VM_QEMU () {
         "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
       return 1
     fi
-    UPDATES=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | awk '$NF == "<" {count++} END {print count+0}')
-    UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-    UPDATES=${UPDATES:-0}
+    package_count_result="$QEMU_EXEC_STDOUT"
+    if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" pkg "null" "null" error PACKAGE_COUNT_INVALID \
+        "pkg update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      return 1
+    fi
+    UPDATES=$PACKAGE_COUNTS_TOTAL
     [[ "$UPDATES" -gt 0 ]] && echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
     [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
     QEMU_PKG_STATUS=ok
@@ -1480,6 +1878,10 @@ CHECK_VM_QEMU () {
       "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     return 0
   fi
+  # Guest-specific handlers above may use the raw get-osinfo fields.
+  # Generic Linux checks and status records use the canonical QGA name.
+  OS="$OS_NAME"
+
   # Do not guess a Linux guest from a successful QGA ping alone.  In the
   # read-only onboarding mode an unknown OS must not trigger a Linux-specific
   # guest-exec probe and turn a reachable agent into a false transport error.
@@ -1499,17 +1901,14 @@ CHECK_VM_QEMU () {
     return 1
   fi
   if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
-    STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error QGA_GUEST_EXEC "${QEMU_EXEC_OUTPUT}"
+    STATUS_MODEL_RECORD "$VM" vm qga true "" "" "null" "null" error GUEST_COMMAND_FAILED \
+      "QEMU Guest Agent is reachable, but the guest command failed (exit code $QEMU_EXEC_EXITCODE): ${QEMU_EXEC_OUTPUT}"
     return 1
   fi
   if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
-    if [[ "${INITIAL_INVENTORY:-false}" == true ]] &&
-      ! GUEST_INTERNET_PREFLIGHT_QGA "$VM"; then
-      STATUS_MODEL_RECORD "$VM" vm qga false "$OS" "" "null" "null" \
-        not_checked NETWORK_UNAVAILABLE \
-        "VM $VM has no guest internet access; package check skipped" \
-        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-      return 0
+    if ! GUEST_INTERNET_PREFLIGHT_QGA "$VM"; then
+      GUEST_CONNECTIVITY_FAILURE VM "$VM" "Internet connectivity check failed for VM $VM; package check skipped" qga
+      return $?
     fi
     KERNEL=$(printf '%s\n' "$OS_INFO" | grep kernel-version || true)
 #    if [[ "$KERNEL" =~ FreeBSD ]]; then
@@ -1517,23 +1916,24 @@ CHECK_VM_QEMU () {
 #      return
 #    fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "apt-get update"
-      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
-        echo -e "${RD}QEMU apt update failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
+      local apt_count_command
+      if ! apt_count_command=$(APT_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "APT count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "apt-get -s upgrade | grep -ci '^inst.*security'"
-      QEMU_COUNT_RESULT_OK "QEMU security update check for VM $VM" || return 1
-      SECURITY_APT_UPDATES="$QEMU_EXEC_STDOUT"
-      SECURITY_APT_UPDATES=$(SANITIZE_NUMBER "$SECURITY_APT_UPDATES")
-      SECURITY_APT_UPDATES=${SECURITY_APT_UPDATES:-0}
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$apt_count_command"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "Could not determine APT update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      if ! PARSE_APT_UPDATE_COUNTS "$QEMU_EXEC_STDOUT"; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
+          "APT update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
       if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "apt-get -s upgrade | grep -ci '^inst.'"
-      QEMU_COUNT_RESULT_OK "QEMU update check for VM $VM" || return 1
-      NORMAL_APT_UPDATES="$QEMU_EXEC_STDOUT"
-      NORMAL_APT_UPDATES=$(SANITIZE_NUMBER "$NORMAL_APT_UPDATES")
-      NORMAL_APT_UPDATES=${NORMAL_APT_UPDATES:-0}
-      NORMAL_APT_UPDATES=$((NORMAL_APT_UPDATES - SECURITY_APT_UPDATES))
       QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c '[ -f /var/run/reboot-required.pkgs ]'
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
         echo -e "${RD}QEMU reboot check failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
@@ -1556,11 +1956,25 @@ CHECK_VM_QEMU () {
       [[ "$QEMU_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && QEMU_APT_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "$QEMU_APT_UPDATES" "$REBOOT_REQUIRED" "$QEMU_APT_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
     elif [[ "$OS" =~ Fedora ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "dnf check-update | grep -Ec ' updates$'"
-      QEMU_COUNT_RESULT_OK "QEMU dnf check for VM $VM" || return 1
-      UPDATES="$QEMU_EXEC_STDOUT"
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local rpm_count_command rpm_count_result
+      if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$rpm_count_command"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      rpm_count_result="$QEMU_EXEC_STDOUT"
+      if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$RPM_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -1569,11 +1983,25 @@ CHECK_VM_QEMU () {
       [[ "$UPDATES" -gt 0 ]] && QEMU_DNF_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "$UPDATES" false "$QEMU_DNF_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ "$OS" =~ Arch ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "pacman -Qu | wc -l"
-      QEMU_COUNT_RESULT_OK "QEMU pacman check for VM $VM" || return 1
-      UPDATES="$QEMU_EXEC_STDOUT"
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local package_count_command package_count_result
+      if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pacman); then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
+          "Pacman count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "null" "null" error PACKAGE_COUNT_FAILED \
+          "Could not determine Pacman update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      package_count_result="$QEMU_EXEC_STDOUT"
+      if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "null" "null" error PACKAGE_COUNT_INVALID \
+          "Pacman update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$PACKAGE_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -1582,11 +2010,25 @@ CHECK_VM_QEMU () {
       [[ "$UPDATES" -gt 0 ]] && QEMU_PACMAN_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "$UPDATES" false "$QEMU_PACMAN_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ "$OS" =~ Alpine ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- ash -c "apk list -u | wc -l"
-      QEMU_COUNT_RESULT_OK "QEMU apk check for VM $VM" || return 1
-      UPDATES="$QEMU_EXEC_STDOUT"
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local package_count_command package_count_result
+      if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND apk); then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
+          "APK count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "null" "null" error PACKAGE_COUNT_FAILED \
+          "Could not determine APK update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      package_count_result="$QEMU_EXEC_STDOUT"
+      if ! PARSE_PACKAGE_UPDATE_COUNTS "$package_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "null" "null" error PACKAGE_COUNT_INVALID \
+          "APK update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$PACKAGE_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -1595,11 +2037,25 @@ CHECK_VM_QEMU () {
       [[ "$UPDATES" -gt 0 ]] && QEMU_APK_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "$UPDATES" false "$QEMU_APK_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
     elif [[ "$OS" =~ CentOS ]]; then
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "yum -q check-update | wc -l"
-      QEMU_COUNT_RESULT_OK "QEMU yum check for VM $VM" || return 1
-      UPDATES="$QEMU_EXEC_STDOUT"
-      UPDATES=$(SANITIZE_NUMBER "$UPDATES")
-      UPDATES=${UPDATES:-0}
+      local rpm_count_command rpm_count_result
+      if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$rpm_count_command"
+      if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      rpm_count_result="$QEMU_EXEC_STDOUT"
+      if ! PARSE_RPM_UPDATE_COUNTS "$rpm_count_result"; then
+        STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
+          "RPM update count metadata is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        return 1
+      fi
+      UPDATES=$RPM_COUNTS_TOTAL
       if [[ "$UPDATES" -gt 0 ]]; then
         echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
       fi
@@ -1613,9 +2069,119 @@ CHECK_VM_QEMU () {
   fi
 }
 
+HAOS_PARSE_UPDATE_INFO () {
+  python3 -c '
+import json
+import sys
+
+try:
+    payload = json.load(sys.stdin)
+except (ValueError, TypeError):
+    raise SystemExit(1)
+
+if payload.get("result") != "ok" or not isinstance(payload.get("data"), dict):
+    raise SystemExit(1)
+
+data = payload["data"]
+version = data.get("version")
+update_available = data.get("update_available")
+
+if not isinstance(version, str) or not version:
+    raise SystemExit(1)
+if not isinstance(update_available, bool):
+    raise SystemExit(1)
+
+print("{}\t{}".format(
+    version,
+    "true" if update_available else "false"
+))
+'
+}
+
+CHECK_VM_QEMU_HAOS () {
+  local os_payload core_payload os_parsed core_parsed
+  local os_version os_update core_version core_update
+  local updates=0 status=ok display_os
+
+  QEMU_GUEST_EXEC "$VM" --timeout 60 -- /usr/bin/ha os info --raw-json
+  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga false "Home Assistant OS" ha \
+      "null" false error QGA_TRANSPORT \
+      "HAOS OS check failed: ${QEMU_EXEC_OUTPUT}" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+  if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga true "Home Assistant OS" ha \
+      "null" false error HAOS_CHECK \
+      "ha os info failed: ${QEMU_EXEC_OUTPUT}" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+
+  os_payload="$QEMU_EXEC_STDOUT"
+  if ! os_parsed=$(printf '%s' "$os_payload" | HAOS_PARSE_UPDATE_INFO); then
+    STATUS_MODEL_RECORD "$VM" vm qga true "Home Assistant OS" ha \
+      "null" false error HAOS_INVALID_RESPONSE \
+      "Invalid ha os info response" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+
+  IFS=$'\t' read -r os_version os_update <<< "$os_parsed"
+
+  QEMU_GUEST_EXEC "$VM" --timeout 60 -- /usr/bin/ha core info --raw-json
+  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga false "Home Assistant OS ${os_version}" ha \
+      "null" false error QGA_TRANSPORT \
+      "HA Core check failed: ${QEMU_EXEC_OUTPUT}" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+  if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+    STATUS_MODEL_RECORD "$VM" vm qga true "Home Assistant OS ${os_version}" ha \
+      "null" false error HAOS_CHECK \
+      "ha core info failed: ${QEMU_EXEC_OUTPUT}" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+
+  core_payload="$QEMU_EXEC_STDOUT"
+  if ! core_parsed=$(printf '%s' "$core_payload" | HAOS_PARSE_UPDATE_INFO); then
+    STATUS_MODEL_RECORD "$VM" vm qga true "Home Assistant OS ${os_version}" ha \
+      "null" false error HAOS_INVALID_RESPONSE \
+      "Invalid ha core info response" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
+
+  IFS=$'\t' read -r core_version core_update <<< "$core_parsed"
+
+  [[ "$os_update" == true ]] && updates=$((updates + 1))
+  [[ "$core_update" == true ]] && updates=$((updates + 1))
+  [[ "$updates" -gt 0 ]] && status=updates_available
+
+  display_os="Home Assistant OS ${os_version}"
+  [[ -n "$core_version" ]] && display_os+=" / Core ${core_version}"
+
+  STATUS_MODEL_RECORD "$VM" vm qga true "$display_os" ha \
+    "$updates" false "$status" "" "" \
+    "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+
+  if [[ "$updates" -gt 0 ]]; then
+    echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
+    PRINT_UPDATE_TOTAL "$updates"
+  fi
+
+  return 0
+}
+
 CHECK_VM_QEMU_WINDOWS () {
   local result marker check_status updates reboot message windows_os reachable=true error_code=WINDOWS_UPDATE_CHECK
-  windows_os=$(printf '%s\n' "$OS" | sed -E 's/^[[:space:]]*name[[:space:]]*:[[:space:]]*//')
+  windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"pretty-name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
+  if [[ -z "$windows_os" ]]; then
+    windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
+  fi
   windows_os="${windows_os:-Windows}"
   if ! declare -f WINDOWS_POWERSHELL_ENCODE >/dev/null 2>&1; then
     STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_HELPER_MISSING "Windows update helper is not installed"
@@ -1629,13 +2195,11 @@ CHECK_VM_QEMU_WINDOWS () {
     return 1
   fi
   if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
-    if grep -Eqi 'disabled|not allowed|not permitted|permission denied' <<< "$QEMU_EXEC_OUTPUT"; then
-      error_code=QGA_GUEST_EXEC_DISABLED
-    fi
+    error_code=GUEST_COMMAND_FAILED
     STATUS_MODEL_RECORD "$VM" vm qga "$reachable" "$windows_os" windows-update "null" "null" error "$error_code" "${QEMU_EXEC_OUTPUT}"
     return 1
   fi
-  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | tail -n 1)
+  result=$(printf '%s' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n '/^UU_WINDOWS|/p' | tail -n 1)
   IFS='|' read -r marker check_status updates reboot message <<< "$result"
   if [[ "$marker" != UU_WINDOWS || "$check_status" != ok || ! "$updates" =~ ^[0-9]+$ || ("$reboot" != true && "$reboot" != false) ]]; then
     STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_UPDATE_CHECK "Invalid Windows Update response: $result"
@@ -1649,6 +2213,7 @@ CHECK_VM_QEMU_WINDOWS () {
     PRINT_UPDATE_SPLIT Unknown Unknown
   fi
   [[ "$reboot" == true ]] && echo -e "${OR} Reboot required${CL}"
+  return 0
 }
 
 # Output to file
@@ -1670,8 +2235,22 @@ EXIT () {
     wait
     if [[ -f "$LOCAL_FILES/check-output" ]]; then
       local status_notification_sent=false
+      # Apply the scheduled-check policy before any legacy renderer can run.
+      # This keeps older fallback installations from bypassing the central
+      # status-model gate when scheduled notifications are disabled.
+      if [[ "${UU_JOB_SOURCE:-}" == scheduler ]]; then
+        local scheduled_email_enabled
+        scheduled_email_enabled=$(awk -F'"' '/^EMAIL_DAILY_CHECK=/ {print $2}' "$CONFIG_FILE" 2>/dev/null)
+        [[ "${scheduled_email_enabled:-true}" == true ]] || status_notification_sent=true
+      fi
       if declare -f STATUS_MODEL_SEND_NOTIFICATION >/dev/null 2>&1 &&
         STATUS_MODEL_SEND_NOTIFICATION "$LOCAL_FILES/status.json" "$CONFIG_FILE"; then
+        status_notification_sent=true
+      fi
+      # A scoped job owns its notification decision.  Never fall back to the
+      # legacy global renderer, which would mix unrelated status records into
+      # a single-target mail.
+      if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
         status_notification_sent=true
       fi
       if [[ "$status_notification_sent" != true ]]; then
@@ -1735,28 +2314,40 @@ fi
 if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
   ARGUMENTS "$@"
   # Print any tag selection summary captured during config parse
-  if [[ "$RDU" != true && "$RICM" != true && "$TAG_OUTPUT" != false ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
+  if [[ "$RDU" != true && "$RICM" != true && "$TAG_OUTPUT" != false && "${UU_SINGLE_TARGET_CHECK:-false}" != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
 else
   echo -e "${OR} You are offline${CL}"
   mark_check_hard_failure
   exit 2
 fi
 
+RUN_AUTOMATIC_CHECK_DISPATCH () {
+  if [[ "$MODE" =~ Cluster ]]; then HOST_CHECK_START; else
+    if [[ "$WITH_HOST" == true ]] && { [[ "${UU_CHECK_SCOPE:-}" == host || "$USE_INTERNAL_TARGET_SELECTION" != true ]] || TARGET_SELECTION_ALLOWS check "host:$(hostname -s 2>/dev/null || hostname)" "host:$(hostname -s 2>/dev/null || hostname)"; }; then CHECK_HOST_ITSELF; fi
+    if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
+    if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
+  fi
+}
+
 # Run without commands (Automatic Mode)
 if [[ "$COMMAND" != true && "$RDU" == true ]]; then
   OUTPUT_TO_FILE
 elif [[ "$COMMAND" != true ]]; then
   OUTPUT_TO_FILE
-  if [[ "$MODE" =~ Cluster ]]; then HOST_CHECK_START; else
-    if [[ "$WITH_HOST" == true ]]; then CHECK_HOST_ITSELF; fi
-    if [[ "$WITH_LXC" == true ]]; then CONTAINER_CHECK_START; fi
-    if [[ "$WITH_VM" == true ]]; then VM_CHECK_START; fi
-  fi
+  RUN_AUTOMATIC_CHECK_DISPATCH
 fi
 
 # Refresh the local MOTD version cache without making the login path depend on GitHub.
 UPDATE_VERSION_CACHE >/dev/null 2>&1 || true
 if [[ "$STATUS_MODEL_ENABLED" == true && "${UU_REMOTE_DEFER_STATUS_FINISH:-false}" != true ]]; then
+  if STATUS_MODEL_GLOBAL_SCOPE_IS_PARTIAL; then
+    STATUS_MODEL_PARTIAL=true
+  fi
+  if [[ "${UU_GLOBAL_CHECK:-false}" == true && ! -s "${STATUS_MODEL_RECORD_FILE:-}" ]]; then
+    STATUS_MODEL_PARTIAL=true
+    STATUS_MODEL_MARK_ZERO_TARGETS
+  fi
+  STATUS_MODEL_WRITE_RUN_META
   if declare -f STATUS_MODEL_HAS_FAILURES >/dev/null 2>&1 && STATUS_MODEL_HAS_FAILURES; then
     CHECK_FAILURE=1
   fi

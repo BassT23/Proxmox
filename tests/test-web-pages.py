@@ -15,10 +15,13 @@ assert 'data-page="settings"' in page
 assert 'data-page="scheduler"' in page
 assert 'href="/settings"' in page
 assert 'href="/scheduler"' in page
-assert page.count('class="nav-icon"') == 3
+assert page.count('class="nav-icon"') == 5
 assert 'class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"' in page
 assert '.dashboard-meta .page-nav a .nav-icon' in page
 assert 'display:flex!important;align-items:center;gap:8px;min-width:0' in page
+assert 'id="logout-menu"' in page
+assert 'href="https://ko-fi.com/basst"' in page
+assert 'target="_blank" rel="noopener noreferrer"' in page
 assert 'id="overview-page"' in page
 assert 'id="settings-page"' in page
 assert 'id="scheduler-page"' in page
@@ -91,6 +94,9 @@ scheduler = page.split('id="scheduler-page"', 1)[1].split('<footer', 1)[0]
 assert 'class="summary dashboard-kpis"' not in scheduler
 assert 'name="time"' in scheduler
 assert 'name="days"' in scheduler
+assert scheduler.count('name="month_days"') == 31
+assert 'Days of month' in scheduler
+assert 'month days take precedence over weekdays' in scheduler
 assert 'Select all visible' in scheduler
 assert 'schedule-target-table' in scheduler
 assert 'schedule-selected' in scheduler

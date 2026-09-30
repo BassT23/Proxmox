@@ -31,6 +31,16 @@ CLUSTER_TARGET_SCRIPT="$LOCAL_FILES/cluster-target.sh"
 INTERNAL_SSH_FILE="$LOCAL_FILES/internal-ssh.sh"
 GLOBAL_UPDATE_SCRIPT="$LOCAL_FILES/global-update.sh"
 EXTERNAL_SELECTION_SCRIPT="$LOCAL_FILES/external-selection.sh"
+TARGET_SELECTION_SCRIPT="$LOCAL_FILES/target-selection.sh"
+
+configured_headless() {
+  [[ "$(awk -F'\"' '/^IN_HEADLESS_MODE=/ {print $2; exit}' "$LOCAL_FILES/update.conf" 2>/dev/null)" == true ]]
+}
+
+interactive_requested() {
+  [[ "${UU_NONINTERACTIVE:-false}" != true && "${RUN_FROM_CRON:-false}" != true ]] &&
+    ! configured_headless && [[ "${UU_JOB_INTERACTIVE:-false}" == true || -t 0 ]]
+}
 
 if [[ ! -f "$UPDATE_SCRIPT" && -f "$SCRIPT_DIR/update.sh" ]]; then
   UPDATE_SCRIPT="$SCRIPT_DIR/update.sh"
@@ -83,6 +93,9 @@ fi
 if [[ ! -f "$EXTERNAL_SELECTION_SCRIPT" && -f "$SCRIPT_DIR/external-selection.sh" ]]; then
   EXTERNAL_SELECTION_SCRIPT="$SCRIPT_DIR/external-selection.sh"
 fi
+if [[ ! -f "$TARGET_SELECTION_SCRIPT" && -f "$SCRIPT_DIR/target-selection.sh" ]]; then
+  TARGET_SELECTION_SCRIPT="$SCRIPT_DIR/target-selection.sh"
+fi
 # shellcheck disable=SC1090
 [[ -f "$STATUS_MODEL_SCRIPT" ]] && source "$STATUS_MODEL_SCRIPT"
 # shellcheck disable=SC1090
@@ -91,6 +104,15 @@ fi
 [[ -f "$INTERNAL_SSH_FILE" ]] && source "$INTERNAL_SSH_FILE"
 # shellcheck disable=SC1090
 [[ -f "$EXTERNAL_SELECTION_SCRIPT" ]] && source "$EXTERNAL_SELECTION_SCRIPT"
+
+REMOTE_TRACE() {
+  [[ "${UU_REMOTE_TRACE:-false}" == true ]] || return 0
+  if declare -f STATUS_MODEL_DIAGNOSTIC >/dev/null 2>&1; then
+    STATUS_MODEL_DIAGNOSTIC "REMOTE_TRACE $*"
+  else
+    printf 'REMOTE_TRACE %s\n' "$*" >&2
+  fi
+}
 
 usage() {
   cat <<EOF
@@ -101,6 +123,7 @@ Commands:
   check [TARGET]          Run the existing check, optionally for one target
   update TARGET [--without-verified-backup]
                           Start an update job; External targets require recent backup verification
+  job attach JOB_ID       Attach to a running interactive CLI job
   update-all              Start the configured cluster-wide update job
   check-node NODE         Check one Proxmox node host only
   update-node NODE        Update one Proxmox node host only
@@ -227,8 +250,8 @@ external_setup() {
   local defaults_file
   defaults_file=$(external_defaults_file "$target") || return 1
   printf 'Bootstrap (administrator runs this on the External host):\n'
-  printf '  scp -i %q %q %q %q %s@%s:/tmp/\n' "$key_path" "$EXTERNAL_BOOTSTRAP_FILE" "$EXTERNAL_HELPER_FILE" "$defaults_file" "$user" "$host"
-  printf '  sudo /tmp/external-bootstrap.sh /tmp/external-helper.sh %s /tmp/%s.conf\n' "$user" "$target"
+  printf '  scp -i %q %q %q %q %q %s@%s:/tmp/\n' "$key_path" "$EXTERNAL_BOOTSTRAP_FILE" "$EXTERNAL_HELPER_FILE" "$LOCAL_FILES/apt-count.py" "$defaults_file" "$user" "$host"
+  printf '  sudo /tmp/external-bootstrap.sh /tmp/external-helper.sh %s /tmp/%s.conf /tmp/apt-count.py\n' "$user" "$target"
   printf 'The bootstrap installs the root-owned helper and /etc/sudoers.d/ultimate-updater after visudo validation.\n'
 }
 
@@ -549,9 +572,21 @@ resolve_remote_node_transport() {
 }
 
 cluster_node_resolve() {
-  local wanted="$1" config=/etc/pve/corosync.conf result local_node local_ips
+  local wanted="$1" config="${UU_COROSYNC_CONFIG_FILE:-/etc/pve/corosync.conf}" result local_node local_ips
   [[ "$wanted" =~ ^[A-Za-z0-9_.-]+$ ]] || return 2
-  [[ -f "$config" ]] || return 1
+  local_node=$(cluster_target_local_node)
+  if [[ ! -f "$config" ]]; then
+    if [[ "$wanted" == local-host || "${wanted,,}" == "${local_node,,}" ]]; then
+      RESOLVED_NODE="$local_node"
+      RESOLVED_NODE_HOST=$(cluster_target_node_host "$local_node")
+      RESOLVED_NODE_LOCAL=true
+      return 0
+    fi
+    return 1
+  fi
+  if [[ "$wanted" == local-host ]]; then
+    wanted="$local_node"
+  fi
   result=$(python3 - "$config" "$wanted" <<'PY'
 import re
 import sys
@@ -570,7 +605,6 @@ raise SystemExit(1)
 PY
   ) || return 1
   IFS=$'\t' read -r RESOLVED_NODE RESOLVED_NODE_HOST <<< "$result"
-  local_node=$(cluster_target_local_node)
   local_ips=$(hostname -I 2>/dev/null || true)
   RESOLVED_NODE_LOCAL=false
   if [[ "${RESOLVED_NODE,,}" == "${local_node,,}" || " $local_ips " == *" $RESOLVED_NODE_HOST "* ]]; then
@@ -582,19 +616,30 @@ remote_node_check_via_cluster_transport() {
   local node="$1" host="${REMOTE_NODE_HOST:-$2}" port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
   local user="${REMOTE_NODE_USER:-root}" local_file remote_check_dir remote_command
   local remote_config remote_tag_filter remote_cluster_target remote_runtime remote_status_model
-  local remote_status_file tag_filter_script target_runtime_file
+  local remote_status_file tag_filter_script target_runtime_file target_selection_script
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
   remote_check_dir="/tmp/ultimate-updater-check-node-$$-$RANDOM-$RANDOM"
   remote_config="$remote_check_dir/update.conf"
   remote_tag_filter="$remote_check_dir/tag-filter.sh"
   remote_cluster_target="$remote_check_dir/cluster-target.sh"
   remote_runtime="$remote_check_dir/target-runtime.sh"
+  local remote_apt_count="$remote_check_dir/apt-count.py"
+  local remote_rpm_count="$remote_check_dir/rpm-count.py"
+  local remote_package_count="$remote_check_dir/package-count.sh"
   remote_status_model="$remote_check_dir/status-model.sh"
   remote_status_file="$remote_check_dir/status.json"
   tag_filter_script="$LOCAL_FILES/tag-filter.sh"
+  target_selection_script="$LOCAL_FILES/target-selection.sh"
   target_runtime_file="$LOCAL_FILES/target-runtime.sh"
+  local apt_count_file="$LOCAL_FILES/apt-count.py"
+  local rpm_count_file="$LOCAL_FILES/rpm-count.py"
+  local package_count_file="$LOCAL_FILES/package-count.sh"
   [[ -f "$tag_filter_script" ]] || tag_filter_script="$SCRIPT_DIR/tag-filter.sh"
+  [[ -f "$target_selection_script" ]] || target_selection_script="$SCRIPT_DIR/target-selection.sh"
   [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
+  [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+  [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
+  [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
   local_file=$(mktemp)
   if ! STATUS_MODEL_INIT; then
     rm -f -- "$local_file"
@@ -607,10 +652,17 @@ remote_node_check_via_cluster_transport() {
       "$LOCAL_FILES/update.conf" "$user@$host:$remote_config" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$tag_filter_script" "$user@$host:$remote_tag_filter" ||
+    ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$target_selection_script" "$user@$host:$remote_check_dir/target-selection.sh" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$CLUSTER_TARGET_SCRIPT" "$user@$host:$remote_cluster_target" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$target_runtime_file" "$user@$host:$remote_runtime" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$apt_count_file" "$user@$host:$remote_apt_count" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$rpm_count_file" "$user@$host:$remote_rpm_count" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$package_count_file" "$user@$host:$remote_package_count" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$STATUS_MODEL_SCRIPT" "$user@$host:$remote_status_model"; then
     timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
@@ -621,10 +673,17 @@ remote_node_check_via_cluster_transport() {
     printf 'Node %s is unreachable.\n' "$node" >&2
     return 1
   fi
-  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true bash -s -- node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; exit 0' \
+  if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true && -f "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" ]]; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" "$user@$host:$remote_check_dir/target-selection.json" || {
+        timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+        return 1
+      }
+  fi
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_TARGET_SELECTION_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true bash -s -- node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; exit 0' \
     "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
-    "$remote_runtime" "$node" "$remote_status_model" "$remote_status_file" \
-    "$remote_status_file.records" "$remote_status_model" "$node" "$remote_status_file" \
+    "$remote_runtime" "$node" "$remote_status_model" "$remote_status_file" "$remote_status_file.records" \
+    "$remote_check_dir/target-selection.json" "$remote_status_model" "$node" "$remote_status_file" \
     "$remote_status_file.records" "$remote_status_model" "$remote_status_file" "$node" \
     "$remote_check_dir" "$remote_status_file" "$remote_check_dir"
   if ! timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
@@ -692,8 +751,16 @@ remote_update_job() {
   local port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
   local legacy_profile="$LOCAL_FILES/VMs/$target"
   local user="${REMOTE_NODE_USER:-root}" output job_unit command remote_update_dir source scope_env=''
+  local apt_count_file="$LOCAL_FILES/apt-count.py"
+  local rpm_count_file="$LOCAL_FILES/rpm-count.py"
+  local package_count_file="$LOCAL_FILES/package-count.sh"
+  local target_selection_file="${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}"
+  local interactive_env=''
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
   remote_update_dir="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
+  [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+  [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
+  [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
   if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "mkdir -p -- '$remote_update_dir'"; then
     printf 'Could not prepare remote update workspace on %s.\n' "$node" >&2
     return 6
@@ -701,11 +768,13 @@ remote_update_job() {
   for source in \
     "$JOB_RUNNER" "$UPDATE_SCRIPT" "$LOCAL_FILES/update.conf" \
     "$LOCAL_FILES/tag-filter.sh" "$LOCAL_FILES/status-model.sh" \
+    "$LOCAL_FILES/target-selection.sh" "$target_selection_file" \
+    "$LOCAL_FILES/job-pty-bridge.py" \
     "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/ultimate-updater" \
     "$LOCAL_FILES/qga-guest-exec.sh" \
-    "$LOCAL_FILES/target-runtime.sh" "$LOCAL_FILES/cluster-target.sh" \
+    "$LOCAL_FILES/target-runtime.sh" "$apt_count_file" "$rpm_count_file" "$package_count_file" "$LOCAL_FILES/cluster-target.sh" \
     "$LOCAL_FILES/internal-ssh.sh" "$LOCAL_FILES/update-extras.sh" \
-    "$LOCAL_FILES/windows-update.sh"; do
+    "$LOCAL_FILES/windows-update.sh" "$package_count_file"; do
     [[ -f "$source" ]] || continue
     if ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$source" \
       "$user@$host:$remote_update_dir/$(basename -- "$source")"; then
@@ -740,7 +809,7 @@ remote_update_job() {
     fi
   done
   if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
-    "chmod 750 '$remote_update_dir/job-runner.sh' '$remote_update_dir/update.sh' '$remote_update_dir/check-updates.sh' '$remote_update_dir/qga-guest-exec.sh'"; then
+    "chmod 750 '$remote_update_dir/job-runner.sh' '$remote_update_dir/update.sh' '$remote_update_dir/check-updates.sh' '$remote_update_dir/qga-guest-exec.sh' '$remote_update_dir/job-pty-bridge.py'"; then
     timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
     printf 'Could not prepare remote update runner on %s.\n' "$node" >&2
     return 6
@@ -748,8 +817,11 @@ remote_update_job() {
   if [[ "$remote_target" == host ]]; then
     scope_env='UU_UPDATE_SCOPE=host '
   fi
-  printf -v command 'exec /usr/bin/env %sUU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q %q start %q %q' \
-    "$scope_env" "$remote_update_dir" "$remote_update_dir" "$remote_update_dir/job-runner.sh" \
+  if interactive_requested; then
+    interactive_env='UU_JOB_INTERACTIVE=true '
+  fi
+  printf -v command 'exec /usr/bin/env %s%sUU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q UU_TARGET_SELECTION_FILE=%q %q start %q %q' \
+    "$scope_env" "$interactive_env" "$remote_update_dir" "$remote_update_dir" "$remote_update_dir/target-selection.json" "$remote_update_dir/job-runner.sh" \
     "$remote_update_dir/update.sh" "$remote_target"
   if ! output=$(timeout 30 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "$command"); then
     timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true
@@ -776,7 +848,11 @@ run_node_update() {
   require_file "$JOB_RUNNER" "job runner" || return 1
   if [[ "$RESOLVED_NODE_LOCAL" == true ]]; then
     require_file "$UPDATE_SCRIPT" "update script" || return 1
-    UU_UPDATE_SCOPE=host "$JOB_RUNNER" start "$UPDATE_SCRIPT" host
+    if interactive_requested; then
+      UU_JOB_INTERACTIVE=true UU_UPDATE_SCOPE=host "$JOB_RUNNER" start "$UPDATE_SCRIPT" host
+    else
+      UU_UPDATE_SCOPE=host "$JOB_RUNNER" start "$UPDATE_SCRIPT" host
+    fi
   else
     if ! resolve_remote_node_transport "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"; then
       printf 'Could not resolve the existing UU SSH transport for node %s.\n' "$RESOLVED_NODE" >&2
@@ -815,8 +891,8 @@ record_remote_target_error() {
 
 remote_target_check() {
   local target="$1" kind="$2" node="$3" host="$4" mode remote_check_dir remote_config
-  local remote_tag_filter remote_cluster_target remote_runtime remote_qga remote_status_model remote_internal_ssh remote_internal_conf remote_status_file
-  local tag_filter_script target_runtime_file qga_helper internal_ssh_file internal_ssh_conf legacy_profile local_file transport_rc
+  local remote_tag_filter remote_cluster_target remote_runtime remote_qga remote_windows_update remote_status_model remote_internal_ssh remote_internal_conf remote_status_file
+  local tag_filter_script target_runtime_file target_selection_script qga_helper windows_update_file internal_ssh_file internal_ssh_conf legacy_profile local_file transport_rc
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]:-}")
   mode=$([[ "$kind" == container ]] && printf ccontainer || printf cvm)
   if ! resolve_remote_node_transport "$node" "$host"; then
@@ -830,20 +906,34 @@ remote_target_check() {
   remote_tag_filter="$remote_check_dir/tag-filter.sh"
   remote_cluster_target="$remote_check_dir/cluster-target.sh"
   remote_runtime="$remote_check_dir/target-runtime.sh"
+  local remote_apt_count="$remote_check_dir/apt-count.py"
+  local remote_rpm_count="$remote_check_dir/rpm-count.py"
+  local remote_package_count="$remote_check_dir/package-count.sh"
   remote_qga="$remote_check_dir/qga-guest-exec.sh"
+  remote_windows_update="$remote_check_dir/windows-update.sh"
   remote_status_model="$remote_check_dir/status-model.sh"
   remote_internal_ssh="$remote_check_dir/internal-ssh.sh"
   remote_internal_conf="$remote_check_dir/internal-ssh.conf"
   remote_status_file="$remote_check_dir/status.json"
   tag_filter_script="$LOCAL_FILES/tag-filter.sh"
+  target_selection_script="$LOCAL_FILES/target-selection.sh"
   target_runtime_file="$LOCAL_FILES/target-runtime.sh"
+  local apt_count_file="$LOCAL_FILES/apt-count.py"
+  local rpm_count_file="$LOCAL_FILES/rpm-count.py"
+  local package_count_file="$LOCAL_FILES/package-count.sh"
   qga_helper="$LOCAL_FILES/qga-guest-exec.sh"
+  windows_update_file="$LOCAL_FILES/windows-update.sh"
   internal_ssh_file="$LOCAL_FILES/internal-ssh.sh"
   internal_ssh_conf="$LOCAL_FILES/internal-ssh.conf"
   legacy_profile="$LOCAL_FILES/VMs/$target"
   [[ -f "$tag_filter_script" ]] || tag_filter_script="$SCRIPT_DIR/tag-filter.sh"
+  [[ -f "$target_selection_script" ]] || target_selection_script="$SCRIPT_DIR/target-selection.sh"
   [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
+  [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+  [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
+  [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
   [[ -f "$qga_helper" ]] || qga_helper="$SCRIPT_DIR/qga-guest-exec.sh"
+  [[ -f "$windows_update_file" ]] || windows_update_file="$SCRIPT_DIR/windows-update.sh"
   [[ -f "$internal_ssh_file" ]] || internal_ssh_file="$SCRIPT_DIR/internal-ssh.sh"
   local_file=$(mktemp)
   if ! STATUS_MODEL_INIT; then
@@ -857,12 +947,21 @@ remote_target_check() {
       "$LOCAL_FILES/update.conf" "$user@$host:$remote_config" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$tag_filter_script" "$user@$host:$remote_tag_filter" ||
+    ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$target_selection_script" "$user@$host:$remote_check_dir/target-selection.sh" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$CLUSTER_TARGET_SCRIPT" "$user@$host:$remote_cluster_target" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$target_runtime_file" "$user@$host:$remote_runtime" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$apt_count_file" "$user@$host:$remote_apt_count" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$rpm_count_file" "$user@$host:$remote_rpm_count" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$package_count_file" "$user@$host:$remote_package_count" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$qga_helper" "$user@$host:$remote_qga" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$windows_update_file" "$user@$host:$remote_windows_update" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$STATUS_MODEL_SCRIPT" "$user@$host:$remote_status_model"; then
     timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
@@ -895,10 +994,17 @@ remote_target_check() {
     printf 'Could not transfer legacy SSH profile for target %s to node %s.\n' "$target" "$node" >&2
     return 1
   fi
+  if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true && -f "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" ]]; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" "$user@$host:$remote_check_dir/target-selection.json" || {
+        timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+        return 1
+      }
+  fi
   # shellcheck disable=SC2016
-  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q QGA_EXEC_SCRIPT=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true STATUS_MODEL_PARTIAL=true bash -s -- %q %q >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote guest status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; if [[ "$finish_rc" -ne 0 ]]; then exit "$finish_rc"; fi; exit "$remote_rc"' \
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q PACKAGE_COUNT_SCRIPT=%q QGA_EXEC_SCRIPT=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_SINGLE_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true bash -s -- %q %q >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote guest status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; if [[ "$finish_rc" -ne 0 ]]; then exit "$finish_rc"; fi; exit "$remote_rc"' \
     "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
-    "$remote_runtime" "$remote_qga" "$remote_internal_ssh" "$remote_internal_conf" "$node" "$remote_status_model" "$remote_status_file" \
+    "$remote_runtime" "$remote_package_count" "$remote_qga" "$remote_internal_ssh" "$remote_internal_conf" "$node" "$remote_status_model" "$remote_status_file" \
     "$remote_status_file.records" "$mode" "$target" "$remote_status_file.records" \
     "$node" "$remote_status_file" "$remote_status_file.records" "$remote_status_model" \
     "$remote_status_file" "$target" "$remote_check_dir" "$remote_status_file" "$remote_check_dir"
@@ -970,6 +1076,7 @@ remote_target_update() {
 
 run_external_checks() {
   local target result=0 target_result targets
+  REMOTE_TRACE "step=external_phase_enter"
   targets=$(inventory_targets) || return 1
   [[ -n "$targets" ]] || return 0
   require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1
@@ -1052,6 +1159,39 @@ PY
 
 print_global_check_summary() {
   local check_result="$1" external_result="$2"
+  local zero_target_file="${STATUS_FILE}.zero-target"
+  if [[ -e "$zero_target_file" ]]; then
+    rm -f -- "$zero_target_file"
+    rm -f -- "${STATUS_FILE}.run-meta"
+    printf 'CHECK all systems failed: No targets were checked.\n'
+    return 1
+  fi
+  local run_meta_file="${STATUS_FILE}.run-meta"
+  if [[ -r "$run_meta_file" ]]; then
+    python3 - "$run_meta_file" "$check_result" "$external_result" <<'PY'
+import json
+import sys
+
+meta_file, check_result, external_result = sys.argv[1:]
+try:
+    with open(meta_file, encoding="utf-8") as source:
+        meta = json.load(source)
+    checked = int(meta.get("checked", 0))
+    available = meta.get("available")
+except (OSError, ValueError, TypeError):
+    checked = 0
+    available = None
+if int(check_result) == 0 and int(external_result) == 0:
+    if isinstance(available, int) and not isinstance(available, bool):
+        print(f"CHECK all systems completed: {checked} targets checked, {available} updates available")
+    else:
+        print(f"CHECK all systems completed: {checked} targets checked")
+else:
+    print("CHECK all systems failed")
+PY
+    rm -f -- "$run_meta_file"
+    return 0
+  fi
   python3 - "$STATUS_FILE" "$check_result" "$external_result" <<'PY'
 import json
 import sys
@@ -1153,20 +1293,28 @@ run_check() {
   if [[ "${UU_CHECK_JOB_EXECUTION:-false}" != true ]]; then
     require_file "$JOB_RUNNER" "job runner" || return 1
     if [[ -n "$target" ]]; then
-      "$JOB_RUNNER" start-check "$target" "$SCRIPT_DIR/ultimate-updater" target
+      if interactive_requested; then
+        UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start-check "$target" "$SCRIPT_DIR/ultimate-updater" target
+      else
+        "$JOB_RUNNER" start-check "$target" "$SCRIPT_DIR/ultimate-updater" target
+      fi
     else
-      "$JOB_RUNNER" start-check all-systems "$SCRIPT_DIR/ultimate-updater" all
+      if interactive_requested; then
+        UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start-check all-systems "$SCRIPT_DIR/ultimate-updater" all
+      else
+        "$JOB_RUNNER" start-check all-systems "$SCRIPT_DIR/ultimate-updater" all
+      fi
     fi
     return $?
   fi
   if [[ -z "$target" ]]; then
     require_file "$CHECK_SCRIPT" "check script" || return 1
     local check_result external_result
-    UU_DEFER_NOTIFICATION=true "$CHECK_SCRIPT"; check_result=$?
+    UU_GLOBAL_CHECK=true UU_DEFER_NOTIFICATION=true "$CHECK_SCRIPT"; check_result=$?
     classify_collection_result "$check_result"; check_result=$?
     run_external_checks; external_result=$?
     classify_collection_result "$external_result"; external_result=$?
-    if declare -f STATUS_MODEL_SEND_NOTIFICATION >/dev/null 2>&1; then
+    if [[ ! -e "${STATUS_FILE}.zero-target" ]] && declare -f STATUS_MODEL_SEND_NOTIFICATION >/dev/null 2>&1; then
       STATUS_MODEL_SEND_NOTIFICATION "$STATUS_FILE" "$LOCAL_FILES/update.conf" || true
     fi
     print_global_check_summary "$check_result" "$external_result"
@@ -1194,9 +1342,9 @@ run_check() {
     return "$check_result"
   fi
   case "$kind" in
-    host) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" chost; check_result=$? ;;
-    container) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" ccontainer "$target"; check_result=$? ;;
-    vm) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_DEFER_NOTIFICATION=true UU_EXPLICIT_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" cvm "$target"; check_result=$? ;;
+    host) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_SINGLE_TARGET_CHECK=true UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" chost; check_result=$? ;;
+    container) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_SINGLE_TARGET_CHECK=true UU_DEFER_NOTIFICATION=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" ccontainer "$target"; check_result=$? ;;
+    vm) require_file "$CHECK_SCRIPT" "check script" || return 1; UU_SINGLE_TARGET_CHECK=true UU_DEFER_NOTIFICATION=true UU_EXPLICIT_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" cvm "$target"; check_result=$? ;;
     external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; "$EXTERNAL_APT_SCRIPT" check "$target"; check_result=$? ;;
   esac
   print_check_summary "$target" "$check_result"
@@ -1226,8 +1374,24 @@ run_update() {
     return $?
   fi
   case "$kind" in
-    host|container|vm) require_file "$UPDATE_SCRIPT" "update script" || return 1; "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")" ;;
-    external) require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1; if [[ "$override" == true ]]; then UU_EXTERNAL_BACKUP_OVERRIDE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; else "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; fi ;;
+    host|container|vm)
+      require_file "$UPDATE_SCRIPT" "update script" || return 1
+      if interactive_requested; then
+        UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")"
+      else
+        "$JOB_RUNNER" start "$UPDATE_SCRIPT" "$([[ "$kind" == host ]] && printf host || printf '%s' "$target")"
+      fi
+      ;;
+    external)
+      require_file "$EXTERNAL_APT_SCRIPT" "external Linux helper" || return 1
+      if interactive_requested; then
+        if [[ "$override" == true ]]; then UU_JOB_INTERACTIVE=true UU_EXTERNAL_BACKUP_OVERRIDE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; else UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"; fi
+      elif [[ "$override" == true ]]; then
+        UU_EXTERNAL_BACKUP_OVERRIDE=true "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"
+      else
+        "$JOB_RUNNER" start "$EXTERNAL_APT_SCRIPT" "$target"
+      fi
+      ;;
   esac
 }
 
@@ -1263,6 +1427,11 @@ case "$command" in
     shift
     "$HARDCORE_TEST_SCRIPT" "$@"
     ;;
+  job)
+    [[ "${2:-}" == attach && $# -eq 3 ]] || { usage >&2; exit 2; }
+    require_file "$JOB_RUNNER" "job runner" || exit 1
+    "$JOB_RUNNER" attach "$3"
+    ;;
   check)
     [[ $# -le 2 ]] || { usage >&2; exit 2; }
     run_check "${2:-}"
@@ -1277,7 +1446,11 @@ case "$command" in
     require_file "$JOB_RUNNER" "job runner" || exit 1
     require_file "$UPDATE_SCRIPT" "update script" || exit 1
     require_file "$GLOBAL_UPDATE_SCRIPT" "global update dispatcher" || exit 1
-    "$JOB_RUNNER" start-global "$GLOBAL_UPDATE_SCRIPT"
+    if interactive_requested; then
+      UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start-global "$GLOBAL_UPDATE_SCRIPT"
+    else
+      "$JOB_RUNNER" start-global "$GLOBAL_UPDATE_SCRIPT"
+    fi
     ;;
 check-node)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
@@ -1285,7 +1458,11 @@ check-node)
       run_node_check "$2"
     else
       require_file "$JOB_RUNNER" "job runner" || exit 1
-      "$JOB_RUNNER" start-check "$2" "$SCRIPT_DIR/ultimate-updater" node
+      if interactive_requested; then
+        UU_JOB_INTERACTIVE=true "$JOB_RUNNER" start-check "$2" "$SCRIPT_DIR/ultimate-updater" node
+      else
+        "$JOB_RUNNER" start-check "$2" "$SCRIPT_DIR/ultimate-updater" node
+      fi
     fi
     ;;
   update-node)

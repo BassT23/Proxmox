@@ -28,6 +28,8 @@ runtime_sources = "\n".join(
 labels = re.search(r"const configLabels=\{(.*?)\};", server.PAGE, re.S)
 assert labels, "configLabels missing"
 visible_keys = set(re.findall(r"([A-Z][A-Z0-9_]+):", labels.group(1)))
+if "configLabels.USE_INTERNAL_TARGET_SELECTION='Use Ultimate Updater target selection'" in server.PAGE:
+    visible_keys.add("USE_INTERNAL_TARGET_SELECTION")
 assert visible_keys == server.CONFIG_KEYS, sorted(visible_keys ^ server.CONFIG_KEYS)
 orphaned = sorted(key for key in visible_keys if not re.search(rf"\b{re.escape(key)}\b", runtime_sources))
 assert not orphaned, orphaned
@@ -38,7 +40,7 @@ source = (ROOT / "web-ui/server.py").read_text(encoding="utf-8")
 assert '"start-check", target' in source
 assert '"start-check", "all-systems"' in source
 assert 'str(self.server.cli), "update-all"' in source
-assert 'str(self.server.cli), "update-node", node' in source
+assert 'str(self.server.cli), "update-node", action_target' in source
 assert '"start-selfupdate"' in source
 
 cli = (ROOT / "ultimate-updater").read_text(encoding="utf-8")

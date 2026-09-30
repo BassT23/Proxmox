@@ -9,6 +9,8 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 # directory. The wrapper creates its root directory, but not temp/.
 awk '/^CHECK_CONTAINER_FAILURE\(\)/{copy=1} /^## VM ##/{if(copy) exit} copy' \
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/check-container.sh"
+awk '/^GUEST_INTERNET_PREFLIGHT_COMMAND\(\)/,/^# Wait for bootup/' \
+  "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/preflight-functions.sh"
 cat > "$WORK_DIR/harness.sh" <<'HARNESS'
 #!/bin/bash
 set -euo pipefail
@@ -19,9 +21,17 @@ RDU=false
 STATUS_MODEL_NODE=node2
 STATUS_MODEL_GUEST_NAME=smarthome-service
 INITIAL_INVENTORY=false
+CHECK_URL=example.invalid
+EXE_FOR_INTERNET_CHECK=ping
 STATUS_MODEL_RECORD_FILE="$PWD/records"
 SANITIZE_NUMBER() { tr -cd '0-9' <<< "$1"; }
 READ_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; }
+PARSE_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; APT_COUNTS_TOTAL=0; }
+APT_COUNT_REMOTE_COMMAND() { printf ':'; }
+RPM_COUNT_REMOTE_COMMAND() { printf ':'; }
+PARSE_RPM_UPDATE_COUNTS() { RPM_COUNTS_TOTAL=0; }
+PACKAGE_COUNT_REMOTE_COMMAND() { printf ':'; }
+PARSE_PACKAGE_UPDATE_COUNTS() { PACKAGE_COUNTS_TOTAL=0; }
 cluster_target_guest_name() { printf 'smarthome-service\n'; }
 STATUS_MODEL_RECORD() { printf '%s\n' "$*" >> "$STATUS_MODEL_RECORD_FILE"; }
 RUN_PCT_COMMAND() {
@@ -38,6 +48,7 @@ pct() {
   printf 'ostype: unsupported\n'
 }
 source "$PWD/check-container.sh"
+source "$PWD/preflight-functions.sh"
 CHECK_CONTAINER 200
 test -f "$LOCAL_FILES/temp/temp"
 grep -Fq '200 lxc pct true Debian GNU/Linux 12 (bookworm)' "$STATUS_MODEL_RECORD_FILE"
@@ -62,10 +73,18 @@ RDU=false
 STATUS_MODEL_NODE=node2
 STATUS_MODEL_GUEST_NAME=tasmota
 INITIAL_INVENTORY=false
+CHECK_URL=example.invalid
+EXE_FOR_INTERNET_CHECK=ping
 STATUS_MODEL_RECORD_FILE="$PWD/hostname-records"
 YL='' CL=''
 SANITIZE_NUMBER() { tr -cd '0-9' <<< "$1"; }
 READ_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; }
+PARSE_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; APT_COUNTS_TOTAL=0; }
+APT_COUNT_REMOTE_COMMAND() { printf ':'; }
+RPM_COUNT_REMOTE_COMMAND() { printf ':'; }
+PARSE_RPM_UPDATE_COUNTS() { RPM_COUNTS_TOTAL=0; }
+PACKAGE_COUNT_REMOTE_COMMAND() { printf ':'; }
+PARSE_PACKAGE_UPDATE_COUNTS() { PACKAGE_COUNTS_TOTAL=0; }
 cluster_target_guest_name() { printf 'tasmota\n'; }
 STATUS_MODEL_RECORD() { printf '%s\n' "$*" >> "$STATUS_MODEL_RECORD_FILE"; }
 RUN_PCT_COMMAND() {
@@ -74,11 +93,13 @@ RUN_PCT_COMMAND() {
   if [[ "${1:-}" == hostname ]]; then
     return 1
   fi
-  if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == "apt-get update" ]]; then
+  if [[ "${1:-}" == sh && "${2:-}" == -c && "${3:-}" == *ping* ]]; then
     return 0
   fi
-  if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == "apt-get -s upgrade" ]]; then
-    printf '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n'
+  if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == : ]]; then
+    return 0
+  fi
+  if [[ "${1:-}" == bash && "${2:-}" == -c && "${3:-}" == "apt-get update" ]]; then
     return 0
   fi
   return 1
@@ -88,6 +109,7 @@ pct() {
   printf 'ostype: debian\nhostname: tasmota\n'
 }
 source "$PWD/check-container.sh"
+source "$PWD/preflight-functions.sh"
 CHECK_CONTAINER 230
 grep -Fq '230 lxc pct true debian' "$STATUS_MODEL_RECORD_FILE"
 ! grep -Fq 'CHECK_COMMAND_FAILED' "$STATUS_MODEL_RECORD_FILE"
@@ -95,3 +117,60 @@ HARNESS
 chmod 750 "$WORK_DIR/hostname-fallback.sh"
 (cd "$WORK_DIR" && bash hostname-fallback.sh)
 echo 'remote LXC hostname fallback: PASS'
+
+# A reachable guest with a broken repository must retain the APT failure
+# classification instead of being mistaken for a connectivity failure.
+cat > "$WORK_DIR/apt-failure.sh" <<'HARNESS'
+#!/bin/bash
+set -euo pipefail
+LOCAL_FILES="$PWD/remote-run"
+mkdir -p "$LOCAL_FILES"
+CONTAINER=211
+RDU=false
+STATUS_MODEL_NODE=node2
+STATUS_MODEL_GUEST_NAME=iobroker
+INITIAL_INVENTORY=false
+CHECK_URL=example.invalid
+EXE_FOR_INTERNET_CHECK=ping
+STATUS_MODEL_RECORD_FILE="$PWD/apt-failure-records"
+YL='' CL=''
+SANITIZE_NUMBER() { tr -cd '0-9' <<< "$1"; }
+READ_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; }
+PARSE_APT_UPDATE_COUNTS() { SECURITY_APT_UPDATES=0; NORMAL_APT_UPDATES=0; APT_COUNTS_TOTAL=0; }
+APT_COUNT_REMOTE_COMMAND() { printf ':'; }
+RPM_COUNT_REMOTE_COMMAND() { printf ':'; }
+PARSE_RPM_UPDATE_COUNTS() { RPM_COUNTS_TOTAL=0; }
+PACKAGE_COUNT_REMOTE_COMMAND() { printf ':'; }
+PARSE_PACKAGE_UPDATE_COUNTS() { PACKAGE_COUNTS_TOTAL=0; }
+cluster_target_guest_name() { printf 'iobroker\n'; }
+STATUS_MODEL_RECORD() { printf '%s\n' "$*" >> "$STATUS_MODEL_RECORD_FILE"; }
+RUN_PCT_COMMAND() {
+  local id="$1"; shift
+  [[ "$id" == 211 ]]
+  if [[ "${1:-}" == hostname ]]; then
+    printf 'iobroker\n'
+    return 0
+  fi
+  if [[ "${1:-}" == sh && "${2:-}" == -c && "${3:-}" == *ping* ]]; then
+    return 0
+  fi
+  if [[ "${1:-}" == sh && "${2:-}" == -c && "${3:-}" == "cat /etc/os-release" ]]; then
+    printf 'ID=debian\nVERSION_ID="12"\nPRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\n'
+    return 0
+  fi
+  return 1
+}
+pct() {
+  [[ "$1" == config && "$2" == 211 ]]
+  printf 'ostype: debian\n'
+}
+source "$PWD/check-container.sh"
+source "$PWD/preflight-functions.sh"
+CHECK_CONTAINER 211 || true
+grep -Fq 'CHECK_COMMAND_FAILED' "$STATUS_MODEL_RECORD_FILE"
+grep -Fq 'Could not determine APT update counts for LXC 211' "$STATUS_MODEL_RECORD_FILE"
+! grep -Fq 'CONNECTIVITY_FAILED' "$STATUS_MODEL_RECORD_FILE"
+HARNESS
+chmod 750 "$WORK_DIR/apt-failure.sh"
+(cd "$WORK_DIR" && bash apt-failure.sh)
+echo 'remote LXC APT failure classification: PASS'

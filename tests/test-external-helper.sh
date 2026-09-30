@@ -11,6 +11,10 @@ shellcheck "$ROOT_DIR/external-helper.sh" "$ROOT_DIR/external-bootstrap.sh"
 version=$("$ROOT_DIR/external-helper.sh" version)
 [[ "$version" == 'ultimate-updater-external 1' ]]
 
+printf '%s\n' '#!/usr/bin/env python3' 'print("APT_COUNTS|7|5|2|true")' > "$WORK_DIR/apt-count.py"
+chmod 755 "$WORK_DIR/apt-count.py"
+[[ "$(UU_APT_COUNT_SCRIPT="$WORK_DIR/apt-count.py" "$ROOT_DIR/external-helper.sh" status)" == 'APT_COUNTS|7|5|2|true' ]]
+
 if [ "$(id -u)" -ne 0 ]; then
   if "$ROOT_DIR/external-helper.sh" update >/dev/null 2>&1; then
     echo 'external helper unexpectedly allowed non-root update' >&2

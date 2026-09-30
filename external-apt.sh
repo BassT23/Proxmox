@@ -14,6 +14,8 @@ RUNTIME_SCRIPT="${TARGET_RUNTIME_SCRIPT:-$LOCAL_FILES/target-runtime.sh}"
 EXTERNAL_HELPER_PATH="${EXTERNAL_HELPER_PATH:-/usr/local/sbin/ultimate-updater-external}"
 EXTERNAL_HELPER_VERSION="1"
 EXTERNAL_SAFETY_SCRIPT="${EXTERNAL_SAFETY_SCRIPT:-$LOCAL_FILES/external-backup-safety.sh}"
+UU_EFFECTIVE_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2; exit}' "$LOCAL_FILES/update.conf" 2>/dev/null || true)
+[[ "$UU_EFFECTIVE_HEADLESS" == true ]] || UU_EFFECTIVE_HEADLESS=false
 [[ -f "$INVENTORY_SCRIPT" ]] || INVENTORY_SCRIPT="$SCRIPT_DIR/target-inventory.sh"
 [[ -f "$STATUS_MODEL_SCRIPT" ]] || STATUS_MODEL_SCRIPT="$SCRIPT_DIR/status-model.sh"
 [[ -f "$RUNTIME_SCRIPT" ]] || RUNTIME_SCRIPT="$SCRIPT_DIR/target-runtime.sh"
@@ -30,6 +32,14 @@ else
     local host="$1" port="$2" user="$3"
     shift 3
     ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"
+  }
+  CLASSIFY_SSH_EXIT() {
+    case "$1" in
+      0) printf 'SSH_OK' ;;
+      124) printf 'SSH_TIMEOUT' ;;
+      255) printf 'SSH_CONNECTION_FAILED' ;;
+      *) printf 'REMOTE_COMMAND_FAILED' ;;
+    esac
   }
 fi
 
@@ -62,21 +72,12 @@ load_target() {
   fi
 }
 
-classify_ssh_error() {
-  local output="${1,,}"
-  if [[ "$output" == *"permission denied"* || "$output" == *"authentication"* ]]; then
-    printf 'AUTH_FAILED'
-  elif [[ "$output" == *"could not resolve"* || "$output" == *"connection timed out"* ||
-    "$output" == *"no route to host"* || "$output" == *"network is unreachable"* ||
-    "$output" == *"connection refused"* ]]; then
-    printf 'SSH_UNREACHABLE'
-  else
-    printf 'SSH_CONNECTION_FAILED'
-  fi
-}
-
 remote_check() {
-  RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" "UU_EXTERNAL_TARGET_NAME=$EXTERNAL_TARGET bash -s" <<'REMOTE_CHECK'
+  local apt_count_command rpm_count_command
+  apt_count_command=$(APT_COUNT_REMOTE_COMMAND) || return 1
+  rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND) || return 1
+  RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" \
+    "UU_EXTERNAL_TARGET_NAME=$EXTERNAL_TARGET UU_APT_COUNT_COMMAND=$(printf '%q' "$apt_count_command") UU_RPM_COUNT_COMMAND=$(printf '%q' "$rpm_count_command") bash -s" <<'REMOTE_CHECK'
 set -u
 config=/etc/ultimate-updater/external.conf
 config_value() {
@@ -143,26 +144,38 @@ if [ "$updater" = apt ]; then
   # The check is deliberately read-only.  It uses the package metadata
   # already cached on the external system; refreshing package metadata belongs
   # exclusively to the update path below.
-  apt_output=$(apt-get -s upgrade 2>&1) || {
-    printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|apt simulation failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+  apt_counts=$(bash -c "$UU_APT_COUNT_COMMAND") || {
+    printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|structured APT metadata query failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
     exit 25
   }
-  updates=$(printf '%s\n' "$apt_output" | grep -ci '^inst ' || true)
+  IFS='|' read -r apt_marker apt_total apt_normal apt_security apt_known _ <<EOF
+$apt_counts
+EOF
+  if [[ "$apt_marker" != APT_COUNTS || ! "$apt_total" =~ ^[0-9]+$ ||
+    ! "$apt_normal" =~ ^[0-9]+$ || ! "$apt_security" =~ ^[0-9]+$ ||
+    "$apt_known" != true || "$((apt_normal + apt_security))" -ne "$apt_total" ]]; then
+    printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_COUNT_INVALID|structured APT count result was invalid\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+    exit 25
+  fi
+  updates="$apt_total"
   reboot=false
   if [ -e "${UU_REBOOT_REQUIRED_FILE:-/var/run/reboot-required}" ] ||
     [ -e "${UU_REBOOT_REQUIRED_PACKAGES_FILE:-/var/run/reboot-required.pkgs}" ]; then reboot=true; fi
 else
-  dnf_output=$(dnf -q check-update 2>&1)
-  dnf_status=$?
-  if [ "$dnf_status" -ne 0 ] && [ "$dnf_status" -ne 100 ]; then
-    printf 'UU_RESULT|error|%s|%s|null|null|dnf|DNF_CHECK_FAILED|dnf check-update failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+  rpm_counts=$(bash -c "$UU_RPM_COUNT_COMMAND") || {
+    printf 'UU_RESULT|error|%s|%s|null|null|dnf|RPM_COUNT_FAILED|structured RPM metadata query failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+    exit 25
+  }
+  IFS='|' read -r rpm_marker rpm_status rpm_total rpm_normal rpm_security rpm_known _ <<EOF
+$rpm_counts
+EOF
+  if [ "$rpm_marker" != UU_RPM_COUNTS ] || [ "$rpm_status" != ok ] ||
+    ! printf '%s\n' "$rpm_total" | grep -Eq '^[0-9]+$' ||
+    [ "$rpm_normal" != null ] || [ "$rpm_security" != null ] || [ "$rpm_known" != false ]; then
+    printf 'UU_RESULT|error|%s|%s|null|null|dnf|RPM_COUNT_INVALID|structured RPM count result was invalid\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
     exit 25
   fi
-  if [ "$dnf_status" -eq 0 ]; then
-    updates=0
-  else
-    updates=$(printf '%s\n' "$dnf_output" | awk 'NF >= 3 && $2 ~ /^[0-9]/ {count++} END {print count + 0}')
-  fi
+  updates="$rpm_total"
   reboot=null
   if command -v needs-restarting >/dev/null 2>&1; then
     needs-restarting -r >/dev/null 2>&1
@@ -174,7 +187,14 @@ else
     esac
   fi
 fi
-printf 'UU_RESULT|ok|%s|%s|%s|%s|%s|||\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}" "$updates" "$reboot" "$updater"
+if [ "$updater" = apt ]; then
+  printf 'UU_RESULT|ok|%s|%s|%s|%s|%s|||%s|%s|true\n' \
+    "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}" "$updates" "$reboot" "$updater" \
+    "$apt_normal" "$apt_security"
+else
+  printf 'UU_RESULT|ok|%s|%s|%s|%s|%s|||null|null|false\n' \
+    "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}" "$updates" "$reboot" "$updater"
+fi
 REMOTE_CHECK
 }
 
@@ -185,15 +205,21 @@ record_check_error() {
 
 check_target() {
   local result rc marker check_status os_name os_version updates reboot updater code message
+  local normal_updates security_updates security_split_supported
   result=$(remote_check 2>&1)
   rc=$?
   if [[ $rc -ne 0 && "$result" != UU_RESULT\|* ]]; then
-    code=$(classify_ssh_error "$result")
-    record_check_error false offline "$code" "SSH connection failed: $result"
+    code=$(CLASSIFY_SSH_EXIT "$rc")
+    if [[ "$code" == SSH_TIMEOUT || "$code" == SSH_CONNECTION_FAILED ]]; then
+      record_check_error false offline "$code" "SSH transport failed: $result"
+    else
+      record_check_error true error "$code" "Remote check command failed: $result"
+    fi
     printf 'external-linux: %s: %s\n' "$EXTERNAL_TARGET" "$result" >&2
     return 1
   fi
-  IFS='|' read -r marker check_status os_name os_version updates reboot updater code message <<< "$result"
+  IFS='|' read -r marker check_status os_name os_version updates reboot updater code message \
+    normal_updates security_updates security_split_supported <<< "$result"
   if [[ "$marker" != UU_RESULT ]]; then
     record_check_error true error REMOTE_CHECK_FAILED "Unexpected remote check response"
     return 1
@@ -202,7 +228,8 @@ check_target() {
     ok)
       local state=ok
       [[ "$updates" -gt 0 || "$reboot" == true ]] && state=updates_available
-      STATUS_MODEL_UPSERT "$EXTERNAL_TARGET" external ssh true "$os_name" "$os_version" "$updater" "$updates" "$reboot" "$state" "" ""
+      STATUS_MODEL_UPSERT "$EXTERNAL_TARGET" external ssh true "$os_name" "$os_version" "$updater" \
+        "$updates" "$reboot" "$state" "" "" "$normal_updates" "$security_updates" "$security_split_supported"
       printf '%s: %s, %s updates, reboot_required=%s\n' "$EXTERNAL_TARGET" "$os_name" "$updates" "$reboot"
       ;;
     unsupported|error)
@@ -228,6 +255,7 @@ set -u
 helper="__EXTERNAL_HELPER_PATH__"
 expected_version="__EXTERNAL_HELPER_VERSION__"
 target_name="__EXTERNAL_TARGET_NAME__"
+effective_headless="__UU_EFFECTIVE_HEADLESS__"
 config=/etc/ultimate-updater/external.conf
 if [ ! -r "$config" ] || ! awk -F= '
   /^[[:space:]]*($|#)/ { next }
@@ -274,16 +302,17 @@ version=$($helper version 2>/dev/null) || { printf 'EXTERNAL_HELPER_UNAVAILABLE\
   exit 33
 }
 if [ "$(id -u)" -eq 0 ]; then
-  "$helper" update
+  UU_EFFECTIVE_HEADLESS="$effective_headless" "$helper" update
 else
   command -v sudo >/dev/null 2>&1 || { printf 'EXTERNAL_SUDO_UNAVAILABLE\n' >&2; exit 23; }
-  sudo -n "$helper" update
+  sudo -n env UU_EFFECTIVE_HEADLESS="$effective_headless" "$helper" update
 fi
 REMOTE_UPDATE
   )
   remote_script=${remote_script//__EXTERNAL_HELPER_PATH__/$EXTERNAL_HELPER_PATH}
   remote_script=${remote_script//__EXTERNAL_HELPER_VERSION__/$EXTERNAL_HELPER_VERSION}
   remote_script=${remote_script//__EXTERNAL_TARGET_NAME__/$EXTERNAL_TARGET}
+  remote_script=${remote_script//__UU_EFFECTIVE_HEADLESS__/$UU_EFFECTIVE_HEADLESS}
   RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" 'bash -s' <<< "$remote_script"
 }
 
@@ -297,23 +326,38 @@ update_target() {
     printf 'External update blocked: backup safety component is unavailable.\n' >&2
     return 42
   }
+  STATUS_MODEL_TRACE_EVENT external_before_update "$EXTERNAL_TARGET" "" || true
   "${safety_args[@]}" || return $?
   output=$(remote_update 2>&1)
   rc=$?
   if [[ $rc -eq 0 ]]; then
     if [[ "$output" == *EXTERNAL_FILTERED* ]]; then
-      STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" skipped 0 || true
+      STATUS_MODEL_TRACE_EVENT external_before_result_write "$EXTERNAL_TARGET" "" || true
+      STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" skipped 0
+      local result_rc=$?
+      STATUS_MODEL_TRACE_EVENT external_result_write_rc "$EXTERNAL_TARGET" "$result_rc" || true
+      STATUS_MODEL_TRACE_EVENT external_after_result_write "$EXTERNAL_TARGET" "" || true
       printf '%s: update skipped by local External filter\n' "$EXTERNAL_TARGET"
+      STATUS_MODEL_TRACE_EVENT external_returned "$EXTERNAL_TARGET" 0 || true
       return 0
     fi
-    STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" success 0 || true
+    STATUS_MODEL_TRACE_EVENT external_before_result_write "$EXTERNAL_TARGET" "" || true
+    STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" success 0
+    local result_rc=$?
+    STATUS_MODEL_TRACE_EVENT external_result_write_rc "$EXTERNAL_TARGET" "$result_rc" || true
+    STATUS_MODEL_TRACE_EVENT external_after_result_write "$EXTERNAL_TARGET" "" || true
     printf '%s: update completed successfully\n' "$EXTERNAL_TARGET"
+    STATUS_MODEL_TRACE_EVENT external_returned "$EXTERNAL_TARGET" 0 || true
     return 0
   fi
-  code=$(classify_ssh_error "$output")
-  [[ "$code" == SSH_* || "$code" == AUTH_FAILED ]] || code=APT_UPDATE_FAILED
-  STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" failed "$rc" || true
+  code=$(CLASSIFY_SSH_EXIT "$rc")
+  STATUS_MODEL_TRACE_EVENT external_before_result_write "$EXTERNAL_TARGET" "" || true
+  STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" failed "$rc"
+  local result_rc=$?
+  STATUS_MODEL_TRACE_EVENT external_result_write_rc "$EXTERNAL_TARGET" "$result_rc" || true
+  STATUS_MODEL_TRACE_EVENT external_after_result_write "$EXTERNAL_TARGET" "" || true
   printf 'external-linux: %s: update failed (%s): %s\n' "$EXTERNAL_TARGET" "$code" "$output" >&2
+  STATUS_MODEL_TRACE_EVENT external_returned "$EXTERNAL_TARGET" "$rc" || true
   return "$rc"
 }
 

@@ -36,6 +36,17 @@ targets, and server-side jobs in one view.
 
 ![Ultimate Updater dashboard](images/web-ui/dashboard.png)
 
+### Target selection
+
+The Systems view can optionally manage target selection directly. Enable
+**Use Ultimate Updater target selection** in Settings to show independent
+**Check** and **Update** controls for Nodes, LXC containers, VMs, and External
+systems. Each control cycles through **No explicit selection**, **Only**, and
+**Exclude**. The first use asks for confirmation because enabling this mode
+ignores existing Proxmox Only/Exclude tags; those tags are not changed or
+removed. Disabling the mode keeps the saved rules and restores legacy tag
+selection.
+
 ### Navigation
 
 Use the compact menu button in the header to open the current navigation. It
@@ -56,6 +67,24 @@ Jobs run server-side and remain available after the browser session ends. The
 Jobs view shows the action, target, start time, result, exit code, and a link
 to the retained log.
 
+For a running non-interactive job or Check, choose **Live output**. This is a
+read-only terminal view: output is streamed while the job runs, and closing
+the browser does not stop the server-side job. The complete log remains
+available afterwards for viewing or download.
+
+Interactive update jobs can be opened with **Live terminal** when their
+transport supports interaction. This is a real terminal view with PTY output,
+ANSI/cursor handling, input, and terminal resizing. A browser disconnect does
+not end the job; the terminal can be attached again and existing output may be
+replayed. After completion the terminal remains open and shows **Job finished**
+or **Job failed**. In either case, existing output remains visible and the
+complete log can still be viewed or downloaded. Failed jobs disable further
+input, while Close remains available.
+
+On small displays the terminal uses a responsive, fullscreen-like layout. The
+mobile keybar provides **Esc**, **Tab**, arrow keys, and **Enter**. **Terminal
+Font Size** can be adjusted with the font controls and is saved per browser.
+
 ![Web UI jobs and logs](images/web-ui/jobs.png)
 
 ### Scheduler
@@ -70,17 +99,53 @@ The UI does not expose a general shell, arbitrary commands, private keys, or
 password storage. Configuration writes preserve unrelated settings and are
 validated atomically. Updates require browser confirmation.
 
+### Reboot now
+
+In a target's detail view, **Reboot now** is shown only when **Reboot required**
+is **Yes** and the target is a supported Node, LXC, or VM. It is not a general
+reboot button in the overview. Guest reboots require one confirmation; Node
+reboots require an additional safety confirmation because running guests may be
+affected. Running or conflicting jobs, offline targets, and unsupported or
+restricted targets block the action.
+
+This manual action is separate from `REBOOT_IF_NEEDED`: that setting controls
+reboot handling in the Update path, while **Reboot now** is an explicit action
+started from target details.
+
 ## Authentication and service control
 
-Normal Proxmox installations authenticate the local administrator through PAM.
-The service is root-owned because the existing CLI and job runner need local
-permissions. Useful service commands are:
+The Web UI uses Proxmox authentication by default. The login domain list is
+read from Proxmox, credentials are checked by its local API, and access is
+granted only when the account has the full built-in `Administrator` effective
+privileges at `/`. The service is root-owned because the existing CLI and job
+runner need local permissions. Useful service commands are:
 
 ```bash
 systemctl status ultimate-updater-web
 systemctl restart ultimate-updater-web
 journalctl -u ultimate-updater-web
 ```
+
+The normal login does not require a separate Ultimate Updater user. For
+example, an existing `alice@pam` or `admin@pve` Proxmox administrator can use
+the corresponding domain and their existing password. Proxmox remains
+authoritative for authentication, account status, realms, and authorization;
+Ultimate Updater does not create or modify Proxmox users, groups, roles, or
+ACLs.
+
+The existing `UU_AUTH_BACKEND=internal` mode remains available as an explicit
+fallback/development backend. The earlier `UU_AUTH_BACKEND=pam` plus
+`WEB_UI_PAM_USER=admin` mode remains a legacy compatibility path; it is not the
+default and does not provide Proxmox realm or RBAC authorization.
+
+```text
+UU_AUTH_BACKEND=pam
+WEB_UI_PAM_USER=admin
+```
+
+Two-factor authentication challenges from Proxmox are rejected by this login
+flow unless a complete ticket is returned; a password-only success is never
+treated as sufficient. Passwords and Proxmox tickets are not stored.
 
 The interface is responsive on narrow displays. The dashboard can also show
 an expanded external-system section when target details are needed.

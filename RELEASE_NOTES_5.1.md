@@ -1,6 +1,142 @@
-# Ultimate Updater 5.1.2
+# Ultimate Updater 5.1.3
 
-Status: Stable patch release.
+Status: Stable release.
+
+5.1.3 is a stability, correctness, and hardening release following the
+existing 5.1 Web UI generation. It focuses on reliability across update
+execution, checks, remote operation, result handling, installer/self-update
+behavior, notifications, and terminal handling.
+
+## 5.1.3
+
+- Update and check execution, status handling, result preservation, remote and
+  cluster operation, notifications, and current-run summaries were hardened.
+- External and remote results remain correctly attributed through final status
+  refreshes without resurrecting stale or non-inventory targets.
+- Installer and self-update behavior now preserves legacy bootstrap
+  compatibility, reports the actual installed build identity, honors explicit
+  same-commit branch changes, and presents cleaner interactive output.
+- Web UI version details and compact build identities distinguish product
+  version, branch, Beta/build information, and installed/available commits.
+- Alpine minimal-LXC checks no longer require Bash, and total-only package
+  managers are kept out of unsupported security splits.
+- The wider 5.1.3 cycle also includes authentication, backup/snapshot,
+  package-manager, scheduler, and terminal-safety hardening documented in the
+  historical Beta sections below.
+
+The following Beta 7 section records the release-candidate validation history;
+the final release incorporates its approved changes.
+
+## Beta 7
+
+- Installer, CLI, and Web UI build identity now reflects the installed
+  Ultimate Updater product, including Beta/develop branch and short commit
+  information where applicable.
+- Legacy installed clients retain the literal `VERSION` bootstrap path needed
+  to discover current 5.1.3 self-update payloads.
+- Installer and self-update output no longer repeats an intermediate
+  `Installing:` identity; the final installed build identity remains visible.
+- The Web UI version dialog separates product version, channel/Beta details,
+  and installed/available commits without redundant compact identity strings.
+- Explicit branch changes are honored even when source and target branches
+  point to the same commit.
+- Interactive installer clearing reaches the controlling terminal, while
+  headless, scheduler, and managed output remain free of terminal controls.
+- Global update result preservation and current-run summary scoping retain
+  External and remote metadata through final refreshes without resurrecting
+  stale or non-inventory results.
+- Minimal Alpine LXCs can be checked without Bash, and APK remains total-only
+  where security splitting is unsupported.
+
+During Beta 7 validation, the combined External `update-all`
+result-preservation scenario remained a field-validation target; this
+historical note does not change the stable release scope above.
+
+## Beta 6
+
+- Native interactive update execution preserves the real terminal, while
+  headless jobs capture output and retain the exact command result.
+- Mutating update steps and extra updaters execute once and propagate their
+  actual failures without replacing them with false success.
+- Community-Scripts execution is isolated from controlling-terminal
+  SIGTTOU/SIGTTIN hangs, including nested `/dev/tty` reads, while live output
+  and cancellation remain available.
+- Informational commands no longer produce update-summary notifications.
+- Installer cron checks now carry the scheduler source marker, preserve custom
+  schedules, and migrate known legacy entries safely.
+- Standalone local-node actions and aggregate checks use the correct local
+  dispatch, while cluster node actions retain their remote behavior.
+- Remote update results and guest failures are handed back into the central
+  status model with current-inventory and stale-result protection.
+- External update preservation, status refresh, and summary rendering remain
+  important validation targets; the External `update-all` field case is not
+  claimed as confirmed fixed yet.
+
+These Beta 6 changes are for validation and are not a stable 5.1.3 release.
+
+## Beta 5
+
+- SSH guest package-count commands now work without an extra remote shell
+  wrapper, with deterministic package-count handling across supported managers.
+- Proxmox-native and configured administrator authentication support was added
+  for the Web UI.
+- External APT normal/security counts, cluster status handback, QGA/Windows
+  checks, LXC backup fallback, and Community-Scripts terminal isolation were
+  hardened.
+- The Welcome Screen now presents structured, compact update and check
+  summaries, including Home Assistant OS/Core QGA checks.
+- Interactive and headless job execution, remote terminal reconnects, target
+  selection context, and locale-independent status/count handling were
+  improved.
+
+These Beta 5 changes are for validation and are not a stable 5.1.3 release.
+
+## Beta 4
+
+- Running interactive jobs now show only `Live terminal`, running
+  non-interactive jobs show only `Live output`, and completed jobs use a static
+  `Final output` view.
+- Target Selection loading distinguishes loading, ready, and unavailable
+  states; stored rules remain visible instead of being replaced by a fake empty
+  legacy view.
+- Filtered global checks preserve status and timestamps for out-of-scope
+  targets, while zero-target checks no longer report a normal successful
+  zero-update result.
+- Selected remote Proxmox nodes are executed correctly in global checks without
+  implicitly selecting their guests.
+
+## Beta 3
+
+- Optional Web UI-managed target selection for Proxmox nodes, LXC containers,
+  VMs, and External systems.
+- Independent Check and Update tri-state rules with `empty`, `Only`, and
+  `Exclude` states.
+- Legacy Proxmox Only/Exclude tags remain the default. When internal selection
+  is enabled, those tags are ignored but never modified.
+- First-use activation confirmation, clear Check/Update controls, compact
+  Systems integration, and immediate optimistic UI feedback.
+- Debounced persistence, stale-response protection, rollback on save failure,
+  and preservation of `target-selection.json` across reloads, restarts, and
+  self-updates.
+
+The Beta 3 contents are for validation and are not a stable 5.1.3 release.
+
+## Beta 2
+
+- Interactive Live terminal support with persistent PTY sessions, reconnect and
+  bounded replay for supported update jobs.
+- Read-only Live output for checks and other non-interactive jobs.
+- Improved mobile terminal usability, keybar support, and terminal font controls.
+- Guarded `Reboot now` actions for supported nodes, LXC containers, and VMs.
+- Clearer connectivity, APT/repository, disabled-check, and job-failure reporting.
+- Scheduler month-day support and improved scheduled-check notification control.
+- Job-scoped single-target notifications with explicit per-target summaries.
+- Consistent English project-owned output, including explicit current/up-to-date
+  targets instead of anonymous counts.
+- Reliability fixes for terminal lifecycle, SSE/DOM handling, cleanup, and
+  final job status propagation.
+
+The Beta 2 contents are for validation and are not a stable 5.1.3 release.
 
 ## Fixed in 5.1.2
 

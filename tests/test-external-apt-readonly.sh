@@ -5,6 +5,18 @@ ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 WORK_DIR=$(mktemp -d)
 trap 'find "$WORK_DIR" -type f -delete; rmdir "$WORK_DIR/fake-bin" "$WORK_DIR" 2>/dev/null || true' EXIT
 mkdir "$WORK_DIR/fake-bin"
+cat > "$WORK_DIR/apt-count.py" <<'PY'
+import os
+import sys
+
+if os.environ.get("APT_MODE") == "error":
+    print("APT_COUNTS|unknown|unknown|unknown|false")
+    sys.exit(2)
+print("APT_COUNTS|1|1|0|true" if os.environ.get("APT_MODE") == "updates" else "APT_COUNTS|0|0|0|true")
+PY
+cat > "$WORK_DIR/rpm-count.py" <<'PY'
+print("UU_RPM_COUNTS|ok|2|null|null|false")
+PY
 
 cat > "$WORK_DIR/fake-bin/ssh" <<'FAKE_SSH'
 #!/bin/bash
@@ -16,7 +28,11 @@ script=$(cat)
 if [[ -n "${REMOTE_CONFIG:-}" ]]; then
   script=${script//config=\/etc\/ultimate-updater\/external.conf/config=$REMOTE_CONFIG}
 fi
-bash -s <<< "$script"
+if [[ -n "${REMOTE_OS_RELEASE:-}" ]]; then
+  script=$(printf '%s\n' "$script" | sed "s#\. /etc/os-release#. \"$REMOTE_OS_RELEASE\"#")
+fi
+remote_command="${@: -1}"
+bash -c "$remote_command" <<< "$script"
 FAKE_SSH
 
 cat > "$WORK_DIR/fake-bin/apt" <<'FAKE_APT'
@@ -41,6 +57,23 @@ cat > "$WORK_DIR/fake-bin/id" <<'FAKE_ID'
 if [[ "${1:-}" == -u ]]; then printf '0\n'; else /usr/bin/id "$@"; fi
 FAKE_ID
 chmod 755 "$WORK_DIR/fake-bin"/*
+cat > "$WORK_DIR/debian-os-release" <<'OS_RELEASE'
+ID=debian
+ID_LIKE=debian
+PRETTY_NAME="Debian fixture"
+VERSION_ID="13"
+OS_RELEASE
+cat > "$WORK_DIR/fedora-os-release" <<'OS_RELEASE'
+ID=fedora
+ID_LIKE=""
+PRETTY_NAME="Fedora fixture"
+VERSION_ID="40"
+OS_RELEASE
+cat > "$WORK_DIR/fake-bin/dnf" <<'FAKE_DNF'
+#!/bin/bash
+exit 0
+FAKE_DNF
+chmod 755 "$WORK_DIR/fake-bin/dnf"
 touch "$WORK_DIR/identity"
 
 awk '/<<.*REMOTE_CHECK/{check=1; next} /<<.*REMOTE_UPDATE/{check=0} check && /apt-get update/{found=1} END{exit(found ? 1 : 0)}' \
@@ -75,11 +108,18 @@ host=nonroot-target
 transport=ssh
 user=basst
 port=22
+[dnf]
+host=dnf-target
+transport=ssh
+user=root
+port=22
 CONFIG
 
 run_check() {
   local target=$1 mode=$2 expected_rc=$3 expected_state=$4
   local status_file="$WORK_DIR/$target-status.json"
+  local remote_os_release="$WORK_DIR/debian-os-release"
+  [[ "$target" == dnf ]] && remote_os_release="$WORK_DIR/fedora-os-release"
   APT_MODE="$mode" MUTATION_MARKER="$WORK_DIR/mutation" \
     UU_REBOOT_REQUIRED_FILE="$WORK_DIR/no-reboot-required" \
     UU_REBOOT_REQUIRED_PACKAGES_FILE="$WORK_DIR/no-reboot-required.pkgs" \
@@ -89,6 +129,8 @@ run_check() {
     TARGET_INVENTORY_SCRIPT="$ROOT_DIR/target-inventory.sh" \
     STATUS_MODEL_SCRIPT="$ROOT_DIR/status-model.sh" TARGET_RUNTIME_SCRIPT="$ROOT_DIR/target-runtime.sh" \
     STATUS_MODEL_FILE="$status_file" STATUS_MODEL_RECORD_FILE="$WORK_DIR/$target-records" \
+    RPM_COUNT_SCRIPT="$WORK_DIR/rpm-count.py" \
+    REMOTE_OS_RELEASE="$remote_os_release" \
     SSH_ARGS_LOG="$WORK_DIR/$target-ssh.args" UU_SSH_COMMAND_TIMEOUT=1 "$ROOT_DIR/external-apt.sh" check "$target" > "$WORK_DIR/$target.out" 2>&1 || rc=$?
   rc=${rc:-0}
   if [[ "$rc" -ne "$expected_rc" ]]; then
@@ -108,9 +150,27 @@ EXCLUDE=""
 CONFIG
 
 run_check updates updates 0 updates_available
-grep -Fq '"available": 1' "$WORK_DIR/updates-status.json"
+python3 - "$WORK_DIR/updates-status.json" <<'PY'
+import json
+import sys
+
+target = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]
+assert target["updates"]["available"] == 1
+assert target["normal_updates"] == 1
+assert target["security_updates"] == 0
+assert target["security_split_supported"] is True
+PY
 run_check zero zero 0 ok
-grep -Fq '"available": 0' "$WORK_DIR/zero-status.json"
+python3 - "$WORK_DIR/zero-status.json" <<'PY'
+import json
+import sys
+
+target = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]
+assert target["updates"]["available"] == 0
+assert target["normal_updates"] == 0
+assert target["security_updates"] == 0
+assert target["security_split_supported"] is True
+PY
 run_check error error 1 error
 run_check timeout updates 1 offline
 [[ ! -e "$WORK_DIR/mutation" ]]
@@ -135,5 +195,24 @@ ONLY=""
 EXCLUDE=""
 CONFIG
 run_check nonroot updates 1 error
+
+cat > "$WORK_DIR/external.conf" <<'CONFIG'
+schema_version="1"
+ONLY_UPDATE_CHECK=""
+EXCLUDE_UPDATE_CHECK=""
+ONLY=""
+EXCLUDE=""
+CONFIG
+run_check dnf updates 0 updates_available
+python3 - "$WORK_DIR/dnf-status.json" <<'PY'
+import json
+import sys
+
+target = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]
+assert target["updates"]["available"] == 2
+assert target["normal_updates"] is None
+assert target["security_updates"] is None
+assert target["security_split_supported"] is False
+PY
 
 echo 'external apt read-only tests: PASS'

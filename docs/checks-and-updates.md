@@ -14,6 +14,10 @@ reboot-required state, and errors. A failed target remains visible as a
 target error; other targets continue according to the configured error
 policy.
 
+In the Web UI, a running Check uses **Live output**. The view is read-only and
+does not provide an input channel. The complete output remains available in
+the job log after the Check finishes.
+
 ## Update
 
 An update is a mutating operation. It runs the selected package-manager or
@@ -24,6 +28,19 @@ target and job log before starting an update.
 Checks and updates are executed as server-side jobs where the CLI/Web UI
 dispatches a job. The job remains observable after the browser or SSH session
 disconnects, and per-target locking prevents conflicting operations.
+
+When `IN_HEADLESS_MODE=false` and the selected local host/LXC/SSH transport
+supports interaction, an Update can be followed in **Live terminal**. Input
+and resize are available, but a browser disconnect does not cancel the job.
+With `IN_HEADLESS_MODE=true`, or with `-s`/`--silent`, the Update is
+non-interactive and has no input channel. QEMU Guest Agent updates are always
+non-interactive because `qm guest exec` does not provide guest stdin.
+
+If a target or package manager fails, the error is retained through cleanup
+and lifecycle restoration. Successful cleanup does not turn the Update into a
+success: the job ends non-zero and is shown as failed, with the specific
+cause retained in the terminal and full log. `Continue after errors` permits
+later targets to run but does not hide a failure from the final result.
 
 ## Output semantics
 

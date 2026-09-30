@@ -18,6 +18,12 @@ OCTOPRINT=$(awk -F'"' '/^OCTOPRINT=/ {print $2}' $CONFIG_FILE)
 DOCKER_COMPOSE=$(awk -F'"' '/^DOCKER_COMPOSE=/ {print $2}' $CONFIG_FILE)
 COMPOSE_PATH=$(awk -F'"' '/^COMPOSE_PATH=/ {print $2}' $CONFIG_FILE)
 INCLUDE_HELPER_SCRIPTS=$(awk -F'"' '/^INCLUDE_HELPER_SCRIPTS=/ {print $2}' $CONFIG_FILE)
+IN_HEADLESS_MODE=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' $CONFIG_FILE)
+COMMUNITY_UPDATE_COMMAND="${UU_COMMUNITY_UPDATE_COMMAND:-update}"
+
+if [[ "$IN_HEADLESS_MODE" == true ]]; then
+  export DEBIAN_FRONTEND=noninteractive
+fi
 
 # PiHole
 if [[ -f "/usr/local/bin/pihole" && $PIHOLE == true ]]; then
@@ -134,21 +140,23 @@ if [[ $DOCKER_COMPOSE_V1 == true || $DOCKER_COMPOSE_V2 == true ]] && [[ $DOCKER_
 fi
 
 # Community / Helper Scripts
-if grep -q "community-scripts" /usr/bin/update 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]]; then
+COMMUNITY_UPDATE_PATH=$(command -v "$COMMUNITY_UPDATE_COMMAND" 2>/dev/null || true)
+COMMUNITY_UPDATE_EXIT=0
+if [[ -n "$COMMUNITY_UPDATE_PATH" ]] && grep -q "community-scripts" "$COMMUNITY_UPDATE_PATH" 2>/dev/null && [[ $INCLUDE_HELPER_SCRIPTS == true ]]; then
   echo -e "\n*** Updating Community-Scripts ***"
   COMMUNITY_UPDATE_LOG=$(mktemp)
-  if timeout 1800s env PHS_SILENT=1 update >"$COMMUNITY_UPDATE_LOG" 2>&1; then
+  # Community helpers are automated update tools.  Detach them from the
+  # controlling terminal as well as stdin: nested terminal ioctls such as
+  # `stty sane` and reads from `/dev/tty` must not stop a background process
+  # group with SIGTTOU/SIGTTIN.  stdout/stderr remain attached to tee for live
+  # output, and --wait preserves the helper's exact exit status.
+  setsid --wait env PHS_SILENT=1 "$COMMUNITY_UPDATE_COMMAND" </dev/null 2>&1 | tee "$COMMUNITY_UPDATE_LOG"
+  COMMUNITY_UPDATE_EXIT=${PIPESTATUS[0]}
+  if [[ $COMMUNITY_UPDATE_EXIT == 0 ]]; then
     echo -e "✅ Update process completed\n"
   else
-    COMMUNITY_UPDATE_EXIT=$?
-    if [[ $COMMUNITY_UPDATE_EXIT == 124 ]]; then
-      echo -e "⚠️ Community-Scripts update timed out after 30 minutes"
-    else
-      echo -e "⚠️ Community-Scripts update failed with exit code $COMMUNITY_UPDATE_EXIT"
-    fi
-    echo -e "Community-Scripts output:\n"
-    cat "$COMMUNITY_UPDATE_LOG"
-    echo
+    echo -e "⚠️ Community-Scripts update failed with exit code $COMMUNITY_UPDATE_EXIT"
   fi
   rm -f "$COMMUNITY_UPDATE_LOG"
 fi
+exit "$COMMUNITY_UPDATE_EXIT"

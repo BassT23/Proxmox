@@ -22,13 +22,29 @@ EXCLUDE_UPDATE_CHECK
 `ONLY` takes precedence over its matching `EXCLUDE`. Filters accept VMIDs,
 ranges, and configured tags; check and update selections are independent.
 
+### Ultimate Updater target selection
+
+`USE_INTERNAL_TARGET_SELECTION` is `false` by default. When it is disabled,
+the existing Proxmox Only/Exclude tag behavior is unchanged. When enabled,
+the Web UI's Check and Update tri-state rules are used instead and Proxmox
+Only/Exclude tags are ignored without being changed. An empty rule means no
+explicit selection; `Only` includes a target, and `Exclude` removes it. Check
+and Update rules are independent. Disabling the option preserves the saved
+internal rules and restores the legacy tag behavior.
+
 ## Updates and lifecycle
 
 `REBOOT_IF_NEEDED` controls reboot handling for updates, not checks. Guest
 start/resume behavior is controlled separately for LXC and VM targets.
 `FREEBSD_UPDATES` enables or disables the writing FreeBSD/pfSense update path;
-it does not disable read-only checks. `IN_HEADLESS_MODE` selects unattended
-operation.
+it does not disable read-only checks. `IN_HEADLESS_MODE` is the persistent
+unattended policy. When it is `true`, scheduled and manually started update
+jobs use non-interactive APT/dpkg handling and do not create an input channel.
+When it is `false` (the default), interactive local host/LXC/SSH jobs may be
+attached through the existing job channel. `-s`/`--silent` remains a
+per-invocation headless override. QEMU Guest Agent updates remain
+non-interactive because `qm guest exec` does not provide a guest stdin
+channel.
 
 ## Snapshots and backups
 
@@ -40,8 +56,13 @@ invalid or inactive ID is rejected. See [Backup and snapshots](backup-and-snapsh
 
 ## Notifications and logging
 
-`EMAIL_USER`, `EMAIL_SENDER`, `EMAIL_DAILY_CHECK`, `EMAIL_NO_UPDATES`,
+`EMAIL_USER`, `EMAIL_SENDER`, `EMAIL_DAILY_CHECK`, `EMAIL_SINGLE_RUNS`, `EMAIL_NO_UPDATES`,
 `EMAIL_ONLY_SECURITY`, and `EMAIL_ONLY_ERROR` control email behavior.
+`EMAIL_SINGLE_RUNS` is false by default; when enabled, explicitly selected
+single-target jobs may send a summary limited to that job's target.
+`EMAIL_DAILY_CHECK` is true by default and enables email notifications for
+scheduled checks. In the Web UI this is **Email for scheduled checks**. Manual
+global runs and update notifications are unaffected.
 `DEBUG` enables technical diagnostics and detailed job output. Keep it false
 for normal user-facing output and enable it temporarily for troubleshooting.
 `LOG_FILE` and `ERROR_LOG_FILE` select the local log files.

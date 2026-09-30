@@ -10,6 +10,7 @@ JOB_STATE_DIR="${UU_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
 REMOTE_REF_DIR="$JOB_STATE_DIR/remote"
 JOB_PREFIX="ultimate-updater-update-"
 CHECK_PREFIX="ultimate-updater-check-"
+REBOOT_PREFIX="ultimate-updater-reboot-"
 CHECK_WARNING_RC="${UU_CHECK_WARNING_RC:-10}"
 MAX_COMPLETED_JOBS="${UU_MAX_COMPLETED_JOBS:-50}"
 CHECK_SCRIPT="${UU_CHECK_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/check-updates.sh}"
@@ -17,12 +18,39 @@ CHECK_CLI="${UU_CHECK_CLI:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/ultimate-upd
 STATUS_MODEL_SCRIPT="${UU_STATUS_MODEL_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/status-model.sh}"
 STATUS_MODEL_FILE="${UU_STATUS_MODEL_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/status.json}"
 UPDATE_CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
+INTERACTIVE_RUNTIME_DIR="${UU_INTERACTIVE_RUNTIME_DIR:-/run/ultimate-updater/jobs}"
+PTY_BRIDGE="${UU_PTY_BRIDGE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/job-pty-bridge.py}"
 REMOTE_JOB_STATE_DIR="${UU_REMOTE_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 SYSTEMD_LOG_FILTER_ARGS=()
 
+# Remote job handback must use the same node-specific SSH policy as the
+# forward update path.  Keep the helper optional for legacy installations
+# that do not ship internal-ssh.sh.
+REMOTE_INTERNAL_SSH_FILE="${UU_INTERNAL_SSH_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/internal-ssh.sh}"
+if [[ -f "$REMOTE_INTERNAL_SSH_FILE" ]]; then
+  # shellcheck disable=SC2034
+  INTERNAL_SSH_CONFIG_FILE="${UU_INTERNAL_SSH_CONFIG_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/internal-ssh.conf}"
+  # shellcheck disable=SC1090
+  source "$REMOTE_INTERNAL_SSH_FILE"
+fi
+
+remote_node_ssh() {
+  local owner_node="$1" owner_host="$2" port="$3" remote_command="$4"
+  if declare -f INTERNAL_SSH_RESOLVE_NODE >/dev/null 2>&1; then
+    INTERNAL_SSH_RESOLVE_NODE "$owner_node" "$owner_host" "$port" || return 1
+    [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
+    INTERNAL_SSH_USE_IDENTITY || return 1
+    ssh -q "${INTERNAL_SSH_ARGS[@]}" -p "$INTERNAL_SSH_PORT" \
+      "${INTERNAL_SSH_USER}@${INTERNAL_SSH_HOST}" "$remote_command"
+  else
+    ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" \
+      "$owner_host" "$remote_command"
+  fi
+}
+
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | list\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list | show UNIT\n' "$0"
 }
 
 valid_target() {
@@ -57,6 +85,15 @@ configured_debug_enabled() {
   [[ "${value,,}" == true || "${value,,}" == 1 || "${value,,}" == yes ]]
 }
 
+configured_headless_enabled() {
+  local value="${IN_HEADLESS_MODE:-}"
+  if [[ -z "$value" && -f "$UPDATE_CONFIG_FILE" ]]; then
+    value=$(awk -F= '$1 == "IN_HEADLESS_MODE" { sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); gsub(/^"|"$/, "", $2); gsub(/^\x27|\x27$/, "", $2); print $2; exit }' \
+      "$UPDATE_CONFIG_FILE" 2>/dev/null || true)
+  fi
+  [[ "${value,,}" == true || "${value,,}" == 1 || "${value,,}" == yes ]]
+}
+
 prepare_systemd_log_filters() {
   SYSTEMD_LOG_FILTER_ARGS=()
   configured_debug_enabled && return 0
@@ -77,6 +114,42 @@ prepare_systemd_log_filters() {
 
 state_file() {
   printf '%s/%s.state' "$JOB_STATE_DIR" "$1"
+}
+
+interactive_job_dir() {
+  local key
+  key=$(printf '%s' "$1" | sha256sum | cut -c1-16)
+  printf '%s/%s' "$INTERACTIVE_RUNTIME_DIR" "$key"
+}
+
+interactive_socket() {
+  printf '%s/control.sock' "$(interactive_job_dir "$1")"
+}
+
+cancel_marker() {
+  printf '%s/%s.cancel' "$JOB_STATE_DIR" "$1"
+}
+
+prepare_interactive_runtime() {
+  local unit="$1" directory
+  [[ "$unit" =~ ^ultimate-updater-(update|check|reboot)-[A-Za-z0-9_.-]+$ ]] || return 2
+  mkdir -p "$INTERACTIVE_RUNTIME_DIR" || return 1
+  chmod 0700 "$INTERACTIVE_RUNTIME_DIR" || return 1
+  directory=$(interactive_job_dir "$unit")
+  mkdir -p "$directory" || return 1
+  chmod 0700 "$directory" || return 1
+  printf '%s\n' "$unit" > "$directory/unit" || return 1
+  chmod 0600 "$directory/unit" || return 1
+}
+
+cleanup_interactive_runtime() {
+  local unit="$1" directory
+  [[ "$unit" =~ ^ultimate-updater-(update|check|reboot)-[A-Za-z0-9_.-]+$ ]] || return 2
+  directory=$(interactive_job_dir "$unit")
+  [[ -d "$directory" ]] || return 0
+  rm -f -- "$directory/control.sock" 2>/dev/null || true
+  rm -f -- "$directory/unit" 2>/dev/null || true
+  rmdir -- "$directory" 2>/dev/null || true
 }
 
 remote_ref_file() {
@@ -116,12 +189,54 @@ write_state() {
     printf 'type=%s\n' "$type"
     printf 'message=%s\n' "$message"
     printf 'source=%s\n' "$source"
+    printf 'interactive=%s\n' "${UU_JOB_INTERACTIVE:-false}"
+    if [[ "${UU_JOB_INTERACTIVE:-false}" == true ]]; then
+      printf 'socket_path=%s\n' "$(interactive_socket "$unit")"
+    fi
   } > "$temp" || return 1
   chmod 0644 "$temp" || return 1
   mv -f -- "$temp" "$file"
   case "$state" in
-    completed|completed_with_warnings|failed|interrupted) cleanup_completed_jobs || true ;;
+    completed|completed_with_warnings|failed|interrupted|cancelled)
+      if [[ "$state" == cancelled ]]; then
+        rm -f -- "$(cancel_marker "$unit")" 2>/dev/null || true
+      fi
+      cleanup_completed_jobs || true ;;
   esac
+}
+
+cancel_requested() {
+  [[ -f "$(cancel_marker "$1")" ]]
+}
+
+request_cancel() {
+  local unit="$1" file state marker
+  valid_unit "$unit" || { printf 'Invalid job ID: %s\n' "$unit" >&2; return 2; }
+  file=$(state_file "$unit")
+  [[ -f "$file" ]] || { printf 'Job not found: %s\n' "$unit" >&2; return 4; }
+  state=$(state_value "$file" state)
+  [[ "$state" == running ]] || { printf 'Job is no longer running: %s (%s)\n' "$unit" "$state" >&2; return 3; }
+  marker=$(cancel_marker "$unit")
+  if [[ -e "$marker" ]]; then
+    printf 'Cancellation already requested: %s\n' "$unit" >&2
+    return 6
+  fi
+  : > "$marker" || { printf 'Could not record cancellation request: %s\n' "$unit" >&2; return 1; }
+  if ! systemctl stop "$unit"; then
+    rm -f -- "$marker" 2>/dev/null || true
+    printf 'Could not stop job unit: %s\n' "$unit" >&2
+    return 1
+  fi
+  # A systemd stop may terminate the runner before its post-command cancel
+  # handling gets a chance to publish the state.  Once the exact unit has
+  # stopped, make the cancellation result authoritative for every job type.
+  if [[ "$(state_value "$file" state 2>/dev/null || printf '')" == running ]]; then
+    UU_JOB_INTERACTIVE="$(state_value "$file" interactive 2>/dev/null || printf 'false')" \
+      write_state "$unit" "$(state_value "$file" target)" cancelled \
+      "$(state_value "$file" started_at)" "$(now)" 130 "Job cancelled by user." || return 1
+  fi
+  printf 'Cancellation requested: %s\n' "$unit"
+  return 0
 }
 
 ensure_state_dir() {
@@ -131,7 +246,7 @@ ensure_state_dir() {
 }
 
 valid_unit() {
-  [[ "$1" =~ ^ultimate-updater-(update|check)-[A-Za-z0-9_.-]+$ ]]
+  [[ "$1" =~ ^ultimate-updater-(update|check|reboot)-[A-Za-z0-9_.-]+$ ]]
 }
 
 valid_remote_value() {
@@ -178,32 +293,64 @@ mark_remote_status_refresh() {
 
 refresh_remote_target_status() {
   local unit="$1" owner_node="$2" target="$3" refresh_state refresh_rc=0 lock
-  local ref_file workspace local_status_file remote_refresh_rc remote_status_file
+  local ref_file workspace local_status_file remote_refresh_rc remote_status_file filtered_status_file
+  local expected_status_target expected_node
   ref_file=$(remote_ref_file "$unit")
   refresh_state=$(state_value "$ref_file" status_refresh)
   [[ "$refresh_state" == "done" || "$refresh_state" == "failed" ]] && return 0
   lock="$ref_file.refresh.lock"
   mkdir "$lock" 2>/dev/null || return 0
   workspace=$(state_value "$ref_file" workspace)
-  if [[ "$target" =~ ^[0-9]+$ && -n "$workspace" && -x "$CHECK_CLI" ]]; then
+  if [[ ( "$target" =~ ^[0-9]+$ || "$target" == node-* ) && -n "$workspace" && -x "$CHECK_CLI" ]]; then
     local_status_file=$(mktemp)
     remote_status_file="$workspace/status.json"
-    if ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
-      "$(state_value "$ref_file" owner_host)" "cat $(printf '%q' "$remote_status_file")" > "$local_status_file" 2>/dev/null &&
-      [[ -s "$local_status_file" ]] &&
-      validate_status_target "$local_status_file" "$target" &&
-      "$CHECK_CLI" status-import "$local_status_file" </dev/null &&
-      validate_status_target "$STATUS_MODEL_FILE" "$target"; then
-      remote_refresh_rc=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
-        "$(state_value "$ref_file" owner_host)" "cat $(printf '%q' "$workspace/post-update-status.rc")" 2>/dev/null || printf '0')
-      [[ "$remote_refresh_rc" =~ ^[0-9]+$ ]] || remote_refresh_rc=1
-      refresh_rc="$remote_refresh_rc"
-      ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$(state_value "$ref_file" port)" \
-        "$(state_value "$ref_file" owner_host)" "rm -rf -- $(printf '%q' "$workspace")" >/dev/null 2>&1 || true
+    expected_status_target="$target"
+    if [[ "$target" == node-* ]]; then
+      expected_node="${target#node-}"
+      expected_status_target="host:$expected_node"
+      filtered_status_file="${local_status_file}.filtered"
+    fi
+    if remote_node_ssh "$(state_value "$ref_file" owner_node)" \
+      "$(state_value "$ref_file" owner_host)" "$(state_value "$ref_file" port)" \
+      "cat $(printf '%q' "$remote_status_file")" > "$local_status_file" 2>/dev/null &&
+      [[ -s "$local_status_file" ]]; then
+      if [[ "$target" == node-* ]]; then
+        python3 - "$local_status_file" "$filtered_status_file" "$expected_node" <<'PY'
+import json
+import sys
+
+source, destination, node = sys.argv[1:]
+with open(source, encoding="utf-8") as handle:
+    payload = json.load(handle)
+targets = [item for item in payload.get("targets", [])
+           if isinstance(item, dict) and
+           (str(item.get("id")) == f"host:{node}" or item.get("node") == node)]
+if not any(str(item.get("id")) == f"host:{node}" for item in targets):
+    raise SystemExit(1)
+with open(destination, "w", encoding="utf-8") as handle:
+    json.dump({"schema_version": payload.get("schema_version", 1), "targets": targets}, handle)
+PY
+        mv -- "$filtered_status_file" "$local_status_file"
+      fi
+      if validate_status_target "$local_status_file" "$expected_status_target" &&
+        "$CHECK_CLI" status-import "$local_status_file" </dev/null &&
+        validate_status_target "$STATUS_MODEL_FILE" "$expected_status_target"; then
+        remote_refresh_rc=$(remote_node_ssh "$(state_value "$ref_file" owner_node)" \
+          "$(state_value "$ref_file" owner_host)" "$(state_value "$ref_file" port)" \
+          "cat $(printf '%q' "$workspace/post-update-status.rc")" 2>/dev/null || printf '0')
+        [[ "$remote_refresh_rc" =~ ^[0-9]+$ ]] || remote_refresh_rc=1
+        refresh_rc="$remote_refresh_rc"
+        remote_node_ssh "$(state_value "$ref_file" owner_node)" \
+          "$(state_value "$ref_file" owner_host)" "$(state_value "$ref_file" port)" \
+          "rm -rf -- $(printf '%q' "$workspace")" >/dev/null 2>&1 || true
+      else
+        refresh_rc=1
+      fi
     else
       refresh_rc=1
     fi
     rm -f -- "$local_status_file"
+    [[ -z "$filtered_status_file" ]] || rm -f -- "$filtered_status_file"
   elif [[ -x "$CHECK_CLI" ]]; then
     if [[ "$target" == node-* ]]; then
       UU_CHECK_JOB_EXECUTION=true UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check-node "$owner_node" </dev/null || refresh_rc=$?
@@ -225,14 +372,42 @@ refresh_remote_target_status() {
 }
 
 remote_ref_line() {
-  local unit="$1" file
+  local unit="$1" file ref_unit owner_node owner_host port
   valid_unit "$unit" || return 2
   file=$(remote_ref_file "$unit")
   [[ -f "$file" ]] || return 1
+  ref_unit=$(state_value "$file" unit)
+  owner_node=$(state_value "$file" owner_node)
+  owner_host=$(state_value "$file" owner_host)
+  port=$(state_value "$file" port)
+  [[ "$ref_unit" == "$unit" ]] || return 1
+  valid_remote_value "$owner_node" && valid_remote_value "$owner_host" || return 1
+  [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]] || return 1
   printf '%s\t%s\t%s\t%s\t%s\n' \
-    "$(state_value "$file" unit)" "$(state_value "$file" target)" \
-    "$(state_value "$file" owner_node)" "$(state_value "$file" owner_host)" \
-    "$(state_value "$file" port)"
+    "$ref_unit" "$(state_value "$file" target)" "$owner_node" "$owner_host" "$port"
+}
+
+show_job() {
+  local unit="$1" file ref_line target owner_node owner_host port remote_state socket_available
+  valid_unit "$unit" || { printf 'Invalid job ID: %s\n' "$unit" >&2; return 2; }
+  file=$(state_file "$unit")
+  if [[ -f "$file" && "$(state_value "$file" unit)" == "$unit" ]]; then
+    socket_available=false
+    if [[ "$(state_value "$file" state)" == running && "$(state_value "$file" interactive)" == true ]]; then
+      socket_available=true
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t%s\t%s\t%s\n' \
+      "$unit" "$(state_value "$file" target)" "$(state_value "$file" state)" \
+      "$(state_value "$file" started_at)" "$(state_value "$file" finished_at)" \
+      "$(state_value "$file" exit_code)" "$(state_value "$file" type)" \
+      "$(state_value "$file" source)" "$(state_value "$file" interactive)" \
+      "$socket_available"
+    return 0
+  fi
+  ref_line=$(remote_ref_line "$unit") || return 1
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  remote_state=$(remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port") || return 1
+  printf '%s\n' "$remote_state"
 }
 
 remote_state_line() {
@@ -243,14 +418,16 @@ remote_state_line() {
   registered_at=$(state_value "$ref_file" registered_at)
   printf -v remote_command 'if [[ -f %q ]]; then cat %q; else exit 1; fi' \
     "$remote_state_file" "$remote_state_file"
-  if output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" \
+  if output=$(remote_node_ssh "$owner_node" "$owner_host" "$port" \
       "$remote_command" 2>/dev/null); then
     remote_line=$(awk -F= -v owner="$owner_node" '
       { values[$1]=$0; sub(/^[^=]*=/, "", values[$1]) }
       END {
         if (values["unit"] == "") exit 1
-        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", values["unit"], values["target"],
-          values["state"], values["started_at"], values["finished_at"], values["exit_code"], owner
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", values["unit"], values["target"],
+          values["state"], values["started_at"], values["finished_at"], values["exit_code"],
+          values["type"], owner, values["source"], values["interactive"],
+          (values["state"] == "running" && values["interactive"] == "true" ? "true" : "false")
       }' <<< "$output") || remote_line=""
     if [[ -n "$remote_line" ]]; then
       printf '%s\n' "$remote_line"
@@ -263,10 +440,17 @@ remote_state_line() {
 
 sync_remote_last_update() {
   local target="$1" state="$2" finished="$3" exit_code="$4"
+  local status_file="${UU_STATUS_MODEL_FILE:-/etc/ultimate-updater/status.json}"
+  local status_lock_file="${status_file}.lock" status_lock_fd
   [[ "$state" == completed || "$state" == failed || "$state" == interrupted ]] || return 0
   [[ "$target" =~ ^[0-9]+$ ]] || return 0
   [[ "$exit_code" =~ ^[0-9]+$ ]] || exit_code=1
-  python3 - "${UU_STATUS_MODEL_FILE:-/etc/ultimate-updater/status.json}" \
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$status_file" \
     "$target" "$state" "$finished" "$exit_code" <<'PY'
 import json
 import os
@@ -290,11 +474,17 @@ if record is None:
     raise SystemExit(0)
 
 status = "success" if job_state == "completed" and exit_code == "0" else "failed"
-record["last_update"] = {
+last_update = record.get("last_update")
+if not isinstance(last_update, dict):
+    last_update = {}
+else:
+    last_update = dict(last_update)
+last_update.update({
     "status": status,
     "timestamp": finished or None,
     "exit_code": int(exit_code),
-}
+})
+record["last_update"] = last_update
 directory = os.path.dirname(os.path.abspath(status_file)) or "."
 fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
 try:
@@ -312,6 +502,9 @@ except Exception:
         pass
     raise
 PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
 }
 
 target_running() {
@@ -355,11 +548,59 @@ job_unit_active() {
 
 send_update_notification() {
   local status_file="${1:-$STATUS_MODEL_FILE}"
+  local run_started_at="${2:-}"
   [[ -f "$STATUS_MODEL_SCRIPT" && -f "$status_file" ]] || return 0
   LOCAL_FILES=$(dirname -- "$status_file") \
     STATUS_MODEL_FILE="$status_file" \
-    bash -c 'source "$1" && STATUS_MODEL_SEND_UPDATE_NOTIFICATION "$2" "$3"' \
+    bash -c 'source "$1" && STATUS_MODEL_SEND_UPDATE_NOTIFICATION "$2" "$3" "$4"' \
+      _ "$STATUS_MODEL_SCRIPT" "$status_file" "$UPDATE_CONFIG_FILE" "$run_started_at" || true
+}
+
+apply_pre_update_counts() {
+  local status_file="${1:-$STATUS_MODEL_FILE}" baseline_file="$2" started_at="$3"
+  [[ -f "$STATUS_MODEL_SCRIPT" && -f "$status_file" && -f "$baseline_file" ]] || return 0
+  LOCAL_FILES=$(dirname -- "$status_file") \
+    STATUS_MODEL_FILE="$status_file" \
+    bash -c 'source "$1" && STATUS_MODEL_APPLY_PRE_UPDATE_COUNTS "$2" "$3"' \
+      _ "$STATUS_MODEL_SCRIPT" "$baseline_file" "$started_at"
+}
+
+preserve_update_results() {
+  local status_file="${1:-$STATUS_MODEL_FILE}" snapshot_file="$2" started_at="$3"
+  [[ -f "$STATUS_MODEL_SCRIPT" && -f "$status_file" && -f "$snapshot_file" ]] || return 1
+  LOCAL_FILES=$(dirname -- "$status_file") \
+    STATUS_MODEL_FILE="$status_file" \
+    bash -c 'source "$1" && STATUS_MODEL_PRESERVE_UPDATE_RESULTS "$2" "$3"' \
+      _ "$STATUS_MODEL_SCRIPT" "$snapshot_file" "$started_at"
+}
+
+trace_external_event() {
+  [[ "${UU_EXTERNAL_LIFECYCLE_TRACE:-false}" == true ]] || return 0
+  local checkpoint="$1" helper_rc="${2:-}" target_id="${3:-}"
+  [[ -f "$STATUS_MODEL_SCRIPT" ]] || return 0
+  LOCAL_FILES=$(dirname -- "$STATUS_MODEL_FILE") \
+    STATUS_MODEL_FILE="$STATUS_MODEL_FILE" \
+    UU_EXTERNAL_LIFECYCLE_TRACE=true \
+    UU_EXTERNAL_LIFECYCLE_TRACE_FILE="${UU_EXTERNAL_LIFECYCLE_TRACE_FILE:-}" \
+    bash -c 'source "$1" && STATUS_MODEL_TRACE_EVENT "$2" "$3" "$4"' \
+      _ "$STATUS_MODEL_SCRIPT" "$checkpoint" "$target_id" "$helper_rc" || true
+}
+
+send_check_notification() {
+  local status_file="${1:-$STATUS_MODEL_FILE}"
+  [[ -f "$STATUS_MODEL_SCRIPT" && -f "$status_file" ]] || return 0
+  LOCAL_FILES=$(dirname -- "$status_file") \
+    STATUS_MODEL_FILE="$status_file" \
+    bash -c 'source "$1" && STATUS_MODEL_SEND_NOTIFICATION "$2" "$3"' \
       _ "$STATUS_MODEL_SCRIPT" "$status_file" "$UPDATE_CONFIG_FILE" || true
+}
+
+notification_scope_kind() {
+  if [[ "${UU_UPDATE_SCOPE:-}" == host || "$1" == host || "$1" == node-* ]]; then
+    printf 'node'
+  else
+    printf 'target'
+  fi
 }
 
 validate_status_target() {
@@ -380,7 +621,9 @@ cleanup_completed_jobs() {
   for file in "$JOB_STATE_DIR"/*.state; do
     state=$(state_value "$file" state)
     case "$state" in
-      completed|completed_with_warnings|failed|interrupted) ;;
+      completed|completed_with_warnings|failed|interrupted|cancelled)
+        cleanup_interactive_runtime "$(state_value "$file" unit)" || true
+        ;;
       *) continue ;;
     esac
     unit=$(state_value "$file" unit)
@@ -406,7 +649,7 @@ cleanup_completed_jobs() {
 
 start_job() {
   local update_script="$1" target="$2" unit timestamp
-  local conflict conflict_target conflict_unit
+  local conflict conflict_target conflict_unit interactive=false socket_path
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_target "$target" || { printf 'Unsupported target: %s\n' "$target" >&2; return 2; }
@@ -420,6 +663,10 @@ start_job() {
     return 3
   fi
   systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
+  [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
+  systemd_env+=("--setenv=UU_SINGLE_TARGET=true" \
+    "--setenv=UU_SINGLE_TARGET_ID=$target" \
+    "--setenv=UU_SINGLE_TARGET_KIND=$(notification_scope_kind "$target")")
   if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
     systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
   fi
@@ -431,18 +678,31 @@ start_job() {
   fi
   [[ -n "${UU_LOCAL_FILES:-}" ]] && systemd_env+=("--setenv=UU_LOCAL_FILES=$UU_LOCAL_FILES")
   [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && systemd_env+=("--setenv=UU_REMOTE_WORK_DIR=$UU_REMOTE_WORK_DIR")
+  [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   [[ "$target" =~ ^[0-9]+$ ]] && systemd_env+=("--setenv=UU_POST_UPDATE_STATUS_CAPTURE=true")
   prepare_systemd_log_filters
 
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
-  write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  if [[ "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_INTERACTIVE:-false}" == true ]] && ! configured_headless_enabled; then
+    [[ -x "$PTY_BRIDGE" ]] || { printf 'Interactive job bridge is not available: %s\n' "$PTY_BRIDGE" >&2; return 1; }
+    interactive=true
+    socket_path=$(interactive_socket "$unit")
+    prepare_interactive_runtime "$unit" || return 1
+  fi
+  UU_JOB_INTERACTIVE="$interactive" write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  [[ "$interactive" == true ]] && systemd_env+=("--setenv=UU_JOB_INTERACTIVE=true")
+  local -a job_command=("$RUNNER_PATH" run "$unit" "$target" "$update_script")
+  if [[ "$interactive" == true ]]; then
+    job_command=("$PTY_BRIDGE" --socket "$socket_path" -- "${job_command[@]}")
+  fi
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for $target" \
     "${systemd_env[@]}" \
     "${SYSTEMD_LOG_FILTER_ARGS[@]}" \
     --property=Type=oneshot --property=StandardOutput=journal \
-    --property=StandardError=journal "$RUNNER_PATH" run "$unit" "$target" "$update_script"; then
+    --property=StandardError=journal "${job_command[@]}"; then
     write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
+    cleanup_interactive_runtime "$unit" || true
     return 1
   fi
   printf 'Update job started\nTarget: %s\nJob: %s\nStatus: ultimate-updater status\nLogs: journalctl -u %s\n' \
@@ -451,6 +711,7 @@ start_job() {
 
 start_global_job() {
   local update_script="$1" unit timestamp target=all-systems
+  local socket_path interactive=false
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_global_target "$target" || return 2
@@ -463,19 +724,37 @@ start_global_job() {
     return 3
   fi
   systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
+  [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
+  [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
     systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
   fi
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${JOB_PREFIX}all-systems-$timestamp-$BASHPID"
+  if [[ "${UU_EXTERNAL_LIFECYCLE_TRACE:-false}" == true ]]; then
+    systemd_env+=("--setenv=UU_EXTERNAL_LIFECYCLE_TRACE=true" \
+      "--setenv=UU_EXTERNAL_LIFECYCLE_TRACE_FILE=$JOB_STATE_DIR/$unit.external-lifecycle-trace.jsonl")
+  fi
   prepare_systemd_log_filters
-  write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  if [[ "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_INTERACTIVE:-false}" == true ]] && ! configured_headless_enabled; then
+    [[ -x "$PTY_BRIDGE" ]] || { printf 'Interactive job bridge is not available: %s\n' "$PTY_BRIDGE" >&2; return 1; }
+    interactive=true
+    socket_path=$(interactive_socket "$unit")
+    prepare_interactive_runtime "$unit" || return 1
+  fi
+  UU_JOB_INTERACTIVE="$interactive" write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  [[ "$interactive" == true ]] && systemd_env+=("--setenv=UU_JOB_INTERACTIVE=true")
+  local -a job_command=("$RUNNER_PATH" run-global "$unit" "$update_script")
+  if [[ "$interactive" == true ]]; then
+    job_command=("$PTY_BRIDGE" --socket "$socket_path" -- "${job_command[@]}")
+  fi
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for all systems" \
     "${systemd_env[@]}" \
     "${SYSTEMD_LOG_FILTER_ARGS[@]}" \
     --property=Type=oneshot --property=StandardOutput=journal \
-    --property=StandardError=journal "$RUNNER_PATH" run-global "$unit" "$update_script"; then
+    --property=StandardError=journal "${job_command[@]}"; then
     write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
+    cleanup_interactive_runtime "$unit" || true
     return 1
   fi
   printf 'Update job started\nTarget: %s\nJob: %s\nStatus: ultimate-updater status\nLogs: journalctl -u %s\n' \
@@ -501,8 +780,17 @@ run_job() {
     write_state "$unit" "$target" failed "$started" "$(now)" 75 "target update already locked"
     return 75
   fi
-  UU_DEFER_UPDATE_MAIL=true "$update_script" "$target" </dev/null
+  if [[ "${UU_JOB_INTERACTIVE:-false}" == true ]]; then
+    UU_DEFER_UPDATE_MAIL=true "$update_script" "$target"
+  else
+    UU_DEFER_UPDATE_MAIL=true "$update_script" "$target" </dev/null
+  fi
   exit_code=$?
+  if cancel_requested "$unit"; then
+    write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." || return 1
+    cleanup_interactive_runtime "$unit" || true
+    return 130
+  fi
   if [[ "$exit_code" -eq 0 ]]; then
     captured_status_file="${UU_REMOTE_WORK_DIR:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/temp}/post-update-status.rc"
     if [[ "$target" =~ ^[0-9]+$ && -f "$captured_status_file" ]]; then
@@ -566,12 +854,13 @@ run_job() {
   if [[ -n "${UU_REMOTE_WORK_DIR:-}" && ( ! "$target" =~ ^[0-9]+$ || ! -f "$UU_REMOTE_WORK_DIR/post-update-status.rc" ) ]]; then
     rm -rf -- "$UU_REMOTE_WORK_DIR"
   fi
+  cleanup_interactive_runtime "$unit" || true
   return "$exit_code"
 }
 
 run_global_job() {
   local unit="$1" update_script="$2" target=all-systems file started exit_code lock_file
-  local post_check_rc=0 post_check_message=""
+  local post_check_rc=0 preserve_rc=0 post_check_message="" update_result_snapshot="" pre_update_snapshot=""
   valid_unit "$unit" || return 2
   valid_global_target "$target" || return 2
   file=$(state_file "$unit")
@@ -589,12 +878,43 @@ run_global_job() {
     write_state "$unit" "$target" failed "$started" "$(now)" 75 "another global update is running"
     return 75
   fi
+  if [[ -f "$STATUS_MODEL_FILE" ]]; then
+    pre_update_snapshot=$(mktemp "${STATUS_MODEL_FILE}.pre-update.XXXXXX") || pre_update_snapshot=""
+    if [[ -n "$pre_update_snapshot" ]]; then
+      cp -- "$STATUS_MODEL_FILE" "$pre_update_snapshot" || {
+        rm -f -- "$pre_update_snapshot"
+        pre_update_snapshot=""
+      }
+    fi
+  fi
   UU_DEFER_UPDATE_MAIL=true "$update_script"
   exit_code=$?
+  trace_external_event after_global_dispatch "$exit_code"
+  if cancel_requested "$unit"; then
+    [[ -z "$pre_update_snapshot" ]] || rm -f -- "$pre_update_snapshot"
+    write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." || return 1
+    cleanup_interactive_runtime "$unit" || true
+    return 130
+  fi
+  # Collect every completed remote result before deciding whether the global
+  # update follows the success refresh path or the failure notification path.
+  # This must not alter the authoritative global exit code.
+  list_jobs >/dev/null 2>&1 || true
+  trace_external_event after_remote_sync
+  [[ -z "$pre_update_snapshot" ]] || apply_pre_update_counts "$STATUS_MODEL_FILE" "$pre_update_snapshot" "$started" || true
   if [[ "$exit_code" -eq 0 ]]; then
+    # The following full check is the inventory authority and must be allowed
+    # to prune stale targets without a later import resurrecting them.
+    if [[ -f "$STATUS_MODEL_FILE" ]]; then
+      trace_external_event before_result_snapshot
+      update_result_snapshot=$(mktemp "${STATUS_MODEL_FILE}.update-results.XXXXXX")
+      cp -- "$STATUS_MODEL_FILE" "$update_result_snapshot"
+      trace_external_event after_result_snapshot
+    fi
     printf 'Post-update status refresh started for all systems.\n'
+    trace_external_event before_post_check
     if [[ -x "$CHECK_CLI" ]]; then
-      UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check </dev/null || post_check_rc=$?
+      UU_CHECK_JOB_EXECUTION=true UU_DEFER_NOTIFICATION=true "$CHECK_CLI" check </dev/null || post_check_rc=$?
       post_check_message="post-update full status refresh rc=$post_check_rc"
     else
       post_check_rc=127
@@ -605,10 +925,28 @@ run_global_job() {
     else
       printf 'Post-update status refresh completed successfully.\n'
     fi
-    send_update_notification "$STATUS_MODEL_FILE"
+    trace_external_event after_post_check "$post_check_rc"
+    preserve_rc=0
+    trace_external_event before_preserve
+    if [[ -n "$update_result_snapshot" ]]; then
+      preserve_update_results "$STATUS_MODEL_FILE" "$update_result_snapshot" "$started" || preserve_rc=$?
+    else
+      preserve_rc=1
+    fi
+    if [[ "$preserve_rc" -ne 0 ]]; then
+      printf 'Post-update result preservation failed (exit code %s).\n' "$preserve_rc" >&2
+    fi
+    [[ -z "$pre_update_snapshot" ]] || apply_pre_update_counts "$STATUS_MODEL_FILE" "$pre_update_snapshot" "$started" || true
+    trace_external_event after_preserve "$preserve_rc"
+    [[ -z "$update_result_snapshot" ]] || rm -f -- "$update_result_snapshot"
+    trace_external_event before_update_notification
+    send_update_notification "$STATUS_MODEL_FILE" "$started"
   else
-    send_update_notification "$STATUS_MODEL_FILE"
+    trace_external_event before_update_notification
+    send_update_notification "$STATUS_MODEL_FILE" "$started"
   fi
+  [[ -z "$pre_update_snapshot" ]] || rm -f -- "$pre_update_snapshot"
+  cleanup_interactive_runtime "$unit" || true
   if [[ "$exit_code" -eq 0 ]]; then
     write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
   else
@@ -634,12 +972,33 @@ start_check_job() {
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${CHECK_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
+  [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
+  [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
+  [[ "${UU_REMOTE_TRACE:-false}" == true ]] && systemd_env+=("--setenv=UU_REMOTE_TRACE=true")
+  if [[ "$mode" == target || "$mode" == node ]]; then
+    systemd_env+=("--setenv=UU_SINGLE_TARGET=true" \
+      "--setenv=UU_SINGLE_TARGET_ID=$target" \
+      "--setenv=UU_SINGLE_TARGET_KIND=$mode")
+  fi
   prepare_systemd_log_filters
-  UU_JOB_TYPE=check write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  local interactive=false socket_path
+  if [[ "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_INTERACTIVE:-false}" == true ]] && ! configured_headless_enabled; then
+    [[ -x "$PTY_BRIDGE" ]] || { printf 'Interactive job bridge is not available: %s\n' "$PTY_BRIDGE" >&2; return 1; }
+    interactive=true
+    socket_path=$(interactive_socket "$unit")
+    prepare_interactive_runtime "$unit" || return 1
+  fi
+  UU_JOB_TYPE=check UU_JOB_INTERACTIVE="$interactive" write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  [[ "$interactive" == true ]] && systemd_env+=("--setenv=UU_JOB_INTERACTIVE=true")
+  local -a job_command=("$RUNNER_PATH" run-check "$unit" "$target" "$cli" "$mode")
+  if [[ "$interactive" == true ]]; then
+    job_command=("$PTY_BRIDGE" --socket "$socket_path" -- "${job_command[@]}")
+  fi
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater check for $target" \
     "${systemd_env[@]}" "${SYSTEMD_LOG_FILTER_ARGS[@]}" --property=Type=oneshot --property=StandardOutput=journal \
-    --property=StandardError=journal "$RUNNER_PATH" run-check "$unit" "$target" "$cli" "$mode"; then
+    --property=StandardError=journal "${job_command[@]}"; then
     UU_JOB_TYPE=check write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
+    cleanup_interactive_runtime "$unit" || true
     return 1
   fi
   printf 'Check job started\nTarget: %s\nJob: %s\nStatus: ultimate-updater status\nLogs: journalctl -u %s\n' \
@@ -695,13 +1054,93 @@ run_selfupdate_job() {
   return "$exit_code"
 }
 
+start_reboot_job() {
+  local target="$1" kind="$2" host="$3" user="$4" port="$5" identity="$6" local_target="$7"
+  local unit timestamp conflict
+  local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR" "--setenv=UU_JOB_TYPE=reboot")
+  valid_target "$target" || { printf 'Unsupported reboot target: %s\n' "$target" >&2; return 2; }
+  [[ "$kind" == host || "$kind" == lxc || "$kind" == vm ]] || { printf 'Unsupported reboot target type.\n' >&2; return 2; }
+  if [[ "$kind" != host && ! "$target" =~ ^[0-9]+$ ]]; then
+    printf 'Guest reboot targets must be numeric.\n' >&2
+    return 2
+  fi
+  [[ "$local_target" == true || "$local_target" == false ]] || return 2
+  [[ "$local_target" == true || ( -n "$host" && "$host" != *[!A-Za-z0-9_.:-]* && "$user" =~ ^[A-Za-z0-9._-]+$ && "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ) ]] || return 2
+  command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start reboot jobs.\n' >&2; return 5; }
+  [[ "$EUID" -eq 0 ]] || { printf 'Starting reboot jobs requires root.\n' >&2; return 2; }
+  ensure_state_dir || return 1
+  acquire_start_lock || { printf 'Could not acquire the job start lock.\n' >&2; return 1; }
+  if conflict=$(running_job_conflict "$target"); then
+    printf 'A job is already running for target %s.\n' "$target" >&2
+    return 3
+  fi
+  timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
+  unit="${REBOOT_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
+  UU_JOB_TYPE=reboot write_state "$unit" "$target" running "$(now)" '' '' || return 1
+  if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater reboot for $target" \
+      "${systemd_env[@]}" --property=Type=oneshot --property=StandardOutput=journal \
+      --property=StandardError=journal "$RUNNER_PATH" run-reboot "$unit" "$target" "$kind" "$host" "$user" "$port" "$identity" "$local_target"; then
+    UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
+    return 1
+  fi
+  printf 'Reboot job started\nTarget: %s\nJob: %s\nStatus: ultimate-updater status\nLogs: journalctl -u %s\n' \
+    "$target" "$unit" "$unit"
+}
+
+run_reboot_job() {
+  local unit="$1" target="$2" kind="$3" host="$4" user="$5" port="$6" identity="$7" local_target="$8"
+  local file started exit_code remote_command
+  local -a command
+  valid_unit "$unit" || return 2
+  valid_target "$target" || return 2
+  [[ "$kind" == host || "$kind" == lxc || "$kind" == vm ]] || return 2
+  [[ "$local_target" == true || "$local_target" == false ]] || return 2
+  [[ "$kind" == host || "$target" =~ ^[0-9]+$ ]] || return 2
+  file=$(state_file "$unit")
+  started=$(state_value "$file" started_at)
+  exec 9>"$JOB_STATE_DIR/$target.lock" || { UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" 1 "could not open target lock"; return 1; }
+  if ! flock -n 9; then
+    UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" 75 "target already locked"
+    return 75
+  fi
+  if [[ "$kind" == host ]]; then
+    remote_command='systemctl reboot'
+  elif [[ "$kind" == lxc ]]; then
+    remote_command="pct reboot $target"
+  else
+    remote_command="qm reboot $target"
+  fi
+  if [[ "$local_target" == true ]]; then
+    command=(bash -c "$remote_command")
+  else
+    command=(ssh -q -o BatchMode=yes -o ConnectTimeout=5)
+    [[ -n "$identity" ]] && command+=( -o IdentitiesOnly=yes -i "$identity" )
+    command+=( -p "$port" "$user@$host" "$remote_command" )
+  fi
+  # A node disappears as soon as the accepted reboot starts.  Persist the
+  # accepted state before issuing that one-way command; guest reboots use the
+  # normal success-after-return path below.
+  if [[ "$kind" == host ]]; then
+    UU_JOB_TYPE=reboot write_state "$unit" "$target" completed "$started" "$(now)" 0 "Reboot initiated" || return 1
+  fi
+  "${command[@]}"
+  exit_code=$?
+  if [[ "$exit_code" -eq 0 ]]; then
+    [[ "$kind" == host ]] || UU_JOB_TYPE=reboot write_state "$unit" "$target" completed "$started" "$(now)" 0 "Reboot initiated"
+  else
+    UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" "Reboot command failed"
+  fi
+  return "$exit_code"
+}
+
 run_check_job() {
-  local unit="$1" target="$2" cli="$3" mode="$4" file started exit_code lock_file
+  local unit="$1" target="$2" cli="$3" mode="$4" file started exit_code lock_file interactive
   valid_unit "$unit" || return 2
   valid_target "$target" || return 2
   [[ -x "$cli" ]] || return 1
   file=$(state_file "$unit")
   started=$(state_value "$file" started_at)
+  interactive=$(state_value "$file" interactive 2>/dev/null || printf 'false')
   lock_file="$JOB_STATE_DIR/$target.lock"
   exec 9>"$lock_file" || { UU_JOB_TYPE=check write_state "$unit" "$target" failed "$started" "$(now)" 1 "could not open target lock"; return 1; }
   if ! flock -n 9; then
@@ -709,13 +1148,26 @@ run_check_job() {
     return 75
   fi
   case "$mode" in
-    target) UU_CHECK_JOB_EXECUTION=true "$cli" check "$target" </dev/null ;;
-    node) UU_CHECK_JOB_EXECUTION=true "$cli" check-node "$target" </dev/null ;;
-    all) UU_CHECK_JOB_EXECUTION=true "$cli" check </dev/null ;;
+    target)
+      if [[ "$interactive" == true ]]; then UU_CHECK_JOB_EXECUTION=true "$cli" check "$target"; else UU_CHECK_JOB_EXECUTION=true "$cli" check "$target" </dev/null; fi ;;
+    node)
+      if [[ "$interactive" == true ]]; then UU_CHECK_JOB_EXECUTION=true "$cli" check-node "$target"; else UU_CHECK_JOB_EXECUTION=true "$cli" check-node "$target" </dev/null; fi ;;
+    all)
+      if [[ "$interactive" == true ]]; then UU_CHECK_JOB_EXECUTION=true "$cli" check; else UU_CHECK_JOB_EXECUTION=true "$cli" check </dev/null; fi ;;
   esac
   exit_code=$?
+  if cancel_requested "$unit"; then
+    write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." || return 1
+    cleanup_interactive_runtime "$unit" || true
+    return 130
+  fi
+  if [[ "$mode" == target || "$mode" == node ]]; then
+    send_check_notification "$STATUS_MODEL_FILE"
+  fi
   if [[ "$mode" != target && "$exit_code" -eq "$CHECK_WARNING_RC" ]]; then
-    UU_JOB_TYPE=check write_state "$unit" "$target" completed_with_warnings "$started" "$(now)" 0 "Check completed with warnings" || return 1
+    # Keep the normalized non-zero check result visible to API/UI consumers
+    # while returning success to systemd for a completed job with warnings.
+    UU_JOB_TYPE=check write_state "$unit" "$target" completed_with_warnings "$started" "$(now)" "$exit_code" "Check completed with warnings" || return 1
     return 0
   elif [[ "$exit_code" -eq 0 ]]; then
     UU_JOB_TYPE=check write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" || return 1
@@ -755,7 +1207,12 @@ refresh_running_jobs() {
             age_seconds=$(( $(date -u +%s) - $(date -u -d "$started" +%s 2>/dev/null || date -u +%s) ))
             if (( age_seconds >= 30 )); then
               type=$(state_value "$file" type)
-              write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit is $active_state" "${type:-update}" || true
+              if cancel_requested "$unit"; then
+                write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." "${type:-update}" || true
+              else
+                write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit is $active_state" "${type:-update}" || true
+              fi
+              cleanup_interactive_runtime "$unit" || true
             fi
           fi
           ;;
@@ -765,7 +1222,12 @@ refresh_running_jobs() {
             age_seconds=$(( $(date -u +%s) - $(date -u -d "$started" +%s 2>/dev/null || date -u +%s) ))
             if (( age_seconds >= 30 )); then
               type=$(state_value "$file" type)
-              write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit no longer active" "${type:-update}" || true
+              if cancel_requested "$unit"; then
+                write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." "${type:-update}" || true
+              else
+                write_state "$unit" "$target" interrupted "$started" "$(now)" '' "unit no longer active" "${type:-update}" || true
+              fi
+              cleanup_interactive_runtime "$unit" || true
             fi
           fi
           ;;
@@ -778,7 +1240,7 @@ list_jobs() {
   [[ -d "$JOB_STATE_DIR" ]] || return 0
   refresh_running_jobs
   cleanup_completed_jobs || true
-  local file unit target state started finished exit_code owner_node owner_host port
+  local file unit target state started finished exit_code owner_node owner_host port interactive socket_available socket_path
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
     unit=$(state_value "$file" unit)
@@ -787,7 +1249,15 @@ list_jobs() {
     started=$(state_value "$file" started_at)
     finished=$(state_value "$file" finished_at)
     exit_code=$(state_value "$file" exit_code)
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t%s\n' "$unit" "$target" "$state" "$started" "$finished" "$exit_code" "$(state_value "$file" type)" "$(state_value "$file" source)"
+    interactive=$(state_value "$file" interactive 2>/dev/null || printf 'false')
+    socket_available=false
+    if [[ "$interactive" == true ]]; then
+      socket_path=$(state_value "$file" socket_path 2>/dev/null || interactive_socket "$unit")
+      [[ -S "$socket_path" ]] && socket_available=true
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t%s\t%s\t%s\n' \
+      "$unit" "$target" "$state" "$started" "$finished" "$exit_code" \
+      "$(state_value "$file" type)" "$(state_value "$file" source)" "$interactive" "$socket_available"
   done
   shopt -s nullglob
   for file in "$REMOTE_REF_DIR"/*.ref; do
@@ -812,7 +1282,7 @@ remote_log() {
   ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
   IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
   printf -v remote_command 'journalctl -u %q -n 200 --no-pager -o cat' "$unit"
-  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
+  remote_node_ssh "$owner_node" "$owner_host" "$port" "$remote_command"
 }
 
 remote_log_full() {
@@ -820,7 +1290,56 @@ remote_log_full() {
   ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
   IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
   printf -v remote_command 'journalctl -u %q --no-pager -o cat' "$unit"
-  ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$owner_host" "$remote_command"
+  remote_node_ssh "$owner_node" "$owner_host" "$port" "$remote_command"
+}
+
+remote_log_follow() {
+  local unit="$1" cursor="${2:-}" ref_line target owner_node owner_host port remote_command
+  ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  printf -v remote_command 'journalctl -u %q --output=json --no-pager --follow --lines 200' "$unit"
+  if [[ -n "$cursor" ]]; then
+    printf -v remote_command '%s --after-cursor %q' "$remote_command" "$cursor"
+  fi
+  remote_node_ssh "$owner_node" "$owner_host" "$port" "$remote_command"
+}
+
+remote_attach() {
+  local unit="$1" ref_line target owner_node owner_host port workspace runner remote_command
+  ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  workspace=$(state_value "$(remote_ref_file "$unit")" workspace 2>/dev/null || true)
+  if [[ -n "$workspace" ]]; then
+    [[ "$workspace" =~ ^/tmp/ultimate-updater-update-node-[0-9]+-[0-9]+-[0-9]+$ ]] || {
+      printf 'Remote job workspace is invalid: %s\n' "$unit" >&2
+      return 1
+    }
+    runner="$workspace/job-runner.sh"
+  else
+    runner="/etc/ultimate-updater/job-runner.sh"
+  fi
+  if [[ -n "$workspace" ]]; then
+    printf -v remote_command 'exec /usr/bin/env UU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q UU_PTY_BRIDGE=%q %q attach %q' \
+      "$workspace" "$workspace" "$workspace/job-pty-bridge.py" "$runner" "$unit"
+  else
+    printf -v remote_command 'exec %q attach %q' "$runner" "$unit"
+  fi
+  remote_node_ssh "$owner_node" "$owner_host" "$port" "$remote_command"
+}
+
+attach_job() {
+  local unit="$1" file state interactive socket_path
+  valid_unit "$unit" || { printf 'Invalid job ID: %s\n' "$unit" >&2; return 2; }
+  file=$(state_file "$unit")
+  [[ -f "$file" ]] || { printf 'Job not found: %s\n' "$unit" >&2; return 1; }
+  state=$(state_value "$file" state)
+  [[ "$state" == running ]] || { printf 'Job is not running: %s (%s)\n' "$unit" "$state" >&2; return 1; }
+  interactive=$(state_value "$file" interactive 2>/dev/null || printf 'false')
+  [[ "$interactive" == true ]] || { printf 'Job is not interactive: %s\n' "$unit" >&2; return 1; }
+  socket_path=$(state_value "$file" socket_path 2>/dev/null || interactive_socket "$unit")
+  [[ -S "$socket_path" ]] || { printf 'Interactive job socket not found: %s\n' "$socket_path" >&2; return 1; }
+  [[ -x "$PTY_BRIDGE" ]] || { printf 'Interactive attach helper is not available: %s\n' "$PTY_BRIDGE" >&2; return 1; }
+  exec python3 "$PTY_BRIDGE" --socket "$socket_path" attach "$socket_path"
 }
 
 case "${1:-}" in
@@ -856,9 +1375,29 @@ case "${1:-}" in
     [[ $# -eq 4 ]] || { usage >&2; exit 2; }
     run_selfupdate_job "$2" "$3" "$4"
     ;;
+  start-reboot)
+    [[ $# -eq 8 ]] || { usage >&2; exit 2; }
+    start_reboot_job "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+    ;;
+  run-reboot)
+    [[ $# -eq 9 ]] || { usage >&2; exit 2; }
+    run_reboot_job "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9"
+    ;;
+  attach)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    attach_job "$2"
+    ;;
+  cancel)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    request_cancel "$2"
+    ;;
   list)
     [[ $# -eq 1 ]] || { usage >&2; exit 2; }
     list_jobs
+    ;;
+  show)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    show_job "$2"
     ;;
   record-remote)
     [[ $# -eq 6 || $# -eq 7 ]] || { usage >&2; exit 2; }
@@ -871,6 +1410,14 @@ case "${1:-}" in
   remote-log-full)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     remote_log_full "$2"
+    ;;
+  remote-log-follow)
+    [[ $# -eq 2 || $# -eq 3 ]] || { usage >&2; exit 2; }
+    remote_log_follow "$2" "${3:-}"
+    ;;
+  remote-attach)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    remote_attach "$2"
     ;;
   *)
     usage >&2

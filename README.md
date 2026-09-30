@@ -1,9 +1,8 @@
 <div align="center">
 
-# Ultimate Updater 5.1.2
+# Ultimate Updater 5.1.3
 
-Central, safety-conscious updates and checks for Proxmox hosts, LXC
-containers, VMs, and selected external systems.
+Status: Stable release.
 
 <img src="https://github.com/user-attachments/assets/df181f9c-683b-4e9b-9234-80c158c7da98"
        style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
@@ -33,6 +32,38 @@ from Proxmox Server Solutions GmbH.
 
 </div>
 
+Central, safety-conscious updates and checks for Proxmox hosts, LXC
+containers, VMs, and selected external systems.
+
+**Ultimate Updater helps you update everything from one place — without giving up control.**
+
+Automation is supported, but control stays with you.
+
+## Roadmap
+
+### 5.1.3
+
+5.1.3 is a stability, correctness, and hardening release focused on reliable
+update execution, checks, remote operation, notifications, result handling,
+installer/self-update behavior, and terminal handling.
+
+### 5.2
+
+The next development cycle is planned to focus on broader system support and
+continued UI evolution:
+
+- Web UI evolution, including theme and skin support while preserving Ultimate
+  Updater's independent visual identity.
+- More mature Windows integration through the existing QGA and PowerShell
+  direction, including update detection, execution, reboot-required state,
+  capability handling, and production-quality validation.
+- More complete first-class External system support, with consistent checks,
+  updates, package-manager capabilities, status integration, notifications,
+  and stronger APT/RPM handling.
+
+These are planned focus areas, not guarantees of specific 5.2 scope or
+ordering.
+
 ## What it does
 
 Ultimate Updater is installed once on a Proxmox cluster and gives you one
@@ -50,6 +81,12 @@ Key features include:
 - VM access through QEMU Guest Agent or SSH, with lifecycle restoration.
 - Persistent server-side jobs that continue after a browser or SSH session
   disconnects.
+- Interactive Web terminal support for supported update jobs and read-only
+  live output for Checks and other non-interactive jobs.
+- Scheduler support for weekdays and selected month days, plus job-scoped
+  notification controls.
+- Optional Web UI-managed target selection with independent Check/Update
+  tri-state rules; legacy Proxmox tag selection remains the default.
 - Separate normal/security counts where classification is supported; other
   systems show a total count.
 - Snapshot and backup safety controls, filters, notifications, and logs.
@@ -72,10 +109,10 @@ The authenticated Web UI is served by `ultimate-updater-web.service` on port
 checks, updates, settings, Internal SSH management, persistent jobs/logs, and
 version/build information. See [Web UI](docs/web-ui.md).
 
-![Ultimate Updater 5.1.2 dashboard](docs/images/web-ui/dashboard.png)
+![Ultimate Updater Web UI dashboard](docs/images/web-ui/dashboard.png)
 
-> Current 5.1.2 dashboard from a dedicated test environment. More Web UI views
-> are shown in the [Web UI guide](docs/web-ui.md).
+> Web UI dashboard from a dedicated test environment. More views are shown in
+> the [Web UI guide](docs/web-ui.md).
 
 ## Supported systems
 

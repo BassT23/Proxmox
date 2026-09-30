@@ -1,7 +1,189 @@
 Changelog:
 ==========
 
-**v5.1 Beta 3** (public beta / release candidate for final validation)
+**Unreleased**
+
+No changes yet.
+
+**v5.1.3** (30.09.2026)
+
+5.1.3 is a stability, correctness, and hardening release following the
+existing 5.1 Web UI generation.
+
+Improved:
+- update and check execution, status handling, result preservation, remote
+  and cluster operation, notifications, and current-run summaries
+- installer/self-update reliability and accurate installed build identity,
+  including legacy bootstrap compatibility and explicit branch transitions
+- Web UI version details and compact build identities for product, branch,
+  Beta/build, and installed/available commit information
+
+Fixed:
+- External and remote result handling through final status refreshes without
+  stale or non-inventory target resurrection
+- interactive installer terminal clearing and cleaner self-update output,
+  while headless and managed output remain log-safe
+- minimal Alpine LXC checks without a Bash dependency and correct total-only
+  semantics for package managers without security splitting
+- authentication, backup/snapshot, scheduler, package-manager, and terminal
+  safety regressions across the 5.1.3 cycle
+
+**v5.1.3 Beta 7** (beta / release candidate for validation)
+
+This cycle is primarily a stability, correctness, and hardening release
+following the existing 5.1 Web UI generation.
+
+Improved:
+- installer, CLI, and Web UI version displays now identify the installed
+  Ultimate Updater build; beta and develop builds include their branch,
+  Beta number, and short commit where applicable
+- Web UI version details separate product version, channel, Beta information,
+  and installed/available commits without repeating compact identity strings
+- global update summaries serialize status writes, preserve External and
+  remote metadata through final refreshes, distinguish actual update work from
+  already-current targets, and remain scoped to the current run
+- installer and self-update output is cleaner while the final installed build
+  identity remains visible
+
+Fixed:
+- legacy installed clients can discover current 5.1.3 payloads through the
+  literal `VERSION` bootstrap compatibility path
+- explicit branch changes are honored even when source and target branches
+  point to the same commit
+- interactive installer and self-update clearing reaches the controlling
+  terminal, while headless, scheduler, and managed output remain free of
+  terminal control sequences
+- completed External and remote results are restored after a full post-update
+  refresh without resurrecting stale or non-inventory targets
+- minimal Alpine LXCs can be checked without Bash; APK remains total-only when
+  security splitting is unsupported
+
+Validation target:
+- External result preservation during the combined remote-node plus
+  `update-all` lifecycle remains subject to field confirmation; no additional
+  field-validation claim is made here.
+
+**v5.1.3 Beta 6** (beta / release candidate for validation)
+
+Added:
+- native interactive update runtime regression coverage, preserving terminal
+  input/output semantics alongside deterministic headless execution
+
+Improved:
+- mutating update steps and extra updaters now execute once and propagate
+  their real failures through the existing result model
+- Community-Scripts execution is isolated from controlling-terminal SIGTTOU
+  and SIGTTIN suspension, including nested `/dev/tty` reads
+- installer cron migration recognizes known updater entries, preserves custom
+  schedules, and creates a backup before changing the real crontab
+- standalone local-node actions and aggregate checks remain on the local path
+  while clustered node dispatch remains remote
+
+Fixed:
+- informational help/version commands no longer enter update-summary
+  finalization
+- remote update results, guest failures, and current-inventory filtering are
+  preserved through global status refresh and notification rendering
+- scheduler-originated cron checks carry `UU_JOB_SOURCE=scheduler` while
+  retaining `RUN_FROM_CRON=true`
+
+Validation target:
+- External result preservation during the combined remote-node plus
+  `update-all` lifecycle remains a field-validation concern; no final fix is
+  claimed here.
+
+**v5.1.3 Beta 5** (beta / release candidate for validation)
+
+Added:
+- structured package metadata counts for APT, DNF/YUM, Pacman, APK, and
+  FreeBSD pkg paths
+- Home Assistant OS/Core QGA checks and hardened QGA/Windows result handling
+
+Improved:
+- interactive/headless job execution, remote terminal reconnects, target
+  selection context, locale-independent status handling, and the compact
+  structured Welcome Screen summary
+- Community-Scripts and remote cluster checks use safer runtime/helper
+  handling, with improved backup fallback and warning-state propagation
+
+Fixed:
+- SSH guest package-count commands no longer add a broken nested shell
+  wrapper (#342)
+- Proxmox-native/configured Web UI administrator authentication was added
+  (#344)
+- External normal/security counts, remote node handback (#338), LXC backup
+  fallback (#334), and related check/runtime regressions were corrected
+
+Security/Safety:
+- browser disconnects, terminal close/reopen, and remote stream failures
+  remain independent from running jobs
+
+**v5.1.3 Beta 4** (beta / release candidate for validation)
+
+Improved:
+- running jobs clearly switch from live views to static final output after completion
+- target selection now exposes explicit loading and error states instead of silently falling back
+
+Fixed:
+- filtered global checks now execute selected remote Proxmox nodes correctly instead of dropping them from the effective scope
+- target-selection state no longer falls back to an empty legacy view when the selection API has not loaded successfully
+- filtered global checks preserve status for targets outside the current scope
+- global checks that execute no targets no longer report a successful zero-update result
+- authenticated WebUI login now loads target-selection state before rendering the target controls
+- malformed persisted target-selection data is reported as unavailable instead of being exposed as an empty selection
+
+**v5.1.3 Beta 3** (beta / release candidate for validation)
+
+Added:
+- optional Web UI-managed target selection with independent Check/Update tri-state rules for Proxmox nodes, guests, and External systems
+
+Improved:
+- first-use activation, clear Check/Update labels, compact controls, and immediate optimistic target-selection feedback
+- debounced persistence with stale-response protection and safe rollback on save failure
+
+Fixed:
+- target-selection rules are preserved across WebUI reloads, service restarts, self-updates, and deployments
+- invalid target-selection files are handled non-destructively
+- embedded WebUI JavaScript syntax no longer leaves the application on the loading screen
+
+**v5.1.3 Beta 2** (beta / release candidate for validation)
+
+Added:
+- running interactive update jobs can be opened as a live browser terminal with ANSI, cursor, and Whiptail/Dialog support
+- interactive terminal input, terminal resizing, reconnects, and a mobile touch keybar are available without making the job depend on the browser
+- running non-interactive jobs, including checks, provide a read-only live output view while the existing log and download views remain available
+- detail views offer a guarded `Reboot now` action for supported nodes, LXC containers, and VMs that require a reboot
+
+Improved:
+- interactive terminal output is streamed with bounded replay support so disconnects do not stop the server-side job
+- mobile terminal layout, viewport fitting, terminal font controls, and persistent per-browser font size improve small-screen use
+- check failures distinguish connectivity problems from APT/repository failures, while disabled checks are reported neutrally
+- single-target notifications can be enabled independently and are limited to the executed job scope; scheduled check notifications have their own setting
+- summary notifications keep node groups visually separated and the Welcome Screen remains compact while full job output stays available
+- notification summaries use consistent English wording and list current or up-to-date targets explicitly instead of anonymous aggregate counts
+
+Fixed:
+- live journal output records now use terminal-correct line endings so successive records start at column zero
+- interactive job failures retain their final status and output, and supported reboot actions use explicit confirmation and job-state handling
+
+**v5.1.3 Beta 1** (beta / release candidate for validation)
+Improved:
+- interactive update jobs can remain attached to a server-side PTY across CLI/WebUI disconnects and reconnects
+- headless/non-interactive policy is applied consistently across the supported update paths
+- check and Community-Scripts output is streamed while commands run, preserving the real exit status
+- local Proxmox node actions use the stable internal `local-host` target ID while retaining the real hostname for display (#325)
+- summary notification mail uses compact per-system blocks with explicit Security/Normal update labels
+- mobile Web UI header and navigation received a small responsive polish
+- schedules can run on selected calendar days of the month
+
+Fixed:
+- installer Welcome-Screen lookup now uses the extracted archive payload root
+- explicit single-target checks no longer show the unrelated global filter summary
+- failed or missing checks no longer hard-block WebUI updates; continuing requires explicit confirmation
+- interactive WebUI jobs no longer enter a recursive render loop or resolve Attach/Input through the slow global job list
+- QEMU Guest Agent `guest-exec` disabled by guest policy is reported separately from QGA transport/readiness failures (#256)
+
+**v5.1** (05.09.2026)
 New:
 - central Web UI with PAM login, responsive configuration, filter previews, External management, Jobs, Logs, and running-job visibility
 - session-independent systemd-run jobs for checks and updates, including shared history, locking, reload persistence, and remote-node dispatch
@@ -46,6 +228,25 @@ Known limitations:
 - Upgrading from older installations can require a host restart because of the changed job/service infrastructure; the updater does not reboot the host automatically.
 - Windows support remains prepared/experimental and deferred from the supported Beta baseline pending dedicated live validation
 - automatic External backup integrations are not implemented; manual time-bound verification remains the safety mechanism
+
+**v5.1.2** (06.09.2026)
+Fixed:
+- self-update now handles GitHub release archives with a top-level directory and locates `config-merge.sh` correctly
+- archive validation no longer produces a misleading tar write error when checking the release contents
+
+Improved:
+- added regression coverage for flat and nested release archive layouts
+
+**v5.1.1** (06.09.2026)
+Fixed:
+- QEMU Guest Agent updates now survive an agent restart during package upgrades by using a detached guest job (#321; `264f85b6`, `566f8f68`)
+- remote cluster VMs receive the required QGA guest-exec helper (`173e15e9`)
+- the post-update welcome/status check preserves the VM ID and rejects an empty one (#322; `bbb3326`)
+- job listings tolerate state files removed concurrently by retention (`0ae622a3`)
+- the stable master installer no longer defaults to the develop branch when no override is supplied (`152131d1`)
+
+Improved:
+- guest overview columns remain aligned across the supported row types (`9d893471`)
 
 **v5.0** (11.08.2026)
 - change Logo

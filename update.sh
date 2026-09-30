@@ -5,7 +5,11 @@
 # Update #
 ##########
 
-VERSION="5.1.2"
+# Legacy bootstrap compatibility mirror.  Pre-metadata clients discover the
+# product version by parsing this literal line from update.sh.  Runtime code
+# uses product-metadata.sh as the canonical source and tests must keep these
+# values aligned.
+VERSION="5.1.3"
 
 # A protection failure must make the overall update job fail, even when the
 # configured continue-on-error mode allows other guests to be processed.
@@ -13,9 +17,26 @@ SAFETY_FAILURE=false
 # Continue-on-error keeps processing later targets, but real target failures
 # must still produce a non-zero final update result.
 UPDATE_FAILURE=false
+SINGLE_TARGET_EXECUTED=false
+TARGET_SELECTION_RUNTIME_ERROR=false
+# Informational commands share the normal EXIT trap so that their cleanup and
+# exit-code handling remain centralized, but they are not update runs and must
+# never emit an update summary.
+NON_UPDATE_COMMAND=false
 
 # Variable / Function
 LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
+PRODUCT_METADATA_FILE="${UU_PRODUCT_METADATA_FILE:-$LOCAL_FILES/product-metadata.sh}"
+if [[ ! -f "$PRODUCT_METADATA_FILE" ]]; then
+  PRODUCT_METADATA_FILE="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/product-metadata.sh"
+fi
+if [[ -f "$PRODUCT_METADATA_FILE" ]]; then
+  # shellcheck disable=SC1090
+  . "$PRODUCT_METADATA_FILE"
+fi
+PRODUCT_VERSION="${PRODUCT_VERSION:-5.1.3}"
+BETA_VERSION="${BETA_VERSION:-}"
+VERSION="$PRODUCT_VERSION"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 TEMP_STATE_DIR="${UU_TEMP_STATE_DIR:-$LOCAL_FILES/temp}"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
@@ -35,6 +56,24 @@ else
   RUN_PROXMOX_COMMAND() { if [[ "${DEBUG:-false}" == true ]]; then "$@"; else "$@" >/dev/null 2>&1; fi; }
   RUN_PROXMOX_CAPTURE() { local rc; PROXMOX_CAPTURE_OUTPUT=$("$@" 2>&1); rc=$?; [[ "${DEBUG:-false}" == true && -n "$PROXMOX_CAPTURE_OUTPUT" ]] && printf '%s\n' "$PROXMOX_CAPTURE_OUTPUT"; return "$rc"; }
 fi
+
+# Execute one mutating step and retain its original result without running it
+# again merely to obtain diagnostics.  Interactive runs keep native terminal
+# fds; headless runs capture and replay combined output for the job log.
+RUN_UPDATE_COMMAND() {
+  local rc
+  UPDATE_STEP_OUTPUT=""
+  if EFFECTIVE_HEADLESS; then
+    UPDATE_STEP_OUTPUT=$("$@" 2>&1)
+    rc=$?
+    [[ -n "$UPDATE_STEP_OUTPUT" ]] && printf '%s\n' "$UPDATE_STEP_OUTPUT"
+  else
+    "$@"
+    rc=$?
+    UPDATE_STEP_OUTPUT="The command output was streamed directly above."
+  fi
+  return "$rc"
+}
 CLUSTER_TARGET_FILE="${CLUSTER_TARGET_FILE:-$LOCAL_FILES/cluster-target.sh}"
 if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
   # shellcheck disable=SC1090,SC1091
@@ -69,22 +108,54 @@ esac
 BUILD_METADATA_FILE="${UU_BUILD_METADATA_FILE:-$LOCAL_FILES/build-metadata}"
 INSTALLED_COMMIT=""
 INSTALLED_TAG=""
+INSTALLED_VERSION="$VERSION"
+INSTALLED_BETA=""
 if [[ -r "$BUILD_METADATA_FILE" ]]; then
+  INSTALLED_VERSION=$(awk -F'"' '/^version=/ {print $2; exit}' "$BUILD_METADATA_FILE")
+  INSTALLED_BETA=$(awk -F'"' '/^beta=/ {print $2; exit}' "$BUILD_METADATA_FILE")
   INSTALLED_COMMIT=$(awk -F'"' '/^commit=/ {print $2; exit}' "$BUILD_METADATA_FILE")
   INSTALLED_TAG=$(awk -F'"' '/^tag=/ {print $2; exit}' "$BUILD_METADATA_FILE")
 fi
+[[ "$INSTALLED_VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]] || INSTALLED_VERSION="$VERSION"
+[[ "$INSTALLED_BETA" =~ ^[0-9]+$ ]] || INSTALLED_BETA=""
 [[ "$INSTALLED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || INSTALLED_COMMIT="unknown"
 [[ "$INSTALLED_TAG" =~ ^[A-Za-z0-9._/-]+$ ]] || INSTALLED_TAG=""
+INSTALLED_BUILD_IDENTITY=$(UU_FORMAT_BUILD_IDENTITY "$INSTALLED_VERSION" "$INSTALLED_BRANCH" "$INSTALLED_BETA" "$INSTALLED_COMMIT")
 # USED_BRANCH describes the installed source only. A bare -up is always the
 # stable master target; beta/develop require an explicit selector.
 BRANCH=master
 SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$INSTALLED_BRANCH"
 DPKG_OPTIONS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 DPKG_OPTIONS_STRING="${DPKG_OPTIONS[*]}"
+HEADLESS=false
+IN_HEADLESS_MODE=false
+if [[ "${UU_NONINTERACTIVE:-false}" == true || "${RUN_FROM_CRON:-false}" == true ]]; then
+  HEADLESS=true
+fi
+
+# A configured headless mode is the persistent policy; -s/--silent remains
+# the per-invocation override.  Keep this decision in one predicate so all
+# update paths use the same effective semantics.
+EFFECTIVE_HEADLESS() {
+  [[ "${HEADLESS:-false}" == true || "${IN_HEADLESS_MODE:-false}" == true ]]
+}
+
+APT_FRONTEND_PREFIX() {
+  EFFECTIVE_HEADLESS && printf 'DEBIAN_FRONTEND=noninteractive '
+}
+
+APT_COMMAND() {
+  if EFFECTIVE_HEADLESS; then
+    DEBIAN_FRONTEND=noninteractive apt-get "$@"
+  else
+    apt-get "$@"
+  fi
+}
 
 # Tag filter
 # shellcheck disable=SC1091
 . "$LOCAL_FILES/tag-filter.sh"
+USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
 
 # Colors
 BL="\e[36m"
@@ -141,9 +212,20 @@ RUN_DOWNLOADED_INSTALLER() {
 
 
 
+SHOULD_CLEAR_UPDATE_HEADER() {
+  [[ -t 0 && -e /dev/tty && -w /dev/tty && "${TERM:-}" != "" && "${TERM:-}" != dumb ]] || return 1
+  [[ "${UU_MANAGED_OUTPUT:-false}" != true ]] || return 1
+  [[ "${UU_NONINTERACTIVE:-false}" != true && "${UU_JOB_SOURCE:-}" != scheduler ]]
+}
+
+CLEAR_UPDATE_HEADER() {
+  SHOULD_CLEAR_UPDATE_HEADER || return 0
+  clear > /dev/tty 2>/dev/null || true
+}
+
 # Header
 HEADER_INFO () {
-  clear
+  CLEAR_UPDATE_HEADER
   echo -e "\n \
     https://github.com/BassT23/Proxmox\n"
   cat <<'EOF'
@@ -162,7 +244,7 @@ EOF
   if [[ "$INFO" != false ]]; then
     echo -e "\n \
           ***  Mode: $MODE***"
-    if [[ "$HEADLESS" == true ]]; then
+    if EFFECTIVE_HEADLESS; then
       echo -e "           ***    Headless    ***"
     else
       echo -e "           ***   Interactive  ***"
@@ -269,8 +351,8 @@ ARGUMENTS () {
         CONTAINER_UPDATE_START
         VM_UPDATE_START
         ;;
-      -h|--help) USAGE; exit 0 ;;
-      -v|--version) VERSION_CHECK; exit 0 ;;
+      -h|--help) NON_UPDATE_COMMAND=true; USAGE; exit 0 ;;
+      -v|--version) NON_UPDATE_COMMAND=true; VERSION_CHECK; exit 0 ;;
       -s|--silent) HEADLESS=true ;;
       -c) RICM=true ;;
       -w) WELCOME_SCREEN=true ;;
@@ -283,8 +365,9 @@ ARGUMENTS () {
           if [[ $EXIT_ON_ERROR == false ]]; then echo -e "ℹ ${OR:-} Continue after errors: enabled${CL:-}\n"; else echo -e "ℹ ${OR:-} Continue after errors: disabled${CL:-}\n"; fi
         fi
         echo -e "🔄${GN:-} Updating Host${CL:-} : ${GN:-}$IP | ($HOSTNAME)${CL:-}\n"
-        if [[ "$WITH_HOST" == true ]]; then
+        if [[ "$WITH_HOST" == true && "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" != true ]]; then
           UPDATE_HOST_ITSELF
+          CHOST=""
         else
           echo -e "⏩${BL:-} Skipped host itself by the user${CL:-}\n\n"
         fi
@@ -339,8 +422,10 @@ ARGUMENTS () {
         exit 2
         ;;
       -check)
-        "$LOCAL_FILES/check-updates.sh"
-        exit $?
+        local check_rc=0
+        CHECK_ONLY_RUN=true
+        "$LOCAL_FILES/check-updates.sh" || check_rc=$?
+        exit "$check_rc"
         ;;
       inventory)
         COMMAND=true
@@ -366,7 +451,7 @@ ARGUMENTS () {
 
 # Usage
 USAGE () {
-  if [[ "$HEADLESS" != true ]]; then
+  if ! EFFECTIVE_HEADLESS; then
     echo -e "Usage: $0 [OPTIONS...] {COMMAND}\n"
     echo -e "[OPTIONS] Manages the Ultimate Updater:"
     echo -e "======================================"
@@ -409,11 +494,13 @@ RUN_BRANCH_UPDATE () {
 }
 
 SHOW_UPDATE_NOTICE () {
-  local target_branch=$1 remote_version=$2
+  local target_branch=$1 remote_version=$2 remote_commit=${3:-} remote_beta=${4:-}
+  local available_identity
+  available_identity=$(UU_FORMAT_BUILD_IDENTITY "$remote_version" "$target_branch" "$remote_beta" "$remote_commit")
 
   echo -e "${OR:-}*** A newer version is available ***${CL:-}\n\
-       Installed: $LOCAL_VERSION / $target_branch: $remote_version"
-  if [[ "$HEADLESS" != true ]]; then
+       Installed: $INSTALLED_BUILD_IDENTITY\n       Available: $available_identity"
+  if ! EFFECTIVE_HEADLESS; then
     echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
     read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
     if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
@@ -424,18 +511,18 @@ SHOW_UPDATE_NOTICE () {
 }
 
 VERSION_CHECK () {
-  local candidate remote_version remote_available=false
+  local candidate remote_version remote_available=false current_commit remote_beta
   local -a candidates
   local branch_for_status=${INSTALLED_BRANCH:-master}
 
-  LOCAL_VERSION=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh")
+  LOCAL_VERSION="$INSTALLED_VERSION"
   case "$branch_for_status" in
     master) candidates=(master) ;;
     beta) candidates=(master beta) ;;
     develop) candidates=(master beta develop) ;;
     *)
       echo -e "${OR:-}The configured branch '$branch_for_status' is not active; use master, beta, or develop.${CL:-}"
-      echo -e "                 Version: $VERSION"
+      echo -e "                 Ultimate Updater $INSTALLED_BUILD_IDENTITY"
       return 0
       ;;
   esac
@@ -459,18 +546,36 @@ VERSION_CHECK () {
     fi
   done
   if [[ "$VERSION_NOT_SHOW" != true && "$remote_available" == true ]]; then
+    current_commit=$(FETCH_REMOTE_COMMIT "$branch_for_status" || true)
+    if [[ "$branch_for_status" != master && "$current_commit" =~ ^[0-9a-f]{40}$ && "$current_commit" != "$INSTALLED_COMMIT" ]]; then
+      remote_beta=$(FETCH_REMOTE_BETA "$branch_for_status" || true)
+      SHOW_UPDATE_NOTICE "$branch_for_status" "$INSTALLED_VERSION" "$current_commit" "$remote_beta"
+      VERSION_NOT_SHOW=true
+    fi
+  fi
+  if [[ "$VERSION_NOT_SHOW" != true && "$remote_available" == true ]]; then
     echo -e "${GN:-}       The Ultimate Updater is UpToDate${CL:-}"
-    echo -e "                 Version: $VERSION"
+    echo -e "                 Ultimate Updater $INSTALLED_BUILD_IDENTITY"
   elif [[ "$VERSION_NOT_SHOW" != true ]]; then
     echo -e "${OR:-}       Unable to verify the remote version${CL:-}"
-    echo -e "                 Version: $VERSION"
+    echo -e "                 Ultimate Updater $INSTALLED_BUILD_IDENTITY"
   fi
 }
 
 # Update The Ultimate Updater
+SAME_INSTALLED_TARGET_IDENTITY() {
+  [[ "$INSTALLED_BRANCH" == "$BRANCH" ]] || return 1
+  [[ "$INSTALLED_VERSION" == "$target_version" ]] || return 1
+  [[ "$installed_commit" =~ ^[0-9a-f]{40}$ && "$target_commit" == "$installed_commit" ]] || return 1
+  if [[ "$BRANCH" == beta ]]; then
+    [[ "$target_beta" =~ ^[0-9]+$ && "$INSTALLED_BETA" == "$target_beta" ]] || return 1
+  fi
+  return 0
+}
+
 UPDATE () {
   SELF_UPDATE_RUN=true
-  local installed_version target_version target_commit installed_commit cache_buster
+  local installed_version target_version target_commit installed_commit target_beta cache_buster
   cache_buster=$(date +%s)
   installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
   if ! target_version=$(FETCH_REMOTE_VERSION "$BRANCH" update.sh); then
@@ -479,9 +584,10 @@ UPDATE () {
   fi
   installed_commit=$(awk -F'"' '/^commit=/ {print $2; exit}' "$BUILD_METADATA_FILE" 2>/dev/null || true)
   target_commit=$(FETCH_REMOTE_COMMIT "$BRANCH" || true)
-  if [[ "$installed_commit" =~ ^[0-9a-f]{40}$ && "$target_commit" == "$installed_commit" ]]; then
+  target_beta=$(FETCH_REMOTE_BETA "$BRANCH" || true)
+  if SAME_INSTALLED_TARGET_IDENTITY; then
     echo -e "${GN:-}       The Ultimate Updater is UpToDate${CL:-}"
-    echo -e "                 Version: $installed_version"
+    echo -e "                 Ultimate Updater $INSTALLED_BUILD_IDENTITY"
     return 0
   fi
   if version_is_less "$target_version" "$installed_version"; then
@@ -515,7 +621,7 @@ UPDATE () {
     return $?
   fi
   RUN_DOWNLOADED_INSTALLER "https://raw.githubusercontent.com/BassT23/Proxmox/refs/heads/$BRANCH/install.sh?uu_cache=$cache_buster" \
-    UU_TARGET_BRANCH="$BRANCH" UU_UPGRADE_INTERACTIVE=true UU_NONINTERACTIVE=true update
+    UU_TARGET_BRANCH="$BRANCH" UU_UPGRADE_INTERACTIVE=true UU_INTERACTIVE_INSTALLER=true UU_NONINTERACTIVE=true update
   return $?
 }
 
@@ -555,9 +661,17 @@ FETCH_REMOTE_COMMIT() {
     awk -F'"' '/"sha"[[:space:]]*:/ {print $4; exit}'
 }
 
+FETCH_REMOTE_BETA() {
+  local branch="$1"
+  [[ "$branch" =~ ^(beta|develop)$ ]] || return 1
+  curl -4 -sS --connect-timeout 5 --max-time 15 \
+    "https://raw.githubusercontent.com/BassT23/Proxmox/$branch/product-metadata.sh" 2>/dev/null |
+    awk -F'"' '/^BETA_VERSION=/ {print $2; exit}'
+}
+
 # Get Server Versions
 STATUS () {
-  local branch_for_status=${INSTALLED_BRANCH:-master} component label local_file local_version remote_version remote_commit
+  local branch_for_status=${INSTALLED_BRANCH:-master} component label local_file local_version remote_version remote_commit remote_beta
   local -a components=(
     "Updater|update.sh|$LOCAL_FILES/update.sh"
     "Extras|update-extras.sh|$LOCAL_FILES/update-extras.sh"
@@ -573,11 +687,16 @@ STATUS () {
     return 1
   fi
 
+  printf 'Ultimate Updater %s\n\n' "$INSTALLED_BUILD_IDENTITY"
   echo -e "${OR:-}  Version overview ($branch_for_status)${CL:-}\n"
+  printf 'Installed product version: %s\n' "$INSTALLED_VERSION"
+  printf 'Installed beta: %s\n' "${INSTALLED_BETA:-—}"
   printf 'Installed commit: %s\n' "${INSTALLED_COMMIT:-unknown}"
   remote_commit=$(FETCH_REMOTE_COMMIT "$branch_for_status" || true)
   [[ "$remote_commit" =~ ^[0-9a-f]{40}$ ]] || remote_commit="unavailable"
+  remote_beta=$(FETCH_REMOTE_BETA "$branch_for_status" || true)
   printf 'Available commit: %s\n' "$remote_commit"
+  printf 'Available beta: %s\n' "${remote_beta:-—}"
   printf 'Installed tag: %s\n\n' "${INSTALLED_TAG:-—}"
   printf '%-12s %-9s %-9s\n' "Component" "Local" "Server"
   printf '%-12s %-9s %-9s\n' "---------" "-----" "------"
@@ -628,16 +747,25 @@ READ_CONFIG () {
   LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   LXC_START_DELAY="${LXC_START_DELAY:-5}"
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
-  EXTRA_IN_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
+  IN_HEADLESS_MODE=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
+  [[ "$IN_HEADLESS_MODE" == true ]] || IN_HEADLESS_MODE=false
+  [[ "${UU_NONINTERACTIVE:-false}" == true || "${RUN_FROM_CRON:-false}" == true ]] && IN_HEADLESS_MODE=true
+  EXTRA_IN_HEADLESS="$IN_HEADLESS_MODE"
   EXCLUDED=$(awk -F'"' '/^EXCLUDE=/ {print $2}' "$CONFIG_FILE")
   ONLY=$(awk -F'"' '/^ONLY=/ {print $2}' "$CONFIG_FILE")
+  USE_INTERNAL_TARGET_SELECTION=$(awk -F'"' '/^USE_INTERNAL_TARGET_SELECTION=/ {print $2}' "$CONFIG_FILE")
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
   INCLUDE_FSTRIM=$(awk -F'"' '/^INCLUDE_FSTRIM=/ {print $2}' "$CONFIG_FILE")
   FSTRIM_WITH_MOUNTPOINT=$(awk -F'"' '/^FSTRIM_WITH_MOUNTPOINT=/ {print $2}' "$CONFIG_FILE")
   PACMAN_ENVIRONMENT=$(awk -F'"' '/^PACMAN_ENVIRONMENT=/ {print $2}' "$CONFIG_FILE")
   if declare -f apply_only_exclude_tags >/dev/null 2>&1; then
     export UU_FILTER_SCOPE=update
-    apply_only_exclude_tags ONLY EXCLUDED
+    if ! apply_only_exclude_tags ONLY EXCLUDED &&
+      [[ "${TARGET_SELECTION_RUNTIME_ERROR:-false}" == true ]]; then
+      printf 'Internal target selection runtime is unavailable; refusing legacy fallback.\n' >&2
+      return 1
+    fi
   fi
   EMAIL_USER=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$CONFIG_FILE")
   EMAIL_USER="${EMAIL_USER:-root}"
@@ -734,8 +862,18 @@ CONTAINER_BACKUP () {
       else
         snapshot_output="$PROXMOX_CAPTURE_OUTPUT"
         if grep -Eqi 'snapshot feature is not available|snapshot[^[:alnum:]]*(feature )?(is )?(not available|unsupported|not supported)|not supported[^[:alnum:]]*snapshot' <<< "$snapshot_output"; then
-          echo -e "⚠️${OR:-} Snapshot not supported for LXC $CONTAINER; continuing without snapshot${CL:-}"
-          snapshot_requested=false
+          echo -e "⚠️${OR:-} Snapshot not supported for LXC $CONTAINER${CL:-}"
+          if [[ "$BACKUP_LXC_MP" == true ]] && pct config "$CONTAINER" | grep -q '^mp'; then
+            backup_requested=true
+            snapshot_requested=false
+            echo -e "ℹ ${OR:-} Configured mount-point backup fallback will be used${CL:-}"
+          elif [[ "$backup_requested" == true ]]; then
+            snapshot_requested=false
+            echo -e "ℹ ${OR:-} Attempting configured backup fallback${CL:-}"
+          else
+            echo -e "❌${RD:-} Guest update aborted: configured snapshot protection was not created${CL:-}"
+            return 1
+          fi
         elif [[ "$backup_requested" == true ]]; then
           snapshot_requested=false
           echo -e "ℹ ${OR:-} Attempting configured backup fallback${CL:-}"
@@ -1007,9 +1145,10 @@ SCRIPT_ONLY_VM () {
 
 # Extras
 EXTRAS () {
+  local extra_rc
   if [[ "$EXTRA_GLOBAL" != true ]]; then
     echo -e "\n${OR:-}--- Skip Extra Updates because of the user settings ---${CL:-}\n"
-  elif [[ "$HEADLESS" == true && "$EXTRA_IN_HEADLESS" == false ]]; then
+  elif EFFECTIVE_HEADLESS && [[ "$EXTRA_IN_HEADLESS" == false ]]; then
     echo -e "\n${OR:-}--- Skip Extra Updates because of Headless Mode or user settings ---${CL:-}\n"
   else
     echo -e "\n${OR:-}--- Searching for extra updates ---${CL:-}"
@@ -1018,8 +1157,10 @@ EXTRAS () {
       pct push "$CONTAINER" -- $LOCAL_FILES/update-extras.sh $LOCAL_FILES/update-extras.sh
       pct push "$CONTAINER" -- $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf
       pct exec "$CONTAINER" -- bash -c "LOCAL_FILES='$LOCAL_FILES' chmod +x '$LOCAL_FILES/update-extras.sh' && \
-                                        LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh' && \
-                                        rm -rf $LOCAL_FILES || true"
+                                        LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh'; \
+                                        extra_rc=\$?; rm -rf '$LOCAL_FILES'; exit \$extra_rc"
+      extra_rc=$?
+      [[ "$extra_rc" -eq 0 ]] || return "$extra_rc"
       USER_SCRIPTS
     # Extras in VMS with SSH_CONNECTION
     elif [[ "$USER" != root ]]; then
@@ -1029,8 +1170,10 @@ EXTRAS () {
       scp $LOCAL_FILES/update-extras.sh "$IP":$LOCAL_FILES/update-extras.sh
       scp $LOCAL_FILES/update.conf "$IP":$LOCAL_FILES/update.conf
       ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "LOCAL_FILES='$LOCAL_FILES' chmod +x '$LOCAL_FILES/update-extras.sh' && \
-                LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh' && \
-                rm -rf $LOCAL_FILES || true"
+                LOCAL_FILES='$LOCAL_FILES' '$LOCAL_FILES/update-extras.sh'; \
+                extra_rc=\$?; rm -rf '$LOCAL_FILES'; exit \$extra_rc"
+      extra_rc=$?
+      [[ "$extra_rc" -eq 0 ]] || return "$extra_rc"
       USER_SCRIPTS_VM
     fi
     echo -e "${GN:-}---   Finished extra updates    ---${CL:-}"
@@ -1138,10 +1281,10 @@ UPDATE_CHECK () {
       status_target="host:$HOSTNAME"
     elif [[ "$CCONTAINER" == true ]]; then
 #      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u ccontainer" | tee -a $LOCAL_FILES/check-output
-      STATUS_MODEL_PARTIAL=true "$LOCAL_FILES/check-updates.sh" -u ccontainer | tee -a "$LOCAL_FILES/check-output"
+      STATUS_MODEL_PARTIAL=true "$LOCAL_FILES/check-updates.sh" -u ccontainer "$CONTAINER" | tee -a "$LOCAL_FILES/check-output"
       status_target="$CONTAINER"
     elif [[ "$CVM" == true ]]; then
-      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u cvm \"$VM\"" | tee -a $LOCAL_FILES/check-output
+      ssh -q -p "$SSH_PORT" "$HOSTNAME" "STATUS_MODEL_PARTIAL=true \"$LOCAL_FILES/check-updates.sh\" -u cvm \"$VM\"" | tee -a $LOCAL_FILES/check-output
       status_target="$VM"
     fi
     if [[ -n "$status_target" ]] && declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
@@ -1263,9 +1406,7 @@ CHECK_QGA_EXEC () {
   if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
     return 0
   fi
-  if grep -Eqi 'not allowed|disabled|not permitted|permission denied' <<< "$QEMU_EXEC_OUTPUT"; then
-    QGA_ERROR="QEMU Guest Agent is reachable on VM $VM, but guest-exec is disabled or not allowed: $QEMU_EXEC_OUTPUT"
-  elif [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 ]]; then
+  if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 ]]; then
     QGA_ERROR="QEMU Guest Agent command failed on VM $VM (guest exit code $QEMU_EXEC_EXITCODE): $QEMU_EXEC_OUTPUT"
   else
     QGA_ERROR="QEMU Guest Agent guest-exec failed on VM $VM (transport exit code $QEMU_EXEC_TRANSPORT_RC): $QEMU_EXEC_OUTPUT"
@@ -1279,9 +1420,21 @@ CHECK_QGA_EXEC () {
 
 # Host Update Start
 HOST_UPDATE_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
+  local host_selected=true host_required=true
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=update UU_FILTER_ELIGIBLE_IDS="$(for host in $HOSTS; do printf 'host:%s ' "$(awk -v address="$host" '/name[[:space:]]*:/ { name=$2 } /ring0_addr[[:space:]]*:/ && $2 == address { print name; found=1; exit } END { if (!found) print address }' /etc/pve/corosync.conf 2>/dev/null)"; done)" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   if [[ "$RICM" != true ]]; then true > $LOCAL_FILES/check-output; fi
   for HOST in $HOSTS; do
     HOST_NODE=$(awk -v address="$HOST" '/name[[:space:]]*:/ { name=$2 } /ring0_addr[[:space:]]*:/ && $2 == address { print name; found=1; exit } END { if (!found) print address }' /etc/pve/corosync.conf 2>/dev/null)
+    host_selected=true
+    host_required=true
+    if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+      TARGET_SELECTION_ALLOWS update "host:$HOST_NODE" "$UU_FILTER_ELIGIBLE_IDS" || host_selected=false
+      TARGET_SELECTION_HOST_REQUIRED update "host:$HOST_NODE" || host_required=false
+      [[ "$host_required" == true ]] || continue
+    fi
     INTERNAL_SSH_RESOLVE_NODE "$HOST_NODE" "$HOST" "$SSH_PORT" || { UPDATE_FAILURE=true; continue; }
     [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || { UPDATE_FAILURE=true; continue; }
     HOST="${INTERNAL_SSH_HOST:-$HOST}"; SSH_PORT="${INTERNAL_SSH_PORT:-$SSH_PORT}"; INTERNAL_SSH_USE_IDENTITY
@@ -1290,9 +1443,11 @@ HOST_UPDATE_START () {
       echo -e "⏩ ${OR:-}Skip Host${CL:-} : ${GN:-}$HOST${CL:-} ${OR:-}- can't connect${CL:-}\n"
       UPDATE_FAILURE=true
     else
+      [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
       if ! UPDATE_HOST "$HOST"; then
         UPDATE_FAILURE=true
       fi
+      unset UU_INTERNAL_SKIP_HOST_TARGET
     fi
   done
 }
@@ -1300,9 +1455,23 @@ HOST_UPDATE_START () {
 # Host Update
 UPDATE_HOST () {
   HOST=$1
+  local remote_update_env="" remote_handoff_env=""
+  local remote_workspace="" remote_job_unit="" remote_state_dir=""
+  local remote_started_at="" remote_finished_at="" remote_state=""
+  local remote_finalize_command="" remote_handoff_rc=0
+  local apt_count_file rpm_count_file package_count_file source
+  [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_update_env="UU_INTERNAL_SKIP_HOST_TARGET=true "
   START_HOST=$(hostname -i | cut -d ' ' -f1)
   if [[ "$HOST" != "$START_HOST" ]]; then
+    remote_workspace="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
+    remote_job_unit="ultimate-updater-update-node-${HOST_NODE:-remote}-$$-$RANDOM"
+    remote_state_dir="${UU_REMOTE_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
+    remote_started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    printf -v remote_handoff_env \
+      'UU_REMOTE_NODE_HANDOFF=true UU_REMOTE_WORK_DIR=%q UU_REMOTE_STATE_DIR=%q UU_REMOTE_JOB_UNIT=%q WELCOME_SCREEN=true ' \
+      "$remote_workspace" "$remote_state_dir" "$remote_job_unit"
     ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
+    ssh -q -p "$SSH_PORT" "$HOST" "mkdir -p $(printf '%q' "$remote_workspace") $(printf '%q' "$remote_state_dir")"
     ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf ]]; then cp -p $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf.uu-backup; else rm -f $LOCAL_FILES/update.conf.uu-backup; fi"
     scp "$0" "$HOST":$LOCAL_FILES/update
     scp $LOCAL_FILES/update-extras.sh "$HOST":$LOCAL_FILES/update-extras.sh
@@ -1310,14 +1479,30 @@ UPDATE_HOST () {
     if [[ -f $LOCAL_FILES/update.conf.dist ]]; then
       scp $LOCAL_FILES/update.conf.dist "$HOST":$LOCAL_FILES/update.conf.dist
     fi
-    if [[ "$WELCOME_SCREEN" == true ]]; then
-      scp $LOCAL_FILES/check-updates.sh "$HOST":$LOCAL_FILES/check-updates.sh
-      scp $LOCAL_FILES/check-output "$HOST":$LOCAL_FILES/check-output
+    apt_count_file="$LOCAL_FILES/apt-count.py"
+    rpm_count_file="$LOCAL_FILES/rpm-count.py"
+    package_count_file="$LOCAL_FILES/package-count.sh"
+    [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+    [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
+    [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
+    for source in "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/status-model.sh" \
+      "$apt_count_file" "$rpm_count_file" "$package_count_file"; do
+      [[ -f "$source" ]] || continue
+      scp "$source" "$HOST:$LOCAL_FILES/$(basename -- "$source")"
+    done
+    if [[ -f "$LOCAL_FILES/check-output" ]]; then
+      scp "$LOCAL_FILES/check-output" "$HOST:$LOCAL_FILES/check-output"
     fi
     scp /etc/ultimate-updater/temp/exec_host "$HOST":/etc/ultimate-updater/temp
     scp -r $LOCAL_FILES/VMs/ "$HOST":$LOCAL_FILES/
     if [[ -f $LOCAL_FILES/tag-filter.sh ]]; then
       scp $LOCAL_FILES/tag-filter.sh "$HOST":$LOCAL_FILES/tag-filter.sh
+    fi
+    if [[ -f "$LOCAL_FILES/target-selection.sh" ]]; then
+      scp "$LOCAL_FILES/target-selection.sh" "$HOST":$LOCAL_FILES/target-selection.sh
+    fi
+    if [[ "$USE_INTERNAL_TARGET_SELECTION" == true && -f "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" ]]; then
+      scp "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" "$HOST":$LOCAL_FILES/target-selection.json
     fi
     if [[ -f "$LOCAL_FILES/target-runtime.sh" ]]; then
       scp "$LOCAL_FILES/target-runtime.sh" "$HOST":$LOCAL_FILES/target-runtime.sh
@@ -1332,17 +1517,56 @@ UPDATE_HOST () {
       scp "$LOCAL_FILES/qga-guest-exec.sh" "$HOST":$LOCAL_FILES/qga-guest-exec.sh
     fi
   fi
-  if [[ "$HEADLESS" == true ]]; then
-    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-s -c host"
+  if EFFECTIVE_HEADLESS; then
+    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}${remote_handoff_env}bash -s" < "$0" -- "-s -c host"
     REMOTE_UPDATE_STATUS=$?
   elif [[ "$WELCOME_SCREEN" == true ]]; then
-    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c -w host"
+    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}${remote_handoff_env}bash -s" < "$0" -- "-c -w host"
     REMOTE_UPDATE_STATUS=$?
   else
-    ssh -q -p "$SSH_PORT" "$HOST" 'bash -s' < "$0" -- "-c host"
+    ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}${remote_handoff_env}bash -s" < "$0" -- "-c host"
     REMOTE_UPDATE_STATUS=$?
   fi
   if [[ "$HOST" != "$START_HOST" ]]; then
+    if [[ -n "$remote_workspace" ]]; then
+      remote_finished_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+      [[ "$REMOTE_UPDATE_STATUS" -eq 0 ]] && remote_state=completed || remote_state=failed
+      printf -v remote_finalize_command \
+        'set -e; [[ -s %q/status.json ]] || exit 86; cp -- %q/status.json %q/status.json; printf %q %q > %q/post-update-status.rc; { printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; } > %q/%q.state' \
+        "$LOCAL_FILES" "$LOCAL_FILES" "$remote_workspace" \
+        '%s\n' "$REMOTE_UPDATE_STATUS" "$remote_workspace" \
+        '%s\n' schema_version=1 \
+        '%s\n' "unit=$remote_job_unit" \
+        '%s\n' "target=node-${HOST_NODE:-remote}" \
+        '%s\n' "state=$remote_state" \
+        '%s\n' "started_at=$remote_started_at" \
+        '%s\n' "finished_at=$remote_finished_at" \
+        '%s\n' "exit_code=$REMOTE_UPDATE_STATUS" \
+        '%s\n' type=update \
+        '%s\n' source=remote \
+        '%s\n' interactive=false \
+        "$remote_state_dir" "$remote_job_unit"
+      if ! ssh -q -p "$SSH_PORT" "$HOST" "$remote_finalize_command"; then
+        remote_handoff_rc=1
+      elif [[ -x "$LOCAL_FILES/job-runner.sh" ]] &&
+        ! "$LOCAL_FILES/job-runner.sh" record-remote "$remote_job_unit" \
+          "node-${HOST_NODE:-remote}" "${HOST_NODE:-remote}" "$HOST" "$SSH_PORT" "$remote_workspace"; then
+        remote_handoff_rc=1
+      fi
+      if [[ "$remote_handoff_rc" -ne 0 ]]; then
+        echo -e "${RD:-}⚠ Could not register structured remote update result for $HOST${CL:-}" >&2
+        UPDATE_FAILURE=true
+      fi
+    fi
+    # Collect the updated welcome-screen state from the remote node using the
+    # already trusted controller -> node SSH direction. Requiring the remote
+    # node to initiate a reverse SCP can fail when the controller host key is
+    # not present in the remote root user's known_hosts.
+    if [[ "$WELCOME_SCREEN" == true ]]; then
+      if ! scp "$HOST:$LOCAL_FILES/check-output" "$LOCAL_FILES/check-output"; then
+        echo -e "${RD:-}⚠ Could not retrieve check-output from remote host $HOST${CL:-}" >&2
+      fi
+    fi
     ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf.uu-backup ]]; then mv -f $LOCAL_FILES/update.conf.uu-backup $LOCAL_FILES/update.conf; else rm -f $LOCAL_FILES/update.conf; fi"
   fi
   return "${REMOTE_UPDATE_STATUS:-0}"
@@ -1351,23 +1575,23 @@ UPDATE_HOST () {
 # shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
   echo -e "${OR:-}--- PVE UPDATE ---${CL:-}" && pveupdate || true
-  if [[ "$HEADLESS" == true ]]; then
+  if EFFECTIVE_HEADLESS; then
     echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}" && \
-    DEBIAN_FRONTEND=noninteractive apt-get "${DPKG_OPTIONS[@]}" dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(DEBIAN_FRONTEND=noninteractive apt-get "${DPKG_OPTIONS[@]}" dist-upgrade -y 2>&1); ERROR; }
+    RUN_UPDATE_COMMAND APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     if [[ $ERROR_CODE != "" ]]; then return; fi
   else
     if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}" && \
-      apt-get "${DPKG_OPTIONS[@]}" dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(apt-get "${DPKG_OPTIONS[@]}" dist-upgrade -y 2>&1); ERROR; }
+      RUN_UPDATE_COMMAND APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
     else
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}" && \
-      apt-get "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(apt-get "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y 2>&1); ERROR; }
+      RUN_UPDATE_COMMAND APT_COMMAND "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
     fi
   fi
   echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}" && \
-  apt-get --purge autoremove -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG=$(apt-get --purge autoremove -y 2>&1); ERROR; }
+  RUN_UPDATE_COMMAND APT_COMMAND --purge autoremove -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
   if [[ $ERROR_CODE != "" ]]; then return; fi
   echo
   CHOST="true"
@@ -1381,15 +1605,23 @@ UPDATE_HOST_ITSELF () {
 
 # Container Update Start
 CONTAINER_UPDATE_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=update UU_FILTER_ELIGIBLE_IDS="$CONTAINERS" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   # Loop through the containers
   for CONTAINER in $CONTAINERS; do
     ERROR_CODE=""
-    if guest_id_matches "$EXCLUDED" "$CONTAINER"; then
-      echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
-    elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$CONTAINER"; then
-      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"; else continue; fi
+    if [[ "$SINGLE_UPDATE" == true && "$CONTAINER" != "$ONLY" ]]; then
+      continue
+    elif [[ "$SINGLE_UPDATE" != true && "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS update "$CONTAINER" "$CONTAINERS"; then
+      echo -e "⏩${BL:-} Skipped LXC $CONTAINER by internal target selection${CL:-}\n\n"
+    elif [[ "$SINGLE_UPDATE" != true ]] && guest_id_matches "$EXCLUDED" "$CONTAINER"; then
+      echo -e "⏩${BL:-} Skipped LXC $CONTAINER by update filter (excluded)${CL:-}\n\n"
+    elif [[ "$SINGLE_UPDATE" != true && "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$CONTAINER"; then
+      echo -e "⏩${BL:-} Skipped LXC $CONTAINER by update filter (not selected)${CL:-}\n\n"
     elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
       echo -e "⏩ ${OR:-}LXC $CONTAINER is a template - skip update${CL:-}\n\n"
       continue
@@ -1403,8 +1635,10 @@ CONTAINER_UPDATE_START () {
         echo -e "⏳${GN:-} Waiting for LXC ${BL:-}$CONTAINER${CL:-}${GN:-} to start ${CL:-}"
 #        sleep "$LXC_START_DELAY"
         if WAIT_FOR_BOOTUP_LXC; then
+          SINGLE_TARGET_EXECUTED=true
           UPDATE_CONTAINER "$CONTAINER"
           CAPTURE_POST_UPDATE_STATUS "$CONTAINER" ccontainer
+          CCONTAINER=""
         else
           ERROR_CODE=$?
           ID=$CONTAINER
@@ -1417,12 +1651,14 @@ CONTAINER_UPDATE_START () {
         RUN_PROXMOX_COMMAND pct shutdown "$CONTAINER" &
         WILL_STOP="false"
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" != true ]]; then
-        echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
+        echo -e "⏩${BL:-} Skipped LXC $CONTAINER because stopped containers are disabled${CL:-}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" == true ]]; then
+        SINGLE_TARGET_EXECUTED=true
         UPDATE_CONTAINER "$CONTAINER"
         CAPTURE_POST_UPDATE_STATUS "$CONTAINER" ccontainer
+        CCONTAINER=""
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" != true ]]; then
-        echo -e "⏩${BL:-} Skipped LXC $CONTAINER by the user${CL:-}\n\n"
+        echo -e "⏩${BL:-} Skipped LXC $CONTAINER because running containers are disabled${CL:-}\n\n"
       else
         echo -e "⚠ Can't find status, please report this issue${CL:-}\n\n"
         UPDATE_FAILURE=true
@@ -1512,69 +1748,69 @@ UPDATE_CONTAINER () {
     if pct exec "$CONTAINER" -- bash -c "grep -rnw /etc/apt -e unifi >/dev/null 2>&1"; then
       UNIFI="true"
       # --allow-releaseinfo-change needed because Unifi regularly changes repository metadata between versions
-      pct exec "$CONTAINER" -- bash -c "apt-get update --allow-releaseinfo-change" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update --allow-releaseinfo-change" 2>&1); ERROR; }
+      RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update --allow-releaseinfo-change" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     else
-      pct exec "$CONTAINER" -- bash -c "apt-get update" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get update" 2>&1); ERROR; }
+      RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     fi
     if [[ $ERROR_CODE != "" ]]; then return; fi
     # Check END
-    if [[ "$HEADLESS" == true ]]; then
+    if EFFECTIVE_HEADLESS; then
       echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}"
-      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" 2>&1); ERROR; }
+      RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
       UNIFI=""
       if [[ $ERROR_CODE != "" ]]; then return; fi
     elif [[ "$UNIFI" == true ]]; then
       echo -e "\n${OR:-}--- APT UPGRADE HEADLESS (Unifi) ---${CL:-}"
       # Use --force-confdef/--force-confold to suppress Unifi interactive prompts
-      pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" 2>&1); ERROR; }
+      RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
       UNIFI=""
       if [[ $ERROR_CODE != "" ]]; then return; fi
     else
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-        pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
       else
-        pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get $DPKG_OPTIONS_STRING -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
       fi
     fi
       echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
-      pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get --purge autoremove -y" 2>&1); ERROR; }
+      RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
-      pct exec "$CONTAINER" -- bash -c "apt-get autoclean -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "apt-get autoclean -y" 2>&1); ERROR; }
+      RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get autoclean -y" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
-      EXTRAS
+      EXTRAS || return $?
       TRIM_FILESYSTEM
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
     echo -e "\n${OR:-}--- DNF UPGRATE ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" 2>&1); ERROR; }
+    RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     if [[ $ERROR_CODE != "" ]]; then return; fi
     echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" 2>&1); ERROR; }
+    RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     if [[ $ERROR_CODE != "" ]]; then return; fi
-    EXTRAS
+    EXTRAS || return $?
     TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ archlinux ]]; then
     echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm" 2>&1); ERROR; }
+    RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     if [[ $ERROR_CODE != "" ]]; then return; fi
-    EXTRAS
+    EXTRAS || return $?
     TRIM_FILESYSTEM
     UPDATE_CHECK
   elif [[ "$OS" =~ alpine ]]; then
     echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
-    pct exec "$CONTAINER" -- ash -c "apk -U upgrade" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- ash -c "apk -U upgrade" 2>&1); ERROR; }
+    RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- ash -c "apk -U upgrade" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     if [[ $ERROR_CODE != "" ]]; then return; fi
     if [[ "$WILL_STOP" != true ]]; then echo; fi
     echo
   elif [[ "$OS" =~ centos ]]; then
     echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "yum -y update" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "yum -y update" 2>&1); ERROR; }
+    RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "yum -y update" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     if [[ $ERROR_CODE != "" ]]; then return; fi
-    EXTRAS
+    EXTRAS || return $?
     TRIM_FILESYSTEM
     UPDATE_CHECK
   else
@@ -1592,15 +1828,23 @@ UPDATE_CONTAINER () {
 
 # VM Update Start
 VM_UPDATE_START () {
+  USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
   # Get the list of VMs
   VMS=$(qm list | tail -n +2 | cut -c -10)
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
+    UU_FILTER_SCOPE=update UU_FILTER_ELIGIBLE_IDS="$VMS" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+  fi
   # Loop through the VMs
   for VM in $VMS; do
     PRE_OS=$(qm config "$VM" | grep ostype || true)
-    if guest_id_matches "$EXCLUDED" "$VM"; then
-      echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
-    elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
-      if [[ "$SINGLE_UPDATE" != true ]]; then echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"; else continue; fi
+    if [[ "$SINGLE_UPDATE" == true && "$VM" != "$ONLY" ]]; then
+      continue
+    elif [[ "$SINGLE_UPDATE" != true && "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS update "$VM" "$VMS"; then
+      echo -e "⏩${BL:-} Skipped VM $VM by internal target selection${CL:-}\n\n"
+    elif [[ "$SINGLE_UPDATE" != true ]] && guest_id_matches "$EXCLUDED" "$VM"; then
+      echo -e "⏩${BL:-} Skipped VM $VM by update filter (excluded)${CL:-}\n\n"
+    elif [[ "$SINGLE_UPDATE" != true && "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
+      echo -e "⏩${BL:-} Skipped VM $VM by update filter (not selected)${CL:-}\n\n"
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
       echo -e "⏩${BL:-} ${OR:-}VM $VM is a template - skip update${CL:-}\n\n"
       continue
@@ -1617,8 +1861,10 @@ VM_UPDATE_START () {
           echo -e " ▶${GN:-} Starting VM${BL:-} $VM ${CL:-}"
           RUN_PROXMOX_COMMAND qm start "$VM"
           START_WAITING="true"
+          SINGLE_TARGET_EXECUTED=true
           UPDATE_VM "$VM"
           CAPTURE_POST_UPDATE_STATUS "$VM" cvm
+          CVM=""
           # Stop the VM
           echo -e "⏹ ${GN:-} Shutting down VM${BL:-} $VM ${CL:-}\n\n"
           RUN_PROXMOX_COMMAND qm shutdown "$VM" &
@@ -1628,12 +1874,14 @@ VM_UPDATE_START () {
           echo -e "⏩${BL:-} Skipped VM $VM because, QEMU or SSH hasn't initialized${CL:-}\n\n"
         fi
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" != true ]]; then
-        echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
+        echo -e "⏩${BL:-} Skipped VM $VM because stopped VMs are disabled${CL:-}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
+        SINGLE_TARGET_EXECUTED=true
         UPDATE_VM "$VM"
         CAPTURE_POST_UPDATE_STATUS "$VM" cvm
+        CVM=""
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" != true ]]; then
-        echo -e "⏩${BL:-} Skipped VM $VM by the user${CL:-}\n\n"
+        echo -e "⏩${BL:-} Skipped VM $VM because running VMs are disabled${CL:-}\n\n"
       else
         echo -e "⚠ Can't find status, please report this issue${CL:-}\n\n"
         UPDATE_FAILURE=true
@@ -1707,13 +1955,13 @@ UPDATE_VM () {
       # Free-BSD
       if [[ $KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true ]]; then
         echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- PKG UPGRADE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg upgrade -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg upgrade -y 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg upgrade -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- PKG CLEANING ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg autoremove -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg autoremove -y 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg autoremove -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo
         return
@@ -1731,52 +1979,60 @@ UPDATE_VM () {
         if [[ "$USER" != root ]]; then
           UPDATE_USER="sudo "
         fi
+        local apt_prefix="$UPDATE_USER"
+        if EFFECTIVE_HEADLESS; then
+          if [[ -n "$UPDATE_USER" ]]; then
+            apt_prefix="${UPDATE_USER}env DEBIAN_FRONTEND=noninteractive "
+          else
+            apt_prefix="env DEBIAN_FRONTEND=noninteractive "
+          fi
+        fi
         echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER"apt-get update -y 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get update -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
         if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-          ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$UPDATE_USER" apt-get "${DPKG_OPTIONS[@]}" upgrade -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "$UPDATE_USER" apt-get "${DPKG_OPTIONS[@]}" upgrade -y 2>&1); ERROR; }
+          RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
           if [[ $ERROR_CODE != "" ]]; then return; fi
         else
-          ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true upgrade -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get "${DPKG_OPTIONS[@]}" -o APT::Get::Always-Include-Phased-Updates=true upgrade -y 2>&1); ERROR; }
+          RUN_UPDATE_COMMAND ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get ${DPKG_OPTIONS_STRING} -o APT::Get::Always-Include-Phased-Updates=true upgrade -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
           if [[ $ERROR_CODE != "" ]]; then return; fi
         fi
         echo -e "\n${OR:-}--- APT CLEANING ---${CL:-}"
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" "apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get --purge autoremove -y 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get --purge autoremove -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" "apt-get autoclean -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "$UPDATE_USER" apt-get autoclean -y 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND ssh -q -p "$SSH_VM_PORT" -tt "$USER"@"$IP" "${apt_prefix}apt-get autoclean -y" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
+        EXTRAS || return $?
         UPDATE_CHECK
       # Fedora
       elif [[ "$OS" =~ Fedora ]]; then
         echo -e "\n${OR:-}--- DNF UPGRADE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y upgrade || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y upgrade 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y upgrade || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
-        ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" dnf -y --purge autoremove || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
+        EXTRAS || return $?
         UPDATE_CHECK
       # Arch
       elif [[ "$OS" =~ Arch ]]; then
         echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pacman -Su --noconfirm || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pacman -Su --noconfirm 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pacman -Su --noconfirm || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
+        EXTRAS || return $?
         UPDATE_CHECK
       # Alpine
       elif [[ "$OS" =~ Alpine ]]; then
         echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" apk -U upgrade || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" apk -U upgrade 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" apk -U upgrade || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
       # Cent OS
       elif [[ "$OS" =~ CentOS ]]; then
         echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
-        ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" yum -y update || { ERROR_CODE=$?; ID=$VM; ERROR_MSG=$(ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" yum -y update 2>&1); ERROR; }
+        RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" yum -y update || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
-        EXTRAS
+        EXTRAS || return $?
         UPDATE_CHECK
       # Windows ( WindowsUpdate need admin rights, ...)
 #      elif [[ $OS_BASE == "win10" || $OS_BASE == "win11" ]]; then
@@ -1951,7 +2207,9 @@ UPDATE_VM_QEMU_WINDOWS () {
 }
 
 ## General ##
-READ_CONFIG
+if ! READ_CONFIG; then
+  exit 1
+fi
 
 # Debug
 DEBUG=$(awk -F'"' '/^DEBUG=/ {print $2}' $CONFIG_FILE)
@@ -2043,15 +2301,15 @@ UPDATE_MAIL_BODY() {
     fi
   fi
   if [[ "${EXIT_CODE:-1}" -eq 0 && ! -s "$ERROR_LOG_FILE" ]]; then
-    printf '✅ Update erfolgreich\n'
+    printf '✅ Update successful\n'
     [[ -n "$package_count" ]] && printf '⬆️ %s\n' "$package_count"
   else
-    printf '⚠️ Update fehlgeschlagen\n'
+    printf '⚠️ Update failed\n'
     printf 'Exitcode: %s\n' "${EXIT_CODE:-1}"
     [[ -s "$ERROR_LOG_FILE" ]] && sed -n '1,4p' "$ERROR_LOG_FILE"
   fi
   if grep -Eqi 'reboot required|reboot needed' "$LOG_FILE" 2>/dev/null; then
-    printf '🔄 Neustart erforderlich\n'
+    printf '🔄 Reboot required\n'
   fi
 }
 
@@ -2068,7 +2326,9 @@ EXIT () {
   if [[ -f "$TEMP_STATE_DIR/exec_host" ]]; then
     EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' "$TEMP_STATE_DIR/exec_host")
   fi
-  if [[ "$WELCOME_SCREEN" == true && -n "$EXEC_HOST" ]]; then
+  # Avoid copying check-output back to the same host. Remote cluster
+  # updates are collected by the initiating node after the remote run.
+  if [[ "$WELCOME_SCREEN" == true && -n "$EXEC_HOST" && "$HOSTNAME" != "$EXEC_HOST" ]]; then
     scp "$LOCAL_FILES"/check-output "$EXEC_HOST":"$LOCAL_FILES"/check-output
   fi
   if [[ "${INITIAL_INVENTORY_CLI:-false}" == true ]]; then
@@ -2076,8 +2336,16 @@ EXIT () {
     rm -rf "$LOCAL_FILES"/update
     exit "$EXIT_CODE"
   fi
+  # Check-only runs own their notification and final status handling.
+  if [[ "${CHECK_ONLY_RUN:-false}" == true ]]; then
+    :
+  # Help/version and other informational commands use the shared EXIT trap
+  # only for cleanup; they are not update runs and must not mark a target or
+  # emit update completion/error handling.
+  elif [[ "${NON_UPDATE_COMMAND:-false}" == true ]]; then
+    :
   # Exit without echo
-  if [[ "$EXIT_CODE" == 2 ]]; then
+  elif [[ "$EXIT_CODE" == 2 ]]; then
     exit
   # Update Finish
   elif [[ "$EXIT_CODE" == 0 ]]; then
@@ -2087,7 +2355,7 @@ EXIT () {
         echo -e "Please checkout $ERROR_LOG_FILE"
         echo
         CLEAN_LOGFILE
-        if [[ "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
+        if [[ "${NON_UPDATE_COMMAND:-false}" != true && "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
           UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null || true
         fi
       else
@@ -2095,7 +2363,7 @@ EXIT () {
         "$LOCAL_FILES/exit/passed.sh"
         CLEAN_LOGFILE
         if [[ "$EMAIL_ONLY_ERROR" != true ]]; then
-          if [[ "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
+          if [[ "${NON_UPDATE_COMMAND:-false}" != true && "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
             UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
           fi
         fi
@@ -2107,7 +2375,7 @@ EXIT () {
       echo -e "${RD:-}⚠  Error during update --- Exit Code: $EXIT_CODE${CL:-}\n"
       "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
-      if [[ "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
+      if [[ "${NON_UPDATE_COMMAND:-false}" != true && "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
         UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
       fi
     fi
@@ -2116,6 +2384,7 @@ EXIT () {
   rm -f -- "${TEMP_STATE_DIR:?}/var"
   rm -rf "$LOCAL_FILES"/update
   if [[ -f "$TEMP_STATE_DIR/exec_host" && "$HOSTNAME" != "$EXEC_HOST" ]]; then rm -rf "$LOCAL_FILES"; fi
+  exit "$EXIT_CODE"
 }
 trap EXIT EXIT
 
@@ -2150,7 +2419,7 @@ if [[ "$COMMAND" != true ]]; then
     HOST_UPDATE_START
   else
     echo -e "🔄${GN:-} Updating Host${CL:-} : ${GN:-}$IP | ($HOSTNAME)${CL:-}\n"
-    if [[ "$WITH_HOST" == true ]]; then
+    if [[ "$WITH_HOST" == true ]] && { [[ "${UU_UPDATE_SCOPE:-}" == host || "$USE_INTERNAL_TARGET_SELECTION" != true ]] || TARGET_SELECTION_ALLOWS update "host:$(hostname -s 2>/dev/null || hostname)" "host:$(hostname -s 2>/dev/null || hostname)"; }; then
       UPDATE_HOST_ITSELF
     else
       echo -e "⏩${BL:-} Skipped host itself by the user${CL:-}\n\n"
@@ -2170,6 +2439,11 @@ fi
 
 if [[ "$SAFETY_FAILURE" == true ]]; then
   exit 1
+fi
+
+if [[ "$SINGLE_UPDATE" == true && "$SINGLE_TARGET_EXECUTED" != true ]]; then
+  printf 'Explicit target %s was not updated; no update lifecycle was started.\n' "$ONLY" >&2
+  UPDATE_FAILURE=true
 fi
 
 if ! UPDATE_FINAL_RC 0; then

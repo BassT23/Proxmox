@@ -28,6 +28,17 @@ source "$ROOT_DIR/qga-guest-exec.sh"
 export PATH="$WORK_DIR:$PATH"
 export QGA_CALLS="$WORK_DIR/calls"
 
+# A reachable agent can reject guest-exec for any guest-side reason.  The
+# reason text must not influence the transport classification.
+QEMU_EXEC_OUTPUT='Agent error: Command guest-exec has been disabled: the command is not allowed'
+QEMU_EXEC_OUTPUT='Agent error: guest command failed'
+grep -Fq 'error GUEST_COMMAND_FAILED' "$ROOT_DIR/check-updates.sh"
+grep -Fq 'error_code=GUEST_COMMAND_FAILED' "$ROOT_DIR/check-updates.sh"
+if grep -Fq 'QGA_GUEST_EXEC_DISABLED' "$ROOT_DIR/check-updates.sh" "$ROOT_DIR/update.sh" "$ROOT_DIR/qga-guest-exec.sh"; then
+  echo 'QGA guest-exec classification still depends on a disabled-text helper' >&2
+  exit 1
+fi
+
 run_case() {
   : > "$QGA_CALLS"
   local status_response="${2:-'{"exited":true,"exitcode":0}'}"
@@ -69,6 +80,18 @@ export QGA_STATUS_RESPONSE='{"exited":true,"exitcode":42,"err-data":"failed\n"}'
 QEMU_GUEST_EXEC 310 --timeout 5 -- /bin/true
 [[ "$QEMU_EXEC_TRANSPORT_RC" == 0 && "$QEMU_EXEC_EXITCODE" == 42 ]]
 [[ "$QEMU_EXEC_STDERR" == $'failed\n' ]]
+
+# Guest-side failures remain guest command results regardless of the language
+# or wording used by the guest command's stderr.
+for guest_stderr in \
+  'permission denied' \
+  'guest-exec is disabled' \
+  'nicht erlaubt' \
+  'random guest failure'; do
+  status_response=$(printf '{"exited":true,"exitcode":7,"err-data":"%s"}' "$guest_stderr")
+  run_case '{"pid":9}' "$status_response"
+  [[ "$QEMU_EXEC_TRANSPORT_RC" == 0 && "$QEMU_EXEC_EXITCODE" == 7 ]]
+done
 
 # Both production paths use the same helper and keep the two APT commands in
 # their ordinary QGA execution path.

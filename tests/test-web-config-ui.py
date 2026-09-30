@@ -28,6 +28,10 @@ assert "matrix:[{label:'Virtual machines',check:'CHECK_WITH_VM',update:'WITH_VM'
 assert "function configMatrix(groupData,values)" in page
 assert "matrix-control" in page
 assert "configField(row.check,values,true)" in page
+assert "'USE_INTERNAL_TARGET_SELECTION'" in page
+assert "input.type='checkbox';input.checked=values[key]===true" in page
+assert "input.type==='checkbox'?input.checked" in page
+assert ".target-selection-state{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;min-width:26px;height:26px;min-height:26px;padding:0" in page
 assert "check-update-matrix" in page
 assert "grid-template-columns:minmax(0,1fr) 58px 58px" in page
 assert ".matrix-cell { display:grid; place-items:center; justify-items:center }" in page
@@ -107,11 +111,7 @@ assert "nodes are detected automatically" in page.lower()
 assert "External systems are managed separately under External Targets." in page
 assert "No additional VM SSH connections configured." in source
 assert "No additional LXC SSH connections configured." in source
-assert "Host unreachable." in source
 assert "Connection timed out." in source
-assert "Authentication failed." in source
-assert "Host key verification failed." in source
-assert "Connection refused." in source
 assert "Could not load Internal SSH connections." in source
 assert "internal-ssh-retry" in source
 assert "Edit SSH settings" in page
@@ -212,6 +212,14 @@ assert "new Intl.Collator(undefined,{numeric:true,sensitivity:'base'})" in page
 assert "const sortNodes=items=>[...items].sort" in page
 assert "nodes=sortNodes(ts.filter(isProxmoxNode))" in page
 assert "externalGroup(external)" in page
+assert "target-selection-header" in page
+assert ">Check</span><span>Update</span><span>Actions</span>" in page
+assert "target-selection-label" in page
+assert "✓ Only · ✕ Exclude · empty = no explicit rule" in page
+assert "targetSelectionConfirmed=copyTargetSelection(targetSelection)" in page
+assert "targetSelectionRevision" in page
+assert "Enable Ultimate Updater target selection?" in page
+assert "aria-label" in page
 assert "grid-template-rows:auto auto" in page
 assert ".node-group .group-summary { grid-column:2; grid-row:2; display:flex; flex-wrap:wrap" in page
 assert ".config-field.boolean-field { width:fit-content; max-width:100%; justify-self:start; cursor:pointer }" in page

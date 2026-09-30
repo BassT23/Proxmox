@@ -9,7 +9,7 @@
 VERSION="3.0"
 
 # Variable / Function
-LOCAL_FILES="/etc/ultimate-updater"
+LOCAL_FILES="${LOCAL_FILES:-/etc/ultimate-updater}"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 CHECK_OUTPUT=0
@@ -25,6 +25,8 @@ CL="\e[0m"
 
 # shellcheck disable=SC1091
 . "$LOCAL_FILES/tag-filter.sh"
+# shellcheck disable=SC1091
+. "$LOCAL_FILES/status-model.sh"
 
 # Version Check. This path intentionally uses only the local cache so SSH/MOTD
 # login never waits for GitHub or another external service.
@@ -89,6 +91,7 @@ READ_WRITE_CONFIG () {
   STOPPED=$(awk -F'"' '/^CHECK_STOPPED_CONTAINER=/ {print $2}' "$CONFIG_FILE")
   EXCLUDED=$(awk -F'"' '/^EXCLUDE_UPDATE_CHECK=/ {print $2}' "$CONFIG_FILE")
   ONLY=$(awk -F'"' '/^ONLY_UPDATE_CHECK=/ {print $2}' "$CONFIG_FILE")
+  USE_INTERNAL_TARGET_SELECTION=$(awk -F'"' '/^USE_INTERNAL_TARGET_SELECTION=/ {print $2}' "$CONFIG_FILE")
   if [[ -f "$LOCAL_FILES/tag-filter.sh" ]]; then
     # shellcheck disable=SC1091
     . "$LOCAL_FILES/tag-filter.sh"
@@ -96,7 +99,20 @@ READ_WRITE_CONFIG () {
       apply_only_exclude_tags ONLY EXCLUDED
     fi
   fi
-  if [[ $ONLY != "" ]]; then
+  if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]]; then
+    selection_file="${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}"
+    if [[ -r "$selection_file" ]] && python3 - "$selection_file" <<'PY' >/dev/null 2>&1
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    data = json.load(source)
+rules = data.get("check", {}) if isinstance(data, dict) else None
+raise SystemExit(0 if isinstance(rules, dict) and any(value in {"only", "exclude"} for value in rules.values()) else 1)
+PY
+    then
+      echo -e "${OR}Target selection is active. Not all systems may be checked.${CL}\n"
+    fi
+  elif [[ $ONLY != "" ]]; then
     echo -e "${OR}Only is set. Not all machines are checked.${CL}\n"
   elif [[ $ONLY == "" && $EXCLUDED != "" ]]; then
     echo -e "${OR}Exclude is set. Not all machines are checked.${CL}\n"
@@ -111,35 +127,6 @@ TIME_CALCULTION () {
   DAYS=$(( (NOW - MOD) / 86400 ))
   HOURS=$(( (NOW - MOD) / 3600 ))
   MINUTES=$(( (NOW - MOD) / 60 ))
-}
-
-COMPACT_WELCOME_OUTPUT () {
-  awk '
-    /^Normal updates: / {
-      normal = $0
-      sub(/^Normal updates: /, "", normal)
-      next
-    }
-    /^Security updates: / {
-      if (normal != "") {
-        security = $0
-        sub(/^Security updates: /, "", security)
-        printf "S: %s / N: %s\n", security, normal
-        normal = ""
-        next
-      }
-    }
-    {
-      if (normal != "") {
-        print "Normal updates: " normal
-        normal = ""
-      }
-      print
-    }
-    END {
-      if (normal != "") print "Normal updates: " normal
-    }
-  ' "$1"
 }
 
 # Welcome. Disk discovery is deliberately disabled: screenfetch/neofetch
@@ -165,12 +152,13 @@ if [[ -f "$LOCAL_FILES/check-output" ]]; then
   else
     echo -e "     Last Update Check: $MINUTES minute(s) ago\n"
   fi
-  if [[ $CHECK_OUTPUT -gt 0 ]]; then
-    echo -e "${OR}Available Updates:${CL}"
-    echo -e "S = Security / N = Normal"
-    echo
-    COMPACT_WELCOME_OUTPUT "$LOCAL_FILES/check-output"
-  fi
+  echo
+fi
+if [[ -f "$LOCAL_FILES/status.json" ]]; then
+  echo -e "${OR}Available Updates:${CL}"
+  echo -e "S = Security / N = Normal"
+  echo
+  UU_WELCOME_COLOR=always STATUS_MODEL_RENDER_WELCOME "$LOCAL_FILES/status.json"
   echo
 fi
 

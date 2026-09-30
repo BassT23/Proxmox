@@ -8,6 +8,7 @@ set -eu
 
 HELPER_VERSION=1
 CONFIG_PATH=/etc/ultimate-updater/external.conf
+APT_COUNT_SCRIPT=${UU_APT_COUNT_SCRIPT:-/usr/local/lib/ultimate-updater/apt-count.py}
 
 usage() {
   printf 'Usage: %s version | status | config-read | config-write | update\n' "$0" >&2
@@ -72,7 +73,11 @@ detect_os() {
 }
 
 apt_status() {
-  /usr/bin/apt-get -s upgrade
+  [ -r "$APT_COUNT_SCRIPT" ] || {
+    printf 'APT_COUNTS|unknown|unknown|unknown|false\n'
+    return 2
+  }
+  /usr/bin/python3 "$APT_COUNT_SCRIPT"
 }
 
 dnf_status() {
@@ -84,13 +89,23 @@ dnf_status() {
 }
 
 update_apt() {
-  DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get update
-  DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get \
-    -o Dpkg::Options::=--force-confdef \
-    -o Dpkg::Options::=--force-confold \
-    dist-upgrade -y
-  DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get --purge autoremove -y
-  DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get autoclean -y
+  if [ "${UU_EFFECTIVE_HEADLESS:-false}" = true ]; then
+    DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get update
+    DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get \
+      -o Dpkg::Options::=--force-confdef \
+      -o Dpkg::Options::=--force-confold \
+      dist-upgrade -y
+    DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get --purge autoremove -y
+    DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get autoclean -y
+  else
+    /usr/bin/apt-get update
+    /usr/bin/apt-get \
+      -o Dpkg::Options::=--force-confdef \
+      -o Dpkg::Options::=--force-confold \
+      dist-upgrade -y
+    /usr/bin/apt-get --purge autoremove -y
+    /usr/bin/apt-get autoclean -y
+  fi
 }
 
 update_dnf() {

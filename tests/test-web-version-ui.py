@@ -12,7 +12,10 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 sample = """Version overview (beta)
+Installed product version: 5.1.3
+Installed beta: 7
 Installed commit: 0123456789abcdef0123456789abcdef01234567
+Available beta: 8
 Available commit: 89abcdef0123456789abcdef0123456789abcdef
 Installed tag: —
 Component    Local     Server
@@ -25,7 +28,9 @@ Check        2.1       2.1
 parsed = module.parse_updater_version_output(sample)
 assert parsed["state"] == "ok"
 assert parsed["branch"] == "beta"
-assert parsed["installed"] == "5.1"
+assert parsed["installed"] == "5.1.3"
+assert parsed["beta"] == 7
+assert parsed["available_beta"] == 8
 assert parsed["available"] == "5.2"
 assert parsed["update_available"] is True
 assert parsed["commit"] == "0123456789abcdef0123456789abcdef01234567"
@@ -57,6 +62,9 @@ for marker in (
 assert "run-selfupdate" in runner
 assert "WRITE_BUILD_METADATA" in installer
 assert "ARCHIVE_COMMIT" in installer
+assert "FORMAT_ARCHIVE_IDENTITY" in installer
+assert "INSTALLER_VERSION=\"2.1\"" in installer
+assert "Version :   2.1" not in installer
 assert "BUILD_METADATA_FILE" in update_script
 assert "FETCH_REMOTE_COMMIT" in update_script
 assert "curl" not in source
@@ -70,6 +78,16 @@ assert "<th>Installed</th><th>Available</th>" in source
 assert "<td>Local" not in source
 assert "<td>Server" not in source
 assert "versionFooterDisplay" in source
+assert "function versionDisplay" in source
+assert "function versionDialogRows" in source
+assert "data.branch==='develop'?'Target Beta':'Beta'" in source
+assert "Installed commit" in source
+assert "Available commit" in source
+assert "data.commit!==data.available_commit" in source
+assert "if(data.tag)rows.push" in source
+assert "${esc(data.installed||'Unavailable')}" in source
+assert "${esc(data.available||'Unavailable')}" in source
+assert "Beta ${betaValue}" in source
 assert "shortCommit" in source
 assert "data.update_available===true" in source
 assert "updateButton.textContent=data.state==='ok'&&data.update_available===true?'Update now':'Up to date'" in source
@@ -93,15 +111,22 @@ assert "schema 1" not in module.PAGE.lower()
 assert 'id="generated"' not in module.PAGE
 assert 'Generated ${date(data.generated_at)}' not in module.PAGE
 assert 'login-version-footer' in module.PAGE
-assert '<p class="login-account-hint">Sign in with the local Proxmox root account.</p>' in module.PAGE
+assert '<p class="login-account-hint">Sign in with your Proxmox administrator account.</p>' in module.PAGE
 assert 'id="login-message"' in module.PAGE
 login_markup = module.PAGE.split('<section id="login-screen"', 1)[1].split('</section>', 1)[0]
 assert login_markup.count('class="login-branding"') == 1
 assert '<h2>Ultimate Updater</h2>' not in login_markup
 assert 'Sign in to access system status and actions.' not in login_markup
-assert 'Sign in with the local Proxmox root account.' in login_markup
+assert 'Sign in with your Proxmox administrator account.' in login_markup
 assert 'name="username"' in login_markup
 assert 'name="password"' in login_markup
+assert 'name="realm"' in login_markup
+assert 'id="login-realm"' in login_markup
+assert '<label>Domain<select name="realm" id="login-realm"' in login_markup
+assert '.modal label input,.modal label select' in module.PAGE
+assert '.modal label select { appearance:none;' in module.PAGE
+assert 'Authentication required.' not in login_markup
+assert 'id="login-message"' in login_markup
 assert '>Sign in</button>' in login_markup
 assert login_markup.index('login-branding') < login_markup.index('login-account-hint') < login_markup.index('name="username"')
 
@@ -121,11 +146,22 @@ with tempfile.TemporaryDirectory() as directory:
     assert (local["installed"], local["branch"], local["commit"], local["tag"]) == (
         "5.1", "beta", "0123456789abcdef0123456789abcdef01234567", "v5.1-beta"
     )
+    assert local["beta"] is None
+    (root_dir / "build-metadata").write_text(
+        'schema_version=2\nversion="5.1.3"\nbranch="beta"\nbeta="7"\n'
+        'commit="0123456789abcdef0123456789abcdef01234567"\ntag=""\n',
+        encoding="utf-8",
+    )
+    modern_local = handler.local_version()
+    assert (modern_local["installed"], modern_local["beta"], modern_local["branch"]) == (
+        "5.1.3", 7, "beta"
+    )
     handler.start_version_refresh = lambda: setattr(handler.server, "refresh_started", True)
     handler.server.version_last_data = None
     public = handler.public_version()
-    assert public["installed"] == "5.1"
+    assert public["installed"] == "5.1.3"
     assert public["branch"] == "beta"
+    assert public["beta"] == 7
     assert public["update_state"] == "checking"
     assert handler.server.refresh_started is True
     handler.server.version_last_data = {
@@ -133,7 +169,8 @@ with tempfile.TemporaryDirectory() as directory:
         "installed": None, "branch": None, "commit": "unknown",
     }
     offline = handler.public_version()
-    assert offline["installed"] == "5.1"
+    assert offline["installed"] == "5.1.3"
     assert offline["branch"] == "beta"
+    assert offline["beta"] == 7
     assert offline["update_state"] == "unavailable"
 print("web updater version/self-update tests: PASS")

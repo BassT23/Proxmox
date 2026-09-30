@@ -48,12 +48,17 @@ EMAIL_USER="root"
 EMAIL_SENDER="$USER"
 # disable email during daily check
 EMAIL_DAILY_CHECK="true"
+# send email for explicitly selected single-target checks/updates
+EMAIL_SINGLE_RUNS="false"
 # send email if no updates available
 EMAIL_NO_UPDATES="false"
 # send email only if security updates available
 EMAIL_ONLY_SECURITY="false"
 # disable email on successful run
 EMAIL_ONLY_ERROR="false"
+
+# use Ultimate Updater-owned Check/Update target selection instead of Proxmox tags
+USE_INTERNAL_TARGET_SELECTION="false"
 
 
 ╔══════════════════════════════════════════════╗

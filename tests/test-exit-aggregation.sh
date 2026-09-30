@@ -37,12 +37,14 @@ CCONTAINER=false ID=913 NAME=fixture ERROR_CODE=17 ERROR_MSG='fixture failure' \
 
 sed -n '/^HOST_CHECK_START () {/,/^# Host Check/p' "$ROOT_DIR/check-updates.sh" \
   | sed '$d' > "$WORK_DIR/check-loop.sh"
+REMOTE_TRACE() { :; }
 # shellcheck source=/dev/null
 source "$WORK_DIR/check-loop.sh"
 # shellcheck disable=SC2034
 HOSTS='node1 node2 node3'
 CHECK_FAILURE=0
 checked_targets=()
+CLUSTER_HOST_NODE() { printf '%s\n' "$1"; }
 HOST_IS_LOCAL() { return 1; }
 CHECK_HOST() {
   checked_targets+=("$1")

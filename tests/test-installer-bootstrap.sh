@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2016 # Assertions intentionally match literal shell fragments.
 set -euo pipefail
 
 ROOT_DIR=$(dirname -- "${BASH_SOURCE[0]}")/..
@@ -20,7 +21,7 @@ grep -Fq 'A restart of this Proxmox host is required' "$INSTALLER"
 grep -Fq 'The host remains usable' "$INSTALLER"
 grep -Fq 'Web UI ready on port' "$INSTALLER"
 grep -Fq 'Updating Ultimate Updater...' "$INSTALLER"
-grep -Fq "Installed: \$BRANCH" "$INSTALLER"
+grep -Fq 'Installed: $(FORMAT_ARCHIVE_IDENTITY)' "$INSTALLER"
 grep -Fq "rm -rf \"\$TEMP_FILES\"/tests" "$INSTALLER"
 grep -Fq "remove_non_runtime_payload \"\$TEMP_FILES\"" "$INSTALLER"
 grep -Fq "remove_non_runtime_payload \"\$LOCAL_FILES\"" "$INSTALLER"
@@ -35,6 +36,8 @@ if grep -Fq 'old file saved as' "$INSTALLER"; then
   exit 1
 fi
 grep -Fq 'UU_UPGRADE_INTERACTIVE=true' "$ROOT_DIR/update.sh"
+grep -Fq 'mv "$TEMP_FILES"/job-pty-bridge.py $LOCAL_FILES/job-pty-bridge.py' "$INSTALLER"
+grep -Fq 'cp "$TEMP_FILES"/job-pty-bridge.py $LOCAL_FILES/job-pty-bridge.py' "$INSTALLER"
 
 work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT

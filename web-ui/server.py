@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+from collections import deque
 import fcntl
 import hashlib
 import hmac
@@ -10,6 +11,7 @@ import json
 import os
 import re
 import secrets
+import select
 import shlex
 import shutil
 import socket
@@ -23,7 +25,9 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urlencode, unquote, urlsplit
+from urllib.request import Request, build_opener, ProxyHandler
 
 try:
     from pam_auth import authenticate as pam_authenticate
@@ -96,6 +100,7 @@ DEFAULT_CONFIG_FILE = Path("/etc/ultimate-updater/update.conf")
 DEFAULT_INVENTORY_FILE = Path("/etc/ultimate-updater/targets.conf")
 DEFAULT_INVENTORY_SCRIPT = Path("/etc/ultimate-updater/target-inventory.sh")
 DEFAULT_TAG_FILTER = Path("/etc/ultimate-updater/tag-filter.sh")
+DEFAULT_TARGET_SELECTION = Path("/etc/ultimate-updater/target-selection.json")
 DEFAULT_EXTERNAL_SCRIPT = Path("/etc/ultimate-updater/external-apt.sh")
 DEFAULT_CLUSTER_TARGET_SCRIPT = Path("/etc/ultimate-updater/cluster-target.sh")
 DEFAULT_EXTERNAL_SETTINGS_SCRIPT = Path("/etc/ultimate-updater/external-settings.sh")
@@ -104,6 +109,7 @@ DEFAULT_CLI = Path("/usr/local/sbin/ultimate-updater")
 DEFAULT_UPDATE_SCRIPT = Path("/etc/ultimate-updater/update.sh")
 DEFAULT_JOB_RUNNER = Path("/etc/ultimate-updater/job-runner.sh")
 DEFAULT_JOBS_DIR = Path("/var/lib/ultimate-updater/jobs")
+DEFAULT_INTERACTIVE_RUNTIME_DIR = Path("/run/ultimate-updater/jobs")
 VISIBLE_JOB_LIMIT = 20
 DEFAULT_BACKUP_STATE_FILE = Path("/var/lib/ultimate-updater/external-backup-verification.json")
 DEFAULT_AUTH_FILE = Path("/etc/ultimate-updater/web-auth.json")
@@ -117,9 +123,10 @@ DEFAULT_PROXMOX_KEY = Path("/etc/pve/local/pve-ssl.key")
 DEFAULT_PROXMOX_CUSTOM_CERT = Path("/etc/pve/local/pveproxy-ssl.pem")
 DEFAULT_PROXMOX_CUSTOM_KEY = Path("/etc/pve/local/pveproxy-ssl.key")
 TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-JOB_RE = re.compile(r"^ultimate-updater-(?:update|check)-[A-Za-z0-9_.-]+$")
+JOB_RE = re.compile(r"^ultimate-updater-(?:update|check|reboot)-[A-Za-z0-9_.-]+$")
 HOST_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 USER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
+REALM_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
 INTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 SCHEDULER_ID_RE = re.compile(r"^[a-f0-9]{12}$")
 SCHEDULER_NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,80}$")
@@ -144,6 +151,7 @@ def scheduler_validate(payload, schedule_id=None):
     name = payload.get("name")
     schedule_type = payload.get("type")
     days = payload.get("days")
+    month_days = payload.get("month_days", [])
     time_value = payload.get("time")
     legacy_frequency = payload.get("frequency")
     legacy_day = payload.get("day", "")
@@ -162,7 +170,12 @@ def scheduler_validate(payload, schedule_id=None):
             days = [day]
         else:
             raise ValueError("Days of week are required")
-    if not isinstance(days, list) or not days:
+    if not isinstance(month_days, list):
+        raise ValueError("Days of month must be a list")
+    if any(isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= 31 for day in month_days):
+        raise ValueError("Days of month must be whole numbers from 1 to 31")
+    month_days = sorted(set(month_days))
+    if not isinstance(days, list) or (not days and not month_days):
         raise ValueError("Select at least one day")
     if any(day not in SCHEDULER_DAYS for day in days) or len(set(days)) != len(days):
         raise ValueError("Days of week are invalid")
@@ -181,6 +194,7 @@ def scheduler_validate(payload, schedule_id=None):
     if schedule_type.endswith("-selected") and not targets:
         raise ValueError("Select at least one target")
     normalized = {"name": name, "type": schedule_type, "days": days,
+                  "month_days": month_days,
                   "time": time_value, "enabled": enabled, "targets": targets}
     if schedule_id is not None:
         if not SCHEDULER_ID_RE.fullmatch(schedule_id):
@@ -191,6 +205,10 @@ def scheduler_validate(payload, schedule_id=None):
 
 def scheduler_calendar(schedule):
     hour, minute = schedule["time"].split(":")
+    month_days = schedule.get("month_days") or []
+    if month_days:
+        day_expression = ",".join(f"{day:02d}" for day in month_days)
+        return f"*-*-{day_expression} {hour}:{minute}:00"
     days = schedule["days"]
     day_expression = "*-*-*" if set(days) == set(SCHEDULER_DAYS) else ",".join(days) + " *-*-*"
     return f"{day_expression} {hour}:{minute}:00"
@@ -283,7 +301,8 @@ def scheduler_unit_files(schedule, unit_dir, cli):
     action = schedule["type"]
     commands = scheduler_commands(schedule, cli)
     service_lines = ["[Unit]", f"Description=Ultimate Updater scheduled {action}", "", "[Service]",
-                     "Type=oneshot", "Environment=UU_JOB_SOURCE=scheduler"]
+                     "Type=oneshot", "Environment=UU_JOB_SOURCE=scheduler",
+                     "Environment=UU_NONINTERACTIVE=true"]
     service_lines.extend(f"ExecStart={shlex.join(command)}" for command in commands)
     service_lines.append("")
     service_text = "\n".join(service_lines)
@@ -384,7 +403,8 @@ CONFIG_BOOLEAN_KEYS = {
     "WITH_HOST", "WITH_LXC", "WITH_VM", "RUNNING_CONTAINER",
     "STOPPED_CONTAINER", "RUNNING_VM", "STOPPED_VM",
     "REBOOT_IF_NEEDED", "EXIT_ON_ERROR", "DEBUG", "SNAPSHOT", "BACKUP",
-    "BACKUP_LXC_MP", "EMAIL_DAILY_CHECK", "EMAIL_NO_UPDATES",
+    "BACKUP_LXC_MP", "EMAIL_DAILY_CHECK", "EMAIL_SINGLE_RUNS", "EMAIL_NO_UPDATES",
+    "USE_INTERNAL_TARGET_SELECTION",
     "EMAIL_ONLY_SECURITY", "EMAIL_ONLY_ERROR", "VERSION_CHECK",
     "FREEBSD_UPDATES", "INCLUDE_PHASED_UPDATES", "INCLUDE_FSTRIM",
     "FSTRIM_WITH_MOUNTPOINT", "INCLUDE_HELPER_SCRIPTS", "EXTRA_GLOBAL",
@@ -411,7 +431,8 @@ CONFIG_KEY_CATEGORIES = {
     "EXE_FOR_INTERNET_CHECK": "advanced", "URL_FOR_INTERNET_CHECK": "advanced",
     "LXC_START_DELAY": "advanced", "VM_START_DELAY": "advanced",
     "EMAIL_USER": "visible", "EMAIL_SENDER": "visible",
-    "EMAIL_DAILY_CHECK": "visible", "EMAIL_NO_UPDATES": "visible",
+    "EMAIL_DAILY_CHECK": "visible", "EMAIL_SINGLE_RUNS": "visible", "EMAIL_NO_UPDATES": "visible",
+    "USE_INTERNAL_TARGET_SELECTION": "visible",
     "EMAIL_ONLY_SECURITY": "visible", "EMAIL_ONLY_ERROR": "visible",
     "CHECK_WITH_HOST": "visible", "CHECK_WITH_LXC": "visible", "CHECK_WITH_VM": "visible",
     "CHECK_STOPPED_CONTAINER": "visible", "CHECK_RUNNING_CONTAINER": "visible",
@@ -437,6 +458,9 @@ UI_ASSETS = {
     "/assets/ultimate-updater-header.png": ("ultimate-updater-header.png", "image/png"),
     "/assets/ultimate-updater-icon.png": ("ultimate-updater-icon.png", "image/png"),
     "/assets/favicon.png": ("favicon.png", "image/png"),
+    "/assets/vendor/xterm/xterm.js": ("vendor/xterm/xterm.js", "text/javascript; charset=utf-8"),
+    "/assets/vendor/xterm/xterm.css": ("vendor/xterm/xterm.css", "text/css; charset=utf-8"),
+    "/assets/vendor/xterm/addon-fit.js": ("vendor/xterm/addon-fit.js", "text/javascript; charset=utf-8"),
 }
 
 
@@ -444,7 +468,7 @@ PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark"><link rel="icon" href="/assets/favicon.png" type="image/png"><title>Ultimate Updater</title>
+  <meta name="color-scheme" content="dark"><link rel="icon" href="/assets/favicon.png" type="image/png"><link rel="stylesheet" href="/assets/vendor/xterm/xterm.css"><script src="/assets/vendor/xterm/xterm.js"></script><script src="/assets/vendor/xterm/addon-fit.js"></script><title>Ultimate Updater</title>
   <style>
     :root { color-scheme:dark; --bg:#0b1020; --panel:#151d34e8; --strong:#19233f; --text:#edf3ff; --muted:#91a0bd; --line:#94a3b82e; --accent:#73a7ff; --good:#55d39a; --warn:#f7c66b; --security:#f0a83a; --bad:#ff7e8b; font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
     * { box-sizing:border-box } .visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0 } body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(circle at top right,#1e3567 0,var(--bg) 42rem) }
@@ -455,7 +479,7 @@ PAGE = r"""<!doctype html>
     .metric { border-radius:16px; padding:18px } .metric strong { display:block; font-size:1.8rem; letter-spacing:-.04em } .metric span { color:var(--muted); font-size:.82rem }
     .dashboard-kpis { grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; margin:16px 0 0; padding:9px; border:1px solid var(--line); border-radius:16px; background:#151d34aa; box-shadow:0 18px 50px #00000029 } .dashboard-kpis .metric { border-color:#94a3b82e; border-radius:10px; padding:13px 12px; background:#0b122433; box-shadow:none } .dashboard-kpis .metric strong { font-size:1.55rem }
     @media (max-width:1100px) { .dashboard-kpis { grid-template-columns:repeat(3,minmax(0,1fr)) } }
-    .notice { border-radius:14px; padding:15px 18px; color:var(--warn); margin-bottom:18px } .notice.error { color:var(--bad) }
+    .notice { border-radius:14px; padding:15px 18px; color:var(--warn); margin:12px 0 18px } .notice.error { color:var(--bad) }
     .section-title { display:flex; justify-content:space-between; align-items:baseline; margin:0 0 12px } h2 { font-size:1rem; margin:0 }
     .targets { display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:14px } .target-card { border-radius:18px; padding:18px; transition:transform .16s,border-color .16s,background .16s }
     .target-card:hover,.target-card:focus-within { transform:translateY(-2px); border-color:var(--accent); background:var(--strong) } .target-top { display:flex; justify-content:space-between; gap:12px; align-items:start }
@@ -463,8 +487,9 @@ PAGE = r"""<!doctype html>
     .pill { border-radius:999px; padding:5px 9px; font-size:.7rem; font-weight:750; white-space:nowrap } .pill.good { color:var(--good); background:#55d39a1f } .pill.warn { color:var(--warn); background:#f7c66b1f } .pill.security-warn { color:var(--security); background:#d783222b; border-color:#d7832266 } .pill.bad { color:var(--bad); background:#ff7e8b1f } .pill.neutral { color:var(--muted); background:#aab7cf1f }
     .target-info,.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px } .target-info span,.detail-grid span { display:block; color:var(--muted); font-size:.72rem; margin-bottom:4px } strong { overflow-wrap:anywhere }
     .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px } button { border:1px solid var(--line); border-radius:9px; padding:9px 12px; color:var(--text); background:#ffffff0d; cursor:pointer; font:inherit; font-size:.82rem } button:hover:not(:disabled),button:focus-visible { border-color:var(--accent); outline:2px solid #73a7ff55 } button.primary { background:#73a7ff24; border-color:#73a7ff88 } button:disabled { cursor:not-allowed; opacity:.45 }
-    .details,.jobs { border-radius:16px; padding:20px; margin-top:18px } .details h3 { margin:0 0 15px } .details-heading { display:flex; align-items:center; gap:12px; justify-content:space-between } .details-heading h3 { margin:0 } .details-close { padding:7px 10px; font-size:.72rem; color:var(--muted) } .detail-sections { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px } .detail-sections section { min-width:0; padding-top:12px; border-top:1px solid #94a3b815 } .detail-sections h4 { margin:0; font-size:.78rem; color:var(--accent) } .detail-sections .detail-grid { grid-template-columns:1fr; gap:10px; margin-top:10px } .error-text { color:var(--bad); white-space:pre-wrap; overflow-wrap:anywhere } .error-text.good { color:var(--good) } .error-text.neutral { color:var(--muted) }
+    .details,.jobs { border-radius:16px; padding:20px; margin-top:18px } .details h3 { margin:0 0 15px } .details-heading { display:flex; align-items:center; gap:12px; justify-content:space-between; padding:6px 2px 10px } .details-heading h3 { margin:0 } .details-close { padding:7px 10px; font-size:.72rem; color:var(--muted) } .detail-sections { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px } .detail-sections section { min-width:0; padding-top:12px; border-top:1px solid #94a3b815 } .detail-sections h4 { margin:0; font-size:.78rem; color:var(--accent) } .detail-sections .detail-grid { grid-template-columns:1fr; gap:10px; margin-top:10px } .reboot-detail-action { margin-top:8px } .reboot-detail-action .danger { border-color:#ed6b7a99; color:#ff9aaa; background:#ed6b7a14 } .reboot-detail-action .danger:hover,.reboot-detail-action .danger:focus-visible { color:#fff; border-color:#ff8798; background:#ed6b7a2b } .error-text { color:var(--bad); white-space:pre-wrap; overflow-wrap:anywhere } .error-text.good { color:var(--good) } .error-text.neutral { color:var(--muted) }
     .job { display:grid; grid-template-columns:1.6fr 1fr .9fr auto auto; gap:10px; align-items:center; padding:11px 0; border-bottom:1px solid var(--line); font-size:.82rem } .job:last-child { border-bottom:0 } .job code { overflow-wrap:anywhere } .job small,.job-meta { color:var(--muted) } .job-meta { grid-column:1 / -1; font-size:.7rem } .job-download { display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:9px; padding:5px 9px; color:var(--muted); background:#ffffff0d; font-size:.7rem; text-decoration:none; white-space:nowrap } .job-download:hover,.job-download:focus-visible { border-color:var(--accent); color:var(--text); outline:2px solid #73a7ff55 } .log { max-height:220px; overflow:auto; white-space:pre-wrap; background:#00000045; border-radius:8px; padding:12px; margin-top:12px; color:#cbd5e1; font: .75rem ui-monospace,monospace } .log-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; margin:10px 0 0; flex-wrap:wrap } .log-actions + .log { margin-top:8px } .log-latest { padding:5px 9px; font-size:.7rem }
+    .interactive-terminal-panel { position:fixed; inset:0; z-index:30; display:grid; place-items:center; min-width:0; min-height:0; padding:clamp(12px,3vw,34px); overflow:hidden; background:#030712cc; } .interactive-terminal-panel[hidden] { display:none } .interactive-terminal-dialog { width:min(1180px,100%); height:min(90vh,900px); max-height:100%; min-width:0; min-height:0; display:flex; flex-direction:column; padding:20px; border:1px solid #159cf055; border-radius:16px; background:linear-gradient(145deg,#07182bf5,#061323f5); box-shadow:0 24px 90px #000c; } .interactive-terminal-dialog .section-title { min-width:0; } .interactive-terminal-dialog .section-title > div:first-child { min-width:0; overflow:hidden; } .interactive-terminal-dialog h2,.interactive-terminal-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .interactive-terminal { flex:1 1 auto; min-width:0; min-height:0; overflow:hidden; padding:10px; border:1px solid #159cf055; border-radius:9px; background:#050914; } .interactive-terminal .xterm { width:100%; height:100%; min-width:0; } .interactive-terminal-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:12px } .interactive-terminal .xterm-viewport { overflow-y:auto !important; }
     .empty { border:1px dashed var(--line); border-radius:16px; padding:30px; text-align:center; color:var(--muted) } .node-scope-help { margin:8px 0 0; color:var(--muted); font-size:.74rem } footer { font-size:.75rem; margin-top:28px }
     @media (max-width:720px) { main { width:calc(100% - 22px); padding-top:25px } header { display:block } .meta { text-align:left; margin-top:15px } .summary { grid-template-columns:repeat(2,1fr) } .dashboard-kpis { gap:6px; padding:7px } .dashboard-kpis .metric { padding:11px 9px } .job { grid-template-columns:1fr 1fr } .job > button { grid-column:span 2; width:100%; text-align:center } }
     .app-main { width:min(1600px,100%); margin:0 auto; padding:34px clamp(18px,4vw,52px) 54px } .app-header { display:flex; justify-content:space-between; gap:20px; align-items:end; margin-bottom:26px } .systems-panel { padding:22px; border:1px solid var(--line); border-radius:18px; background:#151d34aa; box-shadow:0 18px 50px #00000029 } .view-note { color:var(--muted); font-size:.75rem } .node-group,.external-group { margin-top:18px; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#0e162b99 } .node-group:not(.open) { min-height:98px } .group-header { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:96px; padding:15px 16px; cursor:pointer } .group-header:hover { background:#73a7ff0d } .group-toggle { display:grid; place-items:center; flex:0 0 auto; width:38px; height:38px; padding:0; border:1px solid var(--line); border-radius:10px; color:var(--accent); background:#73a7ff0d } .group-toggle:hover { background:#73a7ff22 } .group-title { display:flex; align-items:center; gap:10px; flex:1; min-width:0 } .group-title strong { display:block; font-size:1rem; overflow-wrap:anywhere } .group-title small { display:block; color:var(--muted); font-size:.72rem; margin-top:4px } .group-summary { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:.75rem; white-space:nowrap } .chevron { display:block; color:var(--accent); font-size:1.35rem; line-height:1; transition:transform .16s ease } .node-group.open .chevron,.external-group.open .chevron { transform:rotate(90deg) } .group-body { display:none; padding:0 12px 12px } .node-group.open .group-body,.external-group.open .group-body { display:block } .guest-list { display:grid; gap:6px } .target-row { display:grid; grid-template-columns:minmax(150px,1.5fr) .7fr .65fr .65fr .7fr .9fr auto; align-items:center; gap:10px; padding:10px 12px; border-top:1px solid #94a3b815; font-size:.78rem } .target-row:hover { background:#73a7ff0b } .target-row .target-name { font-size:.82rem } .target-row .target-id { margin-top:2px } .row-muted { color:var(--muted); font-size:.72rem } .row-actions { display:flex; justify-content:flex-end; gap:6px } .row-actions button { padding:7px 9px; font-size:.72rem } .target-card { min-height:205px; display:flex; flex-direction:column } .target-card .actions { margin-top:auto } .target-card .target-info { margin-top:15px } .external-group { grid-column:1 / -1; margin-top:20px } .external-group .group-body { padding-top:2px } .job-toggle { display:flex; align-items:center; gap:10px; border:0; padding:0; background:transparent; color:var(--text); font-weight:700; font-size:1rem } .job-count { color:var(--muted); font-size:.74rem; font-weight:500 } .jobs.collapsed .job-list { display:none } .job-list { margin-top:12px } .job-summary { color:var(--muted); font-size:.75rem } .detail-grid { grid-template-columns:repeat(3,1fr) }
@@ -473,7 +498,7 @@ PAGE = r"""<!doctype html>
     .brand-lockup { display:flex; align-items:flex-start; gap:16px; min-width:0 } .brand-logo { display:none } .brand-header-art { display:block; width:min(300px,70vw); height:auto; flex:0 0 auto; filter:drop-shadow(0 6px 14px #0005) } .brand-copy { min-width:0; padding-top:7px } .management-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:18px } .management-panel { border:1px solid var(--line); border-radius:16px; padding:20px; background:var(--panel); box-shadow:0 18px 50px #00000029 } .management-panel h2 { margin:0 } .management-panel .section-title { margin-bottom:16px } .management-form { display:none; gap:14px; grid-template-columns:1fr; margin-top:14px } .management-form.open { display:grid } .management-form label { color:var(--muted); font-size:.75rem } .management-form input,.management-form select { display:block; width:100%; margin-top:5px; border:1px solid var(--line); border-radius:8px; padding:9px 10px; color:var(--text); background:#0b1224; font:inherit } .management-form .form-wide { grid-column:1/-1 } .management-form .form-actions { display:flex; gap:8px; grid-column:1/-1 } .managed-target { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 0; border-top:1px solid #94a3b815; font-size:.8rem } .managed-target:first-child { border-top:0 } .managed-target small { color:var(--muted); display:block; margin-top:3px } .managed-actions { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end } .managed-actions button { padding:7px 9px; font-size:.72rem } .settings-group { border-top:1px solid var(--line); padding-top:15px; margin-top:15px } .settings-group:first-child { border-top:0; padding-top:0; margin-top:0 } .settings-group h3 { margin:0; font-size:.88rem } .settings-group p { color:var(--muted); font-size:.72rem; margin:5px 0 11px } .config-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 18px } .config-field { display:grid; grid-template-columns:auto 1fr; align-items:center; gap:8px; min-width:0; color:var(--muted); font-size:.78rem } .config-field input[type=checkbox] { grid-column:1; accent-color:var(--accent); width:17px; height:17px } .config-field input[type=text],.config-field input[type=number] { grid-column:2; min-width:0; border:1px solid var(--line); border-radius:8px; padding:8px; color:var(--text); background:#0b1224; font:inherit } .config-field input[type=text] { width:100% } .config-field .field-label { grid-column:1 / -1; grid-row:1; padding-left:25px } .config-field input[type=checkbox] + .field-label { grid-column:2; padding-left:0 } .config-field .field-unit { grid-column:2; color:var(--muted); font-size:.7rem; margin-top:-5px } .config-actions { display:flex; gap:8px; margin-top:18px; padding-top:14px; border-top:1px solid var(--line) } .management-message { color:var(--muted); font-size:.76rem; min-height:1.2em; margin-top:10px } .management-message.error { color:var(--bad) } .modal-backdrop { position:fixed; inset:0; z-index:5; display:none; place-items:center; padding:18px; background:#030712aa } .modal-backdrop.open { display:grid } .modal { width:min(520px,100%); border:1px solid var(--line); border-radius:16px; padding:20px; background:#151d34; box-shadow:0 24px 80px #0008 } .modal h3 { margin:0 0 15px } .modal .form-actions { display:flex; gap:8px; margin-top:14px } .modal-close { margin-left:auto } .login-branding { display:block; width:min(250px,100%); height:auto; margin:0 auto 16px; filter:drop-shadow(0 6px 14px #0005) } .login-account-hint { color:var(--muted); font-size:.76rem; margin:9px 0 0 }
     @media (max-width:760px) { .management-grid { grid-template-columns:1fr } .config-fields,.management-form { grid-template-columns:1fr } .management-form .form-wide { grid-column:auto } .management-form .form-actions { grid-column:auto } .managed-target { align-items:flex-start; flex-direction:column } .managed-actions { justify-content:flex-start } .login-branding { width:min(220px,100%) } }
     .auth-loading { text-align:center; color:var(--muted) } .auth-loading .login-branding { margin-bottom:8px } .management-message.success { color:var(--good) } .login-progress { display:flex; align-items:center; justify-content:center; gap:8px; min-height:1.2em; margin-top:10px; color:var(--muted); font-size:.76rem; visibility:hidden } .login-form.is-loading .login-progress { visibility:visible } .login-spinner { width:13px; height:13px; border:2px solid #91a0bd55; border-top-color:var(--accent); border-radius:50%; animation:login-spin .8s linear infinite } @keyframes login-spin { to { transform:rotate(360deg) } } .login-form.is-loading input { cursor:wait }
-    .modal label { display:block; margin-top:12px; color:var(--muted); font-size:.78rem } .modal label input { display:block; width:100%; margin-top:5px; border:1px solid var(--line); border-radius:8px; padding:9px 10px; color:var(--text); background:#0b1224; font:inherit }
+    .modal label { display:block; margin-top:12px; color:var(--muted); font-size:.78rem } .modal label input,.modal label select { display:block; width:100%; height:40px; margin-top:5px; border:1px solid var(--line); border-radius:8px; padding:9px 10px; color:var(--text); background-color:#0b1224; font:inherit; color-scheme:dark } .modal label select { appearance:none; -webkit-appearance:none; padding-right:36px; background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%); background-position:calc(100% - 16px) 17px,calc(100% - 11px) 17px; background-size:5px 5px,5px 5px; background-repeat:no-repeat } .modal label input:focus,.modal label select:focus { outline:2px solid #8bb9ff; outline-offset:1px; border-color:var(--accent); box-shadow:0 0 0 3px #73a7ff22 }
     .config-fields { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 18px } .config-field { grid-template-columns:minmax(0,1fr) auto; gap:7px 8px } .config-field input[type=checkbox] { grid-column:1; grid-row:1; justify-self:start } .config-field input[type=text],.config-field input[type=number] { grid-column:1 / -1; grid-row:2; width:100% } .config-field .field-label { grid-column:1 / -1; grid-row:1; min-width:0; padding-left:0 } .config-field input[type=checkbox] + .field-label { grid-column:2; justify-self:start } .config-field .field-unit { grid-column:1 / -1; grid-row:3; margin-top:-3px } .settings-group .settings-subtitle { color:var(--muted); font-size:.7rem; margin:13px 0 7px; letter-spacing:.04em; text-transform:uppercase }
     .node-grid { display:grid; grid-column:1/-1; width:100%; min-width:0; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; justify-content:stretch } .node-grid > .node-group { width:100%; min-width:0 } .node-group { margin-top:0; min-height:0 !important } .node-group .group-header,.external-group .group-header { display:grid; grid-template-columns:42px minmax(0,1fr) auto; min-height:98px } .node-group .group-title small,.external-group .group-title small { white-space:nowrap } .node-group .group-summary { display:grid; grid-template-columns:auto auto; grid-template-rows:auto auto; gap:4px 8px; align-items:center } .node-group .group-summary .node-details { grid-column:1/-1; justify-self:end } .guest-panel { grid-column:1/-1; width:100%; min-width:0; margin-top:0; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#0e162b99 } .guest-panel-title { padding:13px 16px; color:var(--text); font-size:.78rem; font-weight:750; border-bottom:1px solid var(--line); background:#151d34aa } .guest-panel .guest-list { padding:0 12px 12px }
     @media (max-width:1180px) { .node-grid { grid-template-columns:repeat(2,minmax(280px,1fr)) } }
@@ -820,7 +845,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
 </head>
 <body>
   <section id="auth-loading" class="modal-backdrop open" aria-live="polite"><div class="modal auth-loading"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><p>Loading…</p></div></section>
-  <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Please use your current root account to sign in.</p><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
+  <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Sign in with your Proxmox administrator account.</p><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><label>Domain<select name="realm" id="login-realm" autocomplete="off" required><option value="">Loading authentication domains…</option></select></label><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
   <main class="app-main" id="dashboard" hidden>
     <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p id="page-subtitle" class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta"><span id="generated">Loading status…</span><button id="job-running-indicator" class="job-running-indicator" type="button" hidden aria-controls="jobs"><span class="job-running-dot" aria-hidden="true"></span><span id="job-running-label">Job running</span></button><button id="updater-version-indicator" class="updater-update-indicator" type="button" hidden>Updater update available</button><button id="logout" type="button">Log out</button></div></div><nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav><section class="summary dashboard-kpis" hidden><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
     <div id="notice" hidden></div>
@@ -828,6 +853,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     <section class="global-actions" aria-labelledby="global-actions-title"><div class="global-actions-copy"><strong id="global-actions-title">Run the configured updater</strong><span>Configured include/exclude and safety rules are respected.</span></div><div class="global-actions-buttons"><button id="check-all" class="global-action check-all" type="button">Check all systems</button><button id="update-all" class="global-action update-all" type="button">Update all systems</button></div></section>
     <section id="systems" class="systems-panel"><div class="section-title"><div class="heading-with-help"><div><h2>Systems</h2><span class="hint">Organized by Proxmox node and external target</span></div><span class="help-control"><button class="help-trigger" type="button" aria-label="About Systems" aria-expanded="false" aria-controls="systems-help-popover">?</button><span id="systems-help-popover" class="help-popover" role="tooltip"><p>Systems shows the complete active inventory grouped by Proxmox node and external target. Status and update information comes from the latest available check data.</p><p>Guests without current update information remain part of the inventory; status data is only an enrichment of the inventory.</p></span></span></div><span class="view-note">Checks and updates use the existing CLI</span></div><p class="node-scope-help">Check/Update node: Only this node. LXCs and VMs are not checked or updated.</p><div id="targets" class="targets"></div><section id="details" class="details" hidden></section></section>
     <section id="jobs" class="jobs" hidden></section>
+    <section id="interactive-terminal-panel" class="interactive-terminal-panel" hidden aria-live="polite"><div class="interactive-terminal-dialog" role="dialog" aria-modal="true" aria-labelledby="interactive-terminal-heading"><div class="section-title"><div><h2 id="interactive-terminal-heading">Live terminal</h2><span id="interactive-terminal-title" class="hint"></span></div><div class="interactive-terminal-header-actions"><span id="interactive-terminal-status" class="pill warn">Disconnected</span><button id="interactive-terminal-stop" class="danger" type="button" hidden>Stop job</button><button id="interactive-terminal-detach" type="button" aria-label="Close window">Close window</button></div></div><div id="interactive-terminal" class="interactive-terminal" aria-label="Interactive job terminal"></div><div id="interactive-terminal-keybar" class="interactive-terminal-keybar" aria-label="Terminal keys" hidden><button type="button" data-interactive-key="Escape" disabled>Esc</button><button type="button" data-interactive-key="Tab" disabled>Tab</button><button type="button" data-interactive-key="ArrowLeft" aria-label="Left" disabled>←</button><button type="button" data-interactive-key="ArrowUp" aria-label="Up" disabled>↑</button><button type="button" data-interactive-key="ArrowDown" aria-label="Down" disabled>↓</button><button type="button" data-interactive-key="ArrowRight" aria-label="Right" disabled>→</button><button type="button" data-interactive-key="Enter" disabled>Enter</button></div><p id="interactive-terminal-help" class="interactive-terminal-help">Ctrl-C detaches from the terminal; the job keeps running.</p><div id="interactive-terminal-message" class="management-message" hidden></div><div class="interactive-terminal-actions"><div class="interactive-terminal-font-controls" aria-label="Terminal font size"><button id="interactive-terminal-font-decrease" type="button" aria-label="Decrease terminal font size">A−</button><span id="interactive-terminal-font-size">11px</span><button id="interactive-terminal-font-increase" type="button" aria-label="Increase terminal font size">A+</button></div><a id="interactive-terminal-download" class="job-download" href="#" download>Download full log</a></div></div></section>
     </section>
     <section id="settings-page" class="page-section" hidden><div class="section-title"><div><h2>Settings</h2><span class="hint">Configure the existing Ultimate Updater behavior.</span></div></div><section class="management-grid settings-grid"><section class="settings-config-area" id="config-panel"><div class="section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div></div><form id="config-form" class="management-form open"></form><div id="config-message" class="management-message"></div></section></section><h2 class="settings-management-title">Connection management</h2><section class="management-grid connection-management-grid"><section class="management-panel" id="internal-ssh-card"><div class="section-title"><div><h2>Internal SSH Connections <span class="help-control"><button class="help-trigger" type="button" aria-label="About Internal SSH Connections" aria-expanded="false" aria-controls="internal-ssh-help">?</button><span id="internal-ssh-help" class="help-popover" role="tooltip"><p>Cluster nodes are detected automatically. Add an SSH connection only when a VM or LXC requires direct SSH access.</p><p>External systems are managed separately under External Targets.</p></span></span></h2><span class="hint">Manage SSH access for nodes and internal guests.</span></div><button id="internal-ssh-open" type="button">Open SSH settings</button></div></section><section class="management-panel" id="external-panel"><div class="section-title"><div><h2>External systems</h2><span class="hint">SSH targets from targets.conf</span></div><button id="target-add">+ Add system</button></div><div id="managed-targets"></div><form id="target-form" class="management-form"></form><div id="target-message" class="management-message"></div></section><section class="management-panel internal-ssh-view" id="internal-ssh-view" hidden><div class="section-title"><div><h2>Internal SSH Connections</h2><span class="hint">Nodes are detected automatically; add guest SSH access only when needed.</span></div><button id="internal-ssh-back" type="button">Back to settings</button></div><div class="settings-group"><h3>Proxmox Nodes</h3><div id="internal-ssh-nodes"><div class="empty">Loading…</div></div></div><div class="settings-group"><h3>Virtual Machines</h3><div id="internal-ssh-vms"><div class="empty">Loading…</div></div><button type="button" class="internal-ssh-add" data-ssh-add="vm">+ Add VM SSH connection</button></div><div class="settings-group"><h3>LXC Containers</h3><div id="internal-ssh-lxcs"><div class="empty">Loading…</div></div><button type="button" class="internal-ssh-add" data-ssh-add="lxc">+ Add LXC SSH connection</button></div><div id="internal-ssh-message" class="management-message"></div></section></section></section>
     <section id="scheduler-page" class="page-section" hidden><section class="management-panel scheduler-placeholder"><h2>Scheduler</h2><p>Scheduled checks and updates are planned for a future release.</p><p>Planned functionality:</p><ul><li>Check all systems</li><li>Update all systems</li><li>Check or update a single system</li><li>Enable or disable schedules</li><li>Individual schedules per job</li><li>Existing safety and include/exclude rules will continue to apply</li></ul><p>Coming in a future release.</p></section></section>
@@ -842,8 +868,10 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const date=v=>{if(!v)return'Unknown';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleString()}; const statusLabel=v=>labels[v]||['Unknown','neutral']; const set=(id,v)=>document.getElementById(id).textContent=v;
     const LOG_BOTTOM_TOLERANCE=10;
     let currentStatus={targets:[]}, jobs=[], pollTimer, openJobLogId=null, logAutoFollow=true, logScrollTop=0, suppressLogScroll=false, finalLogLoaded=new Set(), logLoading=new Set(), csrfToken=null;
-    function setLoginLoading(loading){const form=document.getElementById('login-form'),button=form.querySelector('button[type="submit"]');form.classList.toggle('is-loading',loading);form.dataset.submitting=loading?'true':'false';button.disabled=loading;button.textContent=loading?'Signing in…':'Sign in';form.querySelectorAll('input').forEach(input=>{input.disabled=loading})}
-    function showLogin(message=''){window.__uu_authenticated=false;setLoginLoading(false);document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null}
+    let authRealmsReady=false;
+    function setLoginLoading(loading){const form=document.getElementById('login-form'),button=form.querySelector('button[type="submit"]');form.classList.toggle('is-loading',loading);form.dataset.submitting=loading?'true':'false';button.disabled=loading||!authRealmsReady;button.textContent=loading?'Signing in…':'Sign in';form.querySelectorAll('input,select').forEach(input=>{input.disabled=loading||(!loading&&input.id==='login-realm'&&!authRealmsReady)})}
+    async function loadAuthRealms(){const select=document.getElementById('login-realm');if(!select)return;authRealmsReady=false;setLoginLoading(false);try{const response=await fetch('/api/auth/realms',{cache:'no-store'}),data=await response.json();if(!response.ok||!Array.isArray(data.realms)||!data.realms.length)throw new Error('Proxmox authentication realms are unavailable.');select.replaceChildren(...data.realms.map(item=>{const option=document.createElement('option');option.value=item.realm;option.textContent=item.comment?`${item.comment} (${item.realm})`:item.realm;return option}));select.value=data.default_realm||data.realms[0].realm;authRealmsReady=true;setLoginLoading(false)}catch(error){select.replaceChildren(new Option('Authentication domains unavailable',''));select.value='';setLoginLoading(false);const status=document.getElementById('login-message');status.className='management-message error';status.textContent='Proxmox authentication realms are unavailable.'}}
+    function showLogin(message=''){window.__uu_authenticated=false;setLoginLoading(false);document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null;loadAuthRealms()}
     function showDashboard(){window.__uu_authenticated=true;document.getElementById('auth-loading').classList.remove('open');document.getElementById('login-screen').classList.remove('open');document.getElementById('dashboard').hidden=false;window.dispatchEvent(new Event('uu-auth-ready'))}
     function applyPageRoute(push=false,requestedPage=null){let page=requestedPage|| (location.pathname==='/settings'?'settings':location.pathname==='/scheduler'?'scheduler':'overview');if(push)history.pushState({},'',page==='overview'?'/':`/${page}`);const subtitles={overview:'A clear overview of updates across your systems.',settings:'Manage configuration without leaving your authenticated session.',scheduler:''};document.querySelectorAll('.page-nav a').forEach(link=>{const active=link.dataset.page===page;link.classList.toggle('active',active);link.setAttribute('aria-current',active?'page':'false')});document.getElementById('page-subtitle').textContent=subtitles[page];document.querySelector('.dashboard-kpis').hidden=page!=='overview';document.getElementById('overview-page').hidden=page!=='overview';document.getElementById('settings-page').hidden=page!=='settings';document.getElementById('scheduler-page').hidden=page!=='scheduler';if(page==='settings')loadConfig()}
     const nav=document.querySelector('.page-nav'),navToggle=document.querySelector('.nav-toggle');
@@ -854,12 +882,13 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     async function ensureSession(){const r=await fetch('/api/session',{cache:'no-store'});const d=await r.json();if(!r.ok){showLogin(d.error?.message||'Please sign in.');throw new Error(d.error?.message||'Authentication required.')}csrfToken=d.csrf;return d}
     async function api(path,options={}){if(!csrfToken)await ensureSession();const headers={'Content-Type':'application/json',...(options.headers||{})};if(csrfToken)headers['X-CSRF-Token']=csrfToken;const r=await fetch(path,{...options,headers});const d=await r.json();if(r.status===401){showLogin(d.error?.message||'Session expired.')}if(!r.ok){const error=new Error(d.error?.message||'Request failed');error.code=d.error?.code;error.diagnostics=d.diagnostics;throw error}return d}
     function notice(message,error=false){const n=document.getElementById('notice');n.hidden=false;n.textContent=message;n.className=error?'notice error':'notice'}
-    function running(target){return jobs.some(j=>j.target===target&&j.state==='running')}
+    function running(target){return jobs.some(j=>j.target===target&&['running','pending','starting'].includes(j.state))}
     const detailError=t=>{const error=t?.error;if(error===null||error===undefined||error===''||(typeof error==='object'&&!error.code&&!error.message))return['None','good'];const code=typeof error==='object'?text(error.code,''):'';const message=typeof error==='object'?text(error.message,''):String(error);const value=code&&message?`${code}: ${message}`:code||message||'Unknown';return [code,message,value].some(item=>item.trim().toLowerCase()==='unknown')?['Unknown','neutral']:[value,'bad']};
     function renderDetails(t){const rebootDetail=t.type==='lxc'?'':`<div><span>Reboot required</span><strong>${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong></div>`;const n=document.getElementById('details'),[label,tone]=statusLabel(t.check_status),[errorText,errorTone]=detailError(t);n.hidden=false;n.innerHTML=`<h3>${esc(t.id)}</h3><div class="detail-grid"><div><span>Type</span><strong>${esc(t.type)}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(t.os_detail_display||t.os||'Unknown')}</strong></div><div><span>Updater</span><strong>${esc(t.updater)}</strong></div><div><span>Check status</span><strong class="pill ${tone}">${label}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div>${rebootDetail}<div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Error</span><strong class="error-text ${errorTone}">${esc(errorText)}</strong></div></div>`;n.scrollIntoView({behavior:'smooth',block:'nearest'})}
-    async function action(path,update=false,options={}){if(update&&!options.confirmed&&!confirm(`Start update for "${path.split('/').pop()}"?`))return;try{const d=await api(path,{method:'POST',body:options.override?JSON.stringify({allow_without_backup:true}):'{}'});notice(d.message||'Action accepted.');await loadStatus();await loadJobs()}catch(e){if(update&&e.code==='EXTERNAL_BACKUP_REQUIRED'&&!options.override){if(confirm('No recent backup is verified for this external system.\n\nProceed without verified backup for this update only?'))return action(path,true,{confirmed:true,override:true})}else notice(e.message,true)}}
-    function render(data){currentStatus=data;const ts=Array.isArray(data.targets)?data.targets:[];set('total',ts.length);set('online',ts.filter(t=>t.reachable===true).length);set('attention',ts.filter(t=>healthState(t)==='attention'||t.check_status==='updates_available').length);set('generated',`Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}`);const list=document.getElementById('targets');list.replaceChildren();if(!ts.length){list.innerHTML='<div class="empty">No target status is available yet. Run a check to populate the view.</div>';return}for(const t of ts){const [label,tone]=statusLabel(t.check_status),u=t.updates&&Number.isInteger(t.updates.available)?t.updates.available:'Unknown';const card=document.createElement('article');card.className='target-card';card.innerHTML=`<div class="target-top"><div><div class="target-name">${esc(t.id)}</div><div class="target-id">${esc(t.os)} · ${esc(t.transport)}</div></div><span class="pill ${tone}">${label}</span></div><div class="target-info"><div><span>Updates</span><strong>${u}</strong></div><div><span>Reachability</span><strong>${t.reachable===true?'Online':t.reachable===false?'Offline':'Unknown'}</strong></div><div><span>Type</span><strong>${esc(t.type)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div></div><div class="actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Update running':'Start update'}</button></div>`;card.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});card.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const b=card.querySelector('.update');b.disabled=running(t.id)||!TARGET_UPDATEABLE(t);b.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});list.appendChild(card)}}
-    function TARGET_UPDATEABLE(t){return ['ok','updates_available'].includes(t.check_status)}
+    async function action(path,update=false,options={}){if(update&&!options.confirmed){const prompt=options.warning?`${options.warning}\n\nContinue with the update anyway?`:`Start update for "${path.split('/').pop()}"?`;if(!confirm(prompt))return}try{const d=await api(path,{method:'POST',body:options.override?JSON.stringify({allow_without_backup:true}):'{}'});notice(d.message||'Action accepted.');await loadStatus();await loadJobs()}catch(e){if(update&&e.code==='EXTERNAL_BACKUP_REQUIRED'&&!options.override){if(confirm('No recent backup is verified for this external system.\n\nProceed without verified backup for this update only?'))return action(path,true,{...options,confirmed:true,override:true})}else notice(e.message,true)}}
+    function render(data){currentStatus=data;const ts=Array.isArray(data.targets)?data.targets:[];set('total',ts.length);set('online',ts.filter(t=>t.reachable===true).length);set('attention',ts.filter(t=>healthState(t)==='attention'||t.check_status==='updates_available').length);set('generated',`Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}`);const list=document.getElementById('targets');list.replaceChildren();if(!ts.length){list.innerHTML='<div class="empty">No target status is available yet. Run a check to populate the view.</div>';return}for(const t of ts){const [label,tone]=statusLabel(t.check_status),u=t.updates&&Number.isInteger(t.updates.available)?t.updates.available:'Unknown';const card=document.createElement('article');card.className='target-card';card.innerHTML=`<div class="target-top"><div><div class="target-name">${esc(t.id)}</div><div class="target-id">${esc(t.os)} · ${esc(t.transport)}</div></div><span class="pill ${tone}">${label}</span></div><div class="target-info"><div><span>Updates</span><strong>${u}</strong></div><div><span>Reachability</span><strong>${t.reachable===true?'Online':t.reachable===false?'Offline':'Unknown'}</strong></div><div><span>Type</span><strong>${esc(t.type)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div></div><div class="actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Update running':'Start update'}</button></div>`;card.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});card.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const b=card.querySelector('.update'),gate=updateGate(t);b.disabled=!gate.enabled;b.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true,{warning:gate.warning})});list.appendChild(card)}}
+    function updateGate(t){const status=t?.check_status;if(running(t?.id))return{enabled:false,warning:null,reason:'An update or check job is already running for this target.'};if(t?.reachable===false||status==='offline')return{enabled:false,warning:null,reason:'This target is not reachable.'};if(status==='unsupported'||t?.updateable===false)return{enabled:false,warning:null,reason:'This target is not supported for updates.'};if(status==='error')return{enabled:true,warning:'The last check for this target failed.\nReview the job log before continuing.\n\nUpdating anyway may proceed despite unresolved problems.'};if(status==='stale'||t?.check_stale===true)return{enabled:true,warning:'The last successful check may be outdated.\nRun a new check first, or continue at your own risk.'};if(!['ok','updates_available'].includes(status))return{enabled:true,warning:'No successful check is available for this target.\nIt is recommended to run a check before updating.'};return{enabled:true,warning:null}}
+    function TARGET_UPDATEABLE(t){return updateGate(t).enabled}
     function rememberLogScroll(node){if(suppressLogScroll||!node.isConnected||node.id!==`log-${openJobLogId}`)return;const distance=node.scrollHeight-node.scrollTop-node.clientHeight;logAutoFollow=distance<=LOG_BOTTOM_TOLERANCE;logScrollTop=node.scrollTop;const latest=node.parentElement?.querySelector('.log-latest');if(latest)latest.hidden=logAutoFollow}
     function attachLogScroll(node){if(node.dataset.scrollAttached==='true')return;node.dataset.scrollAttached='true';node.addEventListener('scroll',()=>rememberLogScroll(node));}
     function createLogActions(node,unit){let actions=node.parentElement?.querySelector('.log-actions');if(!actions){actions=document.createElement('div');actions.className='log-actions';node.insertAdjacentElement('beforebegin',actions)}let download=actions.querySelector('.job-download');if(!download){download=document.createElement('a');download.className='job-download';download.dataset.downloadJob=unit;download.href=`/api/jobs/${encodeURIComponent(unit)}/download`;download.textContent='Download full log';actions.prepend(download)}return actions}
@@ -868,18 +897,19 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function renderJobs(){const n=document.getElementById('jobs');if(!jobs.length){n.hidden=true;openJobLogId=null;return}if(openJobLogId&&!jobs.some(j=>j.unit===openJobLogId))openJobLogId=null;n.hidden=false;suppressLogScroll=true;n.innerHTML='<div class="section-title"><h2>Jobs</h2><span class="hint">Server-side state · safe across browser/device changes</span></div>'+jobs.map(j=>{const open=j.unit===openJobLogId;return `<div class="job"><code>${esc(j.unit)}</code><span>${esc(friendlyJobTarget(j.target))}</span><span class="pill ${j.state==='completed'?'good':j.state==='failed'||j.state==='interrupted'?'bad':'warn'}">${esc(j.state==='completed_with_warnings'?'Please check':j.state)}</span><button data-job="${esc(j.unit)}">${open?'Hide log':'Show log'}</button><div class="log" id="log-${esc(j.unit)}"${open?'':' hidden'}></div></div>`}).join('');suppressLogScroll=false;n.querySelectorAll('button[data-job]').forEach(b=>b.addEventListener('click',async()=>{const unit=b.dataset.job;const node=document.getElementById(`log-${unit}`);if(openJobLogId===unit){openJobLogId=null;node.hidden=true;b.textContent='Show log';return}openJobLogId=unit;logAutoFollow=true;logScrollTop=0;node.hidden=false;b.textContent='Hide log';await loadJobLog(unit,node);attachLogScroll(node)}));if(openJobLogId){const node=document.getElementById(`log-${openJobLogId}`);if(node){node.scrollTop=logAutoFollow?node.scrollHeight:logScrollTop;loadJobLog(openJobLogId,node).then(()=>{if(openJobLogId===node.id.slice(4))attachLogScroll(node)})}}}
     async function loadStatus(){try{const d=await api('/api/status',{cache:'no-store'});try{render(d)}catch(e){console.error('Status render failed',e);if(!csrfToken)return;notice('The status view could not be rendered.',true);set('generated','Status render error');document.getElementById('targets').innerHTML='<div class="empty error">The status view could not be rendered.</div>'}}catch(e){if(!csrfToken)return;notice(e.message,true);set('generated','Status unavailable');document.getElementById('targets').innerHTML='<div class="empty">The status file is missing or invalid.</div>'}}
     function isStatusRefreshJob(job){return job?.type==='check'||job?.type==='update'}
-    async function loadJobs(){try{const d=await api('/api/jobs',{cache:'no-store'}),previous=new Map(jobs.map(job=>[job.unit,job.state]));jobs=sortJobs(Array.isArray(d.jobs)?d.jobs:[]);const statusRefreshJobFinished=jobs.some(job=>isStatusRefreshJob(job)&&['completed','completed_with_warnings','failed','interrupted'].includes(job.state)&&['running','pending','starting'].includes(previous.get(job.unit)));renderJobs();reorderJobDom();if(statusRefreshJobFinished)await loadStatus();clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,10000)}}
+    async function loadJobs(){try{const d=await api('/api/jobs',{cache:'no-store'}),previous=new Map(jobs.map(job=>[job.unit,job.state]));jobs=sortJobs(Array.isArray(d.jobs)?d.jobs:[]);const statusRefreshJobFinished=jobs.some(job=>isStatusRefreshJob(job)&&['completed','completed_with_warnings','failed','interrupted','cancelled'].includes(job.state)&&['running','pending','starting'].includes(previous.get(job.unit)));renderJobs();reorderJobDom();if(statusRefreshJobFinished)await loadStatus();clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,10000)}}
     let updaterVersion=null,versionRetryTimer=null,versionStartupTimer=null,versionRetryUsed=false;
-    function versionDisplay(data,value,includeBranch=false){return value&&includeBranch&&data?.branch?`${value} · ${data.branch}`:(value||'Unavailable')}
+    function versionDisplay(data,value,commitValue,betaValue){if(!value)return 'Unavailable';let display=value;if(data?.branch==='beta'&&Number.isInteger(betaValue))display+=` Beta ${betaValue}`;else if(data?.branch==='develop')display+=' develop';if((data?.branch==='beta'||data?.branch==='develop')&&/^[0-9a-f]{40}$/.test(commitValue||''))display+=` · ${commitValue.slice(0,7)}`;return display}
     const shortCommit=value=>value&&/^[0-9a-f]{40}$/.test(value)?value.slice(0,7):(value||'Unknown');
-    const versionFooterDisplay=data=>data?.state==='ok'?`${versionDisplay(data,data.installed,true)} · ${shortCommit(data.commit)}`:'version unavailable';
-    function renderUpdaterVersion(data){updaterVersion=data;const label=document.getElementById('updater-version-label'),indicator=document.getElementById('updater-version-indicator'),updateButton=document.getElementById('updater-version-update');label.textContent=versionFooterDisplay(data);indicator.hidden=!(data.state==='ok'&&data.update_available===true);updateButton.disabled=!(data.state==='ok'&&data.update_available===true&&data.branch);updateButton.textContent=data.state==='ok'&&data.update_available===true?'Update now':'Up to date';const content=document.getElementById('updater-version-content');if(data.state!=='ok'){content.innerHTML='<p class="hint">Version check unavailable. Try again later.</p>';return}let rows=(data.components||[]).map(c=>`<tr><th>${esc(c.name)}</th><td>${esc(c.installed??c.local??'Unknown')}</td><td>${esc(c.available??c.server??'Unknown')}</td></tr>`).join('');content.innerHTML=`<div class="detail-grid"><div><span>Installed version</span><strong>${esc(versionDisplay(data,data.installed))}</strong></div><div><span>Available version</span><strong>${esc(versionDisplay(data,data.available))}</strong></div><div><span>Branch</span><strong>${esc(data.branch||'Unknown')}</strong></div><div><span>Commit</span><strong>${esc(shortCommit(data.commit))}</strong></div><div><span>Tag</span><strong>${esc(data.tag||'—')}</strong></div></div><table class="version-components"><thead><tr><th>Component</th><th>Installed</th><th>Available</th></tr></thead><tbody>${rows||'<tr><td colspan="3">No component details available.</td></tr>'}</tbody></table>`}
+    const versionFooterDisplay=data=>data?.state==='ok'?versionDisplay(data,data.installed,data.commit,data.beta):'version unavailable';
+    function versionDialogRows(data){const rows=[`<div><span>Installed version</span><strong>${esc(data.installed||'Unavailable')}</strong></div>`,`<div><span>Available version</span><strong>${esc(data.available||'Unavailable')}</strong></div>`];if(data.branch)rows.push(`<div><span>Branch</span><strong>${esc(data.branch)}</strong></div>`);if(Number.isInteger(data.beta))rows.push(`<div><span>${data.branch==='develop'?'Target Beta':'Beta'}</span><strong>${esc(data.beta)}</strong></div>`);const installedCommit=/^[0-9a-f]{40}$/.test(data.commit||''),availableCommit=/^[0-9a-f]{40}$/.test(data.available_commit||'');if(installedCommit&&availableCommit&&data.commit!==data.available_commit){rows.push(`<div><span>Installed commit</span><strong>${esc(shortCommit(data.commit))}</strong></div>`,`<div><span>Available commit</span><strong>${esc(shortCommit(data.available_commit))}</strong></div>`)}else if(installedCommit){rows.push(`<div><span>Commit</span><strong>${esc(shortCommit(data.commit))}</strong></div>`)}if(data.tag)rows.push(`<div><span>Tag</span><strong>${esc(data.tag)}</strong></div>`);return rows.join('')}
+    function renderUpdaterVersion(data){updaterVersion=data;const label=document.getElementById('updater-version-label'),indicator=document.getElementById('updater-version-indicator'),updateButton=document.getElementById('updater-version-update');label.textContent=versionFooterDisplay(data);indicator.hidden=!(data.state==='ok'&&data.update_available===true);updateButton.disabled=!(data.state==='ok'&&data.update_available===true&&data.branch);updateButton.textContent=data.state==='ok'&&data.update_available===true?'Update now':'Up to date';const content=document.getElementById('updater-version-content');if(data.state!=='ok'){content.innerHTML='<p class="hint">Version check unavailable. Try again later.</p>';return}let rows=(data.components||[]).map(c=>`<tr><th>${esc(c.name)}</th><td>${esc(c.installed??c.local??'Unknown')}</td><td>${esc(c.available??c.server??'Unknown')}</td></tr>`).join('');content.innerHTML=`<div class="detail-grid">${versionDialogRows(data)}</div><table class="version-components"><thead><tr><th>Component</th><th>Installed</th><th>Available</th></tr></thead><tbody>${rows||'<tr><td colspan="3">No component details available.</td></tr>'}</tbody></table>`}
     async function loadUpdaterVersion(force=false){try{const data=await api(`/api/updater-version${force?'?force=1':''}`,{cache:'no-store'});renderUpdaterVersion(data);return data}catch(_error){const data={state:'unavailable',update_available:false,components:[]};renderUpdaterVersion(data);return data}}
     function scheduleUpdaterVersionCheck(){clearTimeout(versionStartupTimer);clearTimeout(versionRetryTimer);versionRetryUsed=false;versionStartupTimer=setTimeout(async()=>{const data=await loadUpdaterVersion();if(data.state==='unavailable'&&!versionRetryUsed){versionRetryUsed=true;versionRetryTimer=setTimeout(()=>loadUpdaterVersion(),7000)}},2500)}
     function openUpdaterVersion(){document.getElementById('updater-version-modal').classList.add('open')}
     document.getElementById('updater-version-indicator').onclick=openUpdaterVersion;document.getElementById('updater-version-footer').onclick=openUpdaterVersion;document.getElementById('updater-version-close').onclick=()=>document.getElementById('updater-version-modal').classList.remove('open');document.getElementById('updater-version-check').onclick=()=>loadUpdaterVersion(true);document.getElementById('updater-version-update').onclick=async()=>{if(!updaterVersion?.branch||updaterVersion.update_available!==true)return;const button=document.getElementById('updater-version-update');button.disabled=true;try{const data=await api('/api/updater-update',{method:'POST',body:JSON.stringify({branch:updaterVersion.branch})});document.getElementById('updater-version-message').textContent=data.message||'Updater self-update job started.';await loadJobs()}catch(error){document.getElementById('updater-version-message').textContent=error.message;document.getElementById('updater-version-message').className='management-message error';button.disabled=false}};
-    document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true')return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value})});const d=await r.json();if(!r.ok)throw new Error('Login failed');csrfToken=d.csrf;form.reset();message.className='management-message success';message.textContent='Login successful';await Promise.all([loadStatus(),loadJobs(),loadTargets()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent='Login failed'}};
-    document.getElementById('logout').onclick=async()=>{try{await api('/api/logout',{method:'POST',body:'{}'})}catch(_error){}showLogin('You have been signed out.')};
+    document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true'||!authRealmsReady)return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value,realm:form.elements.realm.value})});const d=await r.json();if(!r.ok){const error=new Error(d.error?.message||'Login failed');error.code=d.error?.code;throw error}csrfToken=d.csrf;form.reset();message.className='management-message success';message.textContent='Login successful';await Promise.all([loadStatus(),loadJobs(),loadTargets(),loadTargetSelection()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent=error.message||'Login failed'}};
+    const logout=async()=>{try{await api('/api/logout',{method:'POST',body:'{}'})}catch(_error){}showLogin('You have been signed out.')};document.getElementById('logout').onclick=logout;document.getElementById('logout-menu')?.addEventListener('click',logout);
   </script>
   <div id="target-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="target-modal-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="target-modal-title">External system</h3><button type="button" class="modal-close" id="target-modal-cancel">Close</button></div><div class="management-form open"><label>Name<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"></label><label>Host / IP<input name="host" required pattern="[A-Za-z0-9_.:-]+"></label><label>SSH user<input name="user" required pattern="[A-Za-z_][A-Za-z0-9_.-]*"></label><label>SSH port<input name="port" type="number" min="1" max="65535" value="22" required></label><label>Identity file (optional)<input name="identity_file" placeholder="/root/.ssh/key"></label><div class="form-actions"><button type="submit" class="primary">Save</button><button type="button" id="target-modal-test">Test connection</button></div><div id="target-modal-message" class="management-message form-wide" role="status"></div></div></form></div>
   <script>
@@ -890,7 +920,8 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const nodeLabel=t=>String(t.id||'').replace(/^host:/,'');
     const friendlyType=t=>({host:'Proxmox node',lxc:'LXC container',vm:'Virtual machine',external:'External system'}[String(t?.type||'').toLowerCase()]||String(t?.type||'Unknown'));
     const friendlyTarget=t=>{if(!t)return '';const type=String(t.type||'').toLowerCase();if(type==='host')return nodeLabel(t);if((type==='lxc'||type==='vm')&&t.name)return `${t.id} · ${t.name}`;return String(t.name||t.id||'').replace(/^host:/,'')};
-    const friendlyJobTarget=target=>{const item=(currentStatus.targets||[]).find(candidate=>candidate&&String(candidate.id||'')===String(target||''));return item?friendlyTarget(item):String(target||'').replace(/^host:/,'')};
+    const friendlyJobTarget=target=>{const direct=target&&typeof target==='object'?target:null,id=direct?direct.id||direct.target:target,item=direct?.name||direct?.type?direct:(currentStatus.targets||[]).find(candidate=>candidate&&String(candidate.id||'')===String(id||''));return item?friendlyTarget(item):String(id||'').replace(/^host:/,'')};
+    const jobTitle=job=>`${String(job?.type||'update').toUpperCase()} · ${friendlyJobTarget(job?.target)}`;
     const isProxmoxNode=t=>t&&t.type==='host'&&String(t.id||'').startsWith('host:');
     const nodeNameOrder=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
     const sortNodes=items=>[...items].sort((a,b)=>nodeNameOrder.compare(nodeLabel(a),nodeLabel(b)));
@@ -908,14 +939,17 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const statusTone=t=>{const [fallbackLabel,fallbackTone]=statusLabel(t.check_status),normal=knownNormalUpdates(t),security=knownSecurityUpdates(t),totalOnly=knownTotalOnlyUpdates(t),health=healthState(t),hasError=['bad'].includes(fallbackTone),securityClass=security!==null&&security>0&&!hasError?' security-warn':'';let label=fallbackLabel,tone=fallbackTone;if(!hasError){if(['ok','updates_available'].includes(t.check_status)&&health==='unknown'){label='Unknown';tone='neutral'}else if(security!==null&&security>0){label='Security updates available';tone='warn'}else if((normal!==null&&normal>0)||(totalOnly!==null&&totalOnly>0)){label='Updates available';tone='warn'}else if((securitySplitSupported(t)&&normal===0&&security===0)||(!securitySplitSupported(t)&&totalOnly===0)){label='Healthy';tone='good'}else if(securitySplitSupported(t)&&normal===0&&security===null){label='Unknown';tone='neutral'}}return `<span class="pill ${tone}${securityClass}">${label}</span>`};
     const updateFields=t=>securitySplitSupported(t)?`<div><span>Normal updates</span><strong>${updateValue(knownNormalUpdates(t))}</strong></div><div><span>Security updates</span><strong>${updateValue(knownSecurityUpdates(t))}</strong></div>`:`<div><span>Updates</span><strong>${updateValue(knownTotalOnlyUpdates(t))}</strong></div>`;
     function closeDetails(){const n=document.getElementById('details');openDetailId=null;n.hidden=true;n.replaceChildren()}
-    function renderDetails(t){const n=document.getElementById('details');if(openDetailId===t.id){closeDetails();return}const [errorText,errorTone]=detailError(t),rebootDetail=t.type==='lxc'?'':`<div><span>Reboot required</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong></div>`,backup=t.type==='external'&&t.backup_status?text(t.backup_status.status,'Unknown'):'Not applicable';openDetailId=t.id;n.hidden=false;n.innerHTML=`<div class="details-heading"><h3>${esc(friendlyTarget(t))}</h3><button type="button" class="details-close">Close details</button></div><div class="detail-sections"><section><h4>System</h4><div class="detail-grid"><div><span>Type</span><strong>${esc(friendlyType(t))}</strong></div><div><span>Node</span><strong>${esc(t.node||'Not assigned')}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(osDetailName(t))}</strong></div></div></section><section><h4>Updates</h4><div class="detail-grid"><div><span>Updater</span><strong>${esc(t.updater)}</strong></div>${updateFields(t)}${rebootDetail}</div></section><section><h4>Status</h4><div class="detail-grid"><div><span>Check status</span><strong>${statusTone(t)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div><div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Backup safety</span><strong>${esc(backup)}</strong></div><div><span>Error</span><strong class="error-text ${errorTone}">${esc(errorText)}</strong></div></div></section></div>`;n.querySelector('.details-close').onclick=closeDetails;n.scrollIntoView({behavior:'smooth',block:'nearest'})}
+    function rebootTargetSupported(t){return ['host','lxc','vm'].includes(t.type)&&t.reboot_required===true}
+    function rebootTargetBlocked(t){return running(t.id)||running(t.node||'')||t.reachable!==true||t.check_status==='offline'}
+    async function rebootTarget(t){if(!rebootTargetSupported(t)||rebootTargetBlocked(t))return;const label=t.type==='host'?`node ${friendlyTarget(t)}`:`${t.type==='lxc'?'CT':'VM'} ${t.id} · ${friendlyTarget(t)}`;if(t.type==='host'){if(!confirm(`Reboot ${label}?\n\nRunning guests on this node may be affected.`))return;if(!confirm('Confirm node reboot\n\nThis will reboot the entire Proxmox node.'))return}else if(!confirm(`Reboot ${label} now?\n\nThe system will be restarted.`))return;const button=document.querySelector('[data-reboot-target]');if(button)button.disabled=true;try{const result=await api(`/api/targets/${encodeURIComponent(t.id)}/reboot`,{method:'POST',body:'{}'});notice(result.message||'Reboot initiated.');await loadJobs();await loadStatus()}catch(error){notice(error.message||'Reboot could not be started.',true)}finally{if(button&&document.body.contains(button))button.disabled=false}}
+    function renderDetails(t){const n=document.getElementById('details');if(openDetailId===t.id){closeDetails();return}const [errorText,errorTone]=detailError(t),rebootAction=rebootTargetSupported(t)?`<button type="button" class="danger" data-reboot-target="${esc(t.id)}" ${rebootTargetBlocked(t)?'disabled':''}>Reboot now</button>`:'',rebootDetail=['host','lxc','vm'].includes(t.type)?`<div><span>Reboot required</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong>${rebootAction?`<div class="reboot-detail-action">${rebootAction}</div>`:''}</div>`:'',backup=t.type==='external'&&t.backup_status?text(t.backup_status.status,'Unknown'):'Not applicable';openDetailId=t.id;n.hidden=false;n.innerHTML=`<div class="details-heading"><h3>${esc(friendlyTarget(t))}</h3><button type="button" class="details-close">Close details</button></div><div class="detail-sections"><section><h4>System</h4><div class="detail-grid"><div><span>Type</span><strong>${esc(friendlyType(t))}</strong></div><div><span>Node</span><strong>${esc(t.node||'Not assigned')}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(osDetailName(t))}</strong></div></div></section><section><h4>Updates</h4><div class="detail-grid"><div><span>Updater</span><strong>${esc(t.updater)}</strong></div>${updateFields(t)}${rebootDetail}</div></section><section><h4>Status</h4><div class="detail-grid"><div><span>Check status</span><strong>${statusTone(t)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div><div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Backup safety</span><strong>${esc(backup)}</strong></div><div><span>Error</span><strong class="error-text ${errorTone}">${esc(errorText)}</strong></div></div></section></div>`;n.querySelector('.details-close').onclick=closeDetails;if(rebootAction)n.querySelector('[data-reboot-target]').onclick=()=>rebootTarget(t);n.scrollIntoView({behavior:'smooth',block:'nearest'})}
     function guestIdentity(t){return esc(friendlyTarget(t))}
     function toggleGroup(key){if(openNodes.has(key))openNodes.clear();else{openNodes.clear();openNodes.add(key)}render(currentStatus)}
-    async function nodeAction(node,update=false){const key=`${update?'update':'check'}:${node}`,button=document.querySelector(`[data-node-action="${CSS.escape(key)}"]`);if(button?.disabled)return;if(update&&!confirm(`Update ${node}?\n\nOnly this Proxmox node will be updated. LXCs and VMs are not updated.`))return;document.querySelectorAll(`[data-node="${CSS.escape(node)}"]`).forEach(item=>{item.disabled=true});try{const d=await api(`/api/${update?'update-node':'check-node'}/${encodeURIComponent(node)}`,{method:'POST',body:'{}'});notice(d.message||'Action accepted.');await loadStatus();await loadJobs()}catch(error){notice(error.message,true)}finally{document.querySelectorAll(`[data-node="${CSS.escape(node)}"]`).forEach(item=>{item.disabled=false})}}
+    async function nodeAction(node,update=false,target=null){const key=`${update?'update':'check'}:${node}`,button=document.querySelector(`[data-node-action="${CSS.escape(key)}"]`);if(button?.disabled)return;const gate=update&&target?updateGate(target):{enabled:true,warning:null};if(update&&!gate.enabled)return;if(update&&!confirm(`${gate.warning?`${gate.warning}\n\n`:''}Update ${node.replace(/^host:/,'')}?\n\nOnly this Proxmox node will be updated. LXCs and VMs are not updated.`))return;document.querySelectorAll(`[data-node="${CSS.escape(node)}"]`).forEach(item=>{item.disabled=true});try{const d=await api(`/api/${update?'update-node':'check-node'}/${encodeURIComponent(node)}`,{method:'POST',body:'{}'});notice(d.message||'Action accepted.');await loadStatus();await loadJobs()}catch(error){notice(error.message,true)}finally{document.querySelectorAll(`[data-node="${CSS.escape(node)}"]`).forEach(item=>{item.disabled=false})}}
     async function refreshStatusSoon(attempt=0){if(attempt>=12)return;await new Promise(resolve=>setTimeout(resolve,2500));try{await loadStatus()}finally{refreshStatusSoon(attempt+1)}}
     function globalAction(update=false){const button=document.getElementById(update?'update-all':'check-all');if(button?.disabled)return;if(update){const ts=Array.isArray(currentStatus.targets)?currentStatus.targets:[],updates=ts.map(knownUpdates).filter(Number.isInteger).reduce((a,v)=>a+v,0),offline=ts.filter(t=>t.reachable===false).length;if(!confirm(`Update all systems?\n\n${updates} available updates are currently reported across the visible status. ${offline} system${offline===1?' is':'s are'} offline.\n\nConfigured update rules and safety checks will be respected.`))return}document.querySelectorAll('.global-action').forEach(item=>{item.disabled=true});button.textContent=update?'Starting updates…':'Starting check…';api(`/api/${update?'update-all':'check-all'}`,{method:'POST',body:'{}'}).then(async d=>{notice(d.message||'Action accepted.');await loadStatus();await loadJobs();refreshStatusSoon()}).catch(error=>notice(error.message,true)).finally(()=>{document.querySelectorAll('.global-action').forEach(item=>{item.disabled=false});button.textContent=update?'Update all systems':'Check all systems'})}
-    function nodeGroup(node,guests,host){const open=openNodes.has(node),guestLabel=`${guests.length} guest${guests.length===1?'':'s'}`,rebootBadge=host?.reboot_required===true?'<span class="reboot-required-badge">Reboot required</span>':'',statusBadges=host?`${statusTone(host)}${rebootBadge}`:'',card=document.createElement('article');card.className=`node-group${open?' open':''}`;card.innerHTML=`<div class="group-header"><button class="group-toggle" type="button" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} ${esc(node)}"><span class="chevron" aria-hidden="true"></span></button><div class="group-title"><strong>${esc(node)}</strong><small>Proxmox node</small></div>${host?`<div class="group-status">${statusBadges}</div>`:''}</div><div class="group-info"><span class="group-updates">${updateSummary((host?[host]:guests).filter(Boolean))} · ${guestLabel}</span></div><div class="group-actions"><button class="node-action node-check" data-node-action="check:${esc(node)}" data-node="${esc(node)}" type="button">Check node</button><button class="node-action node-update" data-node-action="update:${esc(node)}" data-node="${esc(node)}" type="button">Update node</button><button class="node-details">Details</button></div>`;card.querySelector('.group-header').addEventListener('click',e=>{if(e.target.closest('.group-toggle'))return;toggleGroup(node)});card.querySelector('.group-toggle').addEventListener('click',e=>{e.stopPropagation();toggleGroup(node)});card.querySelector('.node-details').addEventListener('click',e=>{e.stopPropagation();if(host)renderDetails(host)});card.querySelector('.node-check').addEventListener('click',e=>{e.stopPropagation();nodeAction(node)});card.querySelector('.node-update').addEventListener('click',e=>{e.stopPropagation();nodeAction(node,true)});let panel=null;if(open){panel=document.createElement('section');panel.className='guest-panel';panel.innerHTML=`<div class="guest-panel-title">Guests on ${esc(node)}</div><div class="guest-list"></div>`;guests.forEach(t=>panel.querySelector('.guest-list').appendChild(targetRow(t)))}return{card,panel}}
-    function externalGroup(targets){const group=document.createElement('section');const open=openNodes.has('__external__');group.className=`external-group${open?' open':''}`;group.innerHTML=`<div class="group-header"><button class="group-toggle" type="button" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} external systems"><span class="chevron" aria-hidden="true"></span></button><div class="group-title"><div><strong>External systems</strong><small>${targets.length} target${targets.length===1?'':'s'}</small></div></div><div class="group-summary"><span>${updateSummary(targets)}</span></div></div><div class="group-body"><div class="guest-list"></div></div>`;group.querySelector('.group-header').addEventListener('click',()=>toggleGroup('__external__'));group.querySelector('.group-toggle').addEventListener('click',e=>{e.stopPropagation();toggleGroup('__external__')});targets.forEach(t=>group.querySelector('.guest-list').appendChild(targetRow(t)));return group}
+    function nodeGroup(node,guests,host){const actionNode=host?.id||node,open=openNodes.has(node),guestLabel=`${guests.length} guest${guests.length===1?'':'s'}`,rebootBadge=host?.reboot_required===true?'<span class="reboot-required-badge">Reboot required</span>':'',statusBadges=host?`${statusTone(host)}${rebootBadge}`:'',card=document.createElement('article');card.className=`node-group${open?' open':''}`;card.innerHTML=`<div class="group-header"><button class="group-toggle" type="button" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} ${esc(node)}"><span class="chevron" aria-hidden="true"></span></button><div class="group-title"><strong>${esc(node)}</strong><small>Proxmox node</small></div>${host?`<div class="group-status">${statusBadges}</div>`:''}</div><div class="group-info"><span class="group-updates">${updateSummary((host?[host]:guests).filter(Boolean))} · ${guestLabel}</span></div><div class="group-actions"><button class="node-action node-check" data-node-action="check:${esc(actionNode)}" data-node="${esc(actionNode)}" type="button">Check node</button><button class="node-action node-update" data-node-action="update:${esc(actionNode)}" data-node="${esc(actionNode)}" type="button">Update node</button><button class="node-details">Details</button></div>`;const nodeGate=host?updateGate(host):{enabled:true,warning:null};card.querySelector('.node-update').disabled=!nodeGate.enabled;card.querySelector('.group-header').addEventListener('click',e=>{if(e.target.closest('.group-toggle'))return;toggleGroup(node)});card.querySelector('.group-toggle').addEventListener('click',e=>{e.stopPropagation();toggleGroup(node)});card.querySelector('.node-details').addEventListener('click',e=>{e.stopPropagation();if(host)renderDetails(host)});card.querySelector('.node-check').addEventListener('click',e=>{e.stopPropagation();nodeAction(actionNode)});card.querySelector('.node-update').addEventListener('click',e=>{e.stopPropagation();nodeAction(actionNode,true,host)});card.querySelector('.group-actions').prepend(selectionControls(host||{id:actionNode,type:'host'}));let panel=null;if(open){panel=document.createElement('section');panel.className='guest-panel';panel.innerHTML=`<div class="guest-panel-title">Guests on ${esc(node)}</div>${selectionHeader()}<div class="guest-list"></div>`;guests.forEach(t=>panel.querySelector('.guest-list').appendChild(targetRow(t)))}return{card,panel}}
+    function externalGroup(targets){const group=document.createElement('section');const open=openNodes.has('__external__');group.className=`external-group${open?' open':''}`;group.innerHTML=`<div class="group-header"><button class="group-toggle" type="button" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} external systems"><span class="chevron" aria-hidden="true"></span></button><div class="group-title"><div><strong>External systems</strong><small>${targets.length} target${targets.length===1?'':'s'}</small></div></div><div class="group-summary"><span>${updateSummary(targets)}</span></div></div><div class="group-body">${selectionHeader()}<div class="guest-list"></div></div>`;group.querySelector('.group-header').addEventListener('click',()=>toggleGroup('__external__'));group.querySelector('.group-toggle').addEventListener('click',e=>{e.stopPropagation();toggleGroup('__external__')});targets.forEach(t=>group.querySelector('.guest-list').appendChild(targetRow(t)));return group}
     function render(data){currentStatus=data;const ts=Array.isArray(data.targets)?data.targets:[],nodes=sortNodes(ts.filter(isProxmoxNode)),guests=ts.filter(t=>t.type==='lxc'||t.type==='vm'),external=ts.filter(t=>!isProxmoxNode(t)&&t.type!=='lxc'&&t.type!=='vm');set('total',ts.length);set('online',ts.filter(t=>t.reachable===true).length);set('attention',ts.filter(t=>healthState(t)==='attention'||t.check_status==='updates_available').length);set('generated',`Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}`);const list=document.getElementById('targets');list.replaceChildren();if(!ts.length){list.innerHTML='<div class="empty">No target status is available yet. Run a check to populate the view.</div>';return}if(nodes.length){const grid=document.createElement('div');grid.className='node-grid';let openPanel=null,assigned=new Set();nodes.forEach(host=>{const node=nodeLabel(host),members=guests.filter(t=>targetNode(t,nodes)===node);members.forEach(t=>assigned.add(t.id));const parts=nodeGroup(node,members,host);grid.appendChild(parts.card);if(parts.panel)openPanel=parts.panel});const unassigned=guests.filter(t=>!assigned.has(t.id));if(unassigned.length){const parts=nodeGroup('Guests without node assignment',unassigned,null);grid.appendChild(parts.card);if(parts.panel)openPanel=parts.panel}list.appendChild(grid);if(openPanel)list.appendChild(openPanel)}else if(guests.length){const grid=document.createElement('div');grid.className='node-grid';const parts=nodeGroup('Guests without node assignment',guests,null);grid.appendChild(parts.card);list.appendChild(grid);if(parts.panel)list.appendChild(parts.panel)}if(external.length)list.appendChild(externalGroup(external))}
     function renderJobs(){const n=document.getElementById('jobs');if(!jobs.length){n.hidden=true;openJobLogId=null;return}if(openJobLogId&&!jobs.some(j=>j.unit===openJobLogId))openJobLogId=null;const runningCount=jobs.filter(j=>j.state==='running').length,finished=jobs.length-runningCount;n.hidden=false;suppressLogScroll=true;n.innerHTML=`<div class="section-title"><button class="job-toggle"><span class="chevron" aria-hidden="true"></span><span>Jobs <span class="job-count">(${runningCount} running, ${finished} finished)</span></span></button><span class="job-summary">Server-side state · safe across browser/device changes</span></div><div class="job-list"></div>`;suppressLogScroll=false;n.classList.toggle('collapsed',!jobsExpanded);n.querySelector('.job-toggle').addEventListener('click',()=>{jobsExpanded=!jobsExpanded;n.classList.toggle('collapsed',!jobsExpanded)});const list=n.querySelector('.job-list');jobs.forEach(j=>{const item=document.createElement('div');item.className='job';const open=j.unit===openJobLogId;item.innerHTML=`<code>${esc(j.unit)}</code><span>${esc(j.target)}</span><span class="pill ${j.state==='completed'?'good':j.state==='failed'||j.state==='interrupted'?'bad':'warn'}">${esc(j.state==='completed_with_warnings'?'Please check':j.state)}</span><button data-job="${esc(j.unit)}">${open?'Hide log':'Show log'}</button><div class="log" id="log-${esc(j.unit)}"${open?'':' hidden'}></div>`;list.appendChild(item)});n.querySelectorAll('button[data-job]').forEach(b=>b.addEventListener('click',async()=>{const unit=b.dataset.job,node=document.getElementById(`log-${unit}`);jobsExpanded=true;n.classList.remove('collapsed');if(openJobLogId===unit){openJobLogId=null;node.hidden=true;b.textContent='Show log';return}openJobLogId=unit;logAutoFollow=true;logScrollTop=0;node.hidden=false;b.textContent='Hide log';await loadJobLog(unit,node);attachLogScroll(node)}));if(openJobLogId){const node=document.getElementById(`log-${openJobLogId}`);if(node){node.scrollTop=logAutoFollow?node.scrollHeight:logScrollTop;loadJobLog(openJobLogId,node).then(()=>{if(openJobLogId===node.id.slice(4))attachLogScroll(node)})}}}
     document.getElementById('jobs').addEventListener('click',e=>{const button=e.target.closest('button[data-job]');if(button&&button.textContent==='Show log')finalLogLoaded.delete(button.dataset.job)},true);
@@ -925,26 +959,75 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     renderJobs=renderJobsStable;window.renderJobs=renderJobsStable;
     function normalizeJobsHeading(){const toggle=document.querySelector('#jobs .job-toggle'),label=toggle?.querySelector('span:not(.chevron)');if(!label)return;const count=label.querySelector('.job-count');label.textContent='Jobs ';if(count)label.appendChild(count)}
     function decorateJobRows(){normalizeJobsHeading();const list=document.querySelector('#jobs .job-list');if(!list)return;for(const item of list.querySelectorAll('.job')){const job=jobs.find(candidate=>candidate.unit===item.dataset.unit);if(!job)continue;item.dataset.running=String(job.state==='running');const target=item.querySelector('span');if(target){const label=job.source==='initial-inventory'?'INITIAL INVENTORY':String(job.type||'update').toUpperCase();target.textContent=`${label} · ${job.owner_node?`${friendlyJobTarget(job.target)} · ${job.owner_node}`:friendlyJobTarget(job.target)}`}let meta=item.querySelector('.job-meta');if(!meta){meta=document.createElement('small');meta.className='job-meta';item.appendChild(meta)}const started=job.started_at?date(job.started_at):'Unknown';let duration='';if(job.started_at){const end=job.finished_at?Date.parse(job.finished_at):Date.now(),start=Date.parse(job.started_at);if(Number.isFinite(start)&&Number.isFinite(end))duration=` · ${Math.max(0,Math.round((end-start)/1000))}s`};meta.textContent=`Started ${started}${duration} · Exit ${job.exit_code===null||job.exit_code===undefined?'—':job.exit_code}`}}
-    const renderJobsBase=renderJobs;renderJobs=function(){renderJobsBase();renderRunningIndicator();decorateJobRows()};window.renderJobs=renderJobs;
+    const interactiveAttached=new Set(),interactiveAttachments=new Map(),interactiveQueues=new Map(),finalOutputLoaded=new Set(),finalOutputLoading=new Set();let interactiveTerminal=null,userClosedTerminal=false,reconnectTimer=null,terminalGeneration=0;
+    const INPUT_BATCH_DELAY=15,INPUT_CHUNK_BYTES=2048,RESIZE_DEBOUNCE=150,TERMINAL_FONT_MIN=8,TERMINAL_FONT_MAX=16,TERMINAL_FONT_KEY='ultimate-updater-terminal-font-size';
+    const interactiveKeyData={Escape:'\x1b',Tab:'\t',ArrowLeft:'\x1b[D',ArrowUp:'\x1b[A',ArrowDown:'\x1b[B',ArrowRight:'\x1b[C',Enter:'\r'};
+    const interactiveEncodeBytes=bytes=>{let binary='';bytes.forEach(byte=>binary+=String.fromCharCode(byte));return btoa(binary)};
+    const sendInteractiveChunk=async(unit,attachment_id,bytes)=>{const previous=interactiveQueues.get(unit)||Promise.resolve(),next=previous.catch(()=>{}).then(()=>api(`/api/jobs/${encodeURIComponent(unit)}/input`,{method:'POST',body:JSON.stringify({attachment_id,data:interactiveEncodeBytes(bytes)})}));interactiveQueues.set(unit,next);try{await next}catch(error){interactiveAttached.delete(unit);interactiveAttachments.delete(unit);if(interactiveTerminal?.unit===unit){interactiveTerminal.inputClosed=true;terminalMessage(error.message||'Terminal input failed.',true)}decorateInteractiveJobs()}};
+    const flushInteractiveInput=async state=>{state.inputTimer=null;while(state.inputBuffer.length&&!state.inputClosed){const bytes=Uint8Array.from(state.inputBuffer.splice(0,INPUT_CHUNK_BYTES));await sendInteractiveChunk(state.unit,state.attachment_id,bytes)}};
+    const queueInteractiveInput=value=>{const state=interactiveTerminal;if(!state||state.inputClosed)return;state.inputBuffer.push(...new TextEncoder().encode(value));if(!state.inputTimer)state.inputTimer=setTimeout(()=>flushInteractiveInput(state),INPUT_BATCH_DELAY)};
+    const sendInteractiveResize=async force=>{const state=interactiveTerminal;if(!state||state.inputClosed)return;state.fitAddon.fit();const rows=state.terminal.rows,cols=state.terminal.cols;if(!force&&state.lastSize&&state.lastSize.rows===rows&&state.lastSize.cols===cols)return;if(state.resizeInFlight){state.resizeAgain=true;return}state.lastSize={rows,cols};state.resizeInFlight=true;try{await api(`/api/jobs/${encodeURIComponent(state.unit)}/resize`,{method:'POST',body:JSON.stringify({attachment_id:state.attachment_id,rows,cols})})}catch(error){if(interactiveTerminal===state)terminalMessage(error.message||'Terminal resize failed.',true)}finally{state.resizeInFlight=false;if(state.resizeAgain){state.resizeAgain=false;sendInteractiveResize(true)}}};
+    const scheduleInteractiveResize=()=>{const state=interactiveTerminal;if(!state)return;state.fitAddon.fit();if(state.mode!=='interactive')return;clearTimeout(state.resizeTimer);state.resizeTimer=setTimeout(()=>{if(interactiveTerminal===state)sendInteractiveResize(false)},RESIZE_DEBOUNCE)};
+    const readInteractiveFontSize=()=>{try{const stored=localStorage.getItem(TERMINAL_FONT_KEY);if(stored!==null){const size=Number(stored);if(Number.isInteger(size)&&size>=TERMINAL_FONT_MIN&&size<=TERMINAL_FONT_MAX)return size;localStorage.removeItem(TERMINAL_FONT_KEY)}}catch(_error){}return window.matchMedia?.('(max-width:720px)').matches?11:15};
+    const updateInteractiveFontLabel=size=>{const label=document.getElementById('interactive-terminal-font-size');if(label)label.textContent=`${size}px`};
+    const applyInteractiveFontSize=size=>{const state=interactiveTerminal;if(!state)return;const next=Math.max(TERMINAL_FONT_MIN,Math.min(TERMINAL_FONT_MAX,Math.round(size)));state.terminal.options.fontSize=next;state.fontSize=next;updateInteractiveFontLabel(next);try{localStorage.setItem(TERMINAL_FONT_KEY,String(next))}catch(_error){}scheduleInteractiveResize()};
+    const terminalBytes=value=>{const binary=atob(value),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return bytes};
+    const terminalStatus=(value,error=false)=>{const node=document.getElementById('interactive-terminal-status');if(!node)return;node.textContent=value;node.className=`pill ${error?'bad':value==='Connected'?'good':'warn'}`};
+    const interactiveKeybarState=disabled=>{document.querySelectorAll('[data-interactive-key]').forEach(button=>{button.disabled=disabled});if(!disabled){interactiveKeybarVisibility(true);const heading=document.getElementById('interactive-terminal-heading'),help=document.getElementById('interactive-terminal-help');if(heading)heading.textContent='Live terminal';if(help)help.hidden=false}};
+    const interactiveKeybarVisibility=visible=>{const keybar=document.getElementById('interactive-terminal-keybar');if(keybar)keybar.hidden=!visible};
+    document.querySelectorAll('[data-interactive-key]').forEach(button=>button.addEventListener('click',()=>{const state=interactiveTerminal;if(!state||state.inputClosed)return;queueInteractiveInput(interactiveKeyData[button.dataset.interactiveKey]||'');state.terminal.focus()}));
+    document.getElementById('interactive-terminal-font-decrease').onclick=()=>{const state=interactiveTerminal;if(state)applyInteractiveFontSize((state.fontSize||15)-1)};
+    document.getElementById('interactive-terminal-font-increase').onclick=()=>{const state=interactiveTerminal;if(state)applyInteractiveFontSize((state.fontSize||15)+1)};
+    const terminalMessage=(value,visible=true)=>{const node=document.getElementById('interactive-terminal-message');if(!node)return;node.textContent=value;node.hidden=!visible};
+    const disposeInteractiveTerminal=async detach=>{const current=interactiveTerminal;if(!current)return;interactiveTerminal=null;current.inputClosed=true;if(current.inputTimer)clearTimeout(current.inputTimer);if(current.resizeTimer)clearTimeout(current.resizeTimer);current.resizeObserver?.disconnect();if(current.viewportHandler){window.visualViewport?.removeEventListener('resize',current.viewportHandler);window.removeEventListener('orientationchange',current.viewportHandler)}if(current.eventSource)current.eventSource.close();if(current.fitAddon)current.fitAddon.dispose();if(current.terminal)current.terminal.dispose();document.getElementById('interactive-terminal').replaceChildren();document.getElementById('interactive-terminal-panel').hidden=true;interactiveKeybarState(true);if(detach&&current.attachment_id){try{await api(`/api/jobs/${encodeURIComponent(current.unit)}/detach`,{method:'POST',body:JSON.stringify({attachment_id:current.attachment_id})})}catch(_error){}}interactiveAttached.delete(current.unit);interactiveAttachments.delete(current.unit);interactiveQueues.delete(current.unit);decorateInteractiveJobs()};
+    const closeInteractiveTerminal=async()=>{userClosedTerminal=true;terminalGeneration++;if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null}document.getElementById('interactive-terminal-panel').hidden=true;interactiveKeybarState(true);await disposeInteractiveTerminal(true)};
+    const finalJobState=job=>job?.state&&job.state!=='running';
+    const finalJobStatus=job=>job?.state==='cancelled'?['Job cancelled',false]:job?.state==='failed'||(Number.isInteger(job?.exit_code)&&job.exit_code!==0)?['Job failed',true]:job?.state==='interrupted'?['Job interrupted',true]:['Job finished',false];
+    const showFinalOutput=async(state,job)=>{if(interactiveTerminal!==state||!finalJobState(job)||state.finalizing)return;state.finalizing=true;state.mode='final';state.inputClosed=true;state.attachment_id=null;interactiveAttached.delete(state.unit);interactiveAttachments.delete(state.unit);interactiveQueues.delete(state.unit);if(state.inputTimer)clearTimeout(state.inputTimer);if(state.resizeTimer)clearTimeout(state.resizeTimer);state.resizeObserver?.disconnect();if(state.viewportHandler){window.visualViewport?.removeEventListener('resize',state.viewportHandler);window.removeEventListener('orientationchange',state.viewportHandler)}if(state.eventSource){state.eventSource.close();state.eventSource=null}interactiveKeybarVisibility(false);interactiveKeybarState(true);const heading=document.getElementById('interactive-terminal-heading'),help=document.getElementById('interactive-terminal-help');if(heading)heading.textContent='Final output';if(help)help.hidden=true;const [status,error]=finalJobStatus(job);terminalStatus(status,error);terminalMessage(error?'Update failed. See the terminal output and full job log for the detailed cause.':'',error);if(finalOutputLoaded.has(state.unit)||finalOutputLoading.has(state.unit))return;finalOutputLoading.add(state.unit);try{const result=await api(`/api/jobs/${encodeURIComponent(state.unit)}/log`);if(interactiveTerminal!==state)return;state.terminal.reset();state.terminal.write(String(result.log||'(no journal output)').replace(/\r?\n/g,'\r\n'));finalOutputLoaded.add(state.unit)}catch(loadError){if(interactiveTerminal===state)terminalMessage(loadError.message||'The final job output could not be loaded.',true)}finally{finalOutputLoading.delete(state.unit)}};
+    const openInteractiveTerminal=async(unit,reconnect=false,generation=terminalGeneration)=>{if(!reconnect){userClosedTerminal=false;generation=++terminalGeneration}if(userClosedTerminal||generation!==terminalGeneration)return;const job=jobs.find(item=>item.unit===unit);if(finalJobState(job))return;if(typeof Terminal!=='function'||typeof FitAddon==='undefined'||typeof FitAddon.FitAddon!=='function'){notice('The interactive terminal assets are unavailable.',true);return}if(interactiveTerminal?.unit===unit){interactiveTerminal.terminal.focus();return}if(interactiveTerminal)await disposeInteractiveTerminal(true);let attachment_id=interactiveAttachments.get(unit),createdAttachment=false,panel=null;try{if(!attachment_id){const result=await api(`/api/jobs/${encodeURIComponent(unit)}/attach`,{method:'POST',body:'{}'});attachment_id=result.attachment_id;if(!attachment_id)throw new Error('The interactive attachment is unavailable.');createdAttachment=true;interactiveAttachments.set(unit,attachment_id);interactiveAttached.add(unit)}if(userClosedTerminal||generation!==terminalGeneration||jobs.find(item=>item.unit===unit)?.state!=='running'){if(createdAttachment)await api(`/api/jobs/${encodeURIComponent(unit)}/detach`,{method:'POST',body:JSON.stringify({attachment_id})});return}const container=document.getElementById('interactive-terminal'),currentJob=jobs.find(item=>item.unit===unit);panel=document.getElementById('interactive-terminal-panel');panel.hidden=false;const title=document.getElementById('interactive-terminal-title'),download=document.getElementById('interactive-terminal-download');if(title)title.textContent=currentJob?jobTitle(currentJob):unit;if(download)download.href=`/api/jobs/${encodeURIComponent(unit)}/download`;terminalMessage('');interactiveKeybarState(false);const fontSize=readInteractiveFontSize(),terminal=new Terminal({scrollback:2000,convertEol:false,fontSize});const fitAddon=new FitAddon.FitAddon();terminal.loadAddon(fitAddon);terminal.open(container);interactiveTerminal={unit,attachment_id,terminal,fitAddon,fontSize,eventSource:null,inputBuffer:[],inputTimer:null,inputClosed:false,resizeObserver:null,resizeTimer:null,viewportHandler:null,resizeInFlight:false,resizeAgain:false,lastSize:null,generation};const state=interactiveTerminal;updateInteractiveFontLabel(fontSize);terminal.attachCustomKeyEventHandler(event=>{if(event.type!=='keydown')return true;if(event.ctrlKey&&event.key.toLowerCase()==='c'){event.preventDefault();disposeInteractiveTerminal(true);return false}if(event.ctrlKey&&(event.key.toLowerCase()==='d'||event.key.toLowerCase()==='z')){event.preventDefault();terminalMessage('This control key is disabled for the interactive job.',true);return false}return true});terminal.onData(queueInteractiveInput);fitAddon.fit();await sendInteractiveResize(true);if(userClosedTerminal||generation!==terminalGeneration||interactiveTerminal!==state){if(interactiveTerminal===state)await disposeInteractiveTerminal(true);return}const refit=()=>{if(interactiveTerminal!==state)return;scheduleInteractiveResize()};state.viewportHandler=refit;if(typeof ResizeObserver==='function'){state.resizeObserver=new ResizeObserver(refit);state.resizeObserver.observe(container)}window.addEventListener('orientationchange',refit);window.visualViewport?.addEventListener('resize',refit);terminal.focus();const source=new EventSource(`/api/jobs/${encodeURIComponent(unit)}/stream?attachment_id=${encodeURIComponent(attachment_id)}&from=0`);state.eventSource=source;terminalStatus('Connecting…');source.onopen=()=>{if(interactiveTerminal===state&&!userClosedTerminal)terminalStatus('Connected')};source.addEventListener('attached',()=>{if(interactiveTerminal===state&&!userClosedTerminal)terminalStatus('Connected')});source.addEventListener('output',event=>{if(interactiveTerminal!==state||userClosedTerminal)return;try{terminal.write(terminalBytes(event.data))}catch(error){terminalMessage('Terminal output could not be rendered.',true);terminalStatus('Stream error',true)}});source.addEventListener('truncated',()=>{if(interactiveTerminal===state&&!userClosedTerminal)terminalMessage('Earlier terminal output is no longer available. Use “Download full log” for the complete journal.',true)});source.addEventListener('heartbeat',()=>{});source.addEventListener('closed',()=>{source.close();if(interactiveTerminal===state&&!userClosedTerminal){state.inputClosed=true;interactiveKeybarState(true);terminalStatus('Job finished')}});source.onerror=()=>{if(interactiveTerminal!==state||userClosedTerminal||state.finalizing)return;if(source.readyState===EventSource.CLOSED){terminalStatus('Stream unavailable',true);terminalMessage('The live terminal stream ended. The existing job log remains available.',true)}else terminalStatus('Reconnecting…')};decorateInteractiveJobs()}catch(error){const message=error.message||'The interactive terminal could not be opened.',state=interactiveTerminal;if(state?.unit===unit){state.inputClosed=true;if(state.inputTimer)clearTimeout(state.inputTimer);if(state.resizeTimer)clearTimeout(state.resizeTimer);state.resizeObserver?.disconnect();if(state.viewportHandler){window.visualViewport?.removeEventListener('resize',state.viewportHandler);window.removeEventListener('orientationchange',state.viewportHandler)}state.eventSource?.close();terminalStatus('Stream unavailable',true)}else if(attachment_id&&createdAttachment){try{await api(`/api/jobs/${encodeURIComponent(unit)}/detach`,{method:'POST',body:JSON.stringify({attachment_id})})}catch(_error){}}if(panel&&!userClosedTerminal){panel.hidden=false;interactiveKeybarState(true);terminalMessage(message,true);terminalStatus('Stream unavailable',true)}else if(!userClosedTerminal)notice(message,true);interactiveAttached.delete(unit);interactiveAttachments.delete(unit);interactiveQueues.delete(unit)}};
+    const openLiveOutput=async unit=>{const job=jobs.find(item=>item.unit===unit);if(finalJobState(job))return;if(typeof Terminal!=='function'||typeof FitAddon==='undefined'||typeof FitAddon.FitAddon!=='function'){notice('The live output assets are unavailable.',true);return}if(interactiveTerminal?.unit===unit){interactiveTerminal.terminal.focus();return}if(interactiveTerminal)await disposeInteractiveTerminal(true);try{const panel=document.getElementById('interactive-terminal-panel'),container=document.getElementById('interactive-terminal'),currentJob=jobs.find(item=>item.unit===unit);panel.hidden=false;document.getElementById('interactive-terminal-heading').textContent='Live output';document.getElementById('interactive-terminal-title').textContent=currentJob?jobTitle(currentJob):unit;document.getElementById('interactive-terminal-download').href=`/api/jobs/${encodeURIComponent(unit)}/download`;terminalMessage('');interactiveKeybarVisibility(false);interactiveKeybarState(true);document.getElementById('interactive-terminal-help').hidden=true;const fontSize=readInteractiveFontSize(),terminal=new Terminal({scrollback:2000,convertEol:false,fontSize,disableStdin:true});const fitAddon=new FitAddon.FitAddon();terminal.loadAddon(fitAddon);terminal.open(container);interactiveTerminal={unit,mode:'output',attachment_id:null,terminal,fitAddon,fontSize,eventSource:null,inputBuffer:[],inputTimer:null,inputClosed:true,resizeObserver:null,resizeTimer:null,viewportHandler:null,resizeInFlight:false,resizeAgain:false,lastSize:null};const state=interactiveTerminal;updateInteractiveFontLabel(fontSize);fitAddon.fit();const refit=()=>{if(interactiveTerminal===state)scheduleInteractiveResize()};state.viewportHandler=refit;if(typeof ResizeObserver==='function'){state.resizeObserver=new ResizeObserver(refit);state.resizeObserver.observe(container)}window.addEventListener('orientationchange',refit);window.visualViewport?.addEventListener('resize',refit);terminal.focus();const source=new EventSource(`/api/jobs/${encodeURIComponent(unit)}/output-stream`);state.eventSource=source;terminalStatus('Connecting…');source.onopen=()=>{if(interactiveTerminal===state)terminalStatus('Connected')};source.addEventListener('attached',()=>{if(interactiveTerminal===state)terminalStatus('Connected')});source.addEventListener('output',event=>{if(interactiveTerminal!==state)return;try{terminal.write(terminalBytes(event.data))}catch(error){terminalMessage('Live output could not be rendered.',true);terminalStatus('Stream error',true)}});source.addEventListener('heartbeat',()=>{});source.addEventListener('closed',()=>{source.close();if(interactiveTerminal===state)terminalStatus('Job finished')});source.onerror=()=>{if(interactiveTerminal!==state||state.finalizing)return;if(source.readyState===EventSource.CLOSED){terminalStatus('Stream unavailable',true);terminalMessage('The live output stream ended. The existing job log remains available.',true)}else terminalStatus('Reconnecting…')};}catch(error){await disposeInteractiveTerminal(false);notice(error.message||'The live output could not be opened.',true)}};
+    document.getElementById('interactive-terminal-detach').onclick=()=>closeInteractiveTerminal();
+    const decorateInteractiveJob=item=>{const unit=item.dataset.unit,job=jobs.find(candidate=>candidate.unit===unit),available=job?.interactive&&job?.socket_available&&job?.state==='running';let controls=item.querySelector('.interactive-controls');if(!available){if(controls)controls.remove();interactiveAttached.delete(unit);if(!interactiveTerminal||interactiveTerminal.unit!==unit)interactiveAttachments.delete(unit);return}if(!controls){controls=document.createElement('div');controls.className='interactive-controls';controls.innerHTML='<span class="interactive-status"></span><button type="button" data-interactive-terminal>Live terminal</button>';item.appendChild(controls);controls.querySelector('[data-interactive-terminal]').onclick=()=>openInteractiveTerminal(unit)}const attached=interactiveAttached.has(unit),status=controls.querySelector('.interactive-status'),terminalButton=controls.querySelector('[data-live-job],[data-interactive-terminal]');status.textContent=attached?'Interactive terminal attached':'Interactive terminal available';terminalButton.textContent=interactiveTerminal?.unit===unit?'Terminal open':'Live terminal';terminalButton.disabled=false};
+    const decorateInteractiveJobs=()=>document.querySelectorAll('#jobs .job').forEach(decorateInteractiveJob);
+    const decorateAllLiveJobs=()=>document.querySelectorAll('#jobs .job').forEach(item=>{const unit=item.dataset.unit,job=jobs.find(candidate=>candidate.unit===unit),running=job?.state==='running',interactive=job?.interactive===true;let controls=item.querySelector('.interactive-controls');if(!running){if(controls)controls.remove();if(!interactiveTerminal||interactiveTerminal.unit!==unit)interactiveAttachments.delete(unit);return}if(!controls){controls=document.createElement('div');controls.className='interactive-controls';controls.innerHTML='<span class="interactive-status"></span><button type="button" data-live-job></button>';item.appendChild(controls);controls.querySelector('[data-live-job]').onclick=()=>interactive?openInteractiveTerminal(unit):openLiveOutput(unit)}const status=controls.querySelector('.interactive-status'),button=controls.querySelector('[data-live-job]');status.textContent=interactive?(interactiveAttached.has(unit)?'Interactive terminal attached':'Interactive terminal available'):'Live output available';button.textContent=interactive?(interactiveTerminal?.unit===unit?'Terminal open':'Live terminal'):'Live output';button.disabled=false});
+    const renderJobsBase=renderJobs;renderJobs=function(){renderJobsBase();renderRunningIndicator();decorateJobRows();decorateAllLiveJobs()};window.renderJobs=renderJobs;
+    // Show log remains an independent server-side log view, including while a
+    // job is running. Live terminal/output is opened only by its own action.
     document.getElementById('check-all').onclick=()=>globalAction(false);
     document.getElementById('update-all').onclick=()=>globalAction(true);
     clearTimeout(pollTimer);
   </script>
   <script>
-    const configBooleanKeys=['CHECK_WITH_HOST','CHECK_WITH_LXC','CHECK_WITH_VM','CHECK_RUNNING_CONTAINER','CHECK_STOPPED_CONTAINER','CHECK_RUNNING_VM','CHECK_STOPPED_VM','CHECK_PAUSED_VM','WITH_HOST','WITH_LXC','WITH_VM','RUNNING_CONTAINER','STOPPED_CONTAINER','RUNNING_VM','STOPPED_VM','REBOOT_IF_NEEDED','EXIT_ON_ERROR','DEBUG','SNAPSHOT','BACKUP','BACKUP_LXC_MP','EMAIL_DAILY_CHECK','EMAIL_NO_UPDATES','EMAIL_ONLY_SECURITY','EMAIL_ONLY_ERROR','VERSION_CHECK','FREEBSD_UPDATES','INCLUDE_PHASED_UPDATES','INCLUDE_FSTRIM','FSTRIM_WITH_MOUNTPOINT','INCLUDE_HELPER_SCRIPTS','EXTRA_GLOBAL','IN_HEADLESS_MODE','PIHOLE','IOBROKER','PTERODACTYL','OCTOPRINT','DOCKER_COMPOSE','UNIFI'];
+    // Rebuild a lost interactive attachment from the same running job. The
+    // terminal is reset before replaying the PTY backlog, so history is not
+    // duplicated and no second job is created.
+    const scheduleInteractiveReconnect=state=>{if(!state||userClosedTerminal||state.reconnectScheduled||state.mode==='final'||state.finalizing)return;const unit=state.unit,job=jobs.find(item=>item.unit===unit);if(!job||job.state!=='running')return;state.reconnectScheduled=true;const generation=++terminalGeneration;terminalStatus('Reconnecting…');reconnectTimer=setTimeout(async()=>{reconnectTimer=null;if(userClosedTerminal||generation!==terminalGeneration||interactiveTerminal!==state||jobs.find(item=>item.unit===unit)?.state!=='running'){return}const oldAttachment=state.attachment_id;state.finalizing=true;state.inputClosed=true;state.eventSource?.close();state.terminal?.dispose();state.resizeObserver?.disconnect();state.eventSource=null;interactiveTerminal=null;interactiveAttached.delete(unit);interactiveAttachments.delete(unit);try{if(oldAttachment)await api(`/api/jobs/${encodeURIComponent(unit)}/detach`,{method:'POST',body:JSON.stringify({attachment_id:oldAttachment})});if(!userClosedTerminal&&generation===terminalGeneration)await openInteractiveTerminal(unit,true,generation)}catch(error){if(!userClosedTerminal&&generation===terminalGeneration){terminalStatus('Stream unavailable',true);terminalMessage(error.message||'Live connection unavailable; the job is still running.',true)}}finally{if(interactiveTerminal?.unit===unit)interactiveTerminal.reconnectScheduled=false}},1000)};
+    setInterval(()=>{const state=interactiveTerminal;if(!state||state.mode==='final'||!state.eventSource)return;if(state.eventSource.readyState===EventSource.CLOSED)scheduleInteractiveReconnect(state)},500);
+  </script>
+  <script>
+    // Job polling is the authoritative source for the final interactive
+    // status.  The stream's closed event only says that output ended; it does
+    // not distinguish a successful update from a failed one.
+    const renderJobsWithInteractiveResult=renderJobs;
+    renderJobs=function(){renderJobsWithInteractiveResult();const state=interactiveTerminal;if(!state)return;const job=jobs.find(item=>item.unit===state.unit);if(finalJobState(job))void showFinalOutput(state,job)};
+    window.renderJobs=renderJobs;
+  </script>
+  <script>
+    const configBooleanKeys=['CHECK_WITH_HOST','CHECK_WITH_LXC','CHECK_WITH_VM','CHECK_RUNNING_CONTAINER','CHECK_STOPPED_CONTAINER','CHECK_RUNNING_VM','CHECK_STOPPED_VM','CHECK_PAUSED_VM','WITH_HOST','WITH_LXC','WITH_VM','RUNNING_CONTAINER','STOPPED_CONTAINER','RUNNING_VM','STOPPED_VM','REBOOT_IF_NEEDED','EXIT_ON_ERROR','DEBUG','SNAPSHOT','BACKUP','BACKUP_LXC_MP','EMAIL_DAILY_CHECK','EMAIL_SINGLE_RUNS','EMAIL_NO_UPDATES','EMAIL_ONLY_SECURITY','EMAIL_ONLY_ERROR','VERSION_CHECK','FREEBSD_UPDATES','INCLUDE_PHASED_UPDATES','INCLUDE_FSTRIM','FSTRIM_WITH_MOUNTPOINT','INCLUDE_HELPER_SCRIPTS','EXTRA_GLOBAL','IN_HEADLESS_MODE','PIHOLE','IOBROKER','PTERODACTYL','OCTOPRINT','DOCKER_COMPOSE','UNIFI','USE_INTERNAL_TARGET_SELECTION'];
     const configNumberKeys=['SSH_PORT','LXC_START_DELAY','VM_START_DELAY','KEEP_SNAPSHOTS'];
     const configStringKeys=['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE','BACKUP_MODE','BACKUP_STORAGE','EMAIL_USER','EMAIL_SENDER','EXE_FOR_INTERNET_CHECK','URL_FOR_INTERNET_CHECK','PACMAN_ENVIRONMENT','COMPOSE_PATH'];
-    const configLabels={CHECK_WITH_HOST:'Check host',CHECK_WITH_LXC:'Check LXC',CHECK_WITH_VM:'Check VM',CHECK_RUNNING_CONTAINER:'Check running containers',CHECK_STOPPED_CONTAINER:'Check stopped containers',CHECK_RUNNING_VM:'Check running VMs',CHECK_STOPPED_VM:'Check stopped VMs',CHECK_PAUSED_VM:'Check paused VMs',WITH_HOST:'Update host',WITH_LXC:'Update LXC',WITH_VM:'Update VM',RUNNING_CONTAINER:'Update running containers',STOPPED_CONTAINER:'Update stopped containers',RUNNING_VM:'Update running VMs',STOPPED_VM:'Update stopped VMs',REBOOT_IF_NEEDED:'Reboot if needed',EXIT_ON_ERROR:'Continue after errors',DEBUG:'Debug logging',SNAPSHOT:'Create snapshots',KEEP_SNAPSHOTS:'Snapshots to keep',BACKUP:'Create backups',BACKUP_LXC_MP:'Backup LXC mount points',BACKUP_MODE:'Backup mode',BACKUP_STORAGE:'Backup storage',EMAIL_DAILY_CHECK:'Daily email check',EMAIL_NO_UPDATES:'Email when no updates',EMAIL_ONLY_SECURITY:'Email security updates only',EMAIL_ONLY_ERROR:'Email errors only',VERSION_CHECK:'Check for updater updates',SSH_PORT:'SSH port',EXE_FOR_INTERNET_CHECK:'Internet check command',URL_FOR_INTERNET_CHECK:'Internet check address',FREEBSD_UPDATES:'Update FreeBSD guests',INCLUDE_PHASED_UPDATES:'Include phased updates',INCLUDE_FSTRIM:'Run fstrim',FSTRIM_WITH_MOUNTPOINT:'Include mount points in fstrim',PACMAN_ENVIRONMENT:'Pacman environment',INCLUDE_HELPER_SCRIPTS:'Include helper scripts',EXTRA_GLOBAL:'Enable extra updates',IN_HEADLESS_MODE:'Run extras in headless mode',PIHOLE:'Update Pi-hole',IOBROKER:'Update ioBroker',PTERODACTYL:'Update Pterodactyl',OCTOPRINT:'Update OctoPrint',DOCKER_COMPOSE:'Update Docker Compose',UNIFI:'Update UniFi',COMPOSE_PATH:'Compose search path',LXC_START_DELAY:'LXC start delay',VM_START_DELAY:'VM start delay',ONLY_UPDATE_CHECK:'Only check filter',EXCLUDE_UPDATE_CHECK:'Exclude check filter',ONLY:'Only update filter',EXCLUDE:'Exclude update filter',EMAIL_USER:'Email recipient',EMAIL_SENDER:'Email sender'};
+    const configLabels={CHECK_WITH_HOST:'Check host',CHECK_WITH_LXC:'Check LXC',CHECK_WITH_VM:'Check VM',CHECK_RUNNING_CONTAINER:'Check running containers',CHECK_STOPPED_CONTAINER:'Check stopped containers',CHECK_RUNNING_VM:'Check running VMs',CHECK_STOPPED_VM:'Check stopped VMs',CHECK_PAUSED_VM:'Check paused VMs',WITH_HOST:'Update host',WITH_LXC:'Update LXC',WITH_VM:'Update VM',RUNNING_CONTAINER:'Update running containers',STOPPED_CONTAINER:'Update stopped containers',RUNNING_VM:'Update running VMs',STOPPED_VM:'Update stopped VMs',REBOOT_IF_NEEDED:'Reboot if needed',EXIT_ON_ERROR:'Continue after errors',DEBUG:'Debug logging',SNAPSHOT:'Create snapshots',KEEP_SNAPSHOTS:'Snapshots to keep',BACKUP:'Create backups',BACKUP_LXC_MP:'Backup LXC mount points',BACKUP_MODE:'Backup mode',BACKUP_STORAGE:'Backup storage',EMAIL_DAILY_CHECK:'Email for scheduled checks',EMAIL_SINGLE_RUNS:'Email for single-target runs',EMAIL_NO_UPDATES:'Email when no updates',EMAIL_ONLY_SECURITY:'Email security updates only',EMAIL_ONLY_ERROR:'Email errors only',VERSION_CHECK:'Check for updater updates',SSH_PORT:'SSH port',EXE_FOR_INTERNET_CHECK:'Internet check command',URL_FOR_INTERNET_CHECK:'Internet check address',FREEBSD_UPDATES:'Update FreeBSD guests',INCLUDE_PHASED_UPDATES:'Include phased updates',INCLUDE_FSTRIM:'Run fstrim',FSTRIM_WITH_MOUNTPOINT:'Include mount points in fstrim',PACMAN_ENVIRONMENT:'Pacman environment',INCLUDE_HELPER_SCRIPTS:'Include helper scripts',EXTRA_GLOBAL:'Enable extra updates',IN_HEADLESS_MODE:'Run extras in headless mode',PIHOLE:'Update Pi-hole',IOBROKER:'Update ioBroker',PTERODACTYL:'Update Pterodactyl',OCTOPRINT:'Update OctoPrint',DOCKER_COMPOSE:'Update Docker Compose',UNIFI:'Update UniFi',COMPOSE_PATH:'Compose search path',LXC_START_DELAY:'LXC start delay',VM_START_DELAY:'VM start delay',ONLY_UPDATE_CHECK:'Only check filter',EXCLUDE_UPDATE_CHECK:'Exclude check filter',ONLY:'Only update filter',EXCLUDE:'Exclude update filter',EMAIL_USER:'Email recipient',EMAIL_SENDER:'Email sender'};
+    configLabels.USE_INTERNAL_TARGET_SELECTION='Use Ultimate Updater target selection';
     const configGroups=[
       {title:'Host',hint:'Host checks and updates are controlled here. Guest settings below do not change host processing.',keys:['CHECK_WITH_HOST','WITH_HOST']},
       {title:'Containers / LXC',hint:'Choose which LXC guests and lifecycle states are included for checks and updates.',matrix:[{label:'Containers',check:'CHECK_WITH_LXC',update:'WITH_LXC'},{label:'Running containers',check:'CHECK_RUNNING_CONTAINER',update:'RUNNING_CONTAINER'},{label:'Stopped containers',check:'CHECK_STOPPED_CONTAINER',update:'STOPPED_CONTAINER'}],extras:['LXC_START_DELAY','BACKUP_LXC_MP']},
       {title:'Virtual Machines',hint:'Choose which VMs and lifecycle states are included for checks and updates.',matrix:[{label:'Virtual machines',check:'CHECK_WITH_VM',update:'WITH_VM'},{label:'Running VMs',check:'CHECK_RUNNING_VM',update:'RUNNING_VM'},{label:'Stopped VMs',check:'CHECK_STOPPED_VM',update:'STOPPED_VM'},{label:'Paused VMs',check:'CHECK_PAUSED_VM',update:null}],extras:['VM_START_DELAY']},
-      {title:'Target filters',hint:'Check and update filters are independent. Only activates when an eligible target matches; with zero matches all eligible targets are used. Exclude is always applied afterwards.',filterGroups:[{title:'Check',keys:['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK'],preview:'check'},{title:'Update',keys:['ONLY','EXCLUDE'],preview:'update'}]},
+      {title:'Target filters',hint:'Check and update filters are independent. Only activates when an eligible target matches; with zero matches all eligible targets are used. Proxmox tags remain the default selection source.',keys:['USE_INTERNAL_TARGET_SELECTION'],filterGroups:[{title:'Check',keys:['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK'],preview:'check'},{title:'Update',keys:['ONLY','EXCLUDE'],preview:'update'}]},
       {title:'General update behavior',hint:'These options affect how the core processes checks and updates.',keys:['REBOOT_IF_NEEDED','EXIT_ON_ERROR','DEBUG','VERSION_CHECK','SSH_PORT','EXE_FOR_INTERNET_CHECK','URL_FOR_INTERNET_CHECK']},
       {title:'Advanced settings',hint:'Optional behavior for specialized guests and maintenance tasks.',keys:['FREEBSD_UPDATES','INCLUDE_PHASED_UPDATES','INCLUDE_FSTRIM','FSTRIM_WITH_MOUNTPOINT','PACMAN_ENVIRONMENT','INCLUDE_HELPER_SCRIPTS']},
       {title:'Extra updates',hint:'Optional service-specific updates. These apply only when extra updates are enabled.',keys:['EXTRA_GLOBAL','IN_HEADLESS_MODE','PIHOLE','IOBROKER','PTERODACTYL','OCTOPRINT','DOCKER_COMPOSE','UNIFI','COMPOSE_PATH']},
       {title:'Backup & safety',hint:'Configured protection is evaluated before guest updates.',keys:['SNAPSHOT','KEEP_SNAPSHOTS','BACKUP','BACKUP_MODE','BACKUP_STORAGE']},
-      {title:'Notifications',hint:'Existing email notification settings only; no credentials are stored here.',keys:['EMAIL_DAILY_CHECK','EMAIL_NO_UPDATES','EMAIL_ONLY_SECURITY','EMAIL_ONLY_ERROR','EMAIL_USER','EMAIL_SENDER']}
+      {title:'Notifications',hint:'Existing email notification settings only; no credentials are stored here.',keys:['EMAIL_DAILY_CHECK','EMAIL_SINGLE_RUNS','EMAIL_NO_UPDATES','EMAIL_ONLY_SECURITY','EMAIL_ONLY_ERROR','EMAIL_USER','EMAIL_SENDER']}
     ];
     const helpContent={
       'Host':['Purpose: Select whether the Proxmox host is checked or updated. Default: both are enabled. Node actions always remain host-only; guest settings do not expand them.'],
@@ -955,7 +1038,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
       'Advanced settings':['FreeBSD updates default to disabled and only affect supported FreeBSD/pfSense-style update paths. Linux package-manager behavior is not implied.','Phased updates default to disabled; when enabled, the existing apt update path may include packages held back by phased rollout.','Fstrim defaults to disabled. The mount-point option defaults to enabled and only matters when fstrim is enabled.','Pacman environment is an optional command prefix, for example env http_proxy=http://proxy:8080. Leave empty for no prefix. Helper scripts default to enabled and use the existing updater script locations.'],
       'Extra updates':['Extra updates default to enabled globally; individual services are enabled by default in the distributed configuration. A service is only processed when its own toggle is enabled.','Headless mode defaults to disabled and controls whether extra-update commands run without interactive output. Compose search path defaults to /home and may be set to another absolute path such as /opt.'],
       'Backup & safety':['Snapshots default to enabled, backups default to disabled, and three snapshots are kept by default. Protection is evaluated before a guest update.','Backup mode is limited to stop, suspend, or snapshot. stop gives highest consistency but causes downtime; suspend reduces downtime; snapshot is live and depends on supported storage.','Backup storage expects a Proxmox storage ID, not a filesystem path or PBS datastore name. Example: pbs. Leave it empty to use the first active backup storage reported by pvesm.'],
-      'Notifications':['Email recipient defaults to root and the sender defaults to the system user. Daily checks are enabled by default; no-updates mail and security-only filtering are disabled by default.','These switches control existing notification selection only; they do not store SMTP credentials.']
+      'Notifications':['Email recipient defaults to root and the sender defaults to the system user. Daily checks are enabled by default; single-target run mail, no-updates mail and security-only filtering are disabled by default.','Single-target mail is limited to the selected job target when enabled. These switches control existing notification selection only; they do not store SMTP credentials.']
     };
     const fieldHelpContent={
       SNAPSHOT:['Optional protection before a guest update. If snapshots are not supported for the guest or storage, the update continues without one; an unexpected snapshot error keeps the existing safety handling. An unsupported snapshot does not automatically enable a backup.'],
@@ -976,7 +1059,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     async function loadFilterPreview(form,scope){const keys=scope==='update'?['ONLY','EXCLUDE']:['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK'],only=form?.querySelector(`[data-key="${keys[0]}"]`)?.value||'',exclude=form?.querySelector(`[data-key="${keys[1]}"]`)?.value||'',box=document.getElementById(`${scope}-filter-preview`);if(box)box.innerHTML='<div class="filter-preview-note">Loading target preview…</div>';try{const query=new URLSearchParams({scope,only,exclude});const data=await api(`/api/config-preview?${query.toString()}`);renderFilterPreview(data,scope)}catch(error){if(box)box.innerHTML='<div class="filter-preview-note">Target preview is currently unavailable.</div>'}}
     function scheduleFilterPreview(form,scope){clearTimeout(filterPreviewTimers[scope]);filterPreviewTimers[scope]=setTimeout(()=>loadFilterPreview(form,scope),250)}
     function buildConfigForm(values){const form=document.getElementById('config-form');form.innerHTML='';form.dataset.initialConfig=JSON.stringify(values);for(const groupData of configGroups){const wide=groupData.title==='Host'||groupData.title==='Target filters'||groupData.filterGroups;const group=document.createElement('section');group.className=`settings-group${wide?' settings-group-wide':''}`;const heading=document.createElement('div');heading.className='settings-heading';const title=document.createElement('h3');title.textContent=groupData.title;heading.appendChild(title);if(helpContent[groupData.title])heading.appendChild(createHelpControl(groupData.title,helpContent[groupData.title]));group.appendChild(heading);const hint=document.createElement('p');hint.textContent=groupData.hint;group.appendChild(hint);if(groupData.filterGroups){const scopes=document.createElement('div');scopes.className='filter-scopes';groupData.filterGroups.forEach(scopeData=>{const scope=document.createElement('section');scope.className='filter-scope';const scopeTitle=document.createElement('h4');scopeTitle.textContent=scopeData.title;scope.appendChild(scopeTitle);const fields=document.createElement('div');fields.className='config-fields';scopeData.keys.forEach(key=>fields.appendChild(configField(key,values)));scope.appendChild(fields);const preview=document.createElement('div');preview.id=`${scopeData.preview}-filter-preview`;preview.className='filter-preview';scope.appendChild(preview);scopes.appendChild(scope)});group.appendChild(scopes)}else if(groupData.matrix){group.appendChild(configMatrix(groupData,values))}else if(groupData.columns){const columns=document.createElement('div');columns.className='settings-columns';groupData.columns.forEach(keys=>{const column=document.createElement('div');column.className='settings-column';keys.forEach(key=>column.appendChild(configField(key,values)));columns.appendChild(column)});group.appendChild(columns)}else{const fields=document.createElement('div');fields.className='config-fields';groupData.keys.forEach(key=>fields.appendChild(configField(key,values)));group.appendChild(fields)}form.appendChild(group)}const actions=document.createElement('div');actions.className='config-actions';actions.innerHTML='<button type="submit" class="primary">Save settings</button><button type="button" id="config-close">Cancel</button>';form.appendChild(actions);form.querySelectorAll('[data-key="ONLY_UPDATE_CHECK"],[data-key="EXCLUDE_UPDATE_CHECK"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'check')));form.querySelectorAll('[data-key="ONLY"],[data-key="EXCLUDE"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'update')));loadFilterPreview(form,'check');loadFilterPreview(form,'update');form.onsubmit=async e=>{e.preventDefault();const initial=JSON.parse(form.dataset.initialConfig||'{}'),next={};for(const input of form.querySelectorAll('[data-key]')){const value=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value,previous=initial[input.dataset.key]??'';if(value!==previous)next[input.dataset.key]=value}if(!Object.keys(next).length){setConfigOpen(false);return}try{const d=await api('/api/config',{method:'POST',body:JSON.stringify({values:next})});buildConfigForm(d.config);setConfigOpen(false);managementMessage('config-message','Configuration saved.')}catch(error){managementMessage('config-message',error.message,true)}};document.getElementById('config-close').onclick=()=>setConfigOpen(false)}
-    const buildConfigFormBase=buildConfigForm;buildConfigForm=function(values){buildConfigFormBase(values);const form=document.getElementById('config-form'),input=form?.querySelector('[data-key="EXIT_ON_ERROR"]');if(!input)return;input.checked=values.EXIT_ON_ERROR!==true;const submit=form.onsubmit;form.onsubmit=async event=>{input.checked=!input.checked;await submit.call(form,event);if(input.isConnected)input.checked=!input.checked}};
+    const buildConfigFormBase=buildConfigForm;buildConfigForm=function(values){buildConfigFormBase(values);const form=document.getElementById('config-form'),input=form?.querySelector('[data-key="EXIT_ON_ERROR"]');const filterGroup=[...form.querySelectorAll('.settings-group')].find(group=>group.querySelector('h3')?.textContent==='Target filters');if(filterGroup&&!filterGroup.querySelector('[data-key="USE_INTERNAL_TARGET_SELECTION"]')){const fields=document.createElement('div');fields.className='config-fields';fields.appendChild(configField('USE_INTERNAL_TARGET_SELECTION',values));const hint=document.createElement('p');hint.className='hint';hint.textContent='When enabled, Proxmox Only/Exclude tags are ignored; target selection is controlled by Ultimate Updater.';fields.appendChild(hint);filterGroup.insertBefore(fields,filterGroup.querySelector('.filter-scopes'))}if(!input)return;input.checked=values.EXIT_ON_ERROR!==true;const submit=form.onsubmit;form.onsubmit=async event=>{input.checked=!input.checked;await submit.call(form,event);if(input.isConnected)input.checked=!input.checked}};
     async function loadConfig(){try{const d=await api('/api/config');buildConfigForm(d.config)}catch(error){managementMessage('config-message',error.message,true)}}
     function renderManagedTargets(){const box=document.getElementById('managed-targets');if(!managedTargets.length){box.innerHTML='<div class="empty">No external systems configured.</div>';return}box.innerHTML=managedTargets.map(t=>`<div class="managed-target"><div><strong>${esc(t.id)}</strong><small>${esc(t.user)}@${esc(t.host)}:${esc(t.port)} · SSH</small></div><div class="managed-actions"><button data-edit="${esc(t.id)}">Edit</button><button data-test="${esc(t.id)}">Test connection</button><button data-remove="${esc(t.id)}">Remove</button></div></div>`).join('');box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openTargetModal(managedTargets.find(t=>t.id===b.dataset.edit)));box.querySelectorAll('[data-test]').forEach(b=>b.onclick=()=>testTarget(b.dataset.test,null,b));box.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>removeTarget(b.dataset.remove))}
     async function openExternalSettings(target){const form=document.getElementById('external-settings-form');form.elements.target.value=target;managementMessage('external-settings-message','Loading external settings…');document.getElementById('external-settings-modal').classList.add('open');try{const data=await api(`/api/external-settings/${encodeURIComponent(target)}`);const values=data.values||{};for(const key of ['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE'])form.elements[key].value=values[key]??'';managementMessage('external-settings-message','These settings are stored on this external system.')}catch(error){managementMessage('external-settings-message',error.message,true)}}
@@ -1007,9 +1090,25 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function externalFormPayload(form){return {id:form.elements.id.value,host:form.elements.host.value,user:form.elements.user.value,port:Number(form.elements.port.value),identity_file:form.elements.identity_file.value}}
     async function testTarget(id,payload=null,button=null){const messageId=payload?'target-modal-message':'target-message';const original=button?.textContent;if(button){button.dataset.testing='true';button.disabled=true;button.textContent='Testing…'}managementMessage(messageId,'Testing connection…');try{const d=await api(`/api/targets/${encodeURIComponent(id)}/test`,{method:'POST',body:JSON.stringify(payload||{})});const t=d.target||{};managementMessage(messageId,`Connection successful · ${t.os||'OS unknown'}`)}catch(error){managementMessage(messageId,error.message||'SSH connection failed.',true)}finally{if(button){button.textContent=original||'Test connection';delete button.dataset.testing;updateExternalTestAvailability()}}}
     function testExternalForm(event){event.preventDefault();const form=document.getElementById('target-modal-form'),button=event.currentTarget;if(!form.checkValidity()){form.reportValidity();updateExternalTestAvailability();return}const payload=externalFormPayload(form);testTarget(payload.id,payload,button)}
-    function targetRow(t){const rebootField=t.type==='lxc'?'':`<div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div>`;const row=document.createElement('div');row.className=`target-row ${securitySplitSupported(t)?'split-row':'total-only-row'}`;if(t.type==='lxc')row.classList.add('lxc-row');row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div>${securitySplitSupported(t)?`<div class="target-field"><span class="target-label">Normal</span><strong>${updateValue(knownNormalUpdates(t))}</strong></div><div class="target-field"><span class="target-label">Security</span><strong>${updateValue(knownSecurityUpdates(t))}</strong></div>`:`<div class="target-field"><span class="target-label">Updates</span><strong>${updateValue(knownTotalOnlyUpdates(t))}</strong></div>`}${rebootField}<div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osOverviewName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button></div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const update=row.querySelector('.update');update.disabled=running(t.id)||!TARGET_UPDATEABLE(t);update.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true)});return row}
+    function targetRow(t){const rebootField=t.type==='lxc'?'':`<div class="target-field"><span class="target-label">Reboot</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===true?'Yes':t.reboot_required===false?'No':'Unknown'}</strong></div>`;const row=document.createElement('div');row.className=`target-row ${securitySplitSupported(t)?'split-row':'total-only-row'}`;if(t.type==='lxc')row.classList.add('lxc-row');row.innerHTML=`<div><div class="target-name">${guestIdentity(t)}</div><div class="target-id">${esc(t.type)} · ${esc(t.transport)}</div></div><div class="target-field target-status">${statusTone(t)}</div>${securitySplitSupported(t)?`<div class="target-field"><span class="target-label">Normal</span><strong>${updateValue(knownNormalUpdates(t))}</strong></div><div class="target-field"><span class="target-label">Security</span><strong>${updateValue(knownSecurityUpdates(t))}</strong></div>`:`<div class="target-field"><span class="target-label">Updates</span><strong>${updateValue(knownTotalOnlyUpdates(t))}</strong></div>`}${rebootField}<div class="target-field row-os"><span class="target-label">OS</span><strong>${esc(osOverviewName(t))}</strong></div><div class="target-field row-last-check"><span class="target-label">Last check</span><strong>${esc(date(t.last_check))}</strong></div><div class="row-actions"><button class="check">Check</button><button class="primary update">${running(t.id)?'Running':'Update'}</button></div>`;row.addEventListener('click',e=>{if(!e.target.closest('button'))renderDetails(t)});row.querySelector('.check').addEventListener('click',e=>{e.stopPropagation();action(`/api/check/${encodeURIComponent(t.id)}`)});const update=row.querySelector('.update'),gate=updateGate(t);update.disabled=!gate.enabled;update.addEventListener('click',e=>{e.stopPropagation();action(`/api/update/${encodeURIComponent(t.id)}`,true,{warning:gate.warning})});return row}
     document.getElementById('config-open').onclick=()=>setConfigOpen(!document.getElementById('config-form').classList.contains('open'));document.getElementById('internal-ssh-open').onclick=()=>setInternalSshView(true);document.getElementById('internal-ssh-back').onclick=()=>setInternalSshView(false);document.getElementById('target-add').onclick=()=>openTargetModal();document.getElementById('target-modal-cancel').onclick=closeTargetModal;document.getElementById('target-modal-test').addEventListener('click',testExternalForm);document.getElementById('target-modal-form').addEventListener('input',updateExternalTestAvailability);document.getElementById('target-modal-form').onsubmit=saveTarget;document.getElementById('external-settings-close').onclick=closeExternalSettings;document.getElementById('external-settings-form').onsubmit=saveExternalSettings;
-    async function bootstrap(){try{await ensureSession();showDashboard();applyPageRoute();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);scheduleUpdaterVersionCheck()}catch(error){if(csrfToken)notice(error.message,true)}}
+    let targetSelection={schema_version:1,check:{},update:{}},targetSelectionConfirmed={schema_version:1,check:{},update:{}},targetSelectionLoadState='loading',targetSelectionLoadError='',targetSelectionLoadRevision=0,targetSelectionSaveTimer=null,targetSelectionSaveInFlight=false,targetSelectionSaveQueued=false,targetSelectionRevision=0,targetSelectionEnablePromise=null;
+    const selectionKey=t=>String(t.type||'').toLowerCase()==='host'?`host:${String(t.id||'').replace(/^host:/,'')}`:String(t.type||'').toLowerCase()==='external'?`external:${t.id}`:String(t.id||'');
+    const selectionLabel=state=>state==='only'?'Only':state==='exclude'?'Exclude':'No explicit selection';
+    const copyTargetSelection=selection=>({schema_version:1,check:{...(selection?.check||{})},update:{...(selection?.update||{})},...(selection?.enabled===undefined?{}:{enabled:selection.enabled})});
+    function updateTargetSelectionIndicator(){const indicator=document.getElementById('target-selection-indicator'),retry=document.getElementById('target-selection-retry');if(!indicator)return;const labels={loading:'Target selection: Loading…',ready:`Target selection: ${targetSelection.enabled?'Ultimate Updater':'Proxmox tags'}`,error:'Target selection: Unavailable'};indicator.textContent=labels[targetSelectionLoadState];indicator.dataset.state=targetSelectionLoadState;indicator.title=targetSelectionLoadState==='error'?(targetSelectionLoadError||'Target selection is unavailable.'):' ';if(retry)retry.hidden=targetSelectionLoadState!=='error'}
+    function paintTargetSelection(){const unavailable=targetSelectionLoadState!=='ready';document.querySelectorAll('.target-selection-state').forEach(button=>{const state=targetSelection[button.dataset.selectionScope]?.[button.dataset.selectionId]||'';button.className=`target-selection-state ${state}${unavailable?' unavailable':''}`;button.textContent=state==='only'?'✓':state==='exclude'?'✕':'';button.disabled=unavailable;button.title=unavailable?(targetSelectionLoadState==='loading'?'Target selection is loading.':'Target selection is unavailable.') : selectionLabel(state);button.setAttribute('aria-label',unavailable?`${button.dataset.selectionScope} selection unavailable`: `${button.dataset.selectionScope} selection: ${selectionLabel(state)}`)});updateTargetSelectionIndicator()}
+    function rollbackTargetSelection(){targetSelection=copyTargetSelection(targetSelectionConfirmed);paintTargetSelection()}
+    async function flushTargetSelectionSave(){if(targetSelectionSaveInFlight||!targetSelectionSaveQueued)return;targetSelectionSaveQueued=false;const revision=targetSelectionRevision,payload=copyTargetSelection(targetSelection);targetSelectionSaveInFlight=true;try{if(targetSelectionEnablePromise)await targetSelectionEnablePromise;const data=await api('/api/target-selection',{method:'POST',body:JSON.stringify({selection:payload})});if(revision===targetSelectionRevision){targetSelectionConfirmed=copyTargetSelection(data.selection||payload);targetSelectionConfirmed.enabled=true;targetSelection=copyTargetSelection(targetSelection);targetSelection.enabled=true;paintTargetSelection()}}catch(error){if(revision===targetSelectionRevision){rollbackTargetSelection();notice('Could not save target selection.',true)}}finally{targetSelectionSaveInFlight=false;if(targetSelectionSaveQueued)flushTargetSelectionSave()}}
+    function queueTargetSelectionSave(){targetSelectionRevision+=1;targetSelectionSaveQueued=true;clearTimeout(targetSelectionSaveTimer);targetSelectionSaveTimer=setTimeout(flushTargetSelectionSave,180)}
+    function enableTargetSelection(){if(targetSelection.enabled)return Promise.resolve();targetSelection.enabled=true;paintTargetSelection();targetSelectionEnablePromise=api('/api/config',{method:'POST',body:JSON.stringify({values:{USE_INTERNAL_TARGET_SELECTION:true}})}).then(()=>{targetSelectionConfirmed.enabled=true}).catch(error=>{targetSelection.enabled=false;rollbackTargetSelection();targetSelectionEnablePromise=null;throw error});return targetSelectionEnablePromise}
+    async function loadTargetSelection(){clearTimeout(targetSelectionSaveTimer);targetSelectionSaveQueued=false;targetSelectionRevision+=1;targetSelectionEnablePromise=null;const request=++targetSelectionLoadRevision;targetSelectionLoadState='loading';targetSelectionLoadError='';paintTargetSelection();try{const data=await api('/api/target-selection');if(request!==targetSelectionLoadRevision)return;if(!data||!data.selection||typeof data.selection!=='object')throw new Error('Target selection data is unavailable.');targetSelection={...data.selection,enabled:data.enabled===true};targetSelectionConfirmed=copyTargetSelection(targetSelection);targetSelectionLoadState='ready';targetSelectionLoadError='';paintTargetSelection()}catch(error){if(request!==targetSelectionLoadRevision)return;targetSelectionLoadState='error';targetSelectionLoadError=error.message||'Target selection is unavailable.';paintTargetSelection();managementMessage('config-message',targetSelectionLoadError,true)}}
+    function retryTargetSelection(){if(targetSelectionLoadState==='loading')return;loadTargetSelection()}
+    function selectionHeader(){return '<div class="target-selection-header"><span>Target</span><span>Check</span><span>Update</span><span>Actions</span></div>'}
+    function selectionControls(t){const id=selectionKey(t),controls=document.createElement('div');controls.className='target-selection-controls';for(const scope of ['check','update']){const state=targetSelection[scope]?.[id]||'',column=document.createElement('span');column.className='target-selection-column';const label=document.createElement('span');label.className='target-selection-label';label.textContent=scope==='check'?'Check':'Update';const button=document.createElement('button');button.type='button';button.className=`target-selection-state ${state}${targetSelectionLoadState!=='ready'?' unavailable':''}`;button.textContent=state==='only'?'✓':state==='exclude'?'✕':'';button.disabled=targetSelectionLoadState!=='ready';button.title=targetSelectionLoadState==='loading'?'Target selection is loading.':targetSelectionLoadState==='error'?'Target selection is unavailable.':selectionLabel(state);button.setAttribute('aria-label',targetSelectionLoadState==='ready'?`${scope} selection: ${selectionLabel(state)}`:`${scope} selection unavailable`);button.dataset.selectionScope=scope;button.dataset.selectionId=id;button.onclick=event=>{event.stopPropagation();saveTargetSelection(scope,id,targetSelection[scope]?.[id]||'')};column.append(label,button);controls.appendChild(column)}return controls}
+    function saveTargetSelection(scope,id,current){const next=current==='only'?'exclude':current==='exclude'?'':'only';if(!targetSelection.enabled&&next){if(!confirm('Enable Ultimate Updater target selection?\n\nThis will ignore existing Proxmox Only/Exclude tags. Existing tags will not be changed or removed.'))return;enableTargetSelection().catch(()=>notice('Could not enable target selection.',true))}const before=targetSelection[scope]?.[id]||'';if(next)targetSelection[scope][id]=next;else delete targetSelection[scope][id];paintTargetSelection();if(before!==next)queueTargetSelectionSave()}
+    const targetRowWithSelection=targetRow;targetRow=function(t){const row=targetRowWithSelection(t),id=selectionKey(t);if(!id)return row;row.querySelector('.row-actions')?.prepend(selectionControls(t));return row};
+    async function bootstrap(){try{await ensureSession();showDashboard();applyPageRoute();await loadTargetSelection();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);scheduleUpdaterVersionCheck()}catch(error){if(csrfToken)notice(error.message,true)}}
     const aggregateField=field=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[],values=targets.map(t=>t?.[field]).filter(Number.isInteger);return values.length?values.reduce((sum,value)=>sum+value,0):null};
     const aggregateTotalOnly=()=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[],values=targets.map(knownTotalOnlyUpdates).filter(Number.isInteger);return values.length?values.reduce((sum,value)=>sum+value,0):null};
     const aggregateFieldComplete=field=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[];return targets.length&&targets.every(t=>Number.isInteger(t?.[field])||!securitySplitSupported(t))?aggregateField(field):null};
@@ -1031,11 +1130,9 @@ PAGE = PAGE.replace('</style>', '<style>.dashboard-kpis .metric { display:flex; 
 PAGE = PAGE.replace("</body></html>", """<script>
     let loginVersionTimer=null;
     function loginVersionText(data){
-      const version=data?.installed||'version unavailable';
-      const branch=data?.branch?` · ${data.branch}`:'';
-      const commit=data?.commit&&/^[0-9a-f]{40}$/.test(data.commit)?` · ${data.commit.slice(0,7)}`:'';
+      const version=versionDisplay(data,data?.installed,data?.commit,data?.beta);
       const state=data?.update_state==='checking'?'Checking for updates…':data?.update_state==='available'?'Update available':data?.update_state==='up_to_date'?'Up to date':data?.update_state==='unavailable'?'Update status unavailable':'';
-      return `Ultimate Updater ${version}${branch}${commit}${state?' · '+state:''}`;
+      return `Ultimate Updater ${version}${state?' · '+state:''}`;
     }
     function applyPublicVersion(data){
       const login=document.getElementById('login-version');
@@ -1067,7 +1164,7 @@ PAGE = PAGE.replace("</body></html>", """<script>
 PAGE = PAGE.replace('<span id="generated">Loading status…</span>', '')
 PAGE = PAGE.replace('<h2>Ultimate Updater</h2>', '')
 PAGE = PAGE.replace('<p class="hint">Sign in to access system status and actions.</p>', '')
-PAGE = PAGE.replace('<p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Please use your current root account to sign in.</p>', '<p class="login-account-hint">Sign in with the local Proxmox root account.</p>')
+PAGE = PAGE.replace('<p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p>', '')
 PAGE = PAGE.replace('<label>Name<input name="id"', '<label>Name *<input name="id"')
 PAGE = PAGE.replace('<button type="button" id="target-modal-test">Test connection</button>', '<button type="button" id="target-modal-test" disabled>Test connection</button>')
 PAGE = PAGE.replace('<section class="management-panel" id="settings-entry"><div class="section-title"><div><h2>Configuration</h2><span class="hint">Manage Ultimate Updater settings</span></div><a class="button primary" href="/settings">Open settings</a></div></section>', '')
@@ -1105,9 +1202,15 @@ PAGE = PAGE.replace('<section class="settings-config-area" id="config-panel"><di
 PAGE = PAGE.replace('<button id="internal-ssh-back" type="button">Back to settings</button>', '<button id="internal-ssh-back" type="button">Close</button>')
 PAGE = PAGE.replace('<div class="settings-config-intro section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div></div>', '')
 PAGE = PAGE.replace('<h2 class="settings-management-title">Connection management</h2>', '')
-PAGE = PAGE.replace('</head>', '<style>.pill.security-warn{display:inline-flex;width:max-content;max-width:100%;white-space:nowrap}.pill .status-icon,.reboot-required-badge .status-icon{flex:0 0 auto}.main-body>#settings-page:not([hidden]){margin-top:0;padding-top:24px}</style></head>', 1)
+PAGE = PAGE.replace('</head>', '<style>.pill.security-warn{display:inline-flex;width:max-content;max-width:100%;white-space:nowrap}.pill .status-icon,.reboot-required-badge .status-icon{flex:0 0 auto}.main-body>#settings-page:not([hidden]){margin-top:0;padding-top:24px}.target-selection-controls{display:flex;gap:4px;align-items:flex-end;margin-right:8px}.target-selection-column{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:26px}.target-selection-label{display:block;color:var(--muted);font-size:.58rem;line-height:1}.target-selection-state{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;min-width:26px;height:26px;min-height:26px;padding:0;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--muted);font-size:.78rem;font-weight:700;line-height:1}.target-selection-state.only{color:#75e6a1;border-color:#75e6a1}.target-selection-state.exclude{color:#ff8b8b;border-color:#ff8b8b}.target-selection-state.unavailable{cursor:not-allowed;opacity:.55}.target-selection-state:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.target-selection-header{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:8px;margin:0 12px;padding:7px 12px 3px;color:var(--muted);font-size:.68rem;text-align:center}.target-selection-header span:first-child{text-align:left}.target-selection-header span:last-child{text-align:right}.target-selection-legend{color:var(--muted)}#target-selection-indicator[data-state=loading],#target-selection-indicator[data-state=error]{color:var(--muted)}#target-selection-retry{margin-left:6px;padding:1px 6px;font-size:.7rem}@media(max-width:620px){.target-selection-header{display:none}.target-selection-controls{gap:4px;margin-right:4px}.target-selection-state{width:30px;min-width:30px;height:30px;min-height:30px;font-size:.82rem}}</style></head>', 1)
+PAGE = PAGE.replace('<span class="view-note">Checks and updates use the existing CLI</span>', '<span class="view-note">Checks and updates use the existing CLI · <span id="target-selection-indicator" data-state="loading">Target selection: Loading…</span><button id="target-selection-retry" type="button" hidden onclick="retryTargetSelection()">Retry</button> · <span class="target-selection-legend">✓ Only · ✕ Exclude · empty = no explicit rule</span></span>')
 day_toggle_markup = "".join(f'<label><input type="checkbox" name="days" value="{day}"><span>{day}</span></label>' for day in SCHEDULER_DAYS)
+month_day_toggle_markup = "".join(f'<label><input type="checkbox" name="month_days" value="{day}"><span>{day}</span></label>' for day in range(1, 32))
 scheduler_markup = f'''<section id="scheduler-page" class="page-section" hidden><section class="scheduler-head"><div><h2>Scheduler</h2><p>Automatic checks and updates using the existing Ultimate Updater safety rules.</p></div><button id="schedule-add" class="primary" type="button">+ Add schedule</button></section><section class="scheduler-summary"><div><span>Scheduler</span><strong id="scheduler-state">Disabled</strong></div><div><span>Active schedules</span><strong id="scheduler-count">0</strong></div><div><span>Next run</span><strong id="scheduler-next">—</strong></div></section><div id="scheduler-message" class="management-message" hidden></div><section id="scheduler-list" class="scheduler-list"></section><div id="scheduler-empty" class="scheduler-empty">No schedules configured. Add a schedule to automate a full check or update.</div><section id="schedule-modal" class="scheduler-modal" hidden><form id="schedule-form" class="management-panel"><div class="section-title"><div><h2 id="schedule-modal-title">Add schedule</h2><span class="hint">Use the existing configured filters and safety rules.</span></div><button id="schedule-cancel" type="button">Cancel</button></div><input type="hidden" name="id"><label>Name<input name="name" maxlength="80" required></label><label>Action<select name="type"><option value="check-all">Check all systems</option><option value="check-selected">Check selected</option><option value="update-all">Update all systems</option><option value="update-selected">Update selected</option></select></label><fieldset class="schedule-days"><legend>Days of week</legend><div class="day-toggles">{day_toggle_markup}</div></fieldset><label>Time<input name="time" type="time" required></label><section id="schedule-targets" class="schedule-targets" hidden><div class="schedule-targets-head"><div><h3>Targets</h3><span class="hint">Select the concrete systems this schedule may run.</span></div><div class="schedule-target-tools"><button id="target-select-visible" type="button">Select all visible</button><button id="target-clear" type="button">Clear</button></div></div><label class="schedule-target-search">Search<input id="target-search" type="search" placeholder="Name, ID, node, type"></label><div id="schedule-missing" class="schedule-missing" hidden></div><div class="schedule-table-wrap"><table class="schedule-target-table"><thead><tr><th scope="col"><span class="visually-hidden">Select</span></th><th scope="col">ID</th><th scope="col">Node</th><th scope="col">Status</th><th scope="col">Name</th><th scope="col">Type</th></tr></thead><tbody id="schedule-target-body"></tbody></table></div><div id="schedule-selected" class="schedule-selected">Selected (0)</div></section><label class="schedule-enabled"><input name="enabled" type="checkbox" checked> Enabled</label><p id="schedule-update-warning" class="scheduler-warning" hidden>Scheduled updates use the same configured include/exclude and safety rules as manual updates. Reboots only occur according to the existing Ultimate Updater configuration.</p><div class="scheduler-form-actions"><button class="primary" type="submit">Save schedule</button><button id="schedule-delete" type="button" hidden>Delete</button></div></form></section></section>'''
+scheduler_markup = scheduler_markup.replace(
+    f'<fieldset class="schedule-days"><legend>Days of week</legend><div class="day-toggles">{day_toggle_markup}</div></fieldset>',
+    f'<fieldset class="schedule-days"><legend>Days of week</legend><div class="day-toggles">{day_toggle_markup}</div></fieldset><fieldset class="schedule-days schedule-month-days"><legend>Days of month</legend><div class="day-toggles">{month_day_toggle_markup}</div><span class="hint schedule-day-hint">Optional. When selected, month days take precedence over weekdays.</span></fieldset>',
+)
 PAGE = re.sub(r'<section id="scheduler-page" class="page-section" hidden>.*?</section></section>', scheduler_markup, PAGE, count=1, flags=re.S)
 PAGE = PAGE.replace("if(page==='settings')loadConfig()}", "if(page==='settings')loadConfig();if(page==='scheduler')window.dispatchEvent(new Event('scheduler-page-open'))}")
 # The route function is assembled from the base page before the scheduler
@@ -1124,7 +1227,7 @@ PAGE = PAGE.replace('</body></html>', '''<script>
   const showScheduleMessage=(text,error=false)=>{message.hidden=!text;message.textContent=text||'';message.className=`management-message${error?' error':''}`};
   const formatScheduleTime=value=>{if(!value)return'—';const date=new Date(value);if(Number.isNaN(date.getTime()))return'—';const parts=new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}).formatToParts(date);const part=type=>parts.find(item=>item.type===type)?.value||'';return`${part('month')} ${part('day')} · ${part('hour')}:${part('minute')} ${part('dayPeriod')}`};
   const dayLabels={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
-  const scheduleLabel=item=>{const days=item.days||[];if(days.length===7)return`Daily · ${item.time}`;if(days.join(',')==='Mon,Tue,Wed,Thu,Fri')return`Weekdays · ${item.time}`;if(days.join(',')==='Sat,Sun')return`Weekend · ${item.time}`;if(days.length===1)return`${dayLabels[days[0]]||days[0]} · ${item.time}`;return`${days.join(', ')} · ${item.time}`};
+  const scheduleLabel=item=>{const monthDays=item.month_days||[];if(monthDays.length)return`Days ${monthDays.join(', ')} · ${item.time}`;const days=item.days||[];if(days.length===7)return`Daily · ${item.time}`;if(days.join(',')==='Mon,Tue,Wed,Thu,Fri')return`Weekdays · ${item.time}`;if(days.join(',')==='Sat,Sun')return`Weekend · ${item.time}`;if(days.length===1)return`${dayLabels[days[0]]||days[0]} · ${item.time}`;return`${days.join(', ')} · ${item.time}`};
   const resultLabel=item=>item.last_run?`${item.last_run.result||'Started'} · ${formatScheduleTime(item.last_run.timestamp)}`:'Not run yet';
   const isSelected=item=>item.type==='check-selected'||item.type==='update-selected';
   const targetLabel=item=>`${item.name||item.id} · ${item.type_label||item.type}`;
@@ -1132,28 +1235,77 @@ PAGE = PAGE.replace('</body></html>', '''<script>
   const loadSchedulerTargets=async()=>{try{const data=await scheduleApi('/api/scheduler-targets');schedulerTargets=Array.isArray(data.targets)?data.targets:[];renderTargetTable()}catch(error){showScheduleMessage(error.message,true)}};
   const renderSchedules=data=>{schedules=Array.isArray(data.schedules)?data.schedules:[];const enabled=schedules.filter(item=>item.enabled);document.getElementById('scheduler-state').textContent=enabled.length?'Enabled':'Disabled';document.getElementById('scheduler-count').textContent=enabled.length;const next=enabled.filter(item=>item.next_run).sort((a,b)=>a.next_run.localeCompare(b.next_run))[0];document.getElementById('scheduler-next').textContent=next?formatScheduleTime(next.next_run):'—';list.replaceChildren();empty.hidden=schedules.length>0;schedules.forEach(item=>{const card=document.createElement('article');card.className='scheduler-card';card.innerHTML=`<div class="scheduler-card-main"><div class="scheduler-card-title"><strong>${esc(item.name)}</strong><span class="schedule-state ${item.enabled?'enabled':'disabled'}">${item.enabled?'Enabled':'Disabled'}</span></div><span class="hint">${item.type==='check-all'?'Check all systems':item.type==='check-selected'?'Check selected':item.type==='update-all'?'Update all systems':'Update selected'} · ${item.type.endsWith('selected')?`${item.targets.length} targets · `:''}${scheduleLabel(item)}</span><small>Next run: ${item.enabled?formatScheduleTime(item.next_run):'Disabled'}<br>Last run: ${esc(resultLabel(item))}</small></div><div class="scheduler-card-actions"><button type="button" data-schedule-action="edit" data-schedule-id="${item.id}">Edit</button><button type="button" data-schedule-action="run" data-schedule-id="${item.id}">Run now</button><button type="button" data-schedule-action="toggle" data-schedule-id="${item.id}">${item.enabled?'Disable':'Enable'}</button><button type="button" data-schedule-action="delete" data-schedule-id="${item.id}">Delete</button></div>`;list.appendChild(card)})};
   const loadSchedules=async()=>{if(!csrfToken)return;try{renderSchedules(await scheduleApi('/api/schedules'));await loadSchedulerTargets()}catch(error){showScheduleMessage(error.message,true)}};
-  const openSchedule=item=>{form.reset();form.elements.id.value=item?.id||'';form.elements.name.value=item?.name||'';form.elements.type.value=item?.type||'check-all';form.elements.time.value=item?.time||'03:00';form.elements.enabled.checked=item?item.enabled:true;selectedTargets=new Set(item?.targets||[]);form.querySelectorAll('input[name="days"]').forEach(input=>input.checked=(item?.days||['Mon','Tue','Wed','Thu','Fri','Sat','Sun']).includes(input.value));document.getElementById('schedule-modal-title').textContent=item?'Edit schedule':'Add schedule';document.getElementById('schedule-delete').hidden=!item;modal.hidden=false;form.elements.type.dispatchEvent(new Event('change'));renderTargetTable()};
+  const openSchedule=item=>{form.reset();form.elements.id.value=item?.id||'';form.elements.name.value=item?.name||'';form.elements.type.value=item?.type||'check-all';form.elements.time.value=item?.time||'03:00';form.elements.enabled.checked=item?item.enabled:true;selectedTargets=new Set(item?.targets||[]);form.querySelectorAll('input[name="days"]').forEach(input=>input.checked=(item?.days||['Mon','Tue','Wed','Thu','Fri','Sat','Sun']).includes(input.value));form.querySelectorAll('input[name="month_days"]').forEach(input=>input.checked=(item?.month_days||[]).includes(Number(input.value)));document.getElementById('schedule-modal-title').textContent=item?'Edit schedule':'Add schedule';document.getElementById('schedule-delete').hidden=!item;modal.hidden=false;form.elements.type.dispatchEvent(new Event('change'));renderTargetTable()};
   const closeSchedule=()=>{modal.hidden=true};
   document.getElementById('schedule-add').onclick=()=>openSchedule();document.getElementById('schedule-cancel').onclick=closeSchedule;document.getElementById('schedule-delete').onclick=async()=>{const id=form.elements.id.value,item=schedules.find(candidate=>candidate.id===id);if(!item||!confirm(`Delete schedule "${item.name}"?`))return;try{await scheduleApi(`/api/schedules/${id}`,{method:'DELETE'});closeSchedule();await loadSchedules()}catch(error){showScheduleMessage(error.message,true)}};
-  form.elements.type.onchange=()=>{const selected=isSelected({type:form.elements.type.value});document.getElementById('schedule-targets').hidden=!selected;document.getElementById('schedule-update-warning').hidden=!form.elements.type.value.startsWith('update');renderTargetTable()};document.getElementById('target-search').oninput=renderTargetTable;document.getElementById('target-select-visible').onclick=()=>{document.querySelectorAll('#schedule-target-body [data-target-id]').forEach(input=>selectedTargets.add(input.dataset.targetId));renderTargetTable()};document.getElementById('target-clear').onclick=()=>{selectedTargets.clear();renderTargetTable()};document.getElementById('schedule-target-body').onchange=event=>{if(!event.target.matches('[data-target-id]'))return;if(event.target.checked)selectedTargets.add(event.target.dataset.targetId);else selectedTargets.delete(event.target.dataset.targetId);renderTargetTable()};
-  form.onsubmit=async event=>{event.preventDefault();const values={name:form.elements.name.value,type:form.elements.type.value,days:[...form.querySelectorAll('input[name="days"]:checked')].map(input=>input.value),time:form.elements.time.value,enabled:form.elements.enabled.checked,targets:isSelected({type:form.elements.type.value})?[...selectedTargets]:[]},id=form.elements.id.value;try{if(!values.days.length)throw new Error('Select at least one day.');if(isSelected(values)&&!values.targets.length)throw new Error('Select at least one target.');if(values.type.startsWith('update')&&!id&&!confirm('This schedule can automatically update systems using the configured safety rules. Continue?'))return;await scheduleApi(id?`/api/schedules/${id}`:'/api/schedules',{method:id?'PUT':'POST',body:JSON.stringify(values)});closeSchedule();await loadSchedules()}catch(error){showScheduleMessage(error.message,true)} };
+  const syncScheduleDayMode=()=>{const monthSelected=form.querySelectorAll('input[name="month_days"]:checked').length>0;form.querySelectorAll('input[name="days"]').forEach(input=>{input.disabled=monthSelected;input.closest('label').title=monthSelected?'Month days take precedence over weekdays':''});document.querySelector('.schedule-day-hint').textContent=monthSelected?'Month days take precedence over weekdays.':'Optional. When selected, month days take precedence over weekdays.'};
+  form.elements.type.onchange=()=>{const selected=isSelected({type:form.elements.type.value});document.getElementById('schedule-targets').hidden=!selected;document.getElementById('schedule-update-warning').hidden=!form.elements.type.value.startsWith('update');syncScheduleDayMode();renderTargetTable()};form.querySelectorAll('input[name="month_days"]').forEach(input=>input.onchange=syncScheduleDayMode);document.getElementById('target-search').oninput=renderTargetTable;document.getElementById('target-select-visible').onclick=()=>{document.querySelectorAll('#schedule-target-body [data-target-id]').forEach(input=>selectedTargets.add(input.dataset.targetId));renderTargetTable()};document.getElementById('target-clear').onclick=()=>{selectedTargets.clear();renderTargetTable()};document.getElementById('schedule-target-body').onchange=event=>{if(!event.target.matches('[data-target-id]'))return;if(event.target.checked)selectedTargets.add(event.target.dataset.targetId);else selectedTargets.delete(event.target.dataset.targetId);renderTargetTable()};
+  form.onsubmit=async event=>{event.preventDefault();const values={name:form.elements.name.value,type:form.elements.type.value,days:[...form.querySelectorAll('input[name="days"]:checked')].map(input=>input.value),month_days:[...form.querySelectorAll('input[name="month_days"]:checked')].map(input=>Number(input.value)),time:form.elements.time.value,enabled:form.elements.enabled.checked,targets:isSelected({type:form.elements.type.value})?[...selectedTargets]:[]},id=form.elements.id.value;try{if(!values.days.length&&!values.month_days.length)throw new Error('Select at least one weekday or month day.');if(isSelected(values)&&!values.targets.length)throw new Error('Select at least one target.');if(values.type.startsWith('update')&&!id&&!confirm('This schedule can automatically update systems using the configured safety rules. Continue?'))return;await scheduleApi(id?`/api/schedules/${id}`:'/api/schedules',{method:id?'PUT':'POST',body:JSON.stringify(values)});closeSchedule();await loadSchedules()}catch(error){showScheduleMessage(error.message,true)} };
   list.onclick=async event=>{const button=event.target.closest('[data-schedule-action]');if(!button)return;const item=schedules.find(candidate=>candidate.id===button.dataset.scheduleId);if(!item)return;try{if(button.dataset.scheduleAction==='edit')return openSchedule(item);if(button.dataset.scheduleAction==='delete'){if(!confirm(`Delete schedule "${item.name}"?`))return;await scheduleApi(`/api/schedules/${item.id}`,{method:'DELETE'})}else if(button.dataset.scheduleAction==='toggle'){await scheduleApi(`/api/schedules/${item.id}`,{method:'PUT',body:JSON.stringify({enabled:!item.enabled})})}else if(button.dataset.scheduleAction==='run'){button.disabled=true;await scheduleApi(`/api/schedules/${item.id}/run`,{method:'POST',body:'{}'})}await loadSchedules()}catch(error){showScheduleMessage(error.message,true)}finally{button.disabled=false}};
   window.addEventListener('scheduler-page-open',loadSchedules);window.addEventListener('uu-auth-ready',loadSchedules);if(window.__uu_authenticated&&csrfToken)loadSchedules();setInterval(()=>{if(!document.getElementById('scheduler-page').hidden&&csrfToken)loadSchedules()},10000);
 })();
 </script></body></html>''', 1)
+PAGE = PAGE.replace(
+    '<span id="interactive-terminal-status" class="pill warn">Disconnected</span><button id="interactive-terminal-detach"',
+    '<span id="interactive-terminal-status" class="pill warn">Disconnected</span><button id="interactive-terminal-stop" class="danger" type="button" hidden>Stop job</button><button id="interactive-terminal-detach"',
+    1,
+)
+PAGE = PAGE.replace(
+    '</main>\n  <div id="external-settings-modal"',
+    '</main>\n  <div id="interactive-stop-modal" class="modal-backdrop interactive-stop-modal" role="dialog" aria-modal="true" aria-labelledby="interactive-stop-title" hidden><form id="interactive-stop-form" class="modal"><h3 id="interactive-stop-title">Stop running job?</h3><p>This will stop the currently running job. Interrupting package management or an update process may leave the target in an incomplete state.</p><div class="form-actions"><button id="interactive-stop-cancel" type="button">Cancel</button><button id="interactive-stop-confirm" class="danger" type="submit">Stop job</button></div></form></div>\n  <div id="external-settings-modal"',
+    1,
+)
+PAGE = PAGE.replace(
+    'interactiveTerminal={unit,attachment_id,terminal,fitAddon',
+    'interactiveTerminal={unit,mode:\'interactive\',attachment_id,terminal,fitAddon',
+    1,
+)
+PAGE = PAGE.replace('</body>', '''<script>
+    const interactiveStopButton=document.getElementById('interactive-terminal-stop'),interactiveStopModal=document.getElementById('interactive-stop-modal'),interactiveStopForm=document.getElementById('interactive-stop-form'),interactiveStopCancel=document.getElementById('interactive-stop-cancel'),interactiveStopConfirm=document.getElementById('interactive-stop-confirm');
+    const syncInteractiveStopButton=()=>{const state=interactiveTerminal,job=state&&jobs.find(item=>item.unit===state.unit),visible=!!state&&job?.state==='running';if(!interactiveStopButton)return;interactiveStopButton.hidden=!visible;interactiveStopButton.disabled=!!state?.stopping;interactiveStopButton.textContent=state?.stopping?'Stopping…':'Stop job'};
+    interactiveStopButton?.addEventListener('click',()=>{const state=interactiveTerminal,job=state&&jobs.find(item=>item.unit===state.unit);if(!state||job?.state!=='running'||state.stopping)return;interactiveStopModal.hidden=false;interactiveStopModal.classList.add('open');interactiveStopConfirm.focus()});
+    interactiveStopCancel?.addEventListener('click',()=>{interactiveStopModal.hidden=true;interactiveStopModal.classList.remove('open')});
+    interactiveStopModal?.addEventListener('click',event=>{if(event.target===interactiveStopModal){interactiveStopModal.hidden=true;interactiveStopModal.classList.remove('open')}});
+    interactiveStopForm?.addEventListener('submit',async event=>{event.preventDefault();const state=interactiveTerminal,job=state&&jobs.find(item=>item.unit===state.unit);if(!state||job?.state!=='running'||state.stopping)return;state.stopping=true;state.inputClosed=true;syncInteractiveStopButton();interactiveStopConfirm.disabled=true;try{await api(`/api/jobs/${encodeURIComponent(state.unit)}/cancel`,{method:'POST',body:'{}'});interactiveStopModal.hidden=true;interactiveStopModal.classList.remove('open');terminalMessage('Stopping…');terminalStatus('Stopping…')}catch(error){state.stopping=false;interactiveStopConfirm.disabled=false;syncInteractiveStopButton();terminalMessage(error.message||'The job could not be stopped.',true);terminalStatus('Stop failed',true)}});
+    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&interactiveStopModal&&!interactiveStopModal.hidden){interactiveStopModal.hidden=true;interactiveStopModal.classList.remove('open');interactiveStopConfirm.disabled=false}});
+    setInterval(syncInteractiveStopButton,500);
+</script></body>''', 1)
 PAGE = re.sub(r'<nav class="page-nav" aria-label="Primary">.*?</nav>', '', PAGE, count=1, flags=re.S)
-header_nav = '<button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3.5 11 8.5-7 8.5 7v8.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5Z"/><path d="M9 21v-6h6v6"/></svg><span>Dashboard</span></a><a href="/settings" data-page="settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9.7 3.4.5-1.4h3.6l.5 1.4 1.4.6 1.4-.6 2.5 2.5-.6 1.4.6 1.4 1.4.5v3.6l-1.4.5-.6 1.4.6 1.4-2.5 2.5-1.4-.6-1.4.6-.5 1.4h-3.6l-.5-1.4-1.4-.6-1.4.6-2.5-2.5.6-1.4-.6-1.4-1.4-.5V9.2l1.4-.5.6-1.4-.6-1.4 2.5-2.5 1.4.6Z"/><circle cx="12" cy="11" r="3.2"/></svg><span>Settings</span></a><a href="/scheduler" data-page="scheduler"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>Scheduler</span></a></nav>'
+header_nav = '<button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3.5 11 8.5-7 8.5 7v8.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5Z"/><path d="M9 21v-6h6v6"/></svg><span>Dashboard</span></a><a href="/settings" data-page="settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9.7 3.4.5-1.4h3.6l.5.6 1.4.6 1.4-.6 2.5 2.5-.6 1.4.6 1.4 1.4.5v3.6l-1.4.5-.6 1.4.6 1.4-2.5 2.5-1.4-.6-1.4.6-.5 1.4h-3.6l-.5-1.4-1.4-.6-1.4.6-2.5-2.5.6-1.4-.6-1.4-1.4-.5V9.2l1.4-.5-.6-1.4-.6-1.4 2.5-2.5 1.4.6Z"/><circle cx="12" cy="11" r="3.2"/></svg><span>Settings</span></a><a href="/scheduler" data-page="scheduler"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>Scheduler</span></a><span class="nav-separator" aria-hidden="true"></span><a class="nav-support" href="https://ko-fi.com/basst" target="_blank" rel="noopener noreferrer"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 7h10v7.5A4.5 4.5 0 0 1 10.5 19h-1A4.5 4.5 0 0 1 5 14.5Z"/><path d="M15 9h2a2.5 2.5 0 0 1 0 5h-2M7 4h6"/></svg><span>Support project</span></a><button id="logout-menu" class="nav-logout" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H10M14 8l4 4-4 4M18 12H9"/></svg><span>Log out</span></button></nav>'
+header_nav = header_nav.replace('h3.6l.5.6 1.4.6', 'h3.6l.5 1.4 1.4.6')
 PAGE = PAGE.replace('<button id="logout" type="button">Log out</button></div></div></header>', '<button id="logout" type="button">Log out</button>' + header_nav + '</div></div></header>', 1)
 PAGE = PAGE.replace('</head>', '<style>.dashboard-header-top{position:relative}.dashboard-meta{position:relative;display:flex;flex-direction:column;align-items:flex-end;gap:8px;padding-top:0}.dashboard-meta .nav-toggle{display:grid!important;place-items:center;width:40px;height:34px;margin:0;padding:0;border:1px solid #159cf0aa;border-radius:9px;color:#8fd2ff;background:#0b2745cc;font:inherit;font-size:1.05rem;line-height:1;cursor:pointer}.dashboard-meta .nav-toggle:hover,.dashboard-meta .nav-toggle:focus-visible{color:#fff;background:#0878c966;outline:2px solid #41baff66}.dashboard-meta .page-nav{position:absolute!important;top:calc(100% + 8px)!important;right:0!important;left:auto!important;z-index:30;display:none;flex-direction:column;width:180px;min-width:180px;margin:0;padding:6px;border:1px solid #159cf0aa;border-radius:12px;background:linear-gradient(180deg,#0a2745f5,#06172bf2);box-shadow:0 18px 55px #000b,0 0 28px #008cff28}.dashboard-meta .page-nav.expanded{display:flex!important}.dashboard-meta .page-nav a,.dashboard-meta .page-nav.expanded a{display:flex!important;align-items:center;gap:8px;min-width:0;min-height:36px;padding:7px 9px;color:#9eb7d6;border:1px solid transparent;border-radius:8px;text-align:left;font-size:.78rem;white-space:nowrap}.dashboard-meta .page-nav a .nav-icon{display:block;flex:0 0 17px;width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.dashboard-meta .page-nav a:hover,.dashboard-meta .page-nav a:focus-visible{color:#fff;border-color:#41baff66;outline:none}.dashboard-meta .page-nav a.active{color:#fff;background:linear-gradient(90deg,#087ecb,#075694cc);border-color:#35b4ff99;box-shadow:0 0 14px #008cff30,inset 0 1px #ffffff20;font-weight:700}.dashboard-meta .page-nav a::before{content:none!important}.main-body>.page-nav{display:none!important}@media(max-width:760px){.dashboard-meta{align-items:flex-end}.dashboard-meta .page-nav{width:min(180px,calc(100vw - 28px));min-width:0}.dashboard-meta .nav-toggle{width:38px;height:34px}}</style></head>', 1)
+PAGE = PAGE.replace('</head>', '<style>.dashboard-meta .nav-separator{display:block;margin:5px 8px;border-top:1px solid #159cf055}.dashboard-meta .page-nav .nav-logout{display:flex;align-items:center;gap:8px;min-width:0;min-height:36px;margin:0;padding:7px 9px;border:1px solid transparent;border-radius:8px;color:#9eb7d6;background:transparent;text-align:left;font:inherit;font-size:.78rem;white-space:nowrap;cursor:pointer}.dashboard-meta .page-nav .nav-logout:hover,.dashboard-meta .page-nav .nav-logout:focus-visible{color:#fff;border-color:#41baff66;outline:none}.dashboard-meta .page-nav .nav-logout .nav-icon{display:block;flex:0 0 17px;width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.dashboard-meta .page-nav .nav-support{color:#86a9c8}.dashboard-meta .page-nav .nav-support:hover,.dashboard-meta .page-nav .nav-support:focus-visible{color:#d8edff}.dashboard-meta .page-nav .nav-separator + .nav-support{margin-top:0}@media(max-width:760px){.dashboard-header-top{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:10px 12px}.dashboard-brand .brand-header-art{width:min(210px,62vw)}.dashboard-brand .subtitle{display:none}.dashboard-meta{display:flex;flex-direction:row;align-items:center;gap:6px;margin:0;max-width:none;padding:0}.dashboard-meta>#generated,.dashboard-meta>#logout{display:none}.dashboard-meta>.nav-toggle{flex:0 0 auto}.dashboard-meta .page-nav{top:calc(100% + 8px)!important}.dashboard-meta .page-nav .nav-logout{font-size:.78rem}}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.version-dialog{width:min(720px,calc(100vw - 32px))}.version-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:16px}.version-dialog-brand{display:flex;align-items:center;gap:12px;min-width:0}.version-dialog-brand img{display:block;width:42px;height:42px;flex:0 0 42px;object-fit:contain}.version-dialog-brand h3{margin:0;min-width:0}.version-dialog-footer{margin-top:16px;padding-top:10px;border-top:1px solid var(--line);text-align:center;font-size:.72rem}.version-dialog-footer a{color:#79bde8;text-decoration:none}.version-dialog-footer a:hover,.version-dialog-footer a:focus-visible{color:#fff;text-decoration:underline}@media(max-width:520px){.version-dialog{width:min(100vw - 20px,720px)}.version-dialog-header{align-items:flex-start;gap:10px}.version-dialog-brand{align-items:center;gap:10px}.version-dialog-brand img{width:36px;height:36px;flex-basis:36px}.version-dialog-brand h3{font-size:1rem}}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.dashboard-kpis .metric:nth-child(1) .metric-top{color:#72c8ff}.dashboard-kpis .metric:nth-child(2) .metric-top{color:var(--good)}.dashboard-kpis .metric:nth-child(3) .metric-top{color:var(--bad)}.dashboard-kpis .metric:nth-child(4) .metric-top{color:var(--security)}.dashboard-kpis .metric:nth-child(5) .metric-top{color:var(--warn)}.dashboard-kpis .metric:nth-child(6) .metric-top{color:#72c8ff}.dashboard-kpis .metric .metric-top strong{color:inherit}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.dashboard-meta .nav-toggle svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}</style></head>', 1)
+PAGE = PAGE.replace('</head>', '<style>@media(max-width:760px){.dashboard-meta{position:static}}</style></head>', 1)
+PAGE = PAGE.replace('</head>', '<style>@media(max-width:760px){.dashboard-header-top{grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:7px;padding:9px 10px}.dashboard-brand{min-width:0}.dashboard-brand .brand-header-art{width:min(200px,calc(100vw - 170px));max-width:100%}.dashboard-meta{flex:0 0 auto;gap:5px}.dashboard-meta>.job-running-indicator,.dashboard-meta>.updater-update-indicator{width:30px;min-width:30px;height:30px;min-height:30px;margin:0;padding:0;justify-content:center;gap:0;overflow:hidden;font-size:0}.dashboard-meta>.job-running-indicator .job-running-dot{width:8px;height:8px}.dashboard-meta>.updater-update-indicator::before{content:"!";font-size:.8rem}.dashboard-meta>.nav-toggle{width:34px;height:32px}}</style></head>', 1)
+PAGE = PAGE.replace('</head>', '<style>.interactive-controls{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid #159cf033}.interactive-status{color:var(--muted);font-size:.72rem}.interactive-controls button{padding:7px 9px;font-size:.72rem}.interactive-terminal-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:0 1 auto;flex-wrap:wrap}.interactive-stop-modal{z-index:100}.interactive-terminal-keybar{display:none;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:8px}.interactive-terminal-keybar[hidden]{display:none}.interactive-terminal-keybar button{min-width:42px;min-height:40px;padding:7px 10px;font-size:.75rem;white-space:nowrap;touch-action:manipulation}.interactive-terminal-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:12px}.interactive-terminal-font-controls{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:.7rem}.interactive-terminal-font-controls button{min-width:36px;min-height:32px;padding:5px 8px;font-size:.75rem}.interactive-terminal-help{margin:8px 0 0;color:var(--muted);font-size:.7rem}@media(max-width:720px){html,body{overflow-x:hidden}.interactive-terminal-panel{place-items:stretch;padding:0}.interactive-terminal-dialog{width:100%;height:100vh;height:100dvh;max-height:none;padding:8px;border-radius:0}.interactive-terminal-dialog .section-title{gap:7px;margin-bottom:7px}.interactive-terminal-dialog .section-title h2{display:none}.interactive-terminal-dialog .section-title .hint{font-size:.76rem}.interactive-terminal-header-actions{gap:5px}.interactive-terminal-header-actions .pill{max-width:115px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.interactive-terminal-header-actions button{width:auto;min-width:0;min-height:40px;flex:0 1 auto;padding:8px 12px;white-space:nowrap}.interactive-terminal{padding:3px;border-radius:6px}.interactive-terminal .xterm{font-size:11px;line-height:1.1}.interactive-terminal-keybar{display:flex}.interactive-terminal-actions{margin-top:6px;justify-content:space-between}.interactive-terminal-font-controls{display:flex}.interactive-terminal-actions .job-download{padding:5px 8px;font-size:.68rem}.interactive-terminal-help{margin:5px 0;font-size:.64rem}.interactive-terminal-dialog .management-message{margin:5px 0!important;max-height:44px;overflow:auto;font-size:.68rem}}@media(max-width:380px){.interactive-terminal-dialog{padding:5px}.interactive-terminal-keybar{gap:3px}.interactive-terminal-keybar button{min-width:38px;min-height:40px;padding:6px 7px;font-size:.7rem}.interactive-terminal-header-actions{width:100%;justify-content:flex-end}.interactive-terminal-header-actions button{padding-inline:7px}.interactive-terminal-header-actions .pill{max-width:82px}.interactive-terminal-help{display:none}}@media(orientation:landscape) and (max-width:720px){.interactive-terminal-keybar{margin-top:4px}.interactive-terminal-help{display:none}}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.scheduler-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.scheduler-head p{margin:5px 0 0;color:var(--muted);font-size:.78rem}.scheduler-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}.scheduler-summary>div{padding:13px 14px;border:1px solid #159cf055;border-radius:12px;background:#0b172acc}.scheduler-summary span{display:block;color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em}.scheduler-summary strong{display:block;margin-top:5px;font-size:.9rem}.scheduler-list{display:grid;gap:10px}.scheduler-card{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 16px;border:1px solid var(--line);border-radius:14px;background:#0e162b99}.scheduler-card-main{min-width:0}.scheduler-card-title{display:flex;align-items:center;gap:9px}.scheduler-card-title strong{font-size:.92rem;overflow-wrap:anywhere}.scheduler-card-main>.hint{display:block;margin-top:5px}.scheduler-card-main small{display:block;margin-top:9px;color:var(--muted);line-height:1.55}.schedule-state{padding:3px 7px;border-radius:999px;font-size:.65rem;font-weight:700}.schedule-state.enabled{color:var(--good);background:#55d39a1f}.schedule-state.disabled{color:var(--muted);background:#aab7cf1f}.scheduler-card-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px;flex:0 0 auto}.scheduler-card-actions button{padding:7px 9px;font-size:.72rem}.scheduler-empty{padding:30px;border:1px dashed var(--line);border-radius:14px;text-align:center;color:var(--muted)}.scheduler-modal{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:18px;background:#00000088}.scheduler-modal[hidden]{display:none}.scheduler-modal form{width:min(520px,100%);display:grid;grid-template-columns:1fr 1fr;gap:12px}.scheduler-modal .section-title,.scheduler-modal input[type=hidden],.scheduler-modal .scheduler-warning,.scheduler-modal .scheduler-form-actions{grid-column:1 / -1}.scheduler-modal label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:.72rem}.scheduler-modal input,.scheduler-modal select{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:8px;color:var(--text);background:#081426;font:inherit}.scheduler-modal .schedule-enabled{flex-direction:row;align-items:center;gap:7px}.scheduler-modal .schedule-enabled input{width:auto}.scheduler-warning{margin:0;padding:10px 12px;border:1px solid #f0a83a66;border-radius:9px;color:var(--warn);background:#f0a83a12;font-size:.74rem;line-height:1.45}.scheduler-form-actions{display:flex;justify-content:flex-end;gap:8px}@media(max-width:720px){.scheduler-head{align-items:flex-start;flex-direction:column}.scheduler-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.scheduler-card{align-items:stretch;flex-direction:column}.scheduler-card-actions{justify-content:flex-start}.scheduler-modal form{grid-template-columns:1fr}}</style></head>', 1)
-PAGE = PAGE.replace('</head>', '<style>.scheduler-modal form{width:min(920px,100%);max-height:calc(100vh - 36px);overflow:auto}.schedule-days{grid-column:1 / -1;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px}.schedule-days legend{padding:0 5px;color:var(--muted);font-size:.72rem}.day-toggles{display:flex;flex-wrap:wrap;gap:6px}.day-toggles label{display:block}.day-toggles input{position:absolute;opacity:0;pointer-events:none}.day-toggles span{display:block;padding:7px 11px;border:1px solid var(--line);border-radius:7px;color:var(--muted);cursor:pointer;font-size:.75rem}.day-toggles input:checked+span{color:#fff;border-color:#159cf0aa;background:#087ecb66}.schedule-targets{grid-column:1 / -1;min-width:0;padding:14px;border:1px solid #159cf055;border-radius:12px;background:#08172aaa}.schedule-targets[hidden]{display:none}.schedule-targets-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.schedule-targets h3{margin:0;font-size:.88rem}.schedule-target-tools{display:flex;flex-wrap:wrap;gap:7px}.schedule-target-tools button{font-size:.72rem;padding:6px 8px}.schedule-target-search{display:block!important;margin:10px 0}.schedule-target-table{width:100%;border-collapse:collapse;font-size:.73rem}.schedule-target-table th,.schedule-target-table td{padding:8px 7px;border-bottom:1px solid #159cf033;text-align:left;white-space:nowrap}.schedule-target-table th{position:sticky;top:0;z-index:1;color:var(--muted);background:#0a1b31}.schedule-target-table td:first-child,.schedule-target-table th:first-child{width:28px;text-align:center}.schedule-target-table input{width:16px;height:16px}.schedule-table-wrap{max-height:360px;overflow:auto;border:1px solid #159cf044;border-radius:8px}.schedule-selected{margin-top:9px;color:#8fd2ff;font-size:.75rem;font-weight:700}.schedule-missing{margin:8px 0;padding:8px 10px;border:1px solid #ed6b7a88;border-radius:8px;color:#ff9aaa;background:#ed6b7a12;font-size:.73rem}.schedule-missing[hidden]{display:none}.schedule-enabled{grid-column:1 / -1;width:max-content}.scheduler-modal .scheduler-warning{grid-column:1 / -1}@media(max-width:720px){.scheduler-modal form{width:100%;grid-template-columns:1fr}.schedule-targets-head{align-items:flex-start;flex-direction:column}.schedule-table-wrap{overflow-x:auto}.schedule-target-table{min-width:650px}}</style></head>', 1)
+PAGE = PAGE.replace('</head>', '<style>.scheduler-modal form{width:min(920px,100%);max-height:calc(100vh - 36px);overflow:auto}.schedule-days{grid-column:1 / -1;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px}.schedule-days legend{padding:0 5px;color:var(--muted);font-size:.72rem}.day-toggles{display:flex;flex-wrap:wrap;gap:6px}.day-toggles label{display:block}.day-toggles input{position:absolute;opacity:0;pointer-events:none}.day-toggles input:disabled+span{cursor:not-allowed;opacity:.45}.day-toggles span{display:block;padding:7px 11px;border:1px solid var(--line);border-radius:7px;color:var(--muted);cursor:pointer;font-size:.75rem}.day-toggles input:checked+span{color:#fff;border-color:#159cf0aa;background:#087ecb66}.schedule-day-hint{display:block;margin-top:9px;font-size:.7rem}.schedule-targets{grid-column:1 / -1;min-width:0;padding:14px;border:1px solid #159cf055;border-radius:12px;background:#08172aaa}.schedule-targets[hidden]{display:none}.schedule-targets-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.schedule-targets h3{margin:0;font-size:.88rem}.schedule-target-tools{display:flex;flex-wrap:wrap;gap:7px}.schedule-target-tools button{font-size:.72rem;padding:6px 8px}.schedule-target-search{display:block!important;margin:10px 0}.schedule-target-table{width:100%;border-collapse:collapse;font-size:.73rem}.schedule-target-table th,.schedule-target-table td{padding:8px 7px;border-bottom:1px solid #159cf033;text-align:left;white-space:nowrap}.schedule-target-table th{position:sticky;top:0;z-index:1;color:var(--muted);background:#0a1b31}.schedule-target-table td:first-child,.schedule-target-table th:first-child{width:28px;text-align:center}.schedule-target-table input{width:16px;height:16px}.schedule-table-wrap{max-height:360px;overflow:auto;border:1px solid #159cf044;border-radius:8px}.schedule-selected{margin-top:9px;color:#8fd2ff;font-size:.75rem;font-weight:700}.schedule-missing{margin:8px 0;padding:8px 10px;border:1px solid #ed6b7a88;border-radius:8px;color:#ff9aaa;background:#ed6b7a12;font-size:.73rem}.schedule-missing[hidden]{display:none}.schedule-enabled{grid-column:1 / -1;width:max-content}.scheduler-modal .scheduler-warning{grid-column:1 / -1}@media(max-width:720px){.scheduler-modal form{width:100%;grid-template-columns:1fr}.schedule-targets-head{align-items:flex-start;flex-direction:column}.schedule-table-wrap{overflow-x:auto}.schedule-target-table{min-width:650px}}</style></head>', 1)
 
 
 def error_payload(code, message):
     return {"error": {"code": code, "message": message}}
+
+
+def update_start_failure_message(result, generic_message):
+    """Return a useful update-start error without exposing command details."""
+    diagnostic = "\n".join(
+        str(value or "") for value in (getattr(result, "stdout", ""), getattr(result, "stderr", ""))
+    )
+    if "Interactive job bridge is not available" in diagnostic:
+        return "Interactive job setup failed."
+    if "Could not prepare remote update workspace" in diagnostic:
+        return "The remote node is unavailable."
+    if "Could not transfer remote update helper" in diagnostic:
+        return "The remote job runner could not be prepared."
+    if "Could not start update job" in diagnostic:
+        return "The remote job runner could not start the job."
+    if getattr(result, "returncode", None) == 124:
+        return "Job start timed out."
+    return f"{generic_message} (exit code {getattr(result, 'returncode', 'unknown')})."
 
 
 def parse_state_line(line):
@@ -1164,6 +1316,8 @@ def parse_state_line(line):
     source = None
     if len(fields) > 8:
         source = fields[8] or None
+    interactive = len(fields) > 9 and fields[9].lower() == "true"
+    socket_available = len(fields) > 10 and fields[10].lower() == "true"
     if len(fields) > 7:
         job_type = fields[6] or "update"
         owner_node = fields[7] or None
@@ -1181,7 +1335,348 @@ def parse_state_line(line):
             "started_at": started or None, "finished_at": finished or None,
             "exit_code": int(exit_code) if exit_code.lstrip("-").isdigit() else None,
             "type": job_type if job_type in {"check", "update", "selfupdate"} else "update",
-            "source": source, "owner_node": owner_node, "remote": owner_node is not None}
+            "source": source, "owner_node": owner_node, "remote": owner_node is not None,
+            "interactive": interactive, "socket_available": socket_available}
+
+
+class RemoteInteractiveConnection:
+    """Adapt a controlled SSH subprocess to the broker's socket interface."""
+
+    def __init__(self, process):
+        self.process = process
+
+    def recv(self, size):
+        if self.process.stdout is None:
+            return b""
+        data = self.process.stdout.read(size)
+        return data or b""
+
+    def sendall(self, data):
+        if self.process.stdin is None:
+            raise OSError("remote input is unavailable")
+        self.process.stdin.write(data)
+        self.process.stdin.flush()
+
+    def shutdown(self, _how):
+        if self.process.stdin is not None:
+            try:
+                self.process.stdin.close()
+            except OSError:
+                pass
+
+    def close(self):
+        for stream in (self.process.stdin, self.process.stdout):
+            if stream is not None and not stream.closed:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+        if self.process.poll() is None:
+            try:
+                self.process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
+
+
+class InteractiveJobBroker:
+    """Keep one authenticated WebUI connection to a job's PTY socket.
+
+    The broker is deliberately only a byte bridge.  The job-pty-bridge remains
+    the authority for the PTY and for the single-writer rule; this process only
+    holds a socket open between short HTTP requests.  Journald remains the
+    durable output source used by the existing job-log endpoint.
+    """
+
+    STREAM_GRACE_SECONDS = 15
+    ATTACHMENT_ID_BYTES = 24
+    ATTACHMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{32,}$")
+
+    def __init__(self, runtime_dir):
+        self.runtime_dir = Path(runtime_dir)
+        self.lock = threading.RLock()
+        self.clients = {}
+        self.max_replay_bytes = 1024 * 1024
+
+    def socket_path(self, unit):
+        digest = hashlib.sha256(unit.encode("utf-8")).hexdigest()[:16]
+        return self.runtime_dir / digest / "control.sock"
+
+    def _remove(self, unit, item):
+        with self.lock:
+            timer = item.get("grace_timer")
+            if timer is not None:
+                timer.cancel()
+                item["grace_timer"] = None
+            item["closed"] = True
+            item["stream_id"] = None
+            item["condition"].notify_all()
+            if self.clients.get(unit) is item:
+                self.clients.pop(unit, None)
+        try:
+            item["socket"].shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            item["socket"].close()
+        except OSError:
+            pass
+
+    def _reader(self, unit, item):
+        connection = item["socket"]
+        try:
+            while True:
+                data = connection.recv(8192)
+                if not data:
+                    break
+                with self.lock:
+                    if not item["ready"].is_set():
+                        if data.startswith(b"BUSY:"):
+                            item["busy"] = True
+                        item["ready"].set()
+                    if not item["busy"]:
+                        item["next_seq"] += 1
+                        item["output"].append((item["next_seq"], bytes(data)))
+                        item["output_bytes"] += len(data)
+                        while item["output_bytes"] > self.max_replay_bytes and item["output"]:
+                            old_seq, old_data = item["output"].popleft()
+                            item["output_bytes"] -= len(old_data)
+                            item["truncated_before"] = old_seq
+                        item["condition"].notify_all()
+        except OSError:
+            pass
+        finally:
+            item["ready"].set()
+            self._remove(unit, item)
+
+    def _owned_item(self, unit, owner):
+        item = self.clients.get(unit)
+        if item is None or item["owner"] != owner:
+            raise RuntimeError("This WebUI session is not attached to the job.")
+        return item
+
+    def _output_snapshot_locked(self, item, after_seq):
+        chunks = [(seq, data) for seq, data in item["output"] if seq > after_seq]
+        first_seq = item["output"][0][0] if item["output"] else item["next_seq"] + 1
+        return {
+            "chunks": chunks,
+            "next_seq": item["next_seq"],
+            "first_seq": first_seq,
+            "truncated": after_seq < item["truncated_before"] or after_seq < first_seq - 1,
+            "closed": item["closed"],
+        }
+
+    def output_since(self, unit, owner, after_seq=0):
+        if not isinstance(after_seq, int) or isinstance(after_seq, bool) or after_seq < 0:
+            raise ValueError("Output sequence is invalid.")
+        with self.lock:
+            item = self._owned_item(unit, owner)
+            return self._output_snapshot_locked(item, after_seq)
+
+    def wait_for_output(self, unit, owner, after_seq=0, timeout=30):
+        if not isinstance(after_seq, int) or isinstance(after_seq, bool) or after_seq < 0:
+            raise ValueError("Output sequence is invalid.")
+        deadline = time.monotonic() + max(0, min(float(timeout), 60.0))
+        with self.lock:
+            item = self._owned_item(unit, owner)
+            while item["next_seq"] <= after_seq and not item["closed"]:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                item["condition"].wait(remaining)
+            return self._output_snapshot_locked(item, after_seq)
+
+    @classmethod
+    def valid_attachment_id(cls, attachment_id):
+        return isinstance(attachment_id, str) and bool(cls.ATTACHMENT_ID_RE.fullmatch(attachment_id))
+
+    def _attachment_item(self, unit, owner, attachment_id=None):
+        item = self._owned_item(unit, owner)
+        if attachment_id is not None and item["attachment_id"] != attachment_id:
+            raise RuntimeError("This WebUI attachment is no longer valid.")
+        return item
+
+    def attach(self, unit, owner, socket_path, remote_command=None):
+        with self.lock:
+            existing = self.clients.get(unit)
+            if existing is not None:
+                if existing["owner"] == owner:
+                    return "attached"
+                raise RuntimeError("Another WebUI input client is already attached.")
+        # A detached WebUI socket may take a short scheduling interval to be
+        # observed by the bridge.  Retry that transient BUSY state briefly;
+        # a genuinely attached CLI still receives a bounded BUSY response.
+        for attempt in range(10):
+            process = None
+            connection = None
+            try:
+                if remote_command is not None:
+                    process = subprocess.Popen(
+                        remote_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, bufsize=0,
+                    )
+                    connection = RemoteInteractiveConnection(process)
+                else:
+                    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    connection.settimeout(1.0)
+                    connection.connect(str(socket_path))
+                    connection.settimeout(None)
+                # The compact input panel is not a full terminal emulator.
+                # Give dialog/whiptail a stable usable size instead of the
+                # PTY default until a future terminal UI can resize it.
+                connection.sendall(b"\x00UU_RESIZE 24 80\n")
+                if process is not None:
+                    try:
+                        process.wait(timeout=0.2)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    else:
+                        raise RuntimeError("The remote interactive terminal could not be attached.")
+            except (OSError, subprocess.SubprocessError) as error:
+                if connection is not None:
+                    connection.close()
+                elif process is not None:
+                    process.terminate()
+                raise RuntimeError("The interactive job socket is unavailable.") from error
+            except RuntimeError:
+                if connection is not None:
+                    connection.close()
+                elif process is not None:
+                    process.terminate()
+                raise
+            item = {
+                "socket": connection, "owner": owner, "ready": threading.Event(), "busy": False,
+                "output": deque(), "output_bytes": 0, "next_seq": 0,
+                "truncated_before": 0, "closed": False,
+                "attachment_id": secrets.token_urlsafe(self.ATTACHMENT_ID_BYTES),
+                "stream_id": None, "grace_timer": None,
+                "condition": threading.Condition(self.lock),
+            }
+            with self.lock:
+                if unit in self.clients:
+                    connection.close()
+                    raise RuntimeError("Another WebUI input client is already attached.")
+                self.clients[unit] = item
+            threading.Thread(target=self._reader, args=(unit, item), daemon=True,
+                             name=f"uu-web-attach-{unit[-12:]}").start()
+            item["ready"].wait(0.5)
+            if not item["busy"]:
+                return item["attachment_id"]
+            self._remove(unit, item)
+            if attempt < 9:
+                time.sleep(0.25)
+        raise RuntimeError("Another input client is already attached.")
+
+    def send(self, unit, owner, data, attachment_id=None):
+        with self.lock:
+            item = self._attachment_item(unit, owner, attachment_id)
+            connection = item["socket"]
+            try:
+                connection.sendall(data)
+            except OSError as error:
+                self._remove(unit, item)
+                raise RuntimeError("The interactive job connection was lost.") from error
+
+    def resize(self, unit, owner, attachment_id, rows, cols):
+        if not isinstance(rows, int) or isinstance(rows, bool) or not 2 <= rows <= 500:
+            raise ValueError("Terminal rows are invalid.")
+        if not isinstance(cols, int) or isinstance(cols, bool) or not 2 <= cols <= 500:
+            raise ValueError("Terminal columns are invalid.")
+        self.send(
+            unit, owner, f"\x00UU_RESIZE {rows} {cols}\n".encode("ascii"), attachment_id,
+        )
+
+    def detach(self, unit, owner, attachment_id=None):
+        with self.lock:
+            item = self.clients.get(unit)
+            if item is None:
+                return False
+            self._attachment_item(unit, owner, attachment_id)
+        self._remove(unit, item)
+        return True
+
+    def stream_claim(self, unit, owner, attachment_id):
+        with self.lock:
+            item = self._attachment_item(unit, owner, attachment_id)
+            if item["closed"]:
+                raise RuntimeError("This WebUI attachment is closed.")
+            timer = item.get("grace_timer")
+            if timer is not None:
+                timer.cancel()
+                item["grace_timer"] = None
+            stream_id = secrets.token_urlsafe(18)
+            item["stream_id"] = stream_id
+            return stream_id
+
+    def stream_current(self, unit, owner, attachment_id, stream_id):
+        with self.lock:
+            try:
+                item = self._attachment_item(unit, owner, attachment_id)
+            except RuntimeError:
+                return False
+            return not item["closed"] and item.get("stream_id") == stream_id
+
+    def _expire_stream_grace(self, unit, item, stream_id):
+        with self.lock:
+            if self.clients.get(unit) is not item or item.get("stream_id") is not None:
+                return
+            item["grace_timer"] = None
+        self._remove(unit, item)
+
+    def stream_release(self, unit, owner, attachment_id, stream_id):
+        with self.lock:
+            try:
+                item = self._attachment_item(unit, owner, attachment_id)
+            except RuntimeError:
+                return
+            if item.get("stream_id") != stream_id:
+                return
+            item["stream_id"] = None
+            timer = threading.Timer(
+                self.STREAM_GRACE_SECONDS,
+                self._expire_stream_grace,
+                args=(unit, item, stream_id),
+            )
+            timer.daemon = True
+            item["grace_timer"] = timer
+            timer.start()
+
+    def stream_snapshot(self, unit, owner, attachment_id, after_seq=0):
+        with self.lock:
+            item = self._attachment_item(unit, owner, attachment_id)
+            return self._output_snapshot_locked(item, after_seq)
+
+    def stream_wait(self, unit, owner, attachment_id, after_seq=0, timeout=30):
+        if not isinstance(after_seq, int) or isinstance(after_seq, bool) or after_seq < 0:
+            raise ValueError("Output sequence is invalid.")
+        deadline = time.monotonic() + max(0, min(float(timeout), 60.0))
+        with self.lock:
+            item = self._attachment_item(unit, owner, attachment_id)
+            while item["next_seq"] <= after_seq and not item["closed"]:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                item["condition"].wait(remaining)
+            return self._output_snapshot_locked(item, after_seq)
+
+    def attached(self, unit):
+        with self.lock:
+            return unit in self.clients
+
+    def close_all(self):
+        with self.lock:
+            items = list(self.clients.items())
+        for unit, item in items:
+            self._remove(unit, item)
+
+    def detach_owner(self, owner):
+        with self.lock:
+            items = [(unit, item) for unit, item in self.clients.items() if item["owner"] == owner]
+        for unit, item in items:
+            self._remove(unit, item)
 
 
 def parse_updater_version_output(output):
@@ -1191,10 +1686,15 @@ def parse_updater_version_output(output):
     branch = branch_match.group(1).lower() if branch_match else None
     installed_commit_match = re.search(r"^Installed commit:\s*(\S+)", clean, re.MULTILINE | re.IGNORECASE)
     available_commit_match = re.search(r"^Available commit:\s*(\S+)", clean, re.MULTILINE | re.IGNORECASE)
+    installed_product_match = re.search(r"^Installed product version:\s*(\S+)", clean, re.MULTILINE | re.IGNORECASE)
+    installed_beta_match = re.search(r"^Installed beta:\s*(\d+)", clean, re.MULTILINE | re.IGNORECASE)
+    available_beta_match = re.search(r"^Available beta:\s*(\d+)", clean, re.MULTILINE | re.IGNORECASE)
     tag_match = re.search(r"^Installed tag:\s*(\S+)", clean, re.MULTILINE | re.IGNORECASE)
     installed_commit = installed_commit_match.group(1) if installed_commit_match else "unknown"
     available_commit = available_commit_match.group(1) if available_commit_match else "unknown"
     installed_tag = tag_match.group(1) if tag_match and tag_match.group(1) not in {"—", "-"} else None
+    installed_beta = int(installed_beta_match.group(1)) if installed_beta_match else None
+    available_beta = int(available_beta_match.group(1)) if available_beta_match else None
     components = []
     for line in clean.splitlines():
         match = re.match(r"^\s*(Updater|Extras|Config|Welcome|Check)\s+(\S+)\s+(\S+)\s*$", line)
@@ -1203,6 +1703,7 @@ def parse_updater_version_output(output):
                                "installed": match.group(2), "available": match.group(3)})
     updater = next((item for item in components if item["name"] == "Updater"), None)
     installed = updater["local"] if updater else None
+    installed = installed_product_match.group(1) if installed_product_match else installed
     available = updater["server"] if updater else None
     numeric = lambda value: tuple(int(part) for part in value.split(".") if part.isdigit()) if value and re.fullmatch(r"\d+(?:\.\d+)*", value) else None
     local_numbers, remote_numbers = numeric(installed), numeric(available)
@@ -1218,6 +1719,8 @@ def parse_updater_version_output(output):
         "commit": installed_commit,
         "available_commit": available_commit,
         "tag": installed_tag,
+        "beta": installed_beta,
+        "available_beta": available_beta,
         "update_available": version_update or commit_update,
         "components": components,
     }
@@ -1389,6 +1892,63 @@ def update_config_text(content, normalized):
         if key not in found:
             output.append(f"{key}={json.dumps(normalized[key])}\n")
     return "".join(output)
+
+
+TARGET_SELECTION_STATES = {"only", "exclude"}
+TARGET_SELECTION_SCOPES = ("check", "update")
+
+
+def target_selection_default():
+    return {"schema_version": 1, "check": {}, "update": {}}
+
+
+def validate_target_selection(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Target selection must be an object.")
+    result = target_selection_default()
+    if payload.get("schema_version", 1) != 1:
+        raise ValueError("Unsupported target selection schema.")
+    for scope in TARGET_SELECTION_SCOPES:
+        values = payload.get(scope, {})
+        if not isinstance(values, dict):
+            raise ValueError(f"{scope} selection must be an object.")
+        for target_id, state in values.items():
+            if not isinstance(target_id, str) or not re.fullmatch(r"(?:host:[A-Za-z0-9_.-]+|guest:[0-9]+|external:[A-Za-z0-9_.-]+|[0-9]+)", target_id):
+                raise ValueError("Target selection contains an invalid target ID.")
+            if state not in TARGET_SELECTION_STATES:
+                raise ValueError("Target selection state must be only or exclude.")
+            result[scope][target_id] = state
+    return result
+
+
+def read_target_selection(path):
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return validate_target_selection(payload)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        return target_selection_default()
+
+
+def read_target_selection_for_api(path):
+    """Read persisted selection strictly so the UI can show unavailable state."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return validate_target_selection(payload)
+
+
+def write_target_selection(path, payload):
+    normalized = validate_target_selection(payload)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as temporary:
+        json.dump(normalized, temporary, indent=2, sort_keys=True)
+        temporary.write("\n")
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        temporary_path = Path(temporary.name)
+    os.chmod(temporary_path, 0o600)
+    if os.geteuid() == 0:
+        os.chown(temporary_path, 0, 0)
+    os.replace(temporary_path, path)
+    return normalized
 
 
 def parse_inventory_text(content):
@@ -1715,7 +2275,8 @@ def preview_eligible_ids(targets, config, scope):
 
 
 def target_preview(payload, config, tag_filter, inventory, proxmox_resources=None,
-                   filter_keys=("ONLY_UPDATE_CHECK", "EXCLUDE_UPDATE_CHECK")):
+                   filter_keys=("ONLY_UPDATE_CHECK", "EXCLUDE_UPDATE_CHECK"),
+                   internal_selection=None):
     projected = canonical_inventory(payload, inventory, proxmox_resources)
     targets = [dict(item) for item in projected["targets"]]
     known_ids = {str(item.get("id", "")) for item in targets}
@@ -1744,7 +2305,23 @@ def target_preview(payload, config, tag_filter, inventory, proxmox_resources=Non
             return ((not only_active) or item_id in selected_ids) and item_id not in excluded_ids
         item_id = item_id.lower()
         return ((not only_active) or item_id in only_external_ids) and item_id not in excluded_external_ids
-    if only_active:
+    internal_rules = (internal_selection or {}).get("check" if filter_keys[0].startswith("ONLY_UPDATE") else "update", {})
+    internal_enabled = config.get("USE_INTERNAL_TARGET_SELECTION") is True and isinstance(internal_rules, dict)
+    if internal_enabled:
+        def internal_id(item):
+            kind = str(item.get("type", "")).lower()
+            identifier = str(item.get("id", ""))
+            if kind == "host": return identifier if identifier.startswith("host:") else f"host:{identifier}"
+            if kind == "external": return identifier if identifier.startswith("external:") else f"external:{identifier}"
+            return identifier
+        only_internal = {key for key, value in internal_rules.items() if value == "only"}
+        exclude_internal = {key for key, value in internal_rules.items() if value == "exclude"}
+        known_internal = {internal_id(item) for item in targets}
+        active_internal = bool(only_internal)
+        included = [item for item in targets if (not active_internal or internal_id(item) in only_internal) and internal_id(item) not in exclude_internal]
+        excluded = [item for item in targets if item not in included]
+        mode = "internal-only" if active_internal else "internal-exclude" if exclude_internal else "internal-all"
+    elif only_active:
         included = [item for item in targets if not filterable(item) or selected(item)]
         excluded = [item for item in targets if filterable(item) and not selected(item)]
         mode = "only"
@@ -1838,27 +2415,9 @@ def validate_target_payload(payload, current_id=None):
             "transport": "ssh", "identity_file": identity_file}
 
 
-def ssh_failure_message(output):
-    """Map SSH diagnostics to a safe, useful user-facing message."""
-    text = (output or "").upper()
-    if "REMOTE HOST IDENTIFICATION HAS CHANGED" in text or "HOST KEY" in text:
-        return "Host key verification failed."
-    if ("PERMISSION DENIED" in text or "AUTHENTICATION" in text or
-            "PUBLICKEY" in text or "PUBLIC KEY" in text or
-            "NO SUPPORTED AUTHENTICATION METHODS" in text or
-            "TOO MANY AUTHENTICATION FAILURES" in text or
-            ("OFFERED" in text and "KEY" in text)):
-        return "Authentication failed."
-    if "CONNECTION REFUSED" in text:
-        return "Connection refused."
-    if "TIMED OUT" in text or "TIMEOUT" in text:
-        return "Connection timed out."
-    if ("NO ROUTE TO HOST" in text or "NETWORK IS UNREACHABLE" in text or
-            "COULD NOT RESOLVE HOST" in text):
-        return "Host unreachable."
-    if "IDENTITY FILE" in text or "NO SUCH FILE" in text:
-        return "SSH identity file is unavailable."
-    return "SSH connection failed."
+def ssh_failure_message(_output=None, returncode=255):
+    """Map only structured subprocess state, never OpenSSH diagnostic text."""
+    return "SSH connection failed." if returncode == 255 else "Remote command failed."
 
 
 def update_inventory_text(content, target, current_id=None, delete=False):
@@ -1922,6 +2481,169 @@ def locked_atomic_update(path, updater):
             os.close(directory_fd)
 
 
+class ProxmoxAuthError(Exception):
+    def __init__(self, message="Proxmox authentication failed.", tfa=False):
+        super().__init__(message)
+        self.tfa = tfa
+
+
+class ProxmoxAuth:
+    API_URL = "http://127.0.0.1:85/api2/json"
+    TIMEOUT = 3
+    AUTHORIZATION_TTL = 30
+
+    def __init__(self):
+        self._opener = build_opener(ProxyHandler({}))
+        self._realm_cache = None
+        self._authorization_cache = {}
+        self._administrator_privileges_cache = None
+        self._authorization_lock = threading.Lock()
+
+    def _request(self, path, fields=None):
+        data = urlencode(fields).encode("utf-8") if fields is not None else None
+        request = Request(self.API_URL + path, data=data, method="POST" if data else "GET")
+        if data:
+            request.add_header("Content-Type", "application/x-www-form-urlencoded")
+        try:
+            with self._opener.open(request, timeout=self.TIMEOUT) as response:
+                payload = json.loads(response.read(1024 * 1024).decode("utf-8"))
+        except HTTPError as error:
+            try:
+                payload = json.loads(error.read(1024 * 1024).decode("utf-8"))
+            except (OSError, UnicodeError, ValueError):
+                raise ProxmoxAuthError() from error
+            raise ProxmoxAuthError("Proxmox authentication failed.", self._has_tfa(payload)) from error
+        except (OSError, UnicodeError, ValueError, URLError) as error:
+            raise ProxmoxAuthError() from error
+        if not isinstance(payload, dict) or "data" not in payload:
+            raise ProxmoxAuthError("Malformed Proxmox API response.")
+        return payload["data"]
+
+    @staticmethod
+    def _has_tfa(payload):
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            return False
+        if any(data.get(key) for key in ("need_tfa", "NeedTFA", "tfa_challenge", "challenge")):
+            return True
+        return ProxmoxAuth._is_partial_ticket(data.get("ticket"))
+
+    @staticmethod
+    def _is_partial_ticket(ticket):
+        return isinstance(ticket, str) and ticket.startswith("PVE:!tfa!")
+
+    def realms(self):
+        now = time.monotonic()
+        if self._realm_cache and now - self._realm_cache[0] < 30:
+            return self._realm_cache[1]
+        data = self._request("/access/domains")
+        if not isinstance(data, list):
+            raise ProxmoxAuthError("Malformed Proxmox realm response.")
+        realms = []
+        for item in data:
+            if not isinstance(item, dict):
+                raise ProxmoxAuthError("Malformed Proxmox realm response.")
+            realm = item.get("realm")
+            if not isinstance(realm, str) or not REALM_RE.fullmatch(realm):
+                raise ProxmoxAuthError("Malformed Proxmox realm response.")
+            comment = item.get("comment", "")
+            if not isinstance(comment, str):
+                raise ProxmoxAuthError("Malformed Proxmox realm response.")
+            realms.append({"realm": realm, "comment": comment, "type": str(item.get("type", ""))})
+        if not realms:
+            raise ProxmoxAuthError("No Proxmox authentication realms are configured.")
+        default_realm = next((item["realm"] for item in realms if item["realm"] == "pam"), realms[0]["realm"])
+        result = {"realms": realms, "default_realm": default_realm}
+        self._realm_cache = (now, result)
+        return result
+
+    def _pvesh_json(self, args):
+        command = ["pvesh", *args, "--output-format", "json"]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True,
+                                    timeout=self.TIMEOUT, check=False)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise ProxmoxAuthError("Proxmox authorization is unavailable.") from error
+        if result.returncode:
+            raise ProxmoxAuthError("Proxmox authorization is unavailable.")
+        try:
+            return json.loads(result.stdout)
+        except (TypeError, ValueError) as error:
+            raise ProxmoxAuthError("Malformed Proxmox authorization response.") from error
+
+    def _administrator_privileges(self, now):
+        cached = self._administrator_privileges_cache
+        if cached and cached[0] > now:
+            return cached[1]
+        roles = self._pvesh_json(["get", "/access/roles"])
+        if not isinstance(roles, list):
+            raise ProxmoxAuthError("Malformed Proxmox role response.")
+        administrator = next((item for item in roles
+                              if isinstance(item, dict) and item.get("roleid") == "Administrator"), None)
+        privileges = administrator.get("privs") if administrator else None
+        if not isinstance(privileges, str) or not privileges:
+            raise ProxmoxAuthError("Proxmox Administrator role is unavailable.")
+        result = {privilege for privilege in privileges.split(",") if privilege}
+        self._administrator_privileges_cache = (now + self.AUTHORIZATION_TTL, result)
+        return result
+
+    def authorized(self, userid):
+        if (not isinstance(userid, str) or not 1 <= len(userid) <= 256
+                or any(ord(character) < 0x20 or ord(character) == 0x7f for character in userid)):
+            return False
+        username, separator, realm = userid.rpartition("@")
+        if not separator or not username or not REALM_RE.fullmatch(realm):
+            return False
+        now = time.monotonic()
+        with self._authorization_lock:
+            cached = self._authorization_cache.get(userid)
+            if cached and cached[0] > now:
+                return cached[1]
+            permissions = self._pvesh_json(["get", "/access/permissions", "--path", "/",
+                                            "--userid", userid])
+            if not isinstance(permissions, dict) or not isinstance(permissions.get("/"), dict):
+                raise ProxmoxAuthError("Malformed Proxmox permission response.")
+            effective = {key for key, value in permissions["/"].items() if value}
+            result = self._administrator_privileges(now).issubset(effective)
+            self._authorization_cache[userid] = (now + self.AUTHORIZATION_TTL, result)
+            return result
+
+    @staticmethod
+    def _valid_username(username):
+        return (isinstance(username, str) and 0 < len(username) <= 128
+                and all(0x20 <= ord(character) != 0x7f for character in username))
+
+    def authenticate(self, username, password, realm):
+        if not self._valid_username(username):
+            return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+        if not isinstance(realm, str):
+            return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+        try:
+            available = self.realms()
+            if realm not in {item["realm"] for item in available["realms"]}:
+                return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+            data = self._request("/access/ticket", {"username": username, "password": password, "realm": realm})
+            if self._has_tfa({"data": data}):
+                return {"ok": False, "code": "TFA_REQUIRED",
+                        "message": "Two-factor authentication is required but not supported by this login flow."}
+            if not isinstance(data, dict) or not isinstance(data.get("ticket"), str) or not data["ticket"]:
+                return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+            if self._is_partial_ticket(data["ticket"]):
+                return {"ok": False, "code": "TFA_REQUIRED",
+                        "message": "Two-factor authentication is required but not supported by this login flow."}
+            userid = data.get("username")
+            if not isinstance(userid, str):
+                userid = f"{username}@{realm}"
+            if not self.authorized(userid):
+                return {"ok": False, "code": "LOGIN_UNAUTHORIZED", "message": "This Proxmox account is not authorized for Ultimate Updater."}
+            return {"ok": True, "user": userid}
+        except ProxmoxAuthError as error:
+            if error.tfa:
+                return {"ok": False, "code": "TFA_REQUIRED",
+                        "message": "Two-factor authentication is required but not supported by this login flow."}
+            return {"ok": False, "code": "LOGIN_FAILED", "message": "Proxmox authentication is unavailable."}
+
+
 class AuthStore:
     SESSION_SECONDS = 8 * 60 * 60
 
@@ -1929,12 +2651,28 @@ class AuthStore:
         self.path = path
         self.sessions = {}
         self.failed_logins = {}
-        self.backend = os.environ.get("UU_AUTH_BACKEND", "pam").strip().lower()
+        configured_backend = os.environ.get("UU_AUTH_BACKEND", "").strip().lower()
+        self.backend = configured_backend or "proxmox"
+        self.proxmox = ProxmoxAuth()
+        configured_user = os.environ.get("WEB_UI_PAM_USER")
+        if configured_user is None:
+            self.pam_user = "root"
+        elif USER_RE.fullmatch(configured_user):
+            self.pam_user = configured_user
+        else:
+            self.pam_user = None
 
     @property
     def configured(self):
+        if self.backend == "proxmox":
+            try:
+                self.proxmox.realms()
+                return True
+            except ProxmoxAuthError:
+                return False
         if self.backend == "pam":
-            return pam_authenticate is not None and Path("/etc/pam.d/login").is_file()
+            return (self.pam_user is not None and pam_authenticate is not None
+                    and Path("/etc/pam.d/login").is_file())
         if self.backend != "internal":
             return False
         try:
@@ -1943,9 +2681,24 @@ class AuthStore:
         except (OSError, ValueError, TypeError):
             return False
 
-    def verify(self, username, password):
+    def realms(self):
+        if self.backend == "proxmox":
+            return self.proxmox.realms()
+        if self.backend == "internal":
+            return {"realms": [{"realm": "internal", "comment": "Ultimate Updater internal authentication", "type": "internal"}],
+                    "default_realm": "internal"}
         if self.backend == "pam":
-            return username == "root" and pam_authenticate is not None and pam_authenticate(username, password)
+            return {"realms": [{"realm": "pam", "comment": "Linux PAM standard authentication", "type": "pam"}],
+                    "default_realm": "pam"}
+        raise ProxmoxAuthError("Unsupported authentication backend.")
+
+    def verify(self, username, password):
+        if self.backend == "proxmox":
+            return False
+        if self.backend == "pam":
+            return (self.pam_user is not None and username == self.pam_user
+                    and pam_authenticate is not None
+                    and pam_authenticate(username, password))
         if self.backend != "internal":
             return False
         try:
@@ -1960,21 +2713,37 @@ class AuthStore:
         except (OSError, ValueError, TypeError, KeyError):
             return False
 
-    def login(self, username, password, client):
+    def login(self, username, password, realm, client):
         now = time.time()
         attempts, window = self.failed_logins.get(client, (0, now))
         if now - window >= 60:
             attempts, window = 0, now
         if attempts >= 5:
-            return None
-        if not self.verify(username, password):
-            self.failed_logins[client] = (attempts + 1, window)
-            return None
+            return {"ok": False, "code": "LOGIN_RATE_LIMITED", "message": "Too many login attempts."}
+        if self.backend == "proxmox":
+            result = self.proxmox.authenticate(username, password, realm)
+            if not result.get("ok"):
+                self.failed_logins[client] = (attempts + 1, window)
+                return result
+            authenticated_user = result["user"]
+        else:
+            authenticated_user = username
+            try:
+                if realm not in {item["realm"] for item in self.realms()["realms"]}:
+                    self.failed_logins[client] = (attempts + 1, window)
+                    return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+            except ProxmoxAuthError:
+                self.failed_logins[client] = (attempts + 1, window)
+                return {"ok": False, "code": "LOGIN_FAILED", "message": "Authentication configuration is unavailable."}
+            if not self.verify(username, password):
+                self.failed_logins[client] = (attempts + 1, window)
+                return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
         self.failed_logins.pop(client, None)
         token = secrets.token_urlsafe(32)
         csrf = secrets.token_urlsafe(32)
-        self.sessions[token] = {"user": username, "csrf": csrf, "expires": time.time() + self.SESSION_SECONDS}
-        return token, csrf
+        self.sessions[token] = {"user": authenticated_user, "csrf": csrf,
+                                "expires": time.time() + self.SESSION_SECONDS}
+        return {"ok": True, "token": token, "csrf": csrf, "user": authenticated_user}
 
     def session(self, token):
         item = self.sessions.get(token)
@@ -1983,6 +2752,14 @@ class AuthStore:
         if item["expires"] <= time.time():
             self.sessions.pop(token, None)
             return None
+        if self.backend == "proxmox":
+            try:
+                if not self.proxmox.authorized(item["user"]):
+                    self.sessions.pop(token, None)
+                    return None
+            except ProxmoxAuthError:
+                self.sessions.pop(token, None)
+                return None
         item["expires"] = time.time() + self.SESSION_SECONDS
         return item
 
@@ -1992,6 +2769,7 @@ class AuthStore:
 
 class StatusHandler(BaseHTTPRequestHandler):
     server_version = "UltimateUpdaterUI/1"
+    protocol_version = "HTTP/1.1"
 
     def current_session(self):
         cookie = self.headers.get("Cookie", "")
@@ -2110,6 +2888,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         finished = [row for row in rows if row.get("state") not in {"running", "pending", "starting"}]
         selected = running + finished[:max(0, VISIBLE_JOB_LIMIT - len(running))]
         selected.sort(key=sort_key, reverse=True)
+        for row in selected:
+            if row.get("interactive"):
+                row["attached"] = self.server.interactive_broker.attached(row["unit"])
         return selected
 
     def local_version(self):
@@ -2118,6 +2899,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         installed = None
         commit = "unknown"
         tag = None
+        beta = None
+        version = None
         try:
             config = self.config_content()
             match = re.search(r'^USED_BRANCH="(master|beta|develop)"', config, re.MULTILINE)
@@ -2126,6 +2909,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             if self.server.update_script.is_file():
                 match = re.search(r'^VERSION="([^"]+)"', self.server.update_script.read_text(encoding="utf-8"), re.MULTILINE)
                 installed = match.group(1) if match else None
+                version = installed
             metadata = self.server.update_script.parent / "build-metadata"
             if metadata.is_file():
                 content = metadata.read_text(encoding="utf-8")
@@ -2135,12 +2919,19 @@ class StatusHandler(BaseHTTPRequestHandler):
                 match = re.search(r'^tag="([A-Za-z0-9._/-]+)"', content, re.MULTILINE)
                 if match:
                     tag = match.group(1)
+                match = re.search(r'^version="([0-9]+(?:\.[0-9]+)*)"', content, re.MULTILINE)
+                if match:
+                    version = match.group(1)
+                match = re.search(r'^beta="([0-9]+)"', content, re.MULTILINE)
+                if match:
+                    beta = int(match.group(1))
         except (OSError, UnicodeError):
             pass
         return {
-            "state": "local", "branch": branch, "installed": installed,
+            "state": "local", "branch": branch, "installed": version or installed,
             "available": None, "commit": commit, "available_commit": "unknown",
-            "tag": tag, "update_available": None, "components": [],
+            "tag": tag, "beta": beta, "available_beta": None,
+            "update_available": None, "components": [],
             "update_state": "checking",
         }
 
@@ -2213,6 +3004,411 @@ class StatusHandler(BaseHTTPRequestHandler):
         if not JOB_RE.fullmatch(unit):
             return None
         return next((row for row in self.jobs() if row["unit"] == unit), None)
+
+    def direct_job_record(self, unit):
+        """Read one local job state without refreshing the complete job list."""
+        if not JOB_RE.fullmatch(unit):
+            return None
+        state_file = self.server.jobs_dir / f"{unit}.state"
+        try:
+            values = {}
+            for line in state_file.read_text(encoding="utf-8").splitlines():
+                key, separator, value = line.partition("=")
+                if separator:
+                    values[key] = value
+        except OSError:
+            values = None
+        if values is not None and values.get("unit") == unit:
+            exit_code = values.get("exit_code", "")
+            return {
+                "unit": unit,
+                "target": values.get("target", ""),
+                "state": values.get("state", ""),
+                "started_at": values.get("started_at") or None,
+                "finished_at": values.get("finished_at") or None,
+                "exit_code": int(exit_code) if exit_code.lstrip("-").isdigit() else None,
+                "type": values.get("type") if values.get("type") in {"check", "update", "reboot", "selfupdate"} else "update",
+                "source": values.get("source") or None,
+                "owner_node": values.get("owner_node") or None,
+                "remote": bool(values.get("owner_node")),
+                "interactive": values.get("interactive", "false").lower() == "true",
+                "socket_available": False,
+            }
+        try:
+            result = self.run_command([str(self.server.job_runner), "show", unit], timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode:
+            return None
+        for line in result.stdout.splitlines():
+            row = parse_state_line(line)
+            if row and row.get("unit") == unit and row.get("remote"):
+                return row
+        return None
+
+    def handle_job_cancel(self, unit):
+        """Request cancellation of one running job.
+
+        The client supplies only the job identifier.  The runner validates
+        the identifier, reads its state, records the cancellation request,
+        and stops the corresponding transient unit; no client-supplied unit
+        name or PID is ever passed to systemd.
+        """
+        if not JOB_RE.fullmatch(unit):
+            self.send_json(error_payload("INVALID_JOB_ID", "Invalid job ID."), HTTPStatus.BAD_REQUEST)
+            return
+        job = self.direct_job_record(unit)
+        if not job:
+            self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        if job.get("state") != "running":
+            self.send_json(error_payload("JOB_ALREADY_FINISHED", "That job is no longer running."), HTTPStatus.CONFLICT)
+            return
+        try:
+            result = self.run_command([str(self.server.job_runner), "cancel", unit], timeout=15)
+        except (OSError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("JOB_CANCEL_FAILED", "The job could not be stopped."), HTTPStatus.BAD_GATEWAY)
+            return
+        if result.returncode in (0, 6):
+            self.send_json({"unit": unit, "state": "stopping", "already_requested": result.returncode == 6}, HTTPStatus.ACCEPTED)
+            return
+        if result.returncode == 3:
+            self.send_json(error_payload("JOB_ALREADY_FINISHED", "That job is no longer running."), HTTPStatus.CONFLICT)
+            return
+        if result.returncode == 4:
+            self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        if result.returncode == 5:
+            self.send_json(error_payload("JOB_NOT_CANCELLABLE", "That job cannot be stopped."), HTTPStatus.CONFLICT)
+            return
+        self.send_json(error_payload("JOB_CANCEL_FAILED", "The job could not be stopped."), HTTPStatus.BAD_GATEWAY)
+
+    def session_owner(self):
+        cookie = self.headers.get("Cookie", "")
+        return next((part.strip().split("=", 1)[1] for part in cookie.split(";")
+                     if part.strip().startswith("UU_SESSION=")), "")
+
+    def interactive_job_context(self, unit):
+        if not JOB_RE.fullmatch(unit):
+            raise ValueError("Invalid job ID.")
+        # Attach/input requests already carry the complete unit ID.  Avoid the
+        # global runner list here: it refreshes every state file and performs
+        # one systemctl query per job, which can exceed the HTTP timeout while
+        # the requested local job is otherwise healthy.
+        job = self.direct_job_record(unit)
+        if not job:
+            raise KeyError("Job not found.")
+        if job.get("state") != "running":
+            if job.get("remote") and job.get("state") == "remote_unavailable":
+                raise RuntimeError("The remote job state is unavailable.")
+            raise RuntimeError("The job is no longer running.")
+        if not job.get("interactive"):
+            raise RuntimeError("The job does not accept interactive input.")
+        if job.get("remote"):
+            return job, None
+        socket_path = self.server.interactive_broker.socket_path(unit)
+        state_file = self.server.jobs_dir / f"{unit}.state"
+        try:
+            state_values = {}
+            for line in state_file.read_text(encoding="utf-8").splitlines():
+                key, separator, value = line.partition("=")
+                if separator:
+                    state_values[key] = value
+        except OSError as error:
+            raise RuntimeError("The interactive job state is unavailable.") from error
+        # Never accept a socket path supplied by the request.  The state file
+        # must agree with the deterministic path derived from the validated ID.
+        if state_values.get("socket_path") != str(socket_path) or not socket_path.is_socket():
+            raise RuntimeError("The interactive job socket is unavailable.")
+        return job, socket_path
+
+    def handle_interactive_attach(self, unit):
+        job = None
+        try:
+            job, socket_path = self.interactive_job_context(unit)
+            remote_command = None
+            if job.get("remote"):
+                remote_command = [str(self.server.job_runner), "remote-attach", unit]
+            attachment_id = self.server.interactive_broker.attach(
+                unit, self.session_owner(), socket_path, remote_command=remote_command,
+            )
+        except KeyError:
+            self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        except ValueError as error:
+            self.send_json(error_payload("INVALID_JOB_ID", str(error)), HTTPStatus.BAD_REQUEST)
+            return
+        except RuntimeError as error:
+            message = str(error)
+            if job and job.get("remote") and "remote job state" in message.lower():
+                self.send_json(error_payload("REMOTE_RUNTIME_UNAVAILABLE", message), HTTPStatus.BAD_GATEWAY)
+                return
+            if job and job.get("remote") and "remote interactive terminal" in message.lower():
+                self.send_json(error_payload("REMOTE_ATTACH_FAILED", message), HTTPStatus.BAD_GATEWAY)
+                return
+            code = "JOB_INPUT_BUSY" if "already attached" in message else "JOB_INPUT_UNAVAILABLE"
+            status = HTTPStatus.CONFLICT if code == "JOB_INPUT_BUSY" else HTTPStatus.UNPROCESSABLE_ENTITY
+            self.send_json(error_payload(code, message), status)
+            return
+        self.send_json({"unit": unit, "attached": True, "interactive": True,
+                        "attachment_id": attachment_id,
+                        "message": "Interactive input attached."}, HTTPStatus.OK)
+
+    def handle_interactive_input(self, unit, payload):
+        attachment_id = payload.get("attachment_id") if isinstance(payload, dict) else None
+        if not self.server.interactive_broker.valid_attachment_id(attachment_id):
+            self.send_json(error_payload("INVALID_ATTACHMENT", "A valid attachment ID is required."), HTTPStatus.BAD_REQUEST)
+            return
+        encoded = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(encoded, str) or not encoded or len(encoded) > 8192:
+            self.send_json(error_payload("INVALID_JOB_INPUT", "Input data is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            data = base64.b64decode(encoded.encode("ascii"), validate=True)
+        except (ValueError, UnicodeEncodeError):
+            self.send_json(error_payload("INVALID_JOB_INPUT", "Input data is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        if not data or len(data) > 4096:
+            self.send_json(error_payload("INVALID_JOB_INPUT", "Input data is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            self.interactive_job_context(unit)
+            self.server.interactive_broker.send(unit, self.session_owner(), data, attachment_id)
+        except (KeyError, ValueError):
+            self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        except RuntimeError as error:
+            self.send_json(error_payload("JOB_INPUT_UNAVAILABLE", str(error)), HTTPStatus.CONFLICT)
+            return
+        self.send_json({"unit": unit, "accepted": len(data)})
+
+    def handle_interactive_resize(self, unit, payload):
+        attachment_id = payload.get("attachment_id") if isinstance(payload, dict) else None
+        if not self.server.interactive_broker.valid_attachment_id(attachment_id):
+            self.send_json(error_payload("INVALID_ATTACHMENT", "A valid attachment ID is required."), HTTPStatus.BAD_REQUEST)
+            return
+        rows = payload.get("rows") if isinstance(payload, dict) else None
+        cols = payload.get("cols") if isinstance(payload, dict) else None
+        if isinstance(rows, bool) or not isinstance(rows, int) or isinstance(cols, bool) or not isinstance(cols, int):
+            self.send_json(error_payload("INVALID_TERMINAL_SIZE", "Terminal rows and columns must be integers."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            self.interactive_job_context(unit)
+            self.server.interactive_broker.resize(unit, self.session_owner(), attachment_id, rows, cols)
+        except (KeyError, ValueError) as error:
+            code = "JOB_NOT_FOUND" if isinstance(error, KeyError) else "INVALID_TERMINAL_SIZE"
+            status = HTTPStatus.NOT_FOUND if isinstance(error, KeyError) else HTTPStatus.BAD_REQUEST
+            self.send_json(error_payload(code, str(error) or "Terminal size is invalid."), status)
+            return
+        except RuntimeError as error:
+            self.send_json(error_payload("JOB_INPUT_UNAVAILABLE", str(error)), HTTPStatus.CONFLICT)
+            return
+        self.send_json({"unit": unit, "resized": True, "rows": rows, "cols": cols})
+
+    def handle_interactive_detach(self, unit, payload):
+        attachment_id = payload.get("attachment_id") if isinstance(payload, dict) else None
+        if not self.server.interactive_broker.valid_attachment_id(attachment_id):
+            self.send_json(error_payload("INVALID_ATTACHMENT", "A valid attachment ID is required."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            self.server.interactive_broker.detach(unit, self.session_owner(), attachment_id)
+        except RuntimeError as error:
+            self.send_json(error_payload("JOB_INPUT_UNAVAILABLE", str(error)), HTTPStatus.CONFLICT)
+            return
+        self.send_json({"unit": unit, "attached": False})
+
+    def send_sse(self, event, data="", event_id=None):
+        if event_id is not None:
+            self.wfile.write(f"id: {event_id}\n".encode("ascii"))
+        self.wfile.write(f"event: {event}\n".encode("ascii"))
+        for line in str(data).splitlines() or [""]:
+            self.wfile.write(f"data: {line}\n".encode("utf-8"))
+        self.wfile.write(b"\n")
+        self.wfile.flush()
+
+    @staticmethod
+    def journal_output_record(line):
+        try:
+            record = json.loads(line.decode("utf-8", "replace"))
+        except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        if not isinstance(record, dict):
+            return None
+        cursor = record.get("__CURSOR")
+        if not isinstance(cursor, str) or not cursor or "\n" in cursor or "\r" in cursor:
+            return None
+        message = record.get("MESSAGE", "")
+        if isinstance(message, list):
+            try:
+                message = bytes(message).decode("utf-8", "replace")
+            except (TypeError, ValueError):
+                message = ""
+        if not isinstance(message, str):
+            message = str(message)
+        # Journal records are rendered by a real terminal with convertEol
+        # disabled.  Normalize only the record line endings so every record
+        # starts at column zero without changing ANSI/control bytes.
+        message = message.replace("\r\n", "\n").rstrip("\n")
+        message = message.replace("\n", "\r\n")
+        return cursor, (message + "\r\n").encode("utf-8", "replace")
+
+    def handle_journal_output_stream(self, unit):
+        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+        last_event = self.headers.get("Last-Event-ID", "")
+        if len(last_event) > 1024 or "\n" in last_event or "\r" in last_event:
+            self.send_json(error_payload("INVALID_JOURNAL_CURSOR", "The journal cursor is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            job = self.direct_job_record(unit)
+        except (OSError, ValueError):
+            job = None
+        if not JOB_RE.fullmatch(unit) or not job:
+            self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        if job.get("interactive"):
+            self.send_json(error_payload("JOB_STREAM_UNAVAILABLE", "Interactive jobs use the terminal stream."), HTTPStatus.CONFLICT)
+            return
+        if job.get("state") != "running":
+            self.send_json(error_payload("JOB_STREAM_UNAVAILABLE", "The job is no longer running."), HTTPStatus.CONFLICT)
+            return
+        if job.get("remote"):
+            command = [str(self.server.job_runner), "remote-log-follow", unit]
+            if last_event:
+                command.append(last_event)
+        else:
+            command = [
+                "journalctl", "--unit", unit, "--output=json", "--no-pager", "--follow",
+            ]
+            if last_event:
+                command.extend(["--after-cursor", last_event])
+            else:
+                command.extend(["--lines", "200"])
+        try:
+            process = subprocess.Popen(
+                command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                bufsize=0,
+            )
+        except OSError:
+            self.send_json(error_payload("JOB_STREAM_UNAVAILABLE", "The live job output is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-store")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+        def stop_process():
+            if process.poll() is not None:
+                return b""
+            try:
+                process.terminate()
+                trailing, _ = process.communicate(timeout=2)
+                return trailing or b""
+            except subprocess.TimeoutExpired:
+                process.kill()
+                trailing, _ = process.communicate()
+                return trailing or b""
+
+        def send_record(line):
+            record = self.journal_output_record(line)
+            if record is None:
+                return
+            cursor, data = record
+            self.send_sse("output", base64.b64encode(data).decode("ascii"), cursor)
+
+        try:
+            self.send_sse("attached", json.dumps({"unit": unit}, separators=(",", ":")))
+            while process.stdout is not None:
+                ready, _, _ = select.select([process.stdout], [], [], 0.5)
+                if ready:
+                    line = process.stdout.readline()
+                    if line:
+                        send_record(line)
+                        continue
+                    if process.poll() is not None:
+                        break
+                current = self.direct_job_record(unit)
+                if not current or current.get("state") != "running":
+                    for line in stop_process().splitlines():
+                        send_record(line)
+                    self.send_sse("closed", json.dumps({"unit": unit}, separators=(",", ":")))
+                    return
+                self.wfile.write(b": heartbeat\n\n")
+                self.wfile.flush()
+            self.send_sse("closed", json.dumps({"unit": unit}, separators=(",", ":")))
+        except (BrokenPipeError, ConnectionResetError, OSError, ValueError):
+            stop_process()
+        finally:
+            if process.poll() is None:
+                stop_process()
+
+    def handle_interactive_stream(self, unit):
+        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+        attachment_id = query.get("attachment_id", [""])[0]
+        last_event = self.headers.get("Last-Event-ID", "")
+        try:
+            after_seq = int(last_event) if last_event else int(query.get("from", ["0"])[0])
+        except (TypeError, ValueError):
+            self.send_json(error_payload("INVALID_OUTPUT_SEQUENCE", "The output sequence is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        if after_seq < 0:
+            self.send_json(error_payload("INVALID_OUTPUT_SEQUENCE", "The output sequence is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        if not self.server.interactive_broker.valid_attachment_id(attachment_id):
+            self.send_json(error_payload("INVALID_ATTACHMENT", "A valid attachment ID is required."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            self.interactive_job_context(unit)
+            stream_id = self.server.interactive_broker.stream_claim(unit, self.session_owner(), attachment_id)
+        except (KeyError, ValueError):
+            self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
+            return
+        except RuntimeError as error:
+            self.send_json(error_payload("JOB_STREAM_UNAVAILABLE", str(error)), HTTPStatus.CONFLICT)
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-store")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        try:
+            snapshot = self.server.interactive_broker.stream_snapshot(
+                unit, self.session_owner(), attachment_id, after_seq,
+            )
+            self.send_sse("attached", json.dumps({"unit": unit, "next_seq": snapshot["next_seq"]}, separators=(",", ":")))
+            if snapshot["truncated"]:
+                self.send_sse("truncated", json.dumps({
+                    "after": after_seq, "first_available": snapshot["first_seq"],
+                }, separators=(",", ":")))
+            for sequence, data in snapshot["chunks"]:
+                self.send_sse("output", base64.b64encode(data).decode("ascii"), sequence)
+                after_seq = sequence
+            while True:
+                try:
+                    snapshot = self.server.interactive_broker.stream_wait(
+                        unit, self.session_owner(), attachment_id, after_seq, timeout=15,
+                    )
+                except RuntimeError:
+                    self.send_sse("closed", json.dumps({"unit": unit}, separators=(",", ":")))
+                    break
+                if snapshot["closed"]:
+                    self.send_sse("closed", json.dumps({"unit": unit}, separators=(",", ":")))
+                    break
+                if not self.server.interactive_broker.stream_current(unit, self.session_owner(), attachment_id, stream_id):
+                    break
+                for sequence, data in snapshot["chunks"]:
+                    self.send_sse("output", base64.b64encode(data).decode("ascii"), sequence)
+                    after_seq = sequence
+                self.wfile.write(b": heartbeat\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            self.server.interactive_broker.stream_release(
+                unit, self.session_owner(), attachment_id, stream_id,
+            )
 
     def config_content(self):
         return self.server.config_file.read_text(encoding="utf-8") if self.server.config_file.exists() else ""
@@ -2372,7 +3568,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         except OSError:
             return None, "Connection test could not be started."
         if result.returncode:
-            return result, ssh_failure_message(result.stderr)
+            return result, ssh_failure_message(result.stderr, result.returncode)
         return result, None
 
     def external_connection_diagnostics(self, target):
@@ -2411,8 +3607,6 @@ class StatusHandler(BaseHTTPRequestHandler):
         if auth_error:
             diagnostics["ssh_authenticated"] = False
             host_context = "Host reachable · " if diagnostics["host_reachable"] else ""
-            if auth_error == "Authentication failed.":
-                return diagnostics, f"{host_context}SSH authentication failed."
             return diagnostics, f"{host_context}{auth_error}"
         diagnostics["ssh_authenticated"] = True
 
@@ -2471,7 +3665,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         except OSError:
             return None, "Owner-node connection test could not be started."
         if result.returncode:
-            return result, ssh_failure_message(result.stderr)
+            return result, ssh_failure_message(result.stderr, result.returncode)
         return result, None
 
     def handle_internal_ssh_test(self, kind, target_id):
@@ -2549,6 +3743,19 @@ class StatusHandler(BaseHTTPRequestHandler):
                              lambda content: update_config_text(content, normalized))
         self.send_json({"message": "Configuration saved.", "config": config_value_map(self.config_content())})
 
+    def handle_target_selection_get(self):
+        config = config_value_map(self.config_content())
+        self.send_json({"path": str(self.server.target_selection_file),
+                        "enabled": config.get("USE_INTERNAL_TARGET_SELECTION") is True,
+                        "selection": read_target_selection_for_api(self.server.target_selection_file)})
+
+    def handle_target_selection_update(self, payload):
+        selection = payload.get("selection") if isinstance(payload, dict) else None
+        normalized = write_target_selection(self.server.target_selection_file, selection)
+        config = config_value_map(self.config_content())
+        self.send_json({"message": "Target selection saved.", "enabled": config.get("USE_INTERNAL_TARGET_SELECTION") is True,
+                        "selection": normalized})
+
     def handle_config_preview(self, query):
         if not self.server.status_file.exists():
             self.send_json({"available": False, "message": "Target preview unavailable until the initial inventory has completed."})
@@ -2572,6 +3779,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             payload, config, self.server.tag_filter_script, inventory,
             proxmox_inventory_snapshot(),
             filter_keys,
+            read_target_selection(self.server.target_selection_file),
         )
         self.send_json({"available": True, "scope": scope, "preview": preview})
 
@@ -2792,7 +4000,9 @@ class StatusHandler(BaseHTTPRequestHandler):
             raise KeyError(schedule_id)
         started, errors = [], []
         for command in scheduler_commands(schedule, self.server.cli):
-            result = self.run_command(command, timeout=30, extra_env={"UU_JOB_SOURCE": "scheduler"})
+            result = self.run_command(command, timeout=30, extra_env={
+                "UU_JOB_SOURCE": "scheduler", "UU_NONINTERACTIVE": "true",
+            })
             output = f"{result.stdout}\n{result.stderr}"
             job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
             if result.returncode == 3:
@@ -2829,6 +4039,13 @@ class StatusHandler(BaseHTTPRequestHandler):
                                 "tag": None, "update_available": None, "components": [],
                                 "update_state": "unavailable"})
             return
+        if path == "/api/auth/realms":
+            try:
+                self.send_json(self.server.auth.realms())
+            except ProxmoxAuthError:
+                self.send_json(error_payload("AUTH_REALMS_UNAVAILABLE", "Proxmox authentication realms are unavailable."),
+                               HTTPStatus.SERVICE_UNAVAILABLE)
+            return
         if path == "/api/session":
             session = self.current_session()
             if not self.server.auth.configured:
@@ -2857,6 +4074,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.send_json({"config": config_value_map(self.config_content()), "editable": sorted(CONFIG_KEYS)})
             except (OSError, UnicodeError):
                 self.send_json(error_payload("CONFIG_UNAVAILABLE", "Configuration is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        if path == "/api/target-selection":
+            try:
+                self.handle_target_selection_get()
+            except (OSError, ValueError):
+                self.send_json(error_payload("TARGET_SELECTION_UNAVAILABLE", "Target selection is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
             return
         if path == "/api/config-preview":
             try:
@@ -2943,6 +4166,18 @@ class StatusHandler(BaseHTTPRequestHandler):
                                 "tag": None, "update_available": False, "components": []})
             return
         parts = [unquote(part) for part in path.split("/") if part]
+        if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "output-stream":
+            if not self.same_origin():
+                self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+                return
+            self.handle_journal_output_stream(parts[2])
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "stream":
+            if not self.same_origin():
+                self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+                return
+            self.handle_interactive_stream(parts[2])
+            return
         if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "log":
             unit = parts[2]
             try:
@@ -2996,14 +4231,17 @@ class StatusHandler(BaseHTTPRequestHandler):
                 return
             username = payload.get("username") if isinstance(payload, dict) else None
             password = payload.get("password") if isinstance(payload, dict) else None
-            if not isinstance(username, str) or not isinstance(password, str) or len(username) > 128 or len(password) > 1024:
+            realm = payload.get("realm") if isinstance(payload, dict) else None
+            if (not isinstance(username, str) or not isinstance(password, str) or not isinstance(realm, str)
+                    or len(username) > 128 or len(password) > 1024 or len(realm) > 64):
                 self.send_json(error_payload("LOGIN_FAILED", "Invalid credentials."), HTTPStatus.UNAUTHORIZED)
                 return
-            login = self.server.auth.login(username, password, self.client_address[0])
-            if not login:
-                self.send_json(error_payload("LOGIN_FAILED", "Invalid credentials."), HTTPStatus.UNAUTHORIZED)
+            login = self.server.auth.login(username, password, realm, self.client_address[0])
+            if not login.get("ok"):
+                self.send_json(error_payload(login.get("code", "LOGIN_FAILED"), login.get("message", "Login failed.")),
+                               HTTPStatus.UNAUTHORIZED)
                 return
-            token, csrf = login
+            token, csrf = login["token"], login["csrf"]
             secure = "; Secure" if getattr(self.server, "tls_enabled", False) or self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
             cookie = f"UU_SESSION={token}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; HttpOnly; SameSite=Lax{secure}"
             self.send_json_with_cookie({"authenticated": True, "username": username, "csrf": csrf}, cookie)
@@ -3014,10 +4252,26 @@ class StatusHandler(BaseHTTPRequestHandler):
             cookie = self.headers.get("Cookie", "")
             token = next((part.strip().split("=", 1)[1] for part in cookie.split(";")
                           if part.strip().startswith("UU_SESSION=")), "")
+            self.server.interactive_broker.detach_owner(token)
             self.server.auth.logout(token)
             self.send_json_with_cookie({"authenticated": False}, "UU_SESSION=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
             return
         if not self.write_allowed():
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "cancel":
+            self.handle_job_cancel(parts[2])
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "attach":
+            self.handle_interactive_attach(parts[2])
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "input":
+            self.handle_interactive_input(parts[2], payload)
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "resize":
+            self.handle_interactive_resize(parts[2], payload)
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "detach":
+            self.handle_interactive_detach(parts[2], payload)
             return
         if parts == ["api", "schedules"]:
             try:
@@ -3035,7 +4289,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.send_json(error_payload("SCHEDULE_RUN_FAILED", str(error) or "Schedule could not be started."), status)
             return
         if parts == ["api", "check-all"]:
-            self.action_check_all()
+            self.action_check_all(remote_trace=isinstance(payload, dict) and payload.get("remote_trace") is True)
             return
         if parts == ["api", "update-all"]:
             self.action_update_all()
@@ -3062,6 +4316,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.handle_config_update(payload)
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 self.send_json(error_payload("CONFIG_NOT_SAVED", "Configuration was rejected and not changed."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        if urlsplit(self.path).path == "/api/target-selection":
+            try:
+                self.handle_target_selection_update(payload)
+            except (OSError, ValueError):
+                self.send_json(error_payload("TARGET_SELECTION_NOT_SAVED", "Target selection was rejected and not changed."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         if len(parts) == 3 and parts[:2] == ["api", "external-settings"]:
             try:
@@ -3090,6 +4350,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         if len(parts) == 4 and parts[:2] == ["api", "targets"] and parts[3] == "test":
             self.handle_target_test(parts[2], payload)
             return
+        if len(parts) == 4 and parts[:2] == ["api", "targets"] and parts[3] == "reboot":
+            self.action_reboot(parts[2])
+            return
         if len(parts) == 3 and parts[:2] == ["api", "check"]:
             self.action_check(parts[2])
             return
@@ -3113,7 +4376,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         try:
             result = self.run_command([str(self.server.job_runner), "start-check", target,
-                                       str(self.server.cli), "target"], timeout=15)
+                                       str(self.server.cli), "target"], timeout=15,
+                                      extra_env={"UU_JOB_INTERACTIVE": "true"})
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("CHECK_START_FAILED", "The check job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
@@ -3143,8 +4407,11 @@ class StatusHandler(BaseHTTPRequestHandler):
         if is_external and allow_without_backup:
             command.append("--without-verified-backup")
         try:
-            result = self.run_command(command, timeout=30)
-        except (OSError, subprocess.TimeoutExpired):
+            result = self.run_command(command, timeout=30, extra_env={"UU_JOB_INTERACTIVE": "true"})
+        except subprocess.TimeoutExpired:
+            self.send_json(error_payload("UPDATE_START_FAILED", "Job start timed out."), HTTPStatus.GATEWAY_TIMEOUT)
+            return
+        except OSError:
             self.send_json(error_payload("UPDATE_START_FAILED", "The update job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
         output = f"{result.stdout}\n{result.stderr}"
@@ -3157,7 +4424,8 @@ class StatusHandler(BaseHTTPRequestHandler):
                 ), HTTPStatus.CONFLICT)
                 return
             code = "JOB_ALREADY_RUNNING" if result.returncode == 3 else "UPDATE_START_FAILED"
-            message = "An update job is already running for this target." if result.returncode == 3 else "The update job could not be started."
+            message = ("An update job is already running for this target." if result.returncode == 3 else
+                       update_start_failure_message(result, "The update job could not be started."))
             self.send_json(error_payload(code, message), HTTPStatus.CONFLICT if result.returncode == 3 else HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         if not job_match or not JOB_RE.fullmatch(job_match.group(1)):
@@ -3168,6 +4436,9 @@ class StatusHandler(BaseHTTPRequestHandler):
     def known_node(self, node):
         if not isinstance(node, str) or not HOST_RE.fullmatch(node):
             return False
+        node = node.removeprefix("host:")
+        if node == "local-host":
+            node = socket.gethostname().split(".", 1)[0]
         try:
             status = json.loads(self.server.status_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -3176,10 +4447,21 @@ class StatusHandler(BaseHTTPRequestHandler):
                    str(item.get("id", "")).removeprefix("host:") == node
                    for item in status.get("targets", []))
 
-    def action_check_all(self):
+    def node_action_target(self, node):
+        """Map the canonical host key to the CLI's stable local alias."""
+        node = node.removeprefix("host:")
+        local_node = socket.gethostname().split(".", 1)[0]
+        if node == "local-host" or node.casefold() == local_node.casefold():
+            return "local-host"
+        return node
+
+    def action_check_all(self, remote_trace=False):
+        extra_env = {"UU_JOB_INTERACTIVE": "true"}
+        if remote_trace is True:
+            extra_env["UU_REMOTE_TRACE"] = "true"
         try:
             result = self.run_command([str(self.server.job_runner), "start-check", "all-systems",
-                                       str(self.server.cli), "all"], timeout=15)
+                                       str(self.server.cli), "all"], timeout=15, extra_env=extra_env)
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("CHECK_START_FAILED", "The full check could not be started."), HTTPStatus.BAD_GATEWAY)
             return
@@ -3196,7 +4478,8 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def action_update_all(self):
         try:
-            result = self.run_command([str(self.server.cli), "update-all"], timeout=30)
+            result = self.run_command([str(self.server.cli), "update-all"], timeout=30,
+                                      extra_env={"UU_JOB_INTERACTIVE": "true"})
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("UPDATE_START_FAILED", "The full update job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
@@ -3237,8 +4520,10 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("INVALID_NODE", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
             return
         try:
-            result = self.run_command([str(self.server.job_runner), "start-check", node,
-                                       str(self.server.cli), "node"], timeout=15)
+            action_target = self.node_action_target(node)
+            result = self.run_command([str(self.server.job_runner), "start-check", action_target,
+                                       str(self.server.cli), "node"], timeout=15,
+                                      extra_env={"UU_JOB_INTERACTIVE": "true"})
         except (OSError, subprocess.TimeoutExpired):
             self.send_json(error_payload("CHECK_START_FAILED", "The node check job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
@@ -3258,8 +4543,13 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("INVALID_NODE", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
             return
         try:
-            result = self.run_command([str(self.server.cli), "update-node", node], timeout=30)
-        except (OSError, subprocess.TimeoutExpired):
+            action_target = self.node_action_target(node)
+            result = self.run_command([str(self.server.cli), "update-node", action_target], timeout=30,
+                                      extra_env={"UU_JOB_INTERACTIVE": "true"})
+        except subprocess.TimeoutExpired:
+            self.send_json(error_payload("UPDATE_START_FAILED", "Job start timed out."), HTTPStatus.GATEWAY_TIMEOUT)
+            return
+        except OSError:
             self.send_json(error_payload("UPDATE_START_FAILED", "The node update job could not be started."), HTTPStatus.BAD_GATEWAY)
             return
         output = f"{result.stdout}\n{result.stderr}"
@@ -3268,10 +4558,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("JOB_ALREADY_RUNNING", "An update job is already running for this node."), HTTPStatus.CONFLICT)
             return
         if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
-            detail = (result.stderr or result.stdout or "").strip().replace("\n", " ")[:300]
-            message = "The node update job could not be started."
-            if detail:
-                message += f" {detail}"
+            message = update_start_failure_message(result, "The node update job could not be started.")
             self.send_json(error_payload("UPDATE_START_FAILED", message), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         job_unit = job_match.group(1)
@@ -3286,6 +4573,65 @@ class StatusHandler(BaseHTTPRequestHandler):
             ), HTTPStatus.BAD_GATEWAY)
             return
         self.send_json({"node": node, "job": job_unit, "state": "running", "message": "Node update job started."}, HTTPStatus.ACCEPTED)
+
+    def reboot_target_record(self, target_id):
+        if not isinstance(target_id, str) or not target_id:
+            return None
+        try:
+            payload = json.loads(self.server.status_file.read_text(encoding="utf-8"))
+            projected = canonical_inventory(
+                payload, self.inventory_data(), proxmox_inventory_snapshot(), self.server.backup_state_file,
+            )
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+            return None
+        return next((item for item in projected.get("targets", [])
+                     if isinstance(item, dict) and str(item.get("id")) == target_id), None)
+
+    def action_reboot(self, target_id):
+        target = self.reboot_target_record(target_id)
+        if not target:
+            self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not available."), HTTPStatus.NOT_FOUND)
+            return
+        kind = str(target.get("type", ""))
+        if kind not in {"host", "lxc", "vm"}:
+            self.send_json(error_payload("REBOOT_UNSUPPORTED", "This target does not support a WebUI reboot."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        if target.get("reboot_required") is not True:
+            self.send_json(error_payload("REBOOT_NOT_REQUIRED", "This target is not currently marked as requiring a reboot."), HTTPStatus.CONFLICT)
+            return
+        if target.get("reachable") is not True or target.get("check_status") == "offline":
+            self.send_json(error_payload("TARGET_OFFLINE", "The target is not reachable."), HTTPStatus.CONFLICT)
+            return
+        action_target = self.node_action_target(target_id) if kind == "host" else target_id
+        try:
+            nodes, _ = self.internal_ssh_catalog()
+            local_node = socket.gethostname().split(".", 1)[0]
+            owner_node = target.get("node") if kind != "host" else str(target.get("name") or target_id).removeprefix("host:")
+            node_config = next((item for item in nodes if item.get("id") == owner_node), None)
+            if kind == "host" and owner_node.casefold() == local_node.casefold():
+                node_config = {"host": "", "user": "root", "port": 22, "identity_file": "", "local": True}
+            if not node_config or not node_config.get("enabled", True):
+                raise ValueError("The target's reboot transport is unavailable.")
+            local_target = bool(node_config.get("local"))
+            result = self.run_command([
+                str(self.server.job_runner), "start-reboot", action_target, kind,
+                str(node_config.get("host", "")), str(node_config.get("user", "root")),
+                str(node_config.get("port", 22)), str(node_config.get("identity_file", "")),
+                "true" if local_target else "false",
+            ], timeout=15)
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+            self.send_json(error_payload("REBOOT_START_FAILED", str(error) or "The reboot job could not be started."), HTTPStatus.BAD_GATEWAY)
+            return
+        output = f"{result.stdout}\n{result.stderr}"
+        job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
+        if result.returncode == 3:
+            self.send_json(error_payload("JOB_ALREADY_RUNNING", "A job is already running for this target."), HTTPStatus.CONFLICT)
+            return
+        if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
+            self.send_json(error_payload("REBOOT_START_FAILED", "The reboot job could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json({"target": target_id, "job": job_match.group(1), "type": "reboot",
+                        "state": "running", "message": "Reboot job started."}, HTTPStatus.ACCEPTED)
 
     def do_PUT(self):  # noqa: N802
         if not self.write_allowed():
@@ -3391,6 +4737,7 @@ def main():
         server.socket = tls_context.wrap_socket(server.socket, server_side=True)
     server.status_file, server.cli = args.status_file, args.cli
     server.config_file, server.inventory_file = args.config_file, args.inventory_file
+    server.target_selection_file = args.config_file.parent / "target-selection.json"
     server.internal_ssh_file = args.config_file.parent / "internal-ssh.conf"
     server.backup_state_file = DEFAULT_BACKUP_STATE_FILE
     server.inventory_script, server.external_script = args.inventory_script, args.external_script
@@ -3398,6 +4745,9 @@ def main():
     server.tag_filter_script = args.config_file.parent / "tag-filter.sh"
     server.asset_dir = args.asset_dir
     server.job_runner, server.jobs_dir = args.job_runner, args.jobs_dir
+    server.interactive_broker = InteractiveJobBroker(
+        Path(os.environ.get("UU_INTERACTIVE_RUNTIME_DIR", DEFAULT_INTERACTIVE_RUNTIME_DIR))
+    )
     server.scheduler_file, server.scheduler_unit_dir = args.scheduler_file, args.scheduler_unit_dir
     server.update_script = args.config_file.parent / "update.sh"
     server.version_cache = None
@@ -3417,6 +4767,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        server.interactive_broker.close_all()
         server.server_close()
 
 

@@ -298,7 +298,7 @@ with open(record_file, encoding="utf-8") as records:
             "node": node or None,
             "security_split_supported": security_split_supported
             if security_split_supported is not None else (
-                updater == "apt" or normal_updates is not None or security_updates is not None
+                updater == "apt" or security_updates is not None
             ),
         })
         if target_type == "host":
@@ -363,6 +363,8 @@ STATUS_MODEL_UPSERT() {
   local os_name="$5" os_version="$6" updater="$7" updates="$8"
   local reboot_required="$9" check_status="${10}" error_code="${11:-}"
   local error_message="${12:-}"
+  local normal_updates="${13:-null}" security_updates="${14:-null}"
+  local security_split_supported="${15:-false}"
 
   local status_lock_file="${status_file}.lock" status_lock_fd
   exec {status_lock_fd}>"$status_lock_file" || return 1
@@ -373,7 +375,8 @@ STATUS_MODEL_UPSERT() {
 
   python3 - "$status_file" "$target_id" "$target_type" "$transport" \
     "$reachable" "$os_name" "$os_version" "$updater" "$updates" \
-    "$reboot_required" "$check_status" "$error_code" "$error_message" <<'PY'
+    "$reboot_required" "$check_status" "$error_code" "$error_message" \
+    "$normal_updates" "$security_updates" "$security_split_supported" <<'PY'
 import json
 import os
 import sys
@@ -382,7 +385,7 @@ from datetime import datetime, timezone
 
 (status_file, target_id, target_type, transport, reachable, os_name,
  os_version, updater, updates, reboot_required, check_status, error_code,
- error_message) = sys.argv[1:]
+ error_message, normal_updates, security_updates, security_split_supported) = sys.argv[1:]
 
 try:
     with open(status_file, encoding="utf-8") as source:
@@ -419,12 +422,14 @@ record.update({
     "os_version": os_version or None,
     "updater": updater or None,
     "updates": {"available": nullable_int(updates)},
+    "normal_updates": nullable_int(normal_updates),
+    "security_updates": nullable_int(security_updates),
     "reboot_required": nullable_bool(reboot_required),
     "last_check": generated_at,
     "check_status": check_status or "not_checked",
     "error": ({"code": error_code or None, "message": error_message or None}
               if error_code or error_message else None),
-    "security_split_supported": updater == "apt",
+    "security_split_supported": nullable_bool(security_split_supported),
 })
 record.setdefault("last_update", {"status": "unknown", "timestamp": None})
 
@@ -434,6 +439,189 @@ fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
 try:
     with os.fdopen(fd, "w", encoding="utf-8") as output:
         json.dump(payload, output, indent=2)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, status_file)
+except Exception:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
+}
+
+STATUS_MODEL_PRESERVE_UPDATE_RESULTS() {
+  local source_file="$1" started_at="$2"
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  local status_lock_file="${status_file}.lock" status_lock_fd
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$source_file" "$status_file" "$started_at" <<'PY'
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime
+
+source_file, status_file, started_at = sys.argv[1:]
+try:
+    with open(source_file, encoding="utf-8") as source:
+        before = json.load(source)
+    with open(status_file, encoding="utf-8") as source:
+        current = json.load(source)
+    started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+before_targets = before.get("targets") if isinstance(before, dict) else None
+current_targets = current.get("targets") if isinstance(current, dict) else None
+if not isinstance(before_targets, list) or not isinstance(current_targets, list):
+    raise SystemExit(1)
+
+current_by_id = {
+    str(item.get("id")): item for item in current_targets
+    if isinstance(item, dict) and item.get("id")
+}
+for item in before_targets:
+    if not isinstance(item, dict):
+        continue
+    last_update = item.get("last_update")
+    target_id = str(item.get("id") or "")
+    timestamp = last_update.get("timestamp") if isinstance(last_update, dict) else None
+    if not target_id or not isinstance(last_update, dict) or not timestamp:
+        continue
+    try:
+        update_time = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        continue
+    if update_time >= started and target_id in current_by_id:
+        current_by_id[target_id]["last_update"] = last_update
+
+directory = os.path.dirname(os.path.abspath(status_file)) or "."
+fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(current, output, indent=2)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, status_file)
+except Exception:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
+}
+
+# Apply the update counts observed before a global update to terminal results
+# produced by that run. Update commands commonly perform a post-update check
+# before recording their result, so reading the live model at result time can
+# incorrectly turn a real update into "Up to date". The baseline is only
+# metadata for current-run results; it never creates or resurrects targets.
+STATUS_MODEL_APPLY_PRE_UPDATE_COUNTS() {
+  local baseline_file="$1" started_at="$2"
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  local status_lock_file="${status_file}.lock" status_lock_fd
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$baseline_file" "$status_file" "$started_at" <<'PY'
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime
+
+baseline_file, status_file, started_at = sys.argv[1:]
+try:
+    with open(baseline_file, encoding="utf-8") as source:
+        baseline = json.load(source)
+    with open(status_file, encoding="utf-8") as source:
+        current = json.load(source)
+    started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+baseline_targets = baseline.get("targets") if isinstance(baseline, dict) else None
+current_targets = current.get("targets") if isinstance(current, dict) else None
+if not isinstance(baseline_targets, list) or not isinstance(current_targets, list):
+    raise SystemExit(1)
+
+def candidates(target_id):
+    value = str(target_id or "")
+    return {value, value.removeprefix("host:"), value.removeprefix("guest:"),
+            value.removeprefix("external:")}
+
+baseline_by_id = {}
+for item in baseline_targets:
+    if isinstance(item, dict) and item.get("id"):
+        for candidate in candidates(item["id"]):
+            if candidate:
+                baseline_by_id[candidate] = item
+
+changed = False
+for item in current_targets:
+    if not isinstance(item, dict) or not item.get("id"):
+        continue
+    result = item.get("last_update")
+    if not isinstance(result, dict) or str(result.get("status")) not in {
+        "success", "completed", "failed", "interrupted"
+    }:
+        continue
+    timestamp = result.get("timestamp")
+    if not timestamp:
+        continue
+    try:
+        update_time = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        continue
+    if update_time < started:
+        continue
+    before = None
+    for candidate in candidates(item["id"]):
+        if candidate in baseline_by_id:
+            before = baseline_by_id[candidate]
+            break
+    if not isinstance(before, dict):
+        continue
+    updates = before.get("updates")
+    pending = updates.get("available") if isinstance(updates, dict) else None
+    normal = before.get("normal_updates")
+    security = before.get("security_updates")
+    if isinstance(normal, int) and not isinstance(normal, bool) and \
+       isinstance(security, int) and not isinstance(security, bool):
+        pending = normal + security
+    if not isinstance(pending, int) or isinstance(pending, bool) or pending < 0:
+        continue
+    if result.get("pending_before") != pending:
+        result["pending_before"] = pending
+        changed = True
+
+if not changed:
+    raise SystemExit(0)
+
+directory = os.path.dirname(os.path.abspath(status_file)) or "."
+fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(current, output, indent=2)
         output.write("\n")
         output.flush()
         os.fsync(output.fileno())
@@ -485,7 +673,16 @@ if record is None:
     record = {"id": target_id, "type": "external", "transport": "ssh"}
     targets.append(record)
 timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-record["last_update"] = {"status": update_status, "timestamp": timestamp, "exit_code": int(exit_code)}
+pending_before = None
+existing_updates = record.get("updates")
+if isinstance(existing_updates, dict):
+    candidate = existing_updates.get("available")
+    if isinstance(candidate, int) and not isinstance(candidate, bool):
+        pending_before = candidate
+last_update = {"status": update_status, "timestamp": timestamp, "exit_code": int(exit_code)}
+if pending_before is not None:
+    last_update["pending_before"] = pending_before
+record["last_update"] = last_update
 payload["generated_at"] = timestamp
 directory = os.path.dirname(os.path.abspath(status_file)) or "."
 os.makedirs(directory, exist_ok=True)
@@ -510,35 +707,373 @@ PY
   return "$result"
 }
 
+# Optional, run-scoped diagnostics for the External update-all lifecycle.
+# Disabled by default and deliberately limited to status metadata; this never
+# changes the authoritative status model.
+STATUS_MODEL_TRACE_EVENT() {
+  [[ "${UU_EXTERNAL_LIFECYCLE_TRACE:-false}" == true ]] || return 0
+  local trace_file="${UU_EXTERNAL_LIFECYCLE_TRACE_FILE:-}"
+  local checkpoint="${1:-}" target_id="${2:-}" helper_rc="${3:-}"
+  [[ -n "$trace_file" && -n "$checkpoint" ]] || return 0
+  local trace_lock="${trace_file}.lock" trace_lock_fd
+  mkdir -p -- "$(dirname -- "$trace_file")" 2>/dev/null || return 1
+  exec {trace_lock_fd}>"$trace_lock" || return 1
+  if ! flock -x "$trace_lock_fd"; then
+    exec {trace_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$trace_file" "$checkpoint" "$target_id" "$helper_rc" \
+    "${STATUS_MODEL_FILE:-${LOCAL_FILES:-/etc/ultimate-updater}/status.json}" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+trace_file, checkpoint, requested_target, helper_rc, status_file = sys.argv[1:]
+try:
+    real_status = os.path.realpath(status_file)
+except OSError:
+    real_status = status_file
+event_time = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+base = {
+    "timestamp": event_time,
+    "checkpoint": checkpoint,
+    "status_file": status_file,
+    "realpath": real_status,
+    "helper_rc": int(helper_rc) if helper_rc.lstrip("-").isdigit() else (helper_rc or None),
+}
+try:
+    stat = os.stat(status_file)
+    base.update({"device": stat.st_dev, "inode": stat.st_ino, "size": stat.st_size,
+                 "mtime": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()})
+except OSError:
+    base.update({"device": None, "inode": None, "size": None, "mtime": None})
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError):
+    payload = {}
+targets = payload.get("targets") if isinstance(payload, dict) else []
+if not isinstance(targets, list):
+    targets = []
+selected = [item for item in targets if isinstance(item, dict) and
+            ((not requested_target and item.get("type") == "external") or
+             (requested_target and item.get("id") == requested_target))]
+if not selected:
+    selected = [{}]
+for item in selected:
+    result = item.get("last_update") if isinstance(item.get("last_update"), dict) else {}
+    updates = item.get("updates") if isinstance(item.get("updates"), dict) else {}
+    event = dict(base)
+    event.update({
+        "target_id": item.get("id") or requested_target or None,
+        "generated_at": payload.get("generated_at") if isinstance(payload, dict) else None,
+        "last_update_status": result.get("status"),
+        "last_update_timestamp": result.get("timestamp"),
+        "exit_code": result.get("exit_code"),
+        "pending_before": result.get("pending_before"),
+        "updates_available": updates.get("available"),
+        "check_status": item.get("check_status"),
+    })
+    with open(trace_file, "a", encoding="utf-8") as output:
+        json.dump(event, output, sort_keys=True)
+        output.write("\n")
+        output.flush()
+PY
+  local result=$?
+  exec {trace_lock_fd}>&-
+  return "$result"
+}
+
+# Return success only when the structured status model contains a positive
+# security-update count in the notification scope.  Unknown, failed, and
+# unreachable targets are not converted to zero by this gate.
+STATUS_MODEL_HAS_SECURITY_UPDATES() {
+  local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
+  local scope_target="${2:-}" scope_kind="${3:-}"
+  python3 - "$status_file" "$scope_target" "$scope_kind" <<'PY'
+import json
+import sys
+
+status_file, scope_target, scope_kind = sys.argv[1:]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError):
+    raise SystemExit(2)
+
+targets = payload.get("targets") if isinstance(payload, dict) else None
+if not isinstance(targets, list):
+    raise SystemExit(2)
+
+def target_matches_scope(target):
+    if not scope_target:
+        return True
+    wanted = str(scope_target)
+    target_id = str(target.get("id") or "")
+    if scope_kind == "node":
+        if target.get("type") != "host":
+            return False
+        candidates = {wanted, wanted.removeprefix("host:"), wanted.removeprefix("node-")}
+        values = {
+            target_id,
+            target_id.removeprefix("host:"),
+            str(target.get("node") or ""),
+            str(target.get("name") or ""),
+        }
+        return bool(candidates & values) or wanted == "host"
+    candidates = {wanted, wanted.removeprefix("guest:"), wanted.removeprefix("host:")}
+    values = {target_id, target_id.removeprefix("guest:"), target_id.removeprefix("host:")}
+    return bool(candidates & values)
+
+selected = [
+    target for target in targets
+    if isinstance(target, dict) and target_matches_scope(target)
+]
+if scope_target and not selected:
+    raise SystemExit(2)
+
+for target in selected:
+    status = target.get("check_status")
+    if status not in ("ok", "updates_available") or target.get("reachable") is not True:
+        continue
+    value = target.get("security_updates")
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+# Render the compact login summary from the structured status model.  The raw
+# check log remains a diagnostic artifact and is intentionally not an input to
+# this renderer.
+STATUS_MODEL_RENDER_WELCOME() {
+  local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
+  python3 - "$status_file" <<'PY'
+import json
+import os
+import re
+import sys
+
+status_file = sys.argv[1]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError):
+    print("Update status unavailable.")
+    raise SystemExit(0)
+
+targets = payload.get("targets") if isinstance(payload, dict) else None
+if not isinstance(targets, list):
+    print("Update status unavailable.")
+    raise SystemExit(0)
+
+color_mode = os.environ.get("UU_WELCOME_COLOR", "auto").lower()
+use_color = color_mode == "always" or (color_mode == "auto" and sys.stdout.isatty())
+COLORS = {
+    "cyan": "\033[36m",
+    "green": "\033[1;92m",
+    "orange": "\033[1;33m",
+    "red": "\033[1;91m",
+    "reset": "\033[0m",
+}
+
+def paint(value, color):
+    return f"{COLORS[color]}{value}{COLORS['reset']}" if use_color else value
+
+def clean_id(target):
+    value = str(target.get("id") or "unknown")
+    return re.sub(r"^(guest:|host:|external:)", "", value)
+
+def label(target):
+    kind = str(target.get("type") or "external").lower()
+    identifier = clean_id(target)
+    name = str(target.get("name") or "").strip()
+    if kind == "host":
+        hostname = target.get('node') or name or identifier
+        return f"{paint('Host', 'cyan')} : {paint(hostname, 'green')}"
+    prefix = {"lxc": "LXC", "vm": "VM", "external": "External"}.get(kind, kind.title())
+    target_label = f"{prefix} {identifier}"
+    if name and name != identifier:
+        target_label += f" : {name}"
+    return paint(target_label, "green")
+
+def integer(target, field):
+    value = target.get(field)
+    return str(value) if isinstance(value, int) and not isinstance(value, bool) else "Unknown"
+
+def positive_updates(target):
+    split = "normal_updates" in target or "security_updates" in target
+    if split:
+        return any(isinstance(target.get(field), int) and
+                   not isinstance(target.get(field), bool) and target.get(field) > 0
+                   for field in ("normal_updates", "security_updates"))
+    values = target.get("updates")
+    available = values.get("available") if isinstance(values, dict) else None
+    return isinstance(available, int) and not isinstance(available, bool) and available > 0
+
+def natural_key(value):
+    return [int(part) if part.isdigit() else part.casefold()
+            for part in re.split(r"(\d+)", str(value))]
+
+def target_node(target):
+    return str(target.get("node") or "").strip()
+
+def target_sort_key(target):
+    identifier = clean_id(target)
+    numeric = int(identifier) if identifier.isdigit() else None
+    return (numeric is None, numeric if numeric is not None else natural_key(identifier),
+            str(target.get("name") or "").casefold(), identifier.casefold())
+
+checked_targets = [
+    target for target in targets
+    if isinstance(target, dict) and
+    target.get("check_status") in ("ok", "updates_available") and
+    target.get("reachable") is True
+]
+
+node_targets = {}
+external_targets = []
+for target in checked_targets:
+    kind = str(target.get("type") or "external").lower()
+    if kind == "external":
+        if positive_updates(target):
+            external_targets.append(target)
+    elif positive_updates(target):
+        node_targets.setdefault(target_node(target) or "Unassigned", []).append(target)
+
+# A checked host with no own updates still heads a node block when one of its
+# guests has updates. It contributes no fabricated count of its own.
+for target in checked_targets:
+    if str(target.get("type") or "").lower() == "host":
+        node = target_node(target) or "Unassigned"
+        if node in node_targets and not positive_updates(target):
+            node_targets[node].append(target)
+
+def metric(target, field, prefix):
+    return f"{prefix}:{integer(target, field)}"
+
+def compact_name(target, width):
+    name = str(target.get("name") or clean_id(target))
+    if len(name) <= width:
+        return name
+    if width < 4:
+        return name[:width]
+    return name[:width - 3] + "..."
+
+def guest_line(target, name_width, id_width):
+    identifier = clean_id(target)
+    name = compact_name(target, name_width)
+    prefix = f"  {identifier:<{id_width}} {name:<{name_width}}"
+    if "normal_updates" in target or "security_updates" in target:
+        security = paint(metric(target, "security_updates", "S"), "orange")
+        normal = metric(target, "normal_updates", "N")
+        line = f"{prefix} {security} {normal}"
+    else:
+        values = target.get("updates")
+        available = values.get("available") if isinstance(values, dict) else None
+        value = str(available) if isinstance(available, int) and not isinstance(available, bool) else "Unknown"
+        line = f"{prefix} Updates:{value}"
+    if target.get("reboot_required") is True:
+        line += f"  {paint('Reboot', 'orange')}"
+    return paint(line[:len(prefix)], "green") + line[len(prefix):]
+
+def host_header(node, host):
+    header = paint(node, "cyan")
+    if host is not None and positive_updates(host):
+        if "normal_updates" in host or "security_updates" in host:
+            header += f"  {paint(metric(host, 'security_updates', 'S'), 'orange')} {metric(host, 'normal_updates', 'N')}"
+        else:
+            values = host.get("updates")
+            available = values.get("available") if isinstance(values, dict) else None
+            if isinstance(available, int) and not isinstance(available, bool):
+                header += f"  Updates:{available}"
+    return header
+
+rendered_nodes = []
+for node in sorted(node_targets, key=natural_key):
+    targets_for_node = sorted(node_targets[node],
+                              key=lambda target: (target.get("type") != "host",
+                                                  target_sort_key(target)))
+    host = next((target for target in targets_for_node
+                 if str(target.get("type") or "").lower() == "host"), None)
+    guests = [target for target in targets_for_node if target is not host]
+    rendered_nodes.append((node, host, guests))
+
+name_width = min(24, max(
+    [len(str(target.get("name") or clean_id(target)))
+     for _, _, guests in rendered_nodes for target in guests] or [0]
+))
+id_width = max([len(clean_id(target)) for _, _, guests in rendered_nodes for target in guests] or [1])
+
+for block_index, (node, host, guests) in enumerate(rendered_nodes):
+    if block_index:
+        print()
+    print(host_header(node, host))
+    for target in guests:
+        print(guest_line(target, name_width, id_width))
+
+if external_targets:
+    if rendered_nodes:
+        print()
+    print(paint("External", "cyan"))
+    external_width = min(24, max(len(str(target.get("name") or clean_id(target)))
+                             for target in external_targets))
+    external_id_width = max(len(clean_id(target)) for target in external_targets)
+    for target in sorted(external_targets,
+                         key=lambda item: (str(item.get("name") or "").casefold(),
+                                            clean_id(item).casefold())):
+        print(guest_line(target, external_width, external_id_width))
+PY
+}
+
 # Render and optionally send one notification from the unified status model.
 # The first output line is an internal decision marker; callers remove it
 # before writing the human-readable mail body.
 STATUS_MODEL_SEND_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
   local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
-  local email_user email_sender email_no_updates email_only_security
+  local email_user email_sender email_no_updates email_only_security email_daily_check email_single_runs
 
   email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
   email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
   email_no_updates=$(awk -F'"' '/^EMAIL_NO_UPDATES=/ {print $2}' "$config_file" 2>/dev/null)
+  email_daily_check=$(awk -F'"' '/^EMAIL_DAILY_CHECK=/ {print $2}' "$config_file" 2>/dev/null)
   email_only_security=$(awk -F'"' '/^EMAIL_ONLY_SECURITY=/ {print $2}' "$config_file" 2>/dev/null)
+  email_single_runs=$(awk -F'"' '/^EMAIL_SINGLE_RUNS=/ {print $2}' "$config_file" 2>/dev/null)
   email_user="${email_user:-root}"
   email_sender="${email_sender:-$USER}"
   email_sender=$(STATUS_MODEL_EXPAND_SENDER "$email_sender")
   email_no_updates="${email_no_updates:-false}"
+  email_daily_check="${email_daily_check:-true}"
   email_only_security="${email_only_security:-false}"
+  email_single_runs="${email_single_runs:-false}"
+
+  # Scheduler units mark their invocation explicitly.  This gate applies only
+  # to scheduled checks; manual global checks and updates remain independent.
+  # Keep it before the single-target policy so a scheduled selected-target
+  # check is governed by EMAIL_DAILY_CHECK rather than the manual-run switch.
+  if [[ "${UU_JOB_SOURCE:-}" == scheduler && "$email_daily_check" != true ]]; then
+    return 0
+  fi
+
+  local render_target="" render_kind=""
+  if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
+    if [[ "${UU_JOB_SOURCE:-}" != scheduler ]]; then
+      [[ "$email_single_runs" == true ]] || return 0
+    fi
+    render_target="${UU_SINGLE_TARGET_ID:-}"
+    render_kind="${UU_SINGLE_TARGET_KIND:-target}"
+  fi
 
   local notification state body
-  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file") || return 1
+  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file" check "$render_target" "$render_kind") || return 1
   state=${notification%%$'\n'*}
   state=${state#STATE=}
   body=${notification#*$'\n'}
 
-  # The status schema does not classify security updates. Preserve the
-  # existing security-only policy by using the check output as the gate.
   if [[ "$email_only_security" == true ]]; then
-    if [[ ! -f "${LOCAL_FILES:-/etc/ultimate-updater}/check-output" ]] ||
-      ! grep -q 'S' "${LOCAL_FILES:-/etc/ultimate-updater}/check-output"; then
+    if ! STATUS_MODEL_HAS_SECURITY_UPDATES "$status_file" "$render_target" "$render_kind"; then
       return 0
     fi
   fi
@@ -569,17 +1104,27 @@ STATUS_MODEL_SEND_NOTIFICATION() {
 STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-${LOCAL_FILES:-/etc/ultimate-updater}/status.json}}"
   local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
-  local email_user email_sender email_only_error notification state body
+  local run_started_at="${3:-}"
+  local email_user email_sender email_only_error email_single_runs notification state body
 
   email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
   email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
   email_only_error=$(awk -F'"' '/^EMAIL_ONLY_ERROR=/ {print $2}' "$config_file" 2>/dev/null)
+  email_single_runs=$(awk -F'"' '/^EMAIL_SINGLE_RUNS=/ {print $2}' "$config_file" 2>/dev/null)
   email_user="${email_user:-root}"
   email_sender="${email_sender:-${USER:-root}}"
   email_sender=$(STATUS_MODEL_EXPAND_SENDER "$email_sender")
   email_only_error="${email_only_error:-false}"
+  email_single_runs="${email_single_runs:-false}"
 
-  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file" update) || return 1
+  local render_target="" render_kind=""
+  if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
+    [[ "$email_single_runs" == true ]] || return 0
+    render_target="${UU_SINGLE_TARGET_ID:-}"
+    render_kind="${UU_SINGLE_TARGET_KIND:-target}"
+  fi
+
+  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file" update "$render_target" "$render_kind" "$run_started_at") || return 1
   state=${notification%%$'\n'*}
   state=${state#STATE=}
   body=${notification#*$'\n'}
@@ -604,15 +1149,19 @@ STATUS_MODEL_EXPAND_SENDER() {
 STATUS_MODEL_RENDER_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
   local run_type="${2:-check}"
+  local scope_target="${3:-}"
+  local scope_kind="${4:-}"
+  local run_started_at="${5:-}"
   case "$run_type" in
     check|update) ;;
     *) return 2 ;;
   esac
-  python3 - "$status_file" "$run_type" <<'PY'
+  python3 - "$status_file" "$run_type" "$scope_target" "$scope_kind" "$run_started_at" <<'PY'
 import json
 import sys
+from datetime import datetime
 
-status_file, run_type = sys.argv[1:]
+status_file, run_type, scope_target, scope_kind, run_started_at = sys.argv[1:]
 try:
     with open(status_file, encoding="utf-8") as source:
         payload = json.load(source)
@@ -623,12 +1172,68 @@ targets = payload.get("targets")
 if not isinstance(targets, list):
     raise SystemExit(1)
 
+try:
+    started = datetime.fromisoformat(run_started_at.replace("Z", "+00:00")) if run_started_at else None
+except (TypeError, ValueError):
+    started = None
+
+def current_update_result(target):
+    if run_type != "update" or started is None:
+        return True
+    result = target.get("last_update")
+    timestamp = result.get("timestamp") if isinstance(result, dict) else None
+    if not timestamp:
+        return False
+    try:
+        return datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")) >= started
+    except (TypeError, ValueError):
+        return False
+
+def target_matches_scope(target):
+    if not scope_target:
+        return True
+    target_id = str(target.get("id") or "")
+    wanted = str(scope_target)
+    if scope_kind == "node":
+        if target.get("type") != "host":
+            return False
+        candidates = {
+            wanted,
+            wanted.removeprefix("host:"),
+            wanted.removeprefix("node-"),
+        }
+        values = {
+            target_id,
+            target_id.removeprefix("host:"),
+            str(target.get("node") or ""),
+            str(target.get("name") or ""),
+        }
+        # A local node action uses the sentinel "host".  The status model
+        # contains one host record for that scoped check/update.
+        return bool(candidates & values) or wanted == "host"
+    candidates = {
+        wanted,
+        wanted.removeprefix("guest:"),
+        wanted.removeprefix("host:"),
+    }
+    values = {
+        target_id,
+        target_id.removeprefix("guest:"),
+        target_id.removeprefix("host:"),
+    }
+    return bool(candidates & values)
+
+targets = [target for target in targets if isinstance(target, dict) and target_matches_scope(target)]
+if scope_target and not targets:
+    raise SystemExit(1)
+
 updates = []
 current = []
 offline = []
 unsupported = []
 errors = []
 not_checked = []
+skipped = []
 reboots = []
 total = 0
 has_known_count = False
@@ -661,25 +1266,43 @@ def short_error(target):
             return str(message).replace("\n", " ").strip()
     return "check failed"
 
+def check_skip_message(target):
+    """Return neutral wording for checks intentionally not executed."""
+    status = str(target.get("check_status") or "not_checked")
+    error = target.get("error")
+    code = str(error.get("code") or "") if isinstance(error, dict) else ""
+    if status not in ("not_checked", "skipped", "stopped"):
+        return None
+    if code in {"RUNNING_DISABLED", "CHECK_WITH_HOST_DISABLED", "CHECK_DISABLED"}:
+        return "Check disabled"
+    if code in {"STOPPED_READ_ONLY", "PAUSED_READ_ONLY", "UNSUPPORTED_GUEST_OS"}:
+        return "Skipped by configuration"
+    return None
+
 def update_split(target):
     if target.get("security_split_supported") is False or \
        ("security_split_supported" not in target and target.get("updater") != "apt" and
         "normal_updates" not in target and "security_updates" not in target):
         values = target.get("updates")
         available = values.get("available") if isinstance(values, dict) else None
-        return f"Updates: {available if isinstance(available, int) else 'Unknown'}"
+        return [f"Updates: {available if isinstance(available, int) else 'Unknown'}"]
     def value(name):
         candidate = target.get(name)
         if isinstance(candidate, int) and not isinstance(candidate, bool):
             return str(candidate)
         return "Unknown"
-    return f"S: {value('security_updates')} / N: {value('normal_updates')}"
+    return [
+        f"Security Updates: {value('security_updates')}",
+        f"Normal Updates: {value('normal_updates')}",
+    ]
 
 def update_result(target):
     result = target.get("last_update")
     return result if isinstance(result, dict) else {}
 
 def update_status(target):
+    if not current_update_result(target):
+        return "unknown"
     result = update_result(target)
     status = str(result.get("status") or "").lower()
     if status in ("failed", "interrupted"):
@@ -691,30 +1314,37 @@ def update_status(target):
 def update_line(target):
     result = update_result(target)
     if target.get("check_status") == "offline" or target.get("reachable") is False:
-        return "⚠️", "Nicht erreichbar"
+        return "⚠️", "Not reachable"
+    skipped = check_skip_message(target)
+    if skipped is not None:
+        return "💤", skipped
     status = update_status(target)
     if status == "failed":
-        return "❌", "Update fehlgeschlagen"
+        return "❌", "Update failed"
     if status != "success":
-        return "⚠️", "Ergebnis nicht verfügbar"
+        return "⚠️", "Result unavailable"
     if target.get("reboot_required") is True:
-        return "⚠️", "Aktualisiert – Neustart erforderlich"
-    values = target.get("updates")
-    available = values.get("available") if isinstance(values, dict) else None
-    if isinstance(available, int) and not isinstance(available, bool) and available == 0:
-        return "✅", "Alles aktuell"
+        return "⚠️", "Updated – reboot required"
+    pending_before = result.get("pending_before")
+    if isinstance(pending_before, int) and not isinstance(pending_before, bool):
+        if pending_before == 0:
+            return "✅", "Up to date"
+        updated = result.get("updated_packages")
+        if isinstance(updated, int) and not isinstance(updated, bool) and updated >= 0:
+            return "✅", f"{updated} packages updated"
+        return "✅", "Successfully updated"
     updated = result.get("updated_packages")
     if isinstance(updated, int) and not isinstance(updated, bool) and updated >= 0:
-        return "✅", f"{updated} Pakete aktualisiert"
-    return "✅", "Erfolgreich aktualisiert"
+        return "✅", f"{updated} packages updated"
+    return "✅", "Successfully updated"
 
 if run_type == "update":
     hosts = []
-    guest_current = 0
     guest_success = []
     guest_failed = []
     guest_offline = []
     guest_reboot = []
+    guest_skipped = []
     for target in targets:
         if not isinstance(target, dict):
             continue
@@ -727,6 +1357,9 @@ if run_type == "update":
         if status == "offline" or reachable is False:
             guest_offline.append(target)
             continue
+        if check_skip_message(target) is not None:
+            guest_skipped.append(target)
+            continue
         result_status = update_status(target)
         if result_status == "failed":
             guest_failed.append(target)
@@ -736,7 +1369,7 @@ if run_type == "update":
             if target.get("reboot_required") is True:
                 guest_reboot.append(target)
             elif isinstance(available, int) and not isinstance(available, bool) and available == 0:
-                guest_current += 1
+                guest_success.append(target)
             else:
                 guest_success.append(target)
 
@@ -752,7 +1385,7 @@ if run_type == "update":
     if guest_reboot:
         lines.extend(["", "Guests requiring reboot:"])
         for target in guest_reboot:
-            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", "   Aktualisiert – Neustart erforderlich"])
+            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", "   Updated – reboot required"])
     if guest_failed:
         lines.extend(["", "Failed guests:"])
         for target in guest_failed:
@@ -761,9 +1394,11 @@ if run_type == "update":
     if guest_offline:
         lines.extend(["", "Unreachable guests:"])
         for target in guest_offline:
-            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", "   Nicht erreichbar"])
-    if guest_current:
-        lines.extend(["", f"✅ {guest_current} weitere Systeme – alles aktuell"])
+            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", "   Not reachable"])
+    if guest_skipped:
+        lines.extend(["", "Skipped checks:"])
+        for target in guest_skipped:
+            lines.extend([f"💤 {target_icon(target)} {target_name(target)}", f"   {check_skip_message(target)}"])
     print("STATE=issues" if any(update_status(target) == "failed" for target in hosts + guest_failed) or guest_offline else "STATE=updates")
     print("\n".join(lines))
     raise SystemExit(0)
@@ -795,8 +1430,11 @@ for target in targets:
         unsupported.append(target)
     elif status == "error":
         errors.append((target, short_error(target)))
-    elif status == "not_checked":
-        not_checked.append(target)
+    elif status in ("not_checked", "skipped", "stopped"):
+        if check_skip_message(target) is not None:
+            skipped.append(target)
+        else:
+            not_checked.append(target)
 
 has_issues = bool(offline or unsupported or errors or not_checked)
 if updates or reboots:
@@ -811,6 +1449,7 @@ else:
 lines = ["Ultimate Updater status", "=======================", ""]
 if updates:
     lines.append("Available updates:")
+    separator = "----------------------------"
     nodes_with_updates = {str(target.get("node") or "Unassigned") for target, _ in updates}
     rendered_ids = {str(target.get("id") or "") for target, _ in updates}
     for target in targets:
@@ -828,32 +1467,36 @@ if updates:
             grouped[node] = []
             node_order.append(node)
         grouped[node].append((target, count))
-    for node in node_order:
+    for node_index, node in enumerate(node_order):
         node_targets = grouped[node]
         node_target = next((target for target, _ in node_targets if target.get("type") == "host"), None)
-        lines.extend(["", f"🖥️ {node}"])
+        # Keep the existing section spacing before the first node and add one
+        # blank line only when moving to the next node group. Targets within
+        # one node remain a compact block separated by their existing rules.
+        lines.append("")
         if node_target is not None:
-            lines.append(update_split(node_target))
+            lines.append(f"🖥️ {node}")
+            lines.extend(update_split(node_target))
+            lines.append(separator)
         else:
-            lines.append(f"⬆️ {sum(count for _, count in node_targets)} Updates")
-        for target, _ in node_targets:
+            lines.extend([f"🖥️ {node}", f"⬆️ {sum(count for _, count in node_targets)} Updates", separator])
+        guest_targets = [(target, count) for target, count in node_targets if target.get("type") != "host"]
+        for target, _ in guest_targets:
             # The node heading already represents a host target. Do not
             # render the same host a second time as a guest-like row.
-            if target.get("type") == "host":
-                continue
             lines.append(f"{target_icon(target)} {target_name(target)}")
-            lines.append(update_split(target))
+            lines.extend(update_split(target))
             if target.get("reboot_required") is True:
-                lines.append("🔄 Neustart erforderlich")
+                lines.append("🔄 Reboot required")
+            lines.append(separator)
 else:
     lines.append("Available updates: none")
 if has_known_count:
     lines.extend(["", f"Total available updates: {total}"])
 if current:
     lines.extend(["", "Current:"])
-    count = len(current)
-    noun = "weiteres System" if count == 1 else "weitere Systeme"
-    lines.append(f"✅ {count} {noun} geprüft – keine Updates verfügbar")
+    for target in current:
+        lines.extend([f"✅ {target_icon(target)} {target_name(target)}", "   No updates available"])
 if reboots:
     lines.extend(["", "Reboot required:"])
     lines.extend(f"🔄 {target_name(target)}" for target in reboots)
@@ -869,6 +1512,10 @@ if unsupported:
 if not_checked:
     lines.extend(["", "Not checked:"])
     lines.extend(f"⚠️ {target_name(target)}" for target in not_checked)
+if skipped:
+    lines.extend(["", "Skipped:"])
+    for target in skipped:
+        lines.extend([f"💤 {target_name(target)}", f"   {check_skip_message(target)}"])
 
 print(f"STATE={state}")
 print("\n".join(lines))
