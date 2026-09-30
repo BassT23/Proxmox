@@ -1307,6 +1307,33 @@ PAGE = PAGE.replace('</head>', '''<style>
     html[data-theme="classic"] .dashboard-meta .page-nav { background:var(--theme-nav); border-color:var(--line); box-shadow:var(--theme-shadow); }
     html[data-theme="classic"] .dashboard-meta .page-nav a.active { background:var(--theme-nav-active); border-color:#c4d5df66; box-shadow:none; }
     html[data-theme="classic"] .dashboard-meta .nav-toggle { background:var(--theme-nav); border-color:var(--line); }
+    html[data-theme="classic"] .brand-header-art,html[data-theme="classic"] .login-branding { filter:none; }
+    html[data-theme="classic"] .systems-panel,html[data-theme="classic"] .management-panel,html[data-theme="classic"] .scheduler-placeholder,html[data-theme="classic"] .node-group,html[data-theme="classic"] .external-group,html[data-theme="classic"] .guest-panel { border-color:#69737b; background:#2b3238; box-shadow:none; }
+    html[data-theme="classic"] .dashboard-kpis { border-color:#69737b; border-radius:4px; background:#2b3238; box-shadow:none; }
+    html[data-theme="classic"] .dashboard-kpis .metric,html[data-theme="classic"] .metric,html[data-theme="classic"] .target-card,html[data-theme="classic"] .jobs,html[data-theme="classic"] .details { border-color:#69737b; border-radius:4px; background:#30373d; box-shadow:none; }
+    html[data-theme="classic"] .dashboard-kpis .metric { border-color:#566169; background:#343b41; }
+    html[data-theme="classic"] .target-card:hover,html[data-theme="classic"] .target-card:focus-within { transform:none; border-color:#a9bbc5; background:#384148; }
+    html[data-theme="classic"] .node-group,html[data-theme="classic"] .external-group { overflow:hidden; }
+    html[data-theme="classic"] .node-group .group-header,html[data-theme="classic"] .external-group .group-header { background:#30373d; }
+    html[data-theme="classic"] .node-group .group-header:hover,html[data-theme="classic"] .external-group .group-header:hover { background:#394249; }
+    html[data-theme="classic"] .target-row,html[data-theme="classic"] .managed-target,html[data-theme="classic"] .job { border-color:#69737b; }
+    html[data-theme="classic"] .target-row:hover { background:#3a4248; }
+    html[data-theme="classic"] .group-toggle,html[data-theme="classic"] .node-group .group-toggle,html[data-theme="classic"] .external-group .group-toggle { border-color:#69737b; background:transparent; box-shadow:none; }
+    html[data-theme="classic"] .group-toggle:hover,html[data-theme="classic"] .node-group .group-toggle:hover,html[data-theme="classic"] .external-group .group-toggle:hover { background:#465159; color:var(--text); transform:none; box-shadow:none; }
+    html[data-theme="classic"] button:hover:not(:disabled),html[data-theme="classic"] button:focus-visible,html[data-theme="classic"] .job-download:hover,html[data-theme="classic"] .job-download:focus-visible { border-color:#a9bbc5; outline-color:#a9bbc588; box-shadow:none; }
+    html[data-theme="classic"] button.primary { background:#5b7482; border-color:#9db5c1; color:#f4f7f8; }
+    html[data-theme="classic"] .details,html[data-theme="classic"] .modal,html[data-theme="classic"] .version-dialog { background:#30373d; }
+    html[data-theme="classic"] .modal-backdrop,html[data-theme="classic"] .interactive-terminal-panel { backdrop-filter:none; }
+    html[data-theme="classic"] .detail-sections section,html[data-theme="classic"] .section-title,html[data-theme="classic"] .config-actions { border-color:#69737b; }
+    html[data-theme="classic"] .dashboard-meta .page-nav { background:#293036; border-color:#69737b; box-shadow:none; }
+    html[data-theme="classic"] .dashboard-meta .page-nav a,html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout { border-radius:4px; color:#c2ccd1; }
+    html[data-theme="classic"] .dashboard-meta .page-nav a:hover,html[data-theme="classic"] .dashboard-meta .page-nav a:focus-visible,html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout:hover,html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout:focus-visible { color:#fff; border-color:#8899a3; }
+    html[data-theme="classic"] .dashboard-meta .page-nav a.active { background:#566d7a; border-color:#a9bbc5; box-shadow:none; }
+    html[data-theme="classic"] .scheduler-summary>div,html[data-theme="classic"] .scheduler-card,html[data-theme="classic"] .schedule-targets { border-color:#69737b; background:#30373d; box-shadow:none; border-radius:4px; }
+    html[data-theme="classic"] .schedule-target-table th { background:#394249; }
+    html[data-theme="classic"] .schedule-target-table th,html[data-theme="classic"] .schedule-target-table td { border-color:#69737b; }
+    html[data-theme="classic"] .schedule-table-wrap { border-color:#69737b; border-radius:4px; }
+    html[data-theme="classic"] .theme-panel { background:#30373d; }
     html[data-theme="classic"] .theme-panel { grid-column:1 / -1; }
     .theme-picker { display:grid; grid-template-columns:minmax(100px,.35fr) minmax(160px,.65fr); align-items:center; gap:10px; color:var(--muted); font-size:.78rem; }
     .theme-picker select { width:100%; min-height:40px; border:1px solid var(--line); border-radius:var(--theme-control-radius); padding:8px 10px; color:var(--text); background:var(--surface-input); font:inherit; }
