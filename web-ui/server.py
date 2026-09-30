@@ -1414,6 +1414,50 @@ html[data-theme="classic"] #login-screen .modal,
 html[data-theme="classic"] #auth-loading .modal { border-color:#69737b; border-radius:4px; background:#30373d; box-shadow:none; }
 html[data-theme="classic"] .interactive-terminal-dialog { border-color:#69737b; background:#252b30; box-shadow:none; }
 html[data-theme="classic"] .interactive-terminal { border-color:#69737b; }
+html[data-theme="classic"] .node-group .group-summary .node-details,
+html[data-theme="classic"] .node-group .group-summary .node-action,
+html[data-theme="classic"] .row-actions button,
+html[data-theme="classic"] .target-selection-state {
+    background:#3a4248;
+    border-color:#69737b;
+    color:var(--text);
+    box-shadow:none;
+}
+html[data-theme="classic"] .node-group .group-summary .node-update,
+html[data-theme="classic"] .row-actions button.primary {
+    background:#5b7482;
+    border-color:#9db5c1;
+    color:#f4f7f8;
+}
+html[data-theme="classic"] .target-selection-state.only {
+    background:#345746;
+    border-color:#77c99b;
+    color:#b9f2cf;
+}
+html[data-theme="classic"] .target-selection-state.exclude {
+    background:#5a3b40;
+    border-color:#ed8d98;
+    color:#ffc0c7;
+}
+html[data-theme="classic"] .target-selection-state:hover:not(:disabled),
+html[data-theme="classic"] .node-group .group-summary .node-action:hover:not(:disabled),
+html[data-theme="classic"] .row-actions button:hover:not(:disabled) {
+    background:#465159;
+    border-color:#a9bbc5;
+    color:#fff;
+    box-shadow:none;
+}
+html[data-theme="classic"] .node-group .group-summary .node-update:hover:not(:disabled),
+html[data-theme="classic"] .row-actions button.primary:hover:not(:disabled) {
+    background:#6b8795;
+    border-color:#c4d5df;
+}
+html[data-theme="classic"] .target-selection-state:focus-visible,
+html[data-theme="classic"] .node-group .group-summary button:focus-visible,
+html[data-theme="classic"] .row-actions button:focus-visible {
+    outline:2px solid var(--accent);
+    outline-offset:2px;
+}
 </style></head>''', 1)
 
 
