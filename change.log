@@ -3,7 +3,9 @@ Changelog:
 
 **Unreleased**
 
-- 5.2 development cycle initialized; planned feature work has not started.
+Added:
+- Web UI theme support with Modern and Classic visual styles; the selected
+  theme is a browser-local preference and defaults to Modern.
 
 **v5.1.3** (30.09.2026)
 

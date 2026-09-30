@@ -51,8 +51,8 @@ existing 5.1 Web UI generation.
 The current development cycle is planned to focus on broader system support
 and continued UI evolution:
 
-- Web UI evolution, including theme and skin support while preserving Ultimate
-  Updater's independent visual identity.
+- Web UI evolution, now including Modern and Classic theme support while
+  preserving Ultimate Updater's independent visual identity.
 - More mature Windows integration through the existing QGA and PowerShell
   direction, including update detection, execution, reboot-required state,
   capability handling, and production-quality validation.
@@ -60,9 +60,8 @@ and continued UI evolution:
   updates, package-manager capabilities, status integration, notifications,
   and stronger APT/RPM handling.
 
-The first planned implementation is Web UI theme support tracked in issue
-#355. These are planned focus areas, not implemented features or guarantees of
-specific 5.2 scope or ordering.
+These remain broader planned focus areas, not guarantees of specific 5.2 scope
+or ordering.
 
 ## What it does
 

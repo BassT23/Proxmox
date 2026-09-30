@@ -468,7 +468,7 @@ PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark"><link rel="icon" href="/assets/favicon.png" type="image/png"><link rel="stylesheet" href="/assets/vendor/xterm/xterm.css"><script src="/assets/vendor/xterm/xterm.js"></script><script src="/assets/vendor/xterm/addon-fit.js"></script><title>Ultimate Updater</title>
+  <meta name="color-scheme" content="dark"><link rel="icon" href="/assets/favicon.png" type="image/png"><script>(function(){try{var value=localStorage.getItem('ultimate-updater-theme');document.documentElement.dataset.theme=value==='classic'?'classic':'modern'}catch(_error){document.documentElement.dataset.theme='modern'}})();</script><link rel="stylesheet" href="/assets/vendor/xterm/xterm.css"><script src="/assets/vendor/xterm/xterm.js"></script><script src="/assets/vendor/xterm/addon-fit.js"></script><title>Ultimate Updater</title>
   <style>
     :root { color-scheme:dark; --bg:#0b1020; --panel:#151d34e8; --strong:#19233f; --text:#edf3ff; --muted:#91a0bd; --line:#94a3b82e; --accent:#73a7ff; --good:#55d39a; --warn:#f7c66b; --security:#f0a83a; --bad:#ff7e8b; font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
     * { box-sizing:border-box } .visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0 } body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(circle at top right,#1e3567 0,var(--bg) 42rem) }
@@ -874,6 +874,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function showLogin(message=''){window.__uu_authenticated=false;setLoginLoading(false);document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null;loadAuthRealms()}
     function showDashboard(){window.__uu_authenticated=true;document.getElementById('auth-loading').classList.remove('open');document.getElementById('login-screen').classList.remove('open');document.getElementById('dashboard').hidden=false;window.dispatchEvent(new Event('uu-auth-ready'))}
     function applyPageRoute(push=false,requestedPage=null){let page=requestedPage|| (location.pathname==='/settings'?'settings':location.pathname==='/scheduler'?'scheduler':'overview');if(push)history.pushState({},'',page==='overview'?'/':`/${page}`);const subtitles={overview:'A clear overview of updates across your systems.',settings:'Manage configuration without leaving your authenticated session.',scheduler:''};document.querySelectorAll('.page-nav a').forEach(link=>{const active=link.dataset.page===page;link.classList.toggle('active',active);link.setAttribute('aria-current',active?'page':'false')});document.getElementById('page-subtitle').textContent=subtitles[page];document.querySelector('.dashboard-kpis').hidden=page!=='overview';document.getElementById('overview-page').hidden=page!=='overview';document.getElementById('settings-page').hidden=page!=='settings';document.getElementById('scheduler-page').hidden=page!=='scheduler';if(page==='settings')loadConfig()}
+    document.getElementById('theme-select')?.addEventListener('change',event=>applyTheme(event.target.value,true));
     const nav=document.querySelector('.page-nav'),navToggle=document.querySelector('.nav-toggle');
     const navScrim=document.createElement('button');navScrim.type='button';navScrim.className='nav-scrim';navScrim.setAttribute('aria-label','Close navigation');navScrim.hidden=true;document.body.append(navScrim);
     const setNavOpen=open=>{nav.classList.toggle('expanded',open);navScrim.hidden=!open;document.body.classList.toggle('nav-open',open);if(navToggle){navToggle.setAttribute('aria-expanded',String(open));navToggle.setAttribute('aria-label',open?'Close navigation':'Open navigation')}};
@@ -1122,6 +1123,23 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
 # replacement also covers the legacy render path kept for compatibility with
 # older browser state; the active renderer adds CHECK/UPDATE labels per row.
 PAGE = PAGE.replace("Update jobs", "Jobs")
+PAGE = PAGE.replace(
+    '<script>\n    const labels=',
+    '''<script>
+    const THEME_STORAGE_KEY='ultimate-updater-theme';
+    const SUPPORTED_THEMES=Object.freeze(['modern','classic']);
+    const normalizeTheme=value=>SUPPORTED_THEMES.includes(value)?value:'modern';
+    function applyTheme(value,persist=false){const theme=normalizeTheme(value);document.documentElement.dataset.theme=theme;if(persist){try{localStorage.setItem(THEME_STORAGE_KEY,theme)}catch(_error){}}const select=document.getElementById('theme-select');if(select)select.value=theme;return theme}
+    function initializeTheme(){let stored=document.documentElement.dataset.theme||'modern';try{stored=localStorage.getItem(THEME_STORAGE_KEY)||stored}catch(_error){}return applyTheme(stored)}
+    initializeTheme();
+    const labels=''',
+    1,
+)
+PAGE = PAGE.replace(
+    '<section class="management-grid settings-grid"><section class="settings-config-area" id="config-panel">',
+    '<section class="management-grid settings-grid"><section class="management-panel theme-panel" id="theme-panel"><div class="section-title"><div><h2>Appearance</h2><span class="hint">Choose the Web UI visual style for this browser.</span></div></div><label class="theme-picker" for="theme-select">Theme<select id="theme-select"><option value="modern">Modern</option><option value="classic">Classic</option></select></label></section><section class="settings-config-area" id="config-panel">',
+    1,
+)
 PAGE = PAGE.replace("Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}",
                     "Generated ${date(data.generated_at)}")
 PAGE = PAGE.replace('return `<span class="pill ${tone}${securityClass}">${label}</span>`};', 'const iconKind=label===\'Security updates available\'?\'shield\':label===\'Updates available\'?\'download\':label===\'Healthy\'?\'check\':label===\'Offline\'?\'offline\':label===\'Unknown\'?\'unknown\':\'attention\';return `<span class="pill ${tone}${securityClass}">${statusIcon(iconKind)}${label}</span>`};')
@@ -1271,6 +1289,30 @@ PAGE = PAGE.replace('</body>', '''<script>
     setInterval(syncInteractiveStopButton,500);
 </script></body>''', 1)
 PAGE = re.sub(r'<nav class="page-nav" aria-label="Primary">.*?</nav>', '', PAGE, count=1, flags=re.S)
+PAGE = PAGE.replace('</head>', '''<style>
+    :root { --surface-subtle:#0e162b99; --surface-input:#0b1224; --surface-terminal:#050914; --surface-overlay:#030712aa; --theme-shadow:0 18px 50px #00000029; --theme-card-radius:16px; --theme-control-radius:9px; --theme-nav:#061323f5; --theme-nav-active:#087ecb; }
+    html[data-theme="classic"] { --bg:#20252b; --panel:#2c333be8; --strong:#39434d; --text:#eef1f3; --muted:#aeb8c1; --line:#aeb8c144; --accent:#9bb8c9; --good:#77c99b; --warn:#e6c17a; --security:#e3a866; --bad:#ed8d98; --surface-subtle:#343b42; --surface-input:#20262c; --surface-terminal:#171b1f; --surface-overlay:#111417dd; --theme-shadow:0 8px 24px #00000040; --theme-card-radius:5px; --theme-control-radius:4px; --theme-nav:#292f35; --theme-nav-active:#536e7d; color-scheme:dark; }
+    html[data-theme="classic"] body { background:linear-gradient(180deg,#2a3036 0,var(--bg) 28rem); }
+    html[data-theme="classic"] .metric,html[data-theme="classic"] .notice,html[data-theme="classic"] .details,html[data-theme="classic"] .target-card,html[data-theme="classic"] .jobs,html[data-theme="classic"] .systems-panel,html[data-theme="classic"] .management-panel,html[data-theme="classic"] .modal { box-shadow:var(--theme-shadow); border-radius:var(--theme-card-radius); }
+    html[data-theme="classic"] .dashboard-kpis,html[data-theme="classic"] .guest-panel,html[data-theme="classic"] .node-group,html[data-theme="classic"] .external-group,html[data-theme="classic"] .scheduler-card { background:var(--surface-subtle); }
+    html[data-theme="classic"] .dashboard-kpis .metric,html[data-theme="classic"] .target-row:hover,html[data-theme="classic"] .group-header:hover { background:#ffffff08; }
+    html[data-theme="classic"] .management-form input,html[data-theme="classic"] .management-form select,html[data-theme="classic"] .config-field input,html[data-theme="classic"] .config-field select,html[data-theme="classic"] .modal label input,html[data-theme="classic"] .modal label select,html[data-theme="classic"] .scheduler-modal input,html[data-theme="classic"] .scheduler-modal select { background:var(--surface-input); border-radius:var(--theme-control-radius); }
+    html[data-theme="classic"] button,html[data-theme="classic"] .job-download { background:#ffffff08; border-radius:var(--theme-control-radius); }
+    html[data-theme="classic"] button.primary { background:#9bb8c926; border-color:#9bb8c966; }
+    html[data-theme="classic"] .pill,html[data-theme="classic"] .reboot-required-badge { border-radius:4px; }
+    html[data-theme="classic"] .interactive-terminal-dialog { background:#252b30; border-color:var(--line); border-radius:var(--theme-card-radius); box-shadow:var(--theme-shadow); }
+    html[data-theme="classic"] .interactive-terminal { background:var(--surface-terminal); border-color:var(--line); border-radius:var(--theme-control-radius); }
+    html[data-theme="classic"] .log { background:#171b1f; border-radius:var(--theme-control-radius); }
+    html[data-theme="classic"] .modal-backdrop,html[data-theme="classic"] .interactive-terminal-panel { background:var(--surface-overlay); }
+    html[data-theme="classic"] .dashboard-meta .page-nav { background:var(--theme-nav); border-color:var(--line); box-shadow:var(--theme-shadow); }
+    html[data-theme="classic"] .dashboard-meta .page-nav a.active { background:var(--theme-nav-active); border-color:#c4d5df66; box-shadow:none; }
+    html[data-theme="classic"] .dashboard-meta .nav-toggle { background:var(--theme-nav); border-color:var(--line); }
+    html[data-theme="classic"] .theme-panel { grid-column:1 / -1; }
+    .theme-picker { display:grid; grid-template-columns:minmax(100px,.35fr) minmax(160px,.65fr); align-items:center; gap:10px; color:var(--muted); font-size:.78rem; }
+    .theme-picker select { width:100%; min-height:40px; border:1px solid var(--line); border-radius:var(--theme-control-radius); padding:8px 10px; color:var(--text); background:var(--surface-input); font:inherit; }
+    .theme-picker select:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    @media(max-width:760px) { .theme-picker { grid-template-columns:1fr; gap:5px; } }
+  </style></head>''', 1)
 header_nav = '<button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3.5 11 8.5-7 8.5 7v8.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5Z"/><path d="M9 21v-6h6v6"/></svg><span>Dashboard</span></a><a href="/settings" data-page="settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9.7 3.4.5-1.4h3.6l.5.6 1.4.6 1.4-.6 2.5 2.5-.6 1.4.6 1.4 1.4.5v3.6l-1.4.5-.6 1.4.6 1.4-2.5 2.5-1.4-.6-1.4.6-.5 1.4h-3.6l-.5-1.4-1.4-.6-1.4.6-2.5-2.5.6-1.4-.6-1.4-1.4-.5V9.2l1.4-.5-.6-1.4-.6-1.4 2.5-2.5 1.4.6Z"/><circle cx="12" cy="11" r="3.2"/></svg><span>Settings</span></a><a href="/scheduler" data-page="scheduler"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>Scheduler</span></a><span class="nav-separator" aria-hidden="true"></span><a class="nav-support" href="https://ko-fi.com/basst" target="_blank" rel="noopener noreferrer"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 7h10v7.5A4.5 4.5 0 0 1 10.5 19h-1A4.5 4.5 0 0 1 5 14.5Z"/><path d="M15 9h2a2.5 2.5 0 0 1 0 5h-2M7 4h6"/></svg><span>Support project</span></a><button id="logout-menu" class="nav-logout" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H10M14 8l4 4-4 4M18 12H9"/></svg><span>Log out</span></button></nav>'
 header_nav = header_nav.replace('h3.6l.5.6 1.4.6', 'h3.6l.5 1.4 1.4.6')
 PAGE = PAGE.replace('<button id="logout" type="button">Log out</button></div></div></header>', '<button id="logout" type="button">Log out</button>' + header_nav + '</div></div></header>', 1)
