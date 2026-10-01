@@ -22,6 +22,19 @@ assert 'html[data-theme="classic"]' in page
 assert '--surface-terminal:' in page
 assert '--theme-card-radius:' in page
 
+# The node action markup is generated dynamically.  Tie the Classic selector
+# check to that actual template so a selector aimed at the old group-summary
+# container cannot silently pass while the rendered buttons remain Modern.
+node_markup = re.search(r'card\.innerHTML=`(.*?group-actions.*?)`;const nodeGate', page).group(1)
+assert '<div class="group-actions">' in node_markup
+buttons = dict(re.findall(r'<button class="([^"]+)"[^>]*>([^<]+)</button>', node_markup))
+assert buttons['node-action node-check'] == 'Check node'
+assert buttons['node-action node-update'] == 'Update node'
+assert buttons['node-details'] == 'Details'
+for button_class in ('node-action', 'node-details'):
+    assert f'html[data-theme="classic"] .node-group .group-actions .{button_class}' in page
+assert 'html[data-theme="classic"] .node-group .group-summary .node-action' not in page
+
 normalize = re.search(r"const normalizeTheme=value=>.*?;", page).group(0)
 supported = re.search(r"const SUPPORTED_THEMES=.*?;", page).group(0)
 storage_key = re.search(r"const THEME_STORAGE_KEY=.*?;", page).group(0)

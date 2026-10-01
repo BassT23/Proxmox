@@ -1414,9 +1414,8 @@ html[data-theme="classic"] #login-screen .modal,
 html[data-theme="classic"] #auth-loading .modal { border-color:#69737b; border-radius:4px; background:#30373d; box-shadow:none; }
 html[data-theme="classic"] .interactive-terminal-dialog { border-color:#69737b; background:#252b30; box-shadow:none; }
 html[data-theme="classic"] .interactive-terminal { border-color:#69737b; }
-html[data-theme="classic"] .node-group .group-summary .node-details,
-html[data-theme="classic"] .node-group .group-summary .node-action,
-html[data-theme="classic"] .node-group .group-summary .node-update,
+html[data-theme="classic"] .node-group .group-actions .node-details,
+html[data-theme="classic"] .node-group .group-actions .node-action,
 html[data-theme="classic"] .row-actions button,
 html[data-theme="classic"] .target-selection-state {
     background:#3a4248;
@@ -1435,8 +1434,8 @@ html[data-theme="classic"] .target-selection-state.exclude {
     color:#ffc0c7;
 }
 html[data-theme="classic"] .target-selection-state:hover:not(:disabled),
-html[data-theme="classic"] .node-group .group-summary .node-action:hover:not(:disabled),
-html[data-theme="classic"] .node-group .group-summary .node-update:hover:not(:disabled),
+html[data-theme="classic"] .node-group .group-actions .node-action:hover:not(:disabled),
+html[data-theme="classic"] .node-group .group-actions .node-details:hover:not(:disabled),
 html[data-theme="classic"] .row-actions button:hover:not(:disabled) {
     background:#465159;
     border-color:#a9bbc5;
@@ -1444,7 +1443,7 @@ html[data-theme="classic"] .row-actions button:hover:not(:disabled) {
     box-shadow:none;
 }
 html[data-theme="classic"] .target-selection-state:focus-visible,
-html[data-theme="classic"] .node-group .group-summary button:focus-visible,
+html[data-theme="classic"] .node-group .group-actions button:focus-visible,
 html[data-theme="classic"] .row-actions button:focus-visible {
     outline:2px solid var(--accent);
     outline-offset:2px;
