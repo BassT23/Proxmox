@@ -35,6 +35,19 @@ for button_class in ('node-action', 'node-details'):
     assert f'html[data-theme="classic"] .node-group .group-actions .{button_class}' in page
 assert 'html[data-theme="classic"] .node-group .group-summary .node-action' not in page
 
+config_function = "function setConfigOpen" + page.split("function setConfigOpen", 1)[1].split("\n    function managementMessage", 1)[0]
+config_script = f"""
+const form = {{classList: {{toggle: () => {{}}}}}};
+const document = {{getElementById: id => id === 'config-form' ? form : null, querySelector: () => null}};
+const loadConfig = () => {{}};
+{config_function}
+setConfigOpen(true);
+console.log('config toggle without legacy button: PASS');
+"""
+config_result = subprocess.run(["node", "-e", config_script], check=False, capture_output=True, text=True)
+assert config_result.returncode == 0, config_result.stderr or config_result.stdout
+assert "config toggle without legacy button: PASS" in config_result.stdout
+
 normalize = re.search(r"const normalizeTheme=value=>.*?;", page).group(0)
 supported = re.search(r"const SUPPORTED_THEMES=.*?;", page).group(0)
 storage_key = re.search(r"const THEME_STORAGE_KEY=.*?;", page).group(0)

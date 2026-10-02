@@ -43,6 +43,18 @@ ARCHIVE_TAG=""
 ARCHIVE_VERSION=""
 ARCHIVE_BETA=""
 
+INITIALIZE_TARGET_SELECTION_STATE() {
+  local configured_selection
+  [[ -f "$LOCAL_FILES/update.conf" ]] || return 0
+  configured_selection=$(awk -F'"' '/^USE_INTERNAL_TARGET_SELECTION=/ {print $2; exit}' "$LOCAL_FILES/update.conf")
+  [[ "$configured_selection" == true ]] || return 0
+  [[ -f "$LOCAL_FILES/target-selection.sh" ]] || return 1
+  export UU_TARGET_SELECTION_FILE="$LOCAL_FILES/target-selection.json"
+  # shellcheck disable=SC1090
+  . "$LOCAL_FILES/target-selection.sh" || return 1
+  TARGET_SELECTION_INITIALIZE
+}
+
 DOWNLOAD_FILE() {
   local url="$1" destination="$2" kind="${3:-text}" temporary headers http_code retry_after listing
   mkdir -p "$(dirname "$destination")" || return 1
@@ -659,6 +671,7 @@ INSTALL () {
     else
       cp "$TEMP_FILES"/update.conf $LOCAL_FILES/update.conf.dist
     fi
+    INITIALIZE_TARGET_SELECTION_STATE || exit 1
     WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" "$ARCHIVE_VERSION" "$ARCHIVE_BETA" || exit 1
     cp "$TEMP_FILES"/README.md $LOCAL_FILES/README.md
     SETUP_WEB_SERVICE start
@@ -934,6 +947,11 @@ UPDATE () {
       rm -rf "$TEMP_FILES"/check-updates.sh || true
     fi
     cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf.dist"
+    INITIALIZE_TARGET_SELECTION_STATE || {
+      echo -e "❌${RD:-} Target-selection state could not be initialized; existing installation was left unchanged.${CL:-}" >&2
+      rm -rf "$TEMP_FOLDER" || true
+      return 2
+    }
     WRITE_BUILD_METADATA "$BRANCH" "$ARCHIVE_COMMIT" "$ARCHIVE_TAG" "$ARCHIVE_VERSION" "$ARCHIVE_BETA" || return 1
     rm -f "$TEMP_FILES"/update.conf "$TEMP_FILES"/update.conf.dist
     # targets.conf is runtime inventory and must not be replaced by the

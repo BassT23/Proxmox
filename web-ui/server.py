@@ -1051,7 +1051,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     document.addEventListener('click',event=>{const trigger=event.target.closest('.help-trigger');if(trigger){const control=trigger.closest('.help-control'),open=control.classList.contains('open');closeHelpControls(control);control.classList.toggle('open',!open);trigger.setAttribute('aria-expanded',String(!open));return}if(!event.target.closest('.help-control'))closeHelpControls()});
     document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;const open=document.querySelector('.help-control.open');closeHelpControls();if(open)open.querySelector('.help-trigger')?.focus()});
     let managedTargets=[], editingTarget=null, internalSshTargets=[], internalSshAvailable=[];
-    function setConfigOpen(open){const form=document.getElementById('config-form'),panel=document.getElementById('config-panel'),button=document.getElementById('config-open');form.classList.toggle('open',open);document.querySelector('#settings-page .management-grid').classList.toggle('config-open',open);button.textContent=open?'Close editor':'Open editor';button.setAttribute('aria-expanded',String(open));if(open)loadConfig()}
+    function setConfigOpen(open){const form=document.getElementById('config-form'),button=document.getElementById('config-open');if(!form)return;form.classList.toggle('open',open);document.querySelector('#settings-page .management-grid')?.classList.toggle('config-open',open);if(button){button.textContent=open?'Close editor':'Open editor';button.setAttribute('aria-expanded',String(open))}if(open)loadConfig()}
     function managementMessage(id,message,error=false){const n=document.getElementById(id);n.textContent=message||'';n.className=`management-message${error?' error':''}`}
     function configField(key,values,compact=false){const label=document.createElement('label');label.className=`config-field${configBooleanKeys.includes(key)?' boolean-field':''}${configNumberKeys.includes(key)?' numeric-field':''}${compact?' matrix-control':''}`;if(compact)label.title=configLabels[key]||key;const caption=document.createElement('span');caption.className='field-label';caption.textContent=configLabels[key]||key;if(!compact&&fieldHelpContent[key])caption.appendChild(createHelpControl(configLabels[key]||key,fieldHelpContent[key]));const input=key==='BACKUP_MODE'?document.createElement('select'):document.createElement('input');input.name=key;input.dataset.key=key;if(configBooleanKeys.includes(key)){input.type='checkbox';input.checked=values[key]===true;label.append(input,caption)}else if(key==='BACKUP_MODE'){const current=values[key]||'';['stop','suspend','snapshot'].forEach(option=>{const item=document.createElement('option');item.value=option;item.textContent=option;input.appendChild(item)});if(current&&!['stop','suspend','snapshot'].includes(current)){const item=document.createElement('option');item.value=current;item.textContent=`Legacy value: ${current}`;input.appendChild(item)}input.value=current||'stop';label.append(caption,input)}else{input.type=configNumberKeys.includes(key)?'number':'text';input.value=values[key]??'';if(input.type==='number'){input.min=key==='SSH_PORT'?'1':'0';if(key==='SSH_PORT')input.max='65535'}label.append(caption,input);if(configNumberKeys.includes(key)){const unit=document.createElement('span');unit.className='field-unit';unit.textContent=key==='KEEP_SNAPSHOTS'?'snapshots':key==='SSH_PORT'?'TCP port':'seconds';label.append(unit)}else if(key==='BACKUP_STORAGE'){const unit=document.createElement('span');unit.className='field-unit';unit.textContent='Proxmox storage ID, e.g. pbs';label.append(unit)}}return label}
     function configMatrix(groupData,values){const wrap=document.createElement('div');wrap.className='check-update-layout';const matrix=document.createElement('div');matrix.className='check-update-matrix';matrix.setAttribute('role','table');const header=document.createElement('div');header.className='matrix-row';const blank=document.createElement('span');blank.className='matrix-label';const checkHead=document.createElement('span');checkHead.className='matrix-cell matrix-head';checkHead.textContent='Check';const updateHead=document.createElement('span');updateHead.className='matrix-cell matrix-head';updateHead.textContent='Update';header.append(blank,checkHead,updateHead);matrix.appendChild(header);groupData.matrix.forEach(row=>{const item=document.createElement('div');item.className='matrix-row';const label=document.createElement('span');label.className='matrix-label';label.textContent=row.label;const check=document.createElement('span');check.className='matrix-cell';check.appendChild(configField(row.check,values,true));const update=document.createElement('span');update.className='matrix-cell';if(row.update)update.appendChild(configField(row.update,values,true));else{const dash=document.createElement('span');dash.className='matrix-empty';dash.textContent='—';update.appendChild(dash)}item.append(label,check,update);matrix.appendChild(item)});wrap.appendChild(matrix);if(groupData.extras){const extras=document.createElement('div');extras.className='matrix-extras';groupData.extras.forEach(key=>{const field=configField(key,values);if(configNumberKeys.includes(key)){const row=document.createElement('div');row.className='matrix-extra-row';const caption=field.querySelector('.field-label');caption.className='delay-label';const control=document.createElement('span');control.className='delay-control';control.append(field.querySelector('input'),field.querySelector('.field-unit'));row.append(caption,control);extras.appendChild(row)}else extras.appendChild(field)});wrap.appendChild(extras)}return wrap}
@@ -2114,6 +2114,37 @@ def write_target_selection(path, payload):
         os.chown(temporary_path, 0, 0)
     os.replace(temporary_path, path)
     return normalized
+
+
+def ensure_target_selection_file(path):
+    """Create the empty persistent state once, never replacing user data."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = Path(str(path) + ".uu-lock")
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if path.exists() or path.is_symlink():
+            return False
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as temporary:
+            json.dump(target_selection_default(), temporary, indent=2, sort_keys=True)
+            temporary.write("\n")
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            temporary_path = Path(temporary.name)
+        os.chmod(temporary_path, 0o600)
+        if os.geteuid() == 0:
+            os.chown(temporary_path, 0, 0)
+        try:
+            os.link(temporary_path, path)
+        except FileExistsError:
+            return False
+        finally:
+            temporary_path.unlink(missing_ok=True)
+        directory_fd = os.open(path.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        return True
 
 
 def parse_inventory_text(content):
@@ -3904,6 +3935,13 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def handle_config_update(self, payload):
         normalized = validate_config_values(payload.get("values") if isinstance(payload, dict) else None)
+        current_config = config_value_map(self.config_content())
+        if normalized.get("USE_INTERNAL_TARGET_SELECTION") == "true" or current_config.get("USE_INTERNAL_TARGET_SELECTION") is True:
+            try:
+                ensure_target_selection_file(self.server.target_selection_file)
+            except OSError as error:
+                self.send_json(error_payload("TARGET_SELECTION_INIT_FAILED", f"Target selection state could not be initialized: {error}"), HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
         locked_atomic_update(self.server.config_file,
                              lambda content: update_config_text(content, normalized))
         self.send_json({"message": "Configuration saved.", "config": config_value_map(self.config_content())})
