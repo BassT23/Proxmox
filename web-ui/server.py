@@ -1468,6 +1468,8 @@ def update_start_failure_message(result, generic_message):
         return "The remote job runner could not be prepared."
     if "Could not start update job" in diagnostic:
         return "The remote job runner could not start the job."
+    if "Unknown assignment: LogFilterPatterns=" in diagnostic:
+        return "The installed systemd does not support the job log filter."
     if getattr(result, "returncode", None) == 124:
         return "Job start timed out."
     return f"{generic_message} (exit code {getattr(result, 'returncode', 'unknown')})."
@@ -4674,7 +4676,10 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("CHECK_ALREADY_RUNNING", "A full check is already running."), HTTPStatus.CONFLICT)
             return
         if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
-            self.send_json(error_payload("CHECK_START_FAILED", "The full check could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            self.send_json(error_payload(
+                "CHECK_START_FAILED",
+                update_start_failure_message(result, "The full check could not be started."),
+            ), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         self.send_json({"state": "running", "job": job_match.group(1), "type": "check", "target": "all-systems",
                         "message": "Full check job started."}, HTTPStatus.ACCEPTED)
