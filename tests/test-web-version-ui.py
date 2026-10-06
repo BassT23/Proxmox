@@ -126,7 +126,12 @@ assert '<label data-login-factor="first">Domain<select name="realm" id="login-re
 assert 'id="login-tfa"' in login_markup
 assert 'id="login-tfa-type"' in login_markup
 assert 'id="login-tfa-response"' in login_markup
+assert 'id="login-tfa-webauthn"' in login_markup
 assert '/api/login/tfa' in module.PAGE
+assert 'navigator.credentials.get' in module.PAGE
+assert 'isSecureContext' in module.PAGE
+assert "submitTfaResponse('webauthn'" in module.PAGE
+assert 'public_challenge?.webauthn' in module.PAGE
 assert '.modal label input,.modal label select' in module.PAGE
 assert '.modal label select { appearance:none;' in module.PAGE
 assert 'Authentication required.' not in login_markup

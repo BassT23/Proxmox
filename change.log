@@ -8,6 +8,8 @@ Added:
   theme is a browser-local preference and defaults to Modern.
 - Proxmox Web UI login support for TOTP, single-use recovery keys, and
   realm-enforced YubiKey OTP through a short-lived server-side challenge flow.
+- Proxmox WebAuthn login support through the same server-side challenge flow,
+  with browser assertion handling and secure origin validation.
 
 **v5.1.3** (30.09.2026)
 

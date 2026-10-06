@@ -144,17 +144,21 @@ WEB_UI_PAM_USER=admin
 ```
 
 Proxmox two-factor authentication uses a short-lived two-step login flow.
-TOTP, single-use recovery keys, and realm-enforced YubiKey OTP are supported;
-the factor response is sent back to Proxmox with the signed challenge before
-the Ultimate Updater session is created. A partial Proxmox ticket is never
-treated as a successful login. Passwords, OTPs, recovery keys, and Proxmox
-tickets are not stored persistently.
+TOTP, single-use recovery keys, realm-enforced YubiKey OTP, and WebAuthn are
+supported; the factor response is sent back to Proxmox with the signed
+challenge before the Ultimate Updater session is created. A partial Proxmox
+ticket is never treated as a successful login. Passwords, OTPs, recovery
+keys, WebAuthn assertions, and Proxmox tickets are not stored persistently.
 
-WebAuthn is not enabled by this flow yet. It requires a trusted HTTPS origin
-and a matching Proxmox WebAuthn RP-ID/origin configuration. In particular,
-the Proxmox GUI origin on port 8006 is not automatically compatible with an
-independent Ultimate Updater origin on port 8765. Do not disable Proxmox TFA
-as a workaround.
+WebAuthn requires a trusted HTTPS origin and a matching Proxmox WebAuthn RP-ID
+configuration. Configure Proxmox with the shared RP-ID and, when using
+multiple ports, leave its `origin` dynamic so Proxmox derives the expected
+origin from each validated request host. The browser origin and the Ultimate
+Updater host must match exactly; do not use an IP address when the RP-ID and
+certificate use a hostname. A browser secure context is required, and the
+Proxmox GUI on port 8006 and Ultimate Updater on port 8765 must use the same
+RP-ID. Do not disable Proxmox TFA or browser certificate validation as a
+workaround.
 
 The interface is responsive on narrow displays. The dashboard can also show
 an expanded external-system section when target details are needed.

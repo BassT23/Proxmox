@@ -2,6 +2,7 @@
 """Regression tests for Proxmox-native Web UI authentication."""
 
 import importlib.util
+import json
 import threading
 import time
 from pathlib import Path
@@ -98,8 +99,47 @@ assert auth.complete_tfa("admin", "pam", partial, "totp", "123456")["ok"] is Tru
 assert complete_calls[-1]["password"] == "totp:123456"
 assert complete_calls[-1]["tfa-challenge"] == partial
 
+# WebAuthn uses the same Proxmox partial-ticket flow. The browser receives only
+# the public options; the signed partial ticket stays in the server-side state.
+webauthn_public = {
+    "webauthn": {"publicKey": {
+        "challenge": "public-challenge",
+        "rpId": "proxmox-test-2.internal",
+        "allowCredentials": [{"type": "public-key", "id": "credential-id"}],
+        "userVerification": "discouraged",
+    }}
+}
+webauthn_partial = "PVE:!tfa!" + quote(json.dumps(webauthn_public, separators=(",", ":")), safe="") + ":signature"
+webauthn_calls = []
+auth, _ = make_auth()
+def webauthn_request(path, fields=None, request_host=None, request_origin=None):
+    if path == "/access/domains":
+        return REALMS
+    if path == "/access/ticket":
+        webauthn_calls.append((fields, request_host, request_origin))
+        if fields and fields.get("tfa-challenge"):
+            return {"ticket": "PVE:complete-webauthn-ticket", "username": "admin@pam"}
+        return {"ticket": webauthn_partial, "username": "admin@pam"}
+    raise AssertionError(f"unexpected API request: {path}")
+auth._request = webauthn_request
+webauthn_started = auth.authenticate("admin", "secret", "pam", "proxmox-test-2.internal:8765",
+                                     "https://proxmox-test-2.internal:8765")
+assert webauthn_started["challenge"]["methods"] == ["webauthn"]
+assert webauthn_started["challenge"]["public_challenge"] == webauthn_public
+assert auth.complete_tfa("admin", "pam", webauthn_partial, "webauthn",
+                         json.dumps({"id": "id", "type": "public-key", "challenge": "public",
+                                     "rawId": "raw", "response": {"authenticatorData": "a",
+                                     "clientDataJSON": "b", "signature": "c"}}),
+                         "proxmox-test-2.internal:8765",
+                         "https://proxmox-test-2.internal:8765")["ok"] is True
+assert webauthn_calls[-1][0]["password"].startswith("webauthn:{")
+assert webauthn_calls[-1][0]["tfa-challenge"] == webauthn_partial
+assert webauthn_calls[-1][1:] == ("proxmox-test-2.internal:8765", "https://proxmox-test-2.internal:8765")
+
 # An AuthStore exposes only an opaque challenge id to the caller and creates
 # the Ultimate Updater session only after Proxmox returns a complete ticket.
+auth, _ = make_auth()
+auth._request = challenge_request
 store = server.AuthStore(Path("/tmp/unused-proxmox-tfa-test.json"))
 store.backend = "proxmox"
 store.proxmox = auth
@@ -123,7 +163,7 @@ assert store.complete_tfa(pending["challenge_id"], "totp", "123456", pending["_t
 def tfa_store():
     item = server.AuthStore(Path("/tmp/unused-proxmox-tfa-limit-test.json"))
     item.backend = "proxmox"
-    item.proxmox.authenticate = lambda username, password, realm: {
+    item.proxmox.authenticate = lambda username, password, realm, *_context: {
         "ok": False, "code": "TFA_REQUIRED", "message": "TFA required.",
         "challenge": {"username": f"{username}@{realm}", "realm": realm,
                        "partial_ticket": partial, "methods": ["totp"],
