@@ -143,9 +143,18 @@ UU_AUTH_BACKEND=pam
 WEB_UI_PAM_USER=admin
 ```
 
-Two-factor authentication challenges from Proxmox are rejected by this login
-flow unless a complete ticket is returned; a password-only success is never
-treated as sufficient. Passwords and Proxmox tickets are not stored.
+Proxmox two-factor authentication uses a short-lived two-step login flow.
+TOTP, single-use recovery keys, and realm-enforced YubiKey OTP are supported;
+the factor response is sent back to Proxmox with the signed challenge before
+the Ultimate Updater session is created. A partial Proxmox ticket is never
+treated as a successful login. Passwords, OTPs, recovery keys, and Proxmox
+tickets are not stored persistently.
+
+WebAuthn is not enabled by this flow yet. It requires a trusted HTTPS origin
+and a matching Proxmox WebAuthn RP-ID/origin configuration. In particular,
+the Proxmox GUI origin on port 8006 is not automatically compatible with an
+independent Ultimate Updater origin on port 8765. Do not disable Proxmox TFA
+as a workaround.
 
 The interface is responsive on narrow displays. The dashboard can also show
 an expanded external-system section when target details are needed.

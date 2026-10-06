@@ -3,6 +3,7 @@
 
 import importlib.util
 from pathlib import Path
+from urllib.parse import quote
 
 
 ROOT = Path(__file__).parents[1]
@@ -71,6 +72,49 @@ assert auth.authenticate("admin", "secret", "pam")["code"] == "LOGIN_FAILED"
 
 auth._request = lambda path, fields=None: REALMS
 assert auth.authenticate("admin", "secret", "unknown")["code"] == "LOGIN_FAILED"
+
+# The generic Proxmox challenge flow keeps the signed partial ticket internal
+# and sends the factor response in password when tfa-challenge is present.
+partial = "PVE:!tfa!" + quote('{"type":"tfa"}', safe="")
+complete_calls = []
+auth, _ = make_auth()
+def challenge_request(path, fields=None):
+    if path == "/access/domains":
+        return REALMS
+    if path == "/access/ticket":
+        complete_calls.append(fields)
+        if fields and fields.get("tfa-challenge"):
+            return {"ticket": "PVE:complete-ticket", "username": "admin@pam"}
+        return {"ticket": partial, "username": "admin@pam"}
+    raise AssertionError(f"unexpected API request: {path}")
+auth._request = challenge_request
+started = auth.authenticate("admin", "secret", "pam")
+assert started["code"] == "TFA_REQUIRED"
+assert started["challenge"]["methods"] == ["totp"]
+assert started["challenge"]["partial_ticket"] == partial
+assert auth.complete_tfa("admin", "pam", partial, "totp", "123456")["ok"] is True
+assert complete_calls[-1]["password"] == "totp:123456"
+assert complete_calls[-1]["tfa-challenge"] == partial
+
+# An AuthStore exposes only an opaque challenge id to the caller and creates
+# the Ultimate Updater session only after Proxmox returns a complete ticket.
+store = server.AuthStore(Path("/tmp/unused-proxmox-tfa-test.json"))
+store.backend = "proxmox"
+store.proxmox = auth
+pending = store.login("admin", "secret", "pam", "127.0.0.1")
+assert pending["code"] == "TFA_REQUIRED"
+assert "partial_ticket" not in pending
+assert pending["challenge_id"] in store.tfa_challenges
+assert pending["_tfa_binding"] not in pending["challenge_id"]
+assert store.complete_tfa(pending["challenge_id"], "totp", "123456", "wrong-binding")["code"] == "TFA_EXPIRED"
+assert pending["challenge_id"] in store.tfa_challenges
+session = store.complete_tfa(pending["challenge_id"], "totp", "123456", pending["_tfa_binding"])
+assert session["ok"] is True
+assert pending["challenge_id"] not in store.tfa_challenges
+assert store.session(session["token"])["user"] == "admin@pam"
+
+# Challenges are client-bound and cannot be replayed after completion.
+assert store.complete_tfa(pending["challenge_id"], "totp", "123456", pending["_tfa_binding"])["code"] == "TFA_EXPIRED"
 
 # Proxmox usernames are not restricted by the legacy local-PAM regex.
 auth, _ = make_auth()

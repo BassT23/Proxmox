@@ -845,7 +845,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
 </head>
 <body>
   <section id="auth-loading" class="modal-backdrop open" aria-live="polite"><div class="modal auth-loading"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><p>Loading…</p></div></section>
-  <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Sign in with your Proxmox administrator account.</p><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><label>Domain<select name="realm" id="login-realm" autocomplete="off" required><option value="">Loading authentication domains…</option></select></label><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
+  <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Sign in with your Proxmox administrator account.</p><label data-login-factor="first">Username<input name="username" autocomplete="username" required></label><label data-login-factor="first">Password<input name="password" type="password" autocomplete="current-password" required></label><label data-login-factor="first">Domain<select name="realm" id="login-realm" autocomplete="off" required><option value="">Loading authentication domains…</option></select></label><div id="login-tfa" hidden><p id="login-tfa-message" class="hint">Two-factor authentication is required.</p><label>Method<select id="login-tfa-type" autocomplete="off"></select></label><label>Response<input id="login-tfa-response" autocomplete="one-time-code" inputmode="text"></label><div class="form-actions"><button id="login-tfa-cancel" type="button">Cancel</button></div></div><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
   <main class="app-main" id="dashboard" hidden>
     <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p id="page-subtitle" class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta"><span id="generated">Loading status…</span><button id="job-running-indicator" class="job-running-indicator" type="button" hidden aria-controls="jobs"><span class="job-running-dot" aria-hidden="true"></span><span id="job-running-label">Job running</span></button><button id="updater-version-indicator" class="updater-update-indicator" type="button" hidden>Updater update available</button><button id="logout" type="button">Log out</button></div></div><nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav><section class="summary dashboard-kpis" hidden><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
     <div id="notice" hidden></div>
@@ -867,11 +867,13 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const text=(v,f='Unknown')=>v===null||v===undefined||v===''?f:String(v); const esc=v=>text(v,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const date=v=>{if(!v)return'Unknown';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleString()}; const statusLabel=v=>labels[v]||['Unknown','neutral']; const set=(id,v)=>document.getElementById(id).textContent=v;
     const LOG_BOTTOM_TOLERANCE=10;
-    let currentStatus={targets:[]}, jobs=[], pollTimer, openJobLogId=null, logAutoFollow=true, logScrollTop=0, suppressLogScroll=false, finalLogLoaded=new Set(), logLoading=new Set(), csrfToken=null;
+    let currentStatus={targets:[]}, jobs=[], pollTimer, openJobLogId=null, logAutoFollow=true, logScrollTop=0, suppressLogScroll=false, finalLogLoaded=new Set(), logLoading=new Set(), csrfToken=null, pendingTfa=null;
     let authRealmsReady=false;
     function setLoginLoading(loading){const form=document.getElementById('login-form'),button=form.querySelector('button[type="submit"]');form.classList.toggle('is-loading',loading);form.dataset.submitting=loading?'true':'false';button.disabled=loading||!authRealmsReady;button.textContent=loading?'Signing in…':'Sign in';form.querySelectorAll('input,select').forEach(input=>{input.disabled=loading||(!loading&&input.id==='login-realm'&&!authRealmsReady)})}
     async function loadAuthRealms(){const select=document.getElementById('login-realm');if(!select)return;authRealmsReady=false;setLoginLoading(false);try{const response=await fetch('/api/auth/realms',{cache:'no-store'}),data=await response.json();if(!response.ok||!Array.isArray(data.realms)||!data.realms.length)throw new Error('Proxmox authentication realms are unavailable.');select.replaceChildren(...data.realms.map(item=>{const option=document.createElement('option');option.value=item.realm;option.textContent=item.comment?`${item.comment} (${item.realm})`:item.realm;return option}));select.value=data.default_realm||data.realms[0].realm;authRealmsReady=true;setLoginLoading(false)}catch(error){select.replaceChildren(new Option('Authentication domains unavailable',''));select.value='';setLoginLoading(false);const status=document.getElementById('login-message');status.className='management-message error';status.textContent='Proxmox authentication realms are unavailable.'}}
-    function showLogin(message=''){window.__uu_authenticated=false;setLoginLoading(false);document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null;loadAuthRealms()}
+    function showLogin(message=''){window.__uu_authenticated=false;pendingTfa=null;setLoginLoading(false);document.querySelectorAll('[data-login-factor="first"]').forEach(item=>item.hidden=false);document.getElementById('login-tfa').hidden=true;document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null;loadAuthRealms()}
+    function showTfaChallenge(challenge){pendingTfa=challenge;document.querySelectorAll('[data-login-factor="first"]').forEach(item=>item.hidden=true);const box=document.getElementById('login-tfa'),select=document.getElementById('login-tfa-type'),response=document.getElementById('login-tfa-response');const labels={totp:'Authenticator code',recovery:'Recovery key',yubico:'YubiKey OTP',webauthn:'WebAuthn'};select.replaceChildren(...(challenge.methods||[]).map(type=>new Option(labels[type]||type,type)));if(!select.options.length){throw new Error('This Proxmox two-factor method is not supported by this Web UI.')}box.hidden=false;response.value='';response.focus();document.getElementById('login-message').textContent='';document.getElementById('login-tfa-message').textContent='Two-factor authentication is required. Enter the requested response.'}
+    async function cancelTfa(){const challenge=pendingTfa;pendingTfa=null;setLoginLoading(false);document.getElementById('login-tfa').hidden=true;document.querySelectorAll('[data-login-factor="first"]').forEach(item=>item.hidden=false);if(challenge?.challenge_id){await fetch('/api/login/tfa/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({challenge_id:challenge.challenge_id})}).catch(()=>{})}document.getElementById('login-tfa-response').value='';document.getElementById('login-message').textContent='Login cancelled.'}
     function showDashboard(){window.__uu_authenticated=true;document.getElementById('auth-loading').classList.remove('open');document.getElementById('login-screen').classList.remove('open');document.getElementById('dashboard').hidden=false;window.dispatchEvent(new Event('uu-auth-ready'))}
     function applyPageRoute(push=false,requestedPage=null){let page=requestedPage|| (location.pathname==='/settings'?'settings':location.pathname==='/scheduler'?'scheduler':'overview');if(push)history.pushState({},'',page==='overview'?'/':`/${page}`);const subtitles={overview:'A clear overview of updates across your systems.',settings:'Manage configuration without leaving your authenticated session.',scheduler:''};document.querySelectorAll('.page-nav a').forEach(link=>{const active=link.dataset.page===page;link.classList.toggle('active',active);link.setAttribute('aria-current',active?'page':'false')});document.getElementById('page-subtitle').textContent=subtitles[page];document.querySelector('.dashboard-kpis').hidden=page!=='overview';document.getElementById('overview-page').hidden=page!=='overview';document.getElementById('settings-page').hidden=page!=='settings';document.getElementById('scheduler-page').hidden=page!=='scheduler';if(page==='settings')loadConfig()}
     document.getElementById('theme-select')?.addEventListener('change',event=>applyTheme(event.target.value,true));
@@ -909,7 +911,8 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function scheduleUpdaterVersionCheck(){clearTimeout(versionStartupTimer);clearTimeout(versionRetryTimer);versionRetryUsed=false;versionStartupTimer=setTimeout(async()=>{const data=await loadUpdaterVersion();if(data.state==='unavailable'&&!versionRetryUsed){versionRetryUsed=true;versionRetryTimer=setTimeout(()=>loadUpdaterVersion(),7000)}},2500)}
     function openUpdaterVersion(){document.getElementById('updater-version-modal').classList.add('open')}
     document.getElementById('updater-version-indicator').onclick=openUpdaterVersion;document.getElementById('updater-version-footer').onclick=openUpdaterVersion;document.getElementById('updater-version-close').onclick=()=>document.getElementById('updater-version-modal').classList.remove('open');document.getElementById('updater-version-check').onclick=()=>loadUpdaterVersion(true);document.getElementById('updater-version-update').onclick=async()=>{if(!updaterVersion?.branch||updaterVersion.update_available!==true)return;const button=document.getElementById('updater-version-update');button.disabled=true;try{const data=await api('/api/updater-update',{method:'POST',body:JSON.stringify({branch:updaterVersion.branch})});document.getElementById('updater-version-message').textContent=data.message||'Updater self-update job started.';await loadJobs()}catch(error){document.getElementById('updater-version-message').textContent=error.message;document.getElementById('updater-version-message').className='management-message error';button.disabled=false}};
-    document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true'||!authRealmsReady)return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value,realm:form.elements.realm.value})});const d=await r.json();if(!r.ok){const error=new Error(d.error?.message||'Login failed');error.code=d.error?.code;throw error}csrfToken=d.csrf;form.reset();message.className='management-message success';message.textContent='Login successful';await Promise.all([loadStatus(),loadJobs(),loadTargets(),loadTargetSelection()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent=error.message||'Login failed'}};
+    document.getElementById('login-tfa-cancel').onclick=cancelTfa;
+    document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true'||(!pendingTfa&&!authRealmsReady))return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{let request,endpoint;if(pendingTfa){request={challenge_id:pendingTfa.challenge_id,type:document.getElementById('login-tfa-type').value,response:document.getElementById('login-tfa-response').value};endpoint='/api/login/tfa'}else{request={username:form.elements.username.value,password:form.elements.password.value,realm:form.elements.realm.value};endpoint='/api/login'}const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});const d=await r.json();if(d.code==='TFA_REQUIRED'&&d.challenge_id){setLoginLoading(false);showTfaChallenge(d);return}if(!r.ok){const error=new Error(d.error?.message||d.message||'Login failed');error.code=d.error?.code||d.code;throw error}csrfToken=d.csrf;pendingTfa=null;form.reset();message.className='management-message success';message.textContent='Login successful';await Promise.all([loadStatus(),loadJobs(),loadTargets(),loadTargetSelection()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent=error.message||'Login failed'}};
     const logout=async()=>{try{await api('/api/logout',{method:'POST',body:'{}'})}catch(_error){}showLogin('You have been signed out.')};document.getElementById('logout').onclick=logout;document.getElementById('logout-menu')?.addEventListener('click',logout);
   </script>
   <div id="target-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="target-modal-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="target-modal-title">External system</h3><button type="button" class="modal-close" id="target-modal-cancel">Close</button></div><div class="management-form open"><label>Name<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"></label><label>Host / IP<input name="host" required pattern="[A-Za-z0-9_.:-]+"></label><label>SSH user<input name="user" required pattern="[A-Za-z_][A-Za-z0-9_.-]*"></label><label>SSH port<input name="port" type="number" min="1" max="65535" value="22" required></label><label>Identity file (optional)<input name="identity_file" placeholder="/root/.ssh/key"></label><div class="form-actions"><button type="submit" class="primary">Save</button><button type="button" id="target-modal-test">Test connection</button></div><div id="target-modal-message" class="management-message form-wide" role="status"></div></div></form></div>
@@ -2730,6 +2733,35 @@ class ProxmoxAuth:
     def _is_partial_ticket(ticket):
         return isinstance(ticket, str) and ticket.startswith("PVE:!tfa!")
 
+    @staticmethod
+    def _partial_challenge(ticket):
+        if not ProxmoxAuth._is_partial_ticket(ticket):
+            return None
+        encoded = ticket.split("!tfa!", 1)[1]
+        try:
+            decoded = unquote(encoded)
+            challenge, _end = json.JSONDecoder().raw_decode(decoded)
+        except (TypeError, UnicodeError, ValueError):
+            return None
+        return challenge if isinstance(challenge, dict) else None
+
+    @staticmethod
+    def _challenge_methods(challenge, realm_data=None):
+        challenge = challenge if isinstance(challenge, dict) else {}
+        realm_data = realm_data if isinstance(realm_data, dict) else {}
+        methods = []
+        challenge_type = str(challenge.get("type", "")).lower()
+        realm_tfa = str(realm_data.get("tfa", "")).lower()
+        if challenge.get("yubico") or challenge_type in {"yubico", "yubikey"} or realm_tfa == "yubico":
+            methods.append("yubico")
+        if challenge_type in {"webauthn", "u2f"} or challenge.get("webauthn") or challenge.get("u2f"):
+            methods.append("webauthn")
+        if challenge.get("totp") or challenge_type in {"tfa", "totp", "oath"} or realm_tfa in {"oath", "totp"}:
+            methods.append("totp")
+        if challenge.get("recovery"):
+            methods.append("recovery")
+        return list(dict.fromkeys(methods))
+
     def realms(self):
         now = time.monotonic()
         if self._realm_cache and now - self._realm_cache[0] < 30:
@@ -2747,7 +2779,8 @@ class ProxmoxAuth:
             comment = item.get("comment", "")
             if not isinstance(comment, str):
                 raise ProxmoxAuthError("Malformed Proxmox realm response.")
-            realms.append({"realm": realm, "comment": comment, "type": str(item.get("type", ""))})
+            realms.append({"realm": realm, "comment": comment, "type": str(item.get("type", "")),
+                           "tfa": str(item.get("tfa", ""))})
         if not realms:
             raise ProxmoxAuthError("No Proxmox authentication realms are configured.")
         default_realm = next((item["realm"] for item in realms if item["realm"] == "pam"), realms[0]["realm"])
@@ -2818,12 +2851,22 @@ class ProxmoxAuth:
             return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
         try:
             available = self.realms()
-            if realm not in {item["realm"] for item in available["realms"]}:
+            realm_data = next((item for item in available["realms"] if item["realm"] == realm), None)
+            if realm_data is None:
                 return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
             data = self._request("/access/ticket", {"username": username, "password": password, "realm": realm})
             if self._has_tfa({"data": data}):
+                ticket = data.get("ticket") if isinstance(data, dict) else None
+                challenge = self._partial_challenge(ticket)
+                if not challenge:
+                    return {"ok": False, "code": "TFA_REQUIRED",
+                            "message": "Two-factor authentication is required.", "challenge": None}
                 return {"ok": False, "code": "TFA_REQUIRED",
-                        "message": "Two-factor authentication is required but not supported by this login flow."}
+                        "message": "Two-factor authentication is required.",
+                        "challenge": {"username": data.get("username") or f"{username}@{realm}",
+                                       "realm": realm, "partial_ticket": ticket,
+                                       "methods": self._challenge_methods(challenge, realm_data),
+                                       "public_challenge": challenge}}
             if not isinstance(data, dict) or not isinstance(data.get("ticket"), str) or not data["ticket"]:
                 return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
             if self._is_partial_ticket(data["ticket"]):
@@ -2838,17 +2881,48 @@ class ProxmoxAuth:
         except ProxmoxAuthError as error:
             if error.tfa:
                 return {"ok": False, "code": "TFA_REQUIRED",
-                        "message": "Two-factor authentication is required but not supported by this login flow."}
+                        "message": "Two-factor authentication is required.", "challenge": None}
+            return {"ok": False, "code": "LOGIN_FAILED", "message": "Proxmox authentication is unavailable."}
+
+    def complete_tfa(self, username, realm, partial_ticket, factor, response):
+        if not self._valid_username(username) or not isinstance(realm, str):
+            return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+        if factor not in {"totp", "recovery", "yubico"} or not isinstance(response, str) or not response:
+            return {"ok": False, "code": "TFA_UNSUPPORTED", "message": "That two-factor method is unavailable."}
+        if not self._is_partial_ticket(partial_ticket):
+            return {"ok": False, "code": "TFA_EXPIRED", "message": "The two-factor login challenge is invalid or expired."}
+        try:
+            data = self._request("/access/ticket", {
+                "username": username,
+                "password": f"{factor}:{response}",
+                "realm": realm,
+                "tfa-challenge": partial_ticket,
+            })
+            if not isinstance(data, dict) or not isinstance(data.get("ticket"), str) or not data["ticket"]:
+                return {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
+            if self._is_partial_ticket(data["ticket"]) or self._has_tfa({"data": data}):
+                return {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
+            userid = data.get("username") or f"{username}@{realm}"
+            if not self.authorized(userid):
+                return {"ok": False, "code": "LOGIN_UNAUTHORIZED", "message": "This Proxmox account is not authorized for Ultimate Updater."}
+            return {"ok": True, "user": userid}
+        except ProxmoxAuthError as error:
+            if error.tfa:
+                return {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
             return {"ok": False, "code": "LOGIN_FAILED", "message": "Proxmox authentication is unavailable."}
 
 
 class AuthStore:
     SESSION_SECONDS = 8 * 60 * 60
+    TFA_SECONDS = 5 * 60
+    TFA_MAX_ATTEMPTS = 5
 
     def __init__(self, path):
         self.path = path
         self.sessions = {}
         self.failed_logins = {}
+        self.tfa_challenges = {}
+        self.tfa_lock = threading.Lock()
         configured_backend = os.environ.get("UU_AUTH_BACKEND", "").strip().lower()
         self.backend = configured_backend or "proxmox"
         self.proxmox = ProxmoxAuth()
@@ -2920,6 +2994,39 @@ class AuthStore:
             return {"ok": False, "code": "LOGIN_RATE_LIMITED", "message": "Too many login attempts."}
         if self.backend == "proxmox":
             result = self.proxmox.authenticate(username, password, realm)
+            if result.get("code") == "TFA_REQUIRED" and result.get("challenge"):
+                challenge = result["challenge"]
+                methods = [method for method in challenge["methods"] if method in {"totp", "recovery", "yubico"}]
+                if not methods:
+                    return {"ok": False, "code": "TFA_UNSUPPORTED",
+                            "message": "This Proxmox two-factor method is not supported by this Web UI."}
+                challenge_id = secrets.token_urlsafe(32)
+                binding = secrets.token_urlsafe(24)
+                now = time.time()
+                with self.tfa_lock:
+                    self._purge_tfa(now)
+                    self.tfa_challenges[challenge_id] = {
+                        "username": challenge["username"].split("@", 1)[0],
+                        "userid": challenge["username"],
+                        "realm": challenge["realm"],
+                        "partial_ticket": challenge["partial_ticket"],
+                        "methods": tuple(methods),
+                        "public_challenge": challenge.get("public_challenge", {}),
+                        "binding": binding,
+                        "created": now,
+                        "expires": now + self.TFA_SECONDS,
+                        "attempts": 0,
+                        "busy": False,
+                    }
+                    timer = threading.Timer(self.TFA_SECONDS, self._expire_tfa, args=(challenge_id,))
+                    timer.daemon = True
+                    self.tfa_challenges[challenge_id]["timer"] = timer
+                    timer.start()
+                return {"ok": False, "code": "TFA_REQUIRED", "message": result["message"],
+                        "challenge_id": challenge_id, "methods": methods,
+                        "public_challenge": challenge.get("public_challenge", {}),
+                        "expires_at": int((now + self.TFA_SECONDS) * 1000),
+                        "_tfa_binding": binding}
             if not result.get("ok"):
                 self.failed_logins[client] = (attempts + 1, window)
                 return result
@@ -2942,6 +3049,66 @@ class AuthStore:
         self.sessions[token] = {"user": authenticated_user, "csrf": csrf,
                                 "expires": time.time() + self.SESSION_SECONDS}
         return {"ok": True, "token": token, "csrf": csrf, "user": authenticated_user}
+
+    def _purge_tfa(self, now=None):
+        now = time.time() if now is None else now
+        for challenge_id, challenge in list(self.tfa_challenges.items()):
+            if challenge["expires"] <= now:
+                self.tfa_challenges.pop(challenge_id, None)
+
+    def _expire_tfa(self, challenge_id):
+        with self.tfa_lock:
+            challenge = self.tfa_challenges.get(challenge_id)
+            if challenge and challenge["expires"] <= time.time():
+                self.tfa_challenges.pop(challenge_id, None)
+
+    def cancel_tfa(self, challenge_id, binding):
+        if not isinstance(challenge_id, str):
+            return
+        with self.tfa_lock:
+            challenge = self.tfa_challenges.get(challenge_id)
+            if challenge and hmac.compare_digest(challenge["binding"], str(binding or "")):
+                self.tfa_challenges.pop(challenge_id, None)
+                challenge["timer"].cancel()
+
+    def complete_tfa(self, challenge_id, factor, response, binding):
+        now = time.time()
+        with self.tfa_lock:
+            self._purge_tfa(now)
+            challenge = self.tfa_challenges.get(challenge_id)
+            if not challenge or not isinstance(binding, str) or not hmac.compare_digest(challenge["binding"], binding):
+                return {"ok": False, "code": "TFA_EXPIRED", "message": "The two-factor login challenge is invalid or expired."}
+            if challenge["busy"]:
+                return {"ok": False, "code": "TFA_BUSY", "message": "That two-factor login attempt is already in progress."}
+            if factor not in challenge["methods"] or factor == "webauthn":
+                return {"ok": False, "code": "TFA_UNSUPPORTED", "message": "That two-factor method is unavailable."}
+            challenge["busy"] = True
+            challenge["attempts"] += 1
+
+        result = {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
+        accepted = False
+        try:
+            result = self.proxmox.complete_tfa(challenge["username"], challenge["realm"],
+                                               challenge["partial_ticket"], factor, response)
+        finally:
+            with self.tfa_lock:
+                current = self.tfa_challenges.get(challenge_id)
+                if current:
+                    current["busy"] = False
+                    accepted = result.get("ok") and current["expires"] > time.time()
+                    if result.get("ok") or current["attempts"] >= self.TFA_MAX_ATTEMPTS:
+                        self.tfa_challenges.pop(challenge_id, None)
+                        current["timer"].cancel()
+
+        if not result.get("ok"):
+            return result
+        if not accepted:
+            return {"ok": False, "code": "TFA_EXPIRED", "message": "The two-factor login challenge is invalid or expired."}
+        token = secrets.token_urlsafe(32)
+        csrf = secrets.token_urlsafe(32)
+        self.sessions[token] = {"user": result["user"], "csrf": csrf,
+                                "expires": time.time() + self.SESSION_SECONDS}
+        return {"ok": True, "token": token, "csrf": csrf, "user": result["user"]}
 
     def session(self, token):
         item = self.sessions.get(token)
@@ -3024,14 +3191,23 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_bytes(json.dumps(payload, ensure_ascii=False).encode(), "application/json; charset=utf-8", status)
 
     def send_json_with_cookie(self, payload, cookie, status=HTTPStatus.OK):
+        self.send_json_with_cookies(payload, [cookie], status)
+
+    def send_json_with_cookies(self, payload, cookies, status=HTTPStatus.OK):
         body = json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Set-Cookie", cookie)
+        for cookie in cookies:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
+
+    def request_cookie(self, name):
+        prefix = f"{name}="
+        return next((part.strip()[len(prefix):] for part in self.headers.get("Cookie", "").split(";")
+                     if part.strip().startswith(prefix)), "")
 
     def read_body(self):
         try:
@@ -4431,6 +4607,9 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
         if parts == ["api", "login"]:
+            if not self.same_origin():
+                self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+                return
             if not self.server.auth.configured:
                 self.send_json(error_payload("AUTH_NOT_CONFIGURED", "Run the local web-auth setup before using the UI."), HTTPStatus.SERVICE_UNAVAILABLE)
                 return
@@ -4442,6 +4621,13 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.send_json(error_payload("LOGIN_FAILED", "Invalid credentials."), HTTPStatus.UNAUTHORIZED)
                 return
             login = self.server.auth.login(username, password, realm, self.client_address[0])
+            if login.get("code") == "TFA_REQUIRED" and login.get("challenge_id"):
+                binding = login.pop("_tfa_binding")
+                secure = "; Secure" if getattr(self.server, "tls_enabled", False) or self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+                cookie = f"UU_TFA={binding}; Path=/; Max-Age={AuthStore.TFA_SECONDS}; HttpOnly; SameSite=Strict{secure}"
+                self.send_json_with_cookie({key: value for key, value in login.items()
+                                            if key not in {"ok", "_tfa_binding"}}, cookie)
+                return
             if not login.get("ok"):
                 self.send_json(error_payload(login.get("code", "LOGIN_FAILED"), login.get("message", "Login failed.")),
                                HTTPStatus.UNAUTHORIZED)
@@ -4450,6 +4636,37 @@ class StatusHandler(BaseHTTPRequestHandler):
             secure = "; Secure" if getattr(self.server, "tls_enabled", False) or self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
             cookie = f"UU_SESSION={token}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; HttpOnly; SameSite=Lax{secure}"
             self.send_json_with_cookie({"authenticated": True, "username": username, "csrf": csrf}, cookie)
+            return
+        if parts == ["api", "login", "tfa"]:
+            if not self.same_origin():
+                self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+                return
+            challenge_id = payload.get("challenge_id") if isinstance(payload, dict) else None
+            factor = payload.get("type") if isinstance(payload, dict) else None
+            response = payload.get("response") if isinstance(payload, dict) else None
+            if (not isinstance(challenge_id, str) or len(challenge_id) > 256
+                    or not isinstance(factor, str) or len(factor) > 32
+                    or not isinstance(response, str) or not 1 <= len(response) <= 4096):
+                self.send_json(error_payload("TFA_FAILED", "Invalid two-factor response."), HTTPStatus.UNAUTHORIZED)
+                return
+            login = self.server.auth.complete_tfa(challenge_id, factor, response, self.request_cookie("UU_TFA"))
+            if not login.get("ok"):
+                status = HTTPStatus.GONE if login.get("code") == "TFA_EXPIRED" else HTTPStatus.UNAUTHORIZED
+                self.send_json(error_payload(login.get("code", "TFA_FAILED"), login.get("message", "Two-factor authentication failed.")), status)
+                return
+            token, csrf = login["token"], login["csrf"]
+            secure = "; Secure" if getattr(self.server, "tls_enabled", False) or self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+            cookie = f"UU_SESSION={token}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; HttpOnly; SameSite=Lax{secure}"
+            clear_tfa = "UU_TFA=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
+            self.send_json_with_cookies({"authenticated": True, "username": login["user"], "csrf": csrf}, [cookie, clear_tfa])
+            return
+        if parts == ["api", "login", "tfa", "cancel"]:
+            if not self.same_origin():
+                self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+                return
+            challenge_id = payload.get("challenge_id") if isinstance(payload, dict) else None
+            self.server.auth.cancel_tfa(challenge_id, self.request_cookie("UU_TFA"))
+            self.send_json({"cancelled": True})
             return
         if parts == ["api", "logout"]:
             if not self.write_allowed():

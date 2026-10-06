@@ -6,6 +6,8 @@ Changelog:
 Added:
 - Web UI theme support with Modern and Classic visual styles; the selected
   theme is a browser-local preference and defaults to Modern.
+- Proxmox Web UI login support for TOTP, single-use recovery keys, and
+  realm-enforced YubiKey OTP through a short-lived server-side challenge flow.
 
 **v5.1.3** (30.09.2026)
 
