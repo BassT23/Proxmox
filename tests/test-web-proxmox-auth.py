@@ -2,6 +2,8 @@
 """Regression tests for Proxmox-native Web UI authentication."""
 
 import importlib.util
+import threading
+import time
 from pathlib import Path
 from urllib.parse import quote
 
@@ -115,6 +117,55 @@ assert store.session(session["token"])["user"] == "admin@pam"
 
 # Challenges are client-bound and cannot be replayed after completion.
 assert store.complete_tfa(pending["challenge_id"], "totp", "123456", pending["_tfa_binding"])["code"] == "TFA_EXPIRED"
+
+# TFA challenges use bounded in-memory state and opportunistic cleanup, not a
+# timer thread per pending login.
+def tfa_store():
+    item = server.AuthStore(Path("/tmp/unused-proxmox-tfa-limit-test.json"))
+    item.backend = "proxmox"
+    item.proxmox.authenticate = lambda username, password, realm: {
+        "ok": False, "code": "TFA_REQUIRED", "message": "TFA required.",
+        "challenge": {"username": f"{username}@{realm}", "realm": realm,
+                       "partial_ticket": partial, "methods": ["totp"],
+                       "public_challenge": {"totp": True}},
+    }
+    return item
+
+threads_before = {thread.ident for thread in threading.enumerate()}
+limited_store = tfa_store()
+first = limited_store.login("admin", "secret", "pam", "client-a")
+assert first["code"] == "TFA_REQUIRED"
+assert "timer" not in limited_store.tfa_challenges[first["challenge_id"]]
+assert len({thread.ident for thread in threading.enumerate()} - threads_before) == 0
+second = limited_store.login("admin", "secret", "pam", "client-a")
+assert second["code"] == "TFA_REQUIRED"
+third = limited_store.login("admin", "secret", "pam", "client-a")
+assert third["code"] == "TFA_RATE_LIMITED"
+assert len(limited_store.tfa_challenges) == 2
+
+global_store = tfa_store()
+global_store.TFA_MAX_ACTIVE = 2
+assert global_store.login("admin", "secret", "pam", "client-a")["code"] == "TFA_REQUIRED"
+assert global_store.login("other", "secret", "pam", "client-b")["code"] == "TFA_REQUIRED"
+assert global_store.login("third", "secret", "pam", "client-c")["code"] == "TFA_RATE_LIMITED"
+
+# A different user can still start a parallel challenge, while repeated starts
+# for one user are rate-limited even when old challenges are cancelled.
+parallel_store = tfa_store()
+assert parallel_store.login("admin", "secret", "pam", "client-a")["code"] == "TFA_REQUIRED"
+assert parallel_store.login("other", "secret", "pam", "client-a")["code"] == "TFA_REQUIRED"
+for _ in range(parallel_store.TFA_MAX_STARTS_PER_USER - 1):
+    pending_start = parallel_store.login("admin", "secret", "pam", "client-b")
+    assert pending_start["code"] == "TFA_REQUIRED"
+    parallel_store.cancel_tfa(pending_start["challenge_id"], pending_start["_tfa_binding"])
+assert parallel_store.login("admin", "secret", "pam", "client-c")["code"] == "TFA_RATE_LIMITED"
+
+# Expiry is removed during the next authenticated operation without a timer.
+expired_store = tfa_store()
+expired = expired_store.login("admin", "secret", "pam", "client-a")
+expired_store.tfa_challenges[expired["challenge_id"]]["expires"] = time.time() - 1
+assert expired_store.login("other", "secret", "pam", "client-a")["code"] == "TFA_REQUIRED"
+assert expired["challenge_id"] not in expired_store.tfa_challenges
 
 # Proxmox usernames are not restricted by the legacy local-PAM regex.
 auth, _ = make_auth()

@@ -2916,12 +2916,21 @@ class AuthStore:
     SESSION_SECONDS = 8 * 60 * 60
     TFA_SECONDS = 5 * 60
     TFA_MAX_ATTEMPTS = 5
+    TFA_MAX_ACTIVE = 64
+    TFA_MAX_ACTIVE_PER_USER = 2
+    TFA_MAX_ACTIVE_PER_CLIENT = 4
+    TFA_START_WINDOW = 60
+    TFA_MAX_STARTS_PER_USER = 5
+    TFA_MAX_STARTS_PER_CLIENT = 20
+    TFA_MAX_STARTS_GLOBAL = 128
 
     def __init__(self, path):
         self.path = path
         self.sessions = {}
         self.failed_logins = {}
         self.tfa_challenges = {}
+        self.tfa_starts = {"user": {}, "client": {}}
+        self.tfa_start_events = []
         self.tfa_lock = threading.Lock()
         configured_backend = os.environ.get("UU_AUTH_BACKEND", "").strip().lower()
         self.backend = configured_backend or "proxmox"
@@ -3000,15 +3009,33 @@ class AuthStore:
                 if not methods:
                     return {"ok": False, "code": "TFA_UNSUPPORTED",
                             "message": "This Proxmox two-factor method is not supported by this Web UI."}
-                challenge_id = secrets.token_urlsafe(32)
-                binding = secrets.token_urlsafe(24)
                 now = time.time()
+                user_key = f"{challenge['realm']}:{challenge['username']}"
+                client_key = str(client or "unknown")
                 with self.tfa_lock:
                     self._purge_tfa(now)
+                    user_active = sum(item["userid"] == challenge["username"]
+                                      for item in self.tfa_challenges.values())
+                    client_active = sum(item["client"] == client_key
+                                        for item in self.tfa_challenges.values())
+                    if (len(self.tfa_challenges) >= self.TFA_MAX_ACTIVE
+                            or user_active >= self.TFA_MAX_ACTIVE_PER_USER
+                            or client_active >= self.TFA_MAX_ACTIVE_PER_CLIENT
+                            or len(self.tfa_start_events) >= self.TFA_MAX_STARTS_GLOBAL
+                            or not self._tfa_start_allowed("user", user_key)
+                            or not self._tfa_start_allowed("client", client_key)):
+                        return {"ok": False, "code": "TFA_RATE_LIMITED",
+                                "message": "Too many pending two-factor login attempts."}
+                    self._record_tfa_start("user", user_key, now)
+                    self._record_tfa_start("client", client_key, now)
+                    self.tfa_start_events.append(now)
+                    challenge_id = secrets.token_urlsafe(32)
+                    binding = secrets.token_urlsafe(24)
                     self.tfa_challenges[challenge_id] = {
                         "username": challenge["username"].split("@", 1)[0],
                         "userid": challenge["username"],
                         "realm": challenge["realm"],
+                        "client": client_key,
                         "partial_ticket": challenge["partial_ticket"],
                         "methods": tuple(methods),
                         "public_challenge": challenge.get("public_challenge", {}),
@@ -3018,10 +3045,6 @@ class AuthStore:
                         "attempts": 0,
                         "busy": False,
                     }
-                    timer = threading.Timer(self.TFA_SECONDS, self._expire_tfa, args=(challenge_id,))
-                    timer.daemon = True
-                    self.tfa_challenges[challenge_id]["timer"] = timer
-                    timer.start()
                 return {"ok": False, "code": "TFA_REQUIRED", "message": result["message"],
                         "challenge_id": challenge_id, "methods": methods,
                         "public_challenge": challenge.get("public_challenge", {}),
@@ -3055,12 +3078,23 @@ class AuthStore:
         for challenge_id, challenge in list(self.tfa_challenges.items()):
             if challenge["expires"] <= now:
                 self.tfa_challenges.pop(challenge_id, None)
+        cutoff = now - self.TFA_START_WINDOW
+        for scope in self.tfa_starts.values():
+            for key, timestamps in list(scope.items()):
+                current = [stamp for stamp in timestamps if stamp > cutoff]
+                if current:
+                    scope[key] = current
+                else:
+                    scope.pop(key, None)
+        self.tfa_start_events[:] = [stamp for stamp in self.tfa_start_events if stamp > cutoff]
 
-    def _expire_tfa(self, challenge_id):
-        with self.tfa_lock:
-            challenge = self.tfa_challenges.get(challenge_id)
-            if challenge and challenge["expires"] <= time.time():
-                self.tfa_challenges.pop(challenge_id, None)
+    def _tfa_start_allowed(self, scope_name, key):
+        timestamps = self.tfa_starts[scope_name].get(key, [])
+        return len(timestamps) < (self.TFA_MAX_STARTS_PER_USER if scope_name == "user"
+                                  else self.TFA_MAX_STARTS_PER_CLIENT)
+
+    def _record_tfa_start(self, scope_name, key, now):
+        self.tfa_starts[scope_name].setdefault(key, []).append(now)
 
     def cancel_tfa(self, challenge_id, binding):
         if not isinstance(challenge_id, str):
@@ -3069,7 +3103,6 @@ class AuthStore:
             challenge = self.tfa_challenges.get(challenge_id)
             if challenge and hmac.compare_digest(challenge["binding"], str(binding or "")):
                 self.tfa_challenges.pop(challenge_id, None)
-                challenge["timer"].cancel()
 
     def complete_tfa(self, challenge_id, factor, response, binding):
         now = time.time()
@@ -3098,7 +3131,6 @@ class AuthStore:
                     accepted = result.get("ok") and current["expires"] > time.time()
                     if result.get("ok") or current["attempts"] >= self.TFA_MAX_ATTEMPTS:
                         self.tfa_challenges.pop(challenge_id, None)
-                        current["timer"].cancel()
 
         if not result.get("ok"):
             return result
