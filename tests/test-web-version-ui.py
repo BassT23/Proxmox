@@ -93,11 +93,23 @@ assert "data.update_available===true" in source
 assert "updateButton.textContent=data.state==='ok'&&data.update_available===true?'Update now':'Up to date'" in source
 assert "scheduleUpdaterVersionCheck" in source
 assert "function stopAuthenticatedBackgroundWork" in source
+assert "function startAuthenticatedBackgroundWork" in source
 assert "clearTimeout(pollTimer);pollTimer=null" in source
 assert "authGeneration" in source
+assert "logoutInProgress" in source
+assert "response.ok" in source
+assert "data.authenticated!==false" in source
+assert "Logout failed. Your session may still be active." in source
+assert "showLogin('You have been signed out.')" in source
+assert "if(logoutInProgress)return" in source
+logout_source = source[source.index("const logout="):source.index("document.getElementById('logout').onclick=logout")]
+assert logout_source.count("showLogin('You have been signed out.')") == 1
+assert "showLogin('Signing out…')" not in logout_source
+assert "startAuthenticatedBackgroundWork(generation)" in logout_source
+assert "finally{logoutInProgress=false;setLogoutLoading(false)}" in logout_source
 assert "showDashboard();startDashboardLoad()" in source
 assert "pollTimer=setTimeout(()=>loadJobs(generation)" in source
-assert "const token=csrfToken;stopAuthenticatedBackgroundWork();showLogin('Signing out…')" in source
+assert "const token=csrfToken,generation=authGeneration;stopAuthenticatedBackgroundWork();setLogoutLoading(true)" in source
 assert "await Promise.all([loadStatus(),loadJobs(),loadTargets(),loadTargetSelection()])" not in source
 assert "2500" in source and "7000" in source
 assert "self.server.version_cache = {\"at\": now, \"data\": data} if data.get(\"state\") == \"ok\" else None" in source
