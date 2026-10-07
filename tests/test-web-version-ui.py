@@ -92,6 +92,13 @@ assert "shortCommit" in source
 assert "data.update_available===true" in source
 assert "updateButton.textContent=data.state==='ok'&&data.update_available===true?'Update now':'Up to date'" in source
 assert "scheduleUpdaterVersionCheck" in source
+assert "function stopAuthenticatedBackgroundWork" in source
+assert "clearTimeout(pollTimer);pollTimer=null" in source
+assert "authGeneration" in source
+assert "showDashboard();startDashboardLoad()" in source
+assert "pollTimer=setTimeout(()=>loadJobs(generation)" in source
+assert "const token=csrfToken;stopAuthenticatedBackgroundWork();showLogin('Signing out…')" in source
+assert "await Promise.all([loadStatus(),loadJobs(),loadTargets(),loadTargetSelection()])" not in source
 assert "2500" in source and "7000" in source
 assert "self.server.version_cache = {\"at\": now, \"data\": data} if data.get(\"state\") == \"ok\" else None" in source
 assert "/api/public-version" in source

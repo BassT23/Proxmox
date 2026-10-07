@@ -16,7 +16,8 @@ assert 'def ensure_target_selection_file(path):' in server
 assert "clearTimeout(targetSelectionSaveTimer);targetSelectionSaveQueued=false;targetSelectionRevision+=1" in server
 assert "targetSelectionConfirmed=copyTargetSelection(targetSelection)" in server
 bootstrap = server[server.index("async function bootstrap"):server.index("const aggregateField")]
-assert "await loadTargetSelection()" in bootstrap
+assert "startDashboardLoad()" in bootstrap
+assert "loadTargetSelection(generation)" in server
 assert "saveTargetSelection" not in bootstrap
 assert "queueTargetSelectionSave" not in bootstrap
 print("target selection persistence tests: PASS")
