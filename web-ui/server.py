@@ -2687,14 +2687,18 @@ def locked_atomic_update(path, updater):
 
 
 class ProxmoxAuthError(Exception):
-    def __init__(self, message="Proxmox authentication failed.", tfa=False):
+    def __init__(self, message="Proxmox authentication failed.", tfa=False, authentication_failure=False):
         super().__init__(message)
         self.tfa = tfa
+        self.authentication_failure = authentication_failure
 
 
 class ProxmoxAuth:
     API_URL = "http://127.0.0.1:85/api2/json"
-    TIMEOUT = 3
+    # Proxmox may spend a little longer rejecting an invalid second factor
+    # than it does completing a valid one. Keep a bounded timeout without
+    # misclassifying that authentication result as service unavailability.
+    TIMEOUT = 5
     AUTHORIZATION_TTL = 30
 
     def __init__(self):
@@ -2721,7 +2725,8 @@ class ProxmoxAuth:
                 payload = json.loads(error.read(1024 * 1024).decode("utf-8"))
             except (OSError, UnicodeError, ValueError):
                 raise ProxmoxAuthError() from error
-            raise ProxmoxAuthError("Proxmox authentication failed.", self._has_tfa(payload)) from error
+            raise ProxmoxAuthError("Proxmox authentication failed.", self._has_tfa(payload),
+                                   error.code in {401, 403}) from error
         except (OSError, UnicodeError, ValueError, URLError) as error:
             raise ProxmoxAuthError() from error
         if not isinstance(payload, dict) or "data" not in payload:
@@ -2894,6 +2899,8 @@ class ProxmoxAuth:
             if error.tfa:
                 return {"ok": False, "code": "TFA_REQUIRED",
                         "message": "Two-factor authentication is required.", "challenge": None}
+            if error.authentication_failure:
+                return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
             return {"ok": False, "code": "LOGIN_FAILED", "message": "Proxmox authentication is unavailable."}
 
     def complete_tfa(self, username, realm, partial_ticket, factor, response,
@@ -2939,6 +2946,8 @@ class ProxmoxAuth:
             return {"ok": True, "user": userid}
         except ProxmoxAuthError as error:
             if error.tfa:
+                return {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
+            if error.authentication_failure:
                 return {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
             return {"ok": False, "code": "LOGIN_FAILED", "message": "Proxmox authentication is unavailable."}
 

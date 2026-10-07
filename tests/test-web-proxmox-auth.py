@@ -73,6 +73,12 @@ assert auth.authenticate("admin", "secret", "pam")["code"] == "LOGIN_UNAUTHORIZE
 auth._request = lambda path, fields=None: (_ for _ in ()).throw(server.ProxmoxAuthError())
 assert auth.authenticate("admin", "secret", "pam")["code"] == "LOGIN_FAILED"
 
+# Proxmox rejects invalid first-factor credentials with HTTP 401/403. Those
+# responses are authentication failures, not an unavailable Proxmox service.
+auth._request = lambda path, fields=None: (_ for _ in ()).throw(
+    server.ProxmoxAuthError(authentication_failure=True))
+assert auth.authenticate("admin", "secret", "pam")["code"] == "LOGIN_FAILED"
+
 auth._request = lambda path, fields=None: REALMS
 assert auth.authenticate("admin", "secret", "unknown")["code"] == "LOGIN_FAILED"
 
@@ -98,6 +104,10 @@ assert started["challenge"]["partial_ticket"] == partial
 assert auth.complete_tfa("admin", "pam", partial, "totp", "123456")["ok"] is True
 assert complete_calls[-1]["password"] == "totp:123456"
 assert complete_calls[-1]["tfa-challenge"] == partial
+
+auth._request = lambda path, fields=None: (_ for _ in ()).throw(
+    server.ProxmoxAuthError(authentication_failure=True))
+assert auth.complete_tfa("admin", "pam", partial, "totp", "123456")["code"] == "TFA_FAILED"
 
 # WebAuthn uses the same Proxmox partial-ticket flow. The browser receives only
 # the public options; the signed partial ticket stays in the server-side state.
