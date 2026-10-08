@@ -25,7 +25,7 @@ def protected_lines(path):
     try:
         metadata = os.fstat(descriptor)
         if (not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077
-                or metadata.st_size > 131072):
+                or metadata.st_uid != os.geteuid() or metadata.st_size > 131072):
             raise ValueError("invalid protected provider configuration")
         with os.fdopen(descriptor, encoding="utf-8", closefd=False) as source:
             content = source.read(131073)

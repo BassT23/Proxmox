@@ -41,15 +41,14 @@ Failed notifications are retried on the next eligible event.
 
 Disabling is reversible by unsetting `UU_APPRISE_URLS_FILE`.
 
-## What this does not replace yet
+## Existing monitoring integration
 
-The separately maintained Ultimate Updater Notify companion also schedules
-read-only checks with External targets and sends Gatus dead-man heartbeats.
-This Apprise feature alone does **not** replace those lifecycle guarantees.
-Keep the companion live until scheduled check coverage, manual-run behavior,
-notification dedupe, External target handling and Gatus heartbeat parity
-pass live acceptance. Avoid two parallel active alert destinations during
-an eventual cutover.
+This provider-neutral delivery feature does not replace external scheduling,
+target-specific health checks or dead-man heartbeat services. If an existing
+notification companion or monitoring integration provides those functions,
+preserve it until check coverage, deduplication, manual-run semantics and
+heartbeat parity pass live acceptance. Avoid overlapping alert destinations
+during any eventual cutover.
 
 ## Test and maintenance
 
