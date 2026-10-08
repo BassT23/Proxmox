@@ -97,6 +97,8 @@ assert "function startAuthenticatedBackgroundWork" in source
 assert "clearTimeout(pollTimer);pollTimer=null" in source
 assert "authGeneration" in source
 assert "authRealmsLoadGeneration" in source
+assert "function resetTfaFormState" in source
+assert "response.required=false" in source
 assert "logoutInProgress" in source
 assert "response.ok" in source
 assert "data.authenticated!==false" in source
@@ -111,6 +113,8 @@ assert "finally{logoutInProgress=false;setLogoutLoading(false)}" in logout_sourc
 assert "r.status===401&&!logoutInProgress&&requestGeneration===authGeneration&&window.__uu_authenticated" in source
 assert "const request=++authRealmsLoadGeneration" in source
 assert "if(request!==authRealmsLoadGeneration)return" in source
+assert "resetTfaFormState();pendingTfa=challenge" in source
+assert "const challenge=pendingTfa;resetTfaFormState();setLoginLoading(false)" in source
 assert "showDashboard();startDashboardLoad()" in source
 assert "pollTimer=setTimeout(()=>loadJobs(generation)" in source
 assert "const token=csrfToken,generation=authGeneration;stopAuthenticatedBackgroundWork();setLogoutLoading(true)" in source
