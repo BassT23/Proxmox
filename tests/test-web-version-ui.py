@@ -96,6 +96,7 @@ assert "function stopAuthenticatedBackgroundWork" in source
 assert "function startAuthenticatedBackgroundWork" in source
 assert "clearTimeout(pollTimer);pollTimer=null" in source
 assert "authGeneration" in source
+assert "authRealmsLoadGeneration" in source
 assert "logoutInProgress" in source
 assert "response.ok" in source
 assert "data.authenticated!==false" in source
@@ -107,6 +108,9 @@ assert logout_source.count("showLogin('You have been signed out.')") == 1
 assert "showLogin('Signing out…')" not in logout_source
 assert "startAuthenticatedBackgroundWork(generation)" in logout_source
 assert "finally{logoutInProgress=false;setLogoutLoading(false)}" in logout_source
+assert "r.status===401&&!logoutInProgress&&requestGeneration===authGeneration&&window.__uu_authenticated" in source
+assert "const request=++authRealmsLoadGeneration" in source
+assert "if(request!==authRealmsLoadGeneration)return" in source
 assert "showDashboard();startDashboardLoad()" in source
 assert "pollTimer=setTimeout(()=>loadJobs(generation)" in source
 assert "const token=csrfToken,generation=authGeneration;stopAuthenticatedBackgroundWork();setLogoutLoading(true)" in source
