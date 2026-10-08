@@ -7,6 +7,7 @@ from collections import deque
 import fcntl
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import re
@@ -2653,6 +2654,13 @@ class AuthStore:
         self.failed_logins = {}
         configured_backend = os.environ.get("UU_AUTH_BACKEND", "").strip().lower()
         self.backend = configured_backend or "proxmox"
+        self.proxy_header = os.environ.get("UU_TRUSTED_PROXY_USER_HEADER", "Remote-User").strip()
+        self.proxy_users = frozenset(x.strip() for x in os.environ.get("UU_TRUSTED_PROXY_ALLOWED_USERS", "").split(",") if x.strip())
+        try:
+            self.proxy_networks = tuple(ipaddress.ip_network(x.strip(), strict=False)
+                                        for x in os.environ.get("UU_TRUSTED_PROXY_CIDRS", "").split(",") if x.strip())
+        except ValueError:
+            self.proxy_networks = ()
         self.proxmox = ProxmoxAuth()
         configured_user = os.environ.get("WEB_UI_PAM_USER")
         if configured_user is None:
@@ -2664,6 +2672,10 @@ class AuthStore:
 
     @property
     def configured(self):
+        if self.backend == "trusted_proxy":
+            return (bool(self.proxy_networks) and bool(self.proxy_users)
+                    and bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9-]{0,79}", self.proxy_header))
+                    and all(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}", u) for u in self.proxy_users))
         if self.backend == "proxmox":
             try:
                 self.proxmox.realms()
@@ -2682,6 +2694,9 @@ class AuthStore:
             return False
 
     def realms(self):
+        if self.backend == "trusted_proxy":
+            return {"realms": [{"realm": "trusted_proxy", "comment": "Trusted gateway", "type": "trusted_proxy"}],
+                    "default_realm": "trusted_proxy"}
         if self.backend == "proxmox":
             return self.proxmox.realms()
         if self.backend == "internal":
@@ -2713,7 +2728,17 @@ class AuthStore:
         except (OSError, ValueError, TypeError, KeyError):
             return False
 
+    def create_proxy_session(self, user):
+        if self.backend != "trusted_proxy" or not self.configured or user not in self.proxy_users:
+            raise ValueError("Untrusted proxy identity")
+        token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+        self.sessions[token] = {"user": user, "csrf": csrf,
+                                "expires": time.time() + self.SESSION_SECONDS}
+        return {"token": token, "csrf": csrf, "user": user}
+
     def login(self, username, password, realm, client):
+        if self.backend == "trusted_proxy":
+            return {"ok": False, "code": "LOGIN_DISABLED", "message": "Use the configured identity gateway."}
         now = time.time()
         attempts, window = self.failed_logins.get(client, (0, now))
         if now - window >= 60:
@@ -2771,11 +2796,33 @@ class StatusHandler(BaseHTTPRequestHandler):
     server_version = "UltimateUpdaterUI/1"
     protocol_version = "HTTP/1.1"
 
+    def trusted_proxy_identity(self):
+        auth = self.server.auth
+        if auth.backend != "trusted_proxy" or not auth.configured:
+            return None
+        try:
+            peer = ipaddress.ip_address(self.client_address[0])
+        except (ValueError, IndexError, TypeError):
+            return None
+        if not any(peer in network for network in auth.proxy_networks):
+            return None
+        values = self.headers.get_all(auth.proxy_header, [])
+        if len(values) != 1:
+            return None
+        user = values[0].strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}", user):
+            return None
+        return user if user in auth.proxy_users else None
+
     def current_session(self):
         cookie = self.headers.get("Cookie", "")
         token = next((part.strip().split("=", 1)[1] for part in cookie.split(";")
                       if part.strip().startswith("UU_SESSION=")), "")
-        return self.server.auth.session(token) if token else None
+        session = self.server.auth.session(token) if token else None
+        if getattr(self.server.auth, "backend", None) == "trusted_proxy":
+            user = self.trusted_proxy_identity()
+            return session if user and session and session["user"] == user else None
+        return session
 
     def auth_error(self, message="Authentication required.", status=HTTPStatus.UNAUTHORIZED):
         self.send_json(error_payload("AUTH_REQUIRED", message), status)
@@ -4047,10 +4094,27 @@ class StatusHandler(BaseHTTPRequestHandler):
                                HTTPStatus.SERVICE_UNAVAILABLE)
             return
         if path == "/api/session":
-            session = self.current_session()
             if not self.server.auth.configured:
                 self.send_json(error_payload("AUTH_NOT_CONFIGURED", "Run the local web-auth setup before using the UI."), HTTPStatus.SERVICE_UNAVAILABLE)
-            elif not session:
+                return
+            if self.server.auth.backend == "trusted_proxy":
+                user = self.trusted_proxy_identity()
+                if not user:
+                    self.send_json(error_payload("AUTH_REQUIRED", "Trusted gateway identity required."), HTTPStatus.UNAUTHORIZED)
+                    return
+                session = self.current_session()
+                if session:
+                    self.send_json({"authenticated": True, "username": user, "csrf": session["csrf"]})
+                else:
+                    session = self.server.auth.create_proxy_session(user)
+                    cookie = (f"UU_SESSION={session['token']}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; "
+                              "HttpOnly; SameSite=Lax; Secure")
+                    self.send_json_with_cookie(
+                        {"authenticated": True, "username": user, "csrf": session["csrf"]}, cookie
+                    )
+                return
+            session = self.current_session()
+            if not session:
                 self.send_json(error_payload("AUTH_REQUIRED", "Authentication required."), HTTPStatus.UNAUTHORIZED)
             else:
                 self.send_json({"authenticated": True, "username": session["user"], "csrf": session["csrf"]})
