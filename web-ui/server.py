@@ -2860,7 +2860,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
             try:
                 details = os.fstat(descriptor)
-                if not stat.S_ISREG(details.st_mode) or details.st_mode & 0o077 or details.st_size > 4096:
+                if (not stat.S_ISREG(details.st_mode) or details.st_mode & 0o077
+                        or details.st_uid != os.geteuid() or details.st_size > 4096):
                     raise ValueError("invalid credential file")
                 with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as source:
                     configured = source.read(4097).strip()
