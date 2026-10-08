@@ -102,6 +102,8 @@ assert "response.required=false" in source
 assert "logoutInProgress" in source
 assert "response.ok" in source
 assert "data.authenticated!==false" in source
+assert "AUTHORIZATION_UNAVAILABLE" in source or "Proxmox authorization is temporarily unavailable." in source
+assert "if(r.status===401)showLogin(error.message)" in source
 assert "Logout failed. Your session may still be active." in source
 assert "showLogin('You have been signed out.')" in source
 assert "if(logoutInProgress)return" in source

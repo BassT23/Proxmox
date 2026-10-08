@@ -892,7 +892,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const setNavOpen=open=>{nav.classList.toggle('expanded',open);navScrim.hidden=!open;document.body.classList.toggle('nav-open',open);if(navToggle){navToggle.setAttribute('aria-expanded',String(open));navToggle.setAttribute('aria-label',open?'Close navigation':'Open navigation')}};
     navToggle?.addEventListener('click',event=>{event.stopPropagation();setNavOpen(!nav.classList.contains('expanded'))});navScrim.addEventListener('click',()=>setNavOpen(false));document.addEventListener('keydown',event=>{if(event.key==='Escape')setNavOpen(false)});
     document.addEventListener('click',event=>{const link=event.target.closest('.page-nav a');if(!link)return;if(link.dataset.page){event.preventDefault();applyPageRoute(true,link.dataset.page);setNavOpen(false);return}if(link.dataset.anchor){event.preventDefault();applyPageRoute(false,'overview');document.getElementById(link.dataset.anchor)?.scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.page-nav a').forEach(item=>item.classList.toggle('active',item===link));setNavOpen(false)}});window.addEventListener('popstate',()=>applyPageRoute());
-    async function ensureSession(){const r=await fetch('/api/session',{cache:'no-store'});const d=await r.json();if(!r.ok){showLogin(d.error?.message||'Please sign in.');throw new Error(d.error?.message||'Authentication required.')}csrfToken=d.csrf;return d}
+    async function ensureSession(){const r=await fetch('/api/session',{cache:'no-store'});const d=await r.json();if(!r.ok){const error=new Error(d.error?.message||'Authentication required.');error.code=d.error?.code;error.status=r.status;if(r.status===401)showLogin(error.message);throw error}csrfToken=d.csrf;return d}
     async function api(path,options={}){const requestGeneration=authGeneration;if(!csrfToken)await ensureSession();const headers={'Content-Type':'application/json',...(options.headers||{})};if(csrfToken)headers['X-CSRF-Token']=csrfToken;const r=await fetch(path,{...options,headers});const d=await r.json();if(r.status===401&&!logoutInProgress&&requestGeneration===authGeneration&&window.__uu_authenticated){showLogin(d.error?.message||'Session expired.')}if(!r.ok){const error=new Error(d.error?.message||'Request failed');error.code=d.error?.code;error.diagnostics=d.diagnostics;throw error}return d}
     function notice(message,error=false){const n=document.getElementById('notice');n.hidden=false;n.textContent=message;n.className=error?'notice error':'notice'}
     function running(target){return jobs.some(j=>j.target===target&&['running','pending','starting'].includes(j.state))}
@@ -2698,13 +2698,17 @@ class ProxmoxAuthError(Exception):
         self.authentication_failure = authentication_failure
 
 
+class AuthorizationUnavailableError(Exception):
+    """The Proxmox RBAC revalidation could not be completed."""
+
+
 class ProxmoxAuth:
     API_URL = "http://127.0.0.1:85/api2/json"
     # Proxmox may spend a little longer rejecting an invalid second factor
     # than it does completing a valid one. Keep a bounded timeout without
     # misclassifying that authentication result as service unavailability.
     TIMEOUT = 5
-    AUTHORIZATION_TTL = 30
+    AUTHORIZATION_TTL = 5 * 60
 
     def __init__(self):
         self._opener = build_opener(ProxyHandler({}))
@@ -3204,9 +3208,8 @@ class AuthStore:
                 if not self.proxmox.authorized(item["user"]):
                     self.sessions.pop(token, None)
                     return None
-            except ProxmoxAuthError:
-                self.sessions.pop(token, None)
-                return None
+            except ProxmoxAuthError as error:
+                raise AuthorizationUnavailableError from error
         item["expires"] = time.time() + self.SESSION_SECONDS
         return item
 
@@ -3224,6 +3227,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                       if part.strip().startswith("UU_SESSION=")), "")
         return self.server.auth.session(token) if token else None
 
+    def authorization_unavailable(self):
+        self.send_json(error_payload(
+            "AUTHORIZATION_UNAVAILABLE", "Proxmox authorization is temporarily unavailable."
+        ), HTTPStatus.SERVICE_UNAVAILABLE)
+        return False
+
     def auth_error(self, message="Authentication required.", status=HTTPStatus.UNAUTHORIZED):
         self.send_json(error_payload("AUTH_REQUIRED", message), status)
         return False
@@ -3231,7 +3240,11 @@ class StatusHandler(BaseHTTPRequestHandler):
     def authenticated(self):
         if not self.server.auth.configured:
             return self.auth_error("Web authentication is not configured.", HTTPStatus.SERVICE_UNAVAILABLE)
-        return bool(self.current_session()) or self.auth_error()
+        try:
+            session = self.current_session()
+        except AuthorizationUnavailableError:
+            return self.authorization_unavailable()
+        return bool(session) or self.auth_error()
 
     def same_origin(self):
         origin = self.headers.get("Origin")
@@ -3268,7 +3281,10 @@ class StatusHandler(BaseHTTPRequestHandler):
         return host, origin
 
     def write_allowed(self):
-        session = self.current_session()
+        try:
+            session = self.current_session()
+        except AuthorizationUnavailableError:
+            return self.authorization_unavailable()
         if not session:
             return self.auth_error()
         if not self.same_origin():
@@ -4554,7 +4570,11 @@ class StatusHandler(BaseHTTPRequestHandler):
                                HTTPStatus.SERVICE_UNAVAILABLE)
             return
         if path == "/api/session":
-            session = self.current_session()
+            try:
+                session = self.current_session()
+            except AuthorizationUnavailableError:
+                self.authorization_unavailable()
+                return
             if not self.server.auth.configured:
                 self.send_json(error_payload("AUTH_NOT_CONFIGURED", "Run the local web-auth setup before using the UI."), HTTPStatus.SERVICE_UNAVAILABLE)
             elif not session:

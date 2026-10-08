@@ -165,6 +165,36 @@ assert session["ok"] is True
 assert pending["challenge_id"] not in store.tfa_challenges
 assert store.session(session["token"])["user"] == "admin@pam"
 
+# A technical RBAC revalidation failure must preserve the session and surface
+# an unavailable-authorizer result to the HTTP layer instead of becoming 401.
+transient_store = server.AuthStore(Path("/tmp/unused-proxmox-transient-auth-test.json"))
+transient_store.backend = "proxmox"
+transient_store.proxmox.authorized = lambda userid: (_ for _ in ()).throw(server.ProxmoxAuthError())
+transient_token = "transient-token"
+transient_store.sessions[transient_token] = {
+    "user": "admin@pam", "csrf": "csrf-token", "expires": time.time() + 60,
+}
+try:
+    transient_store.session(transient_token)
+except server.AuthorizationUnavailableError:
+    pass
+else:
+    raise AssertionError("transient authorization failure was not surfaced")
+assert transient_token in transient_store.sessions
+
+# A confirmed authorization revoke still removes the session and is handled as
+# an unauthenticated request.
+revoked_store = server.AuthStore(Path("/tmp/unused-proxmox-revoked-auth-test.json"))
+revoked_store.backend = "proxmox"
+revoked_store.proxmox.authorized = lambda userid: False
+revoked_token = "revoked-token"
+revoked_store.sessions[revoked_token] = {
+    "user": "admin@pam", "csrf": "csrf-token", "expires": time.time() + 60,
+}
+assert revoked_store.session(revoked_token) is None
+assert revoked_token not in revoked_store.sessions
+assert server.ProxmoxAuth.AUTHORIZATION_TTL == 300
+
 # Challenges are client-bound and cannot be replayed after completion.
 assert store.complete_tfa(pending["challenge_id"], "totp", "123456", pending["_tfa_binding"])["code"] == "TFA_EXPIRED"
 
@@ -238,7 +268,7 @@ assert calls == {"permissions": 2, "roles": 1}
 
 # Expired entries force fresh lookups and never reuse a stale allow decision.
 auth, calls = make_auth()
-clock = iter((100.0, 100.0, 131.0, 131.0, 131.0))
+clock = iter((100.0, 100.0, 401.0, 401.0, 401.0))
 old_monotonic = server.time.monotonic
 server.time.monotonic = lambda: next(clock)
 try:
