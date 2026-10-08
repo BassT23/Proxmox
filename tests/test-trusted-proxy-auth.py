@@ -79,6 +79,14 @@ def test_sso(trusted_cidr, include_identity=True, allowed="operator@example.com"
                 os.environ[name] = value
 
 
+# A read-only handler without an interactive auth object must not crash.
+from types import SimpleNamespace
+read_only_handler = SimpleNamespace(
+    server=SimpleNamespace(),
+    headers=SimpleNamespace(get=lambda name, default="": default),
+)
+assert updater.StatusHandler.current_session(read_only_handler) is None
+
 test_sso("127.0.0.1/32")
 test_sso("192.0.2.0/24")
 test_sso("127.0.0.1/32", include_identity=False)

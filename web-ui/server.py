@@ -2819,7 +2819,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         token = next((part.strip().split("=", 1)[1] for part in cookie.split(";")
                       if part.strip().startswith("UU_SESSION=")), "")
         session = self.server.auth.session(token) if token else None
-        if getattr(self.server.auth, "backend", None) == "trusted_proxy":
+        if getattr(getattr(self.server, "auth", None), "backend", None) == "trusted_proxy":
             user = self.trusted_proxy_identity()
             return session if user and session and session["user"] == user else None
         return session
