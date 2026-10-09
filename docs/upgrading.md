@@ -12,6 +12,20 @@ update master -up
 The bare `update -up` targets stable `master`. The selected branch is kept as
 installed metadata but does not change the target of a bare update.
 
+## Externally managed source releases
+
+Operators distributing their own reviewed Ultimate Updater source can opt out
+of the built-in **Updater source replacement** without disabling normal package,
+host or guest updates. Create the marker
+`/etc/ultimate-updater/.source-release-pin` using the external deployment
+owner. When present, including as a dangling symlink, source self-update and
+branch replacement refuse to run before fetching an installer. Uninstall
+remains available. With no marker, normal upstream behavior is unchanged.
+
+Only clear the marker as part of a deliberate, verified release and recovery
+procedure. The marker is a local opt-in guard, not an independent signature,
+provenance or source-version verifier.
+
 Upgrades preserve existing `update.conf` values, comments, unknown settings,
 External target registrations, and a configured Web UI port. Missing
 supported defaults are added without replacing user values. Historical
