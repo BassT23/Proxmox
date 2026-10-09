@@ -1053,13 +1053,13 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   # to scheduled checks; manual global checks and updates remain independent.
   # Keep it before the single-target policy so a scheduled selected-target
   # check is governed by EMAIL_DAILY_CHECK rather than the manual-run switch.
-  if [[ "${UU_JOB_SOURCE:-}" == scheduler && "$email_daily_check" != true ]]; then
+  if [[ ( "${UU_JOB_SOURCE:-}" == scheduler || "${UU_SCHEDULED_CHECK:-false}" == true ) && "$email_daily_check" != true ]]; then
     return 0
   fi
 
   local render_target="" render_kind=""
   if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
-    if [[ "${UU_JOB_SOURCE:-}" != scheduler ]]; then
+    if [[ "${UU_JOB_SOURCE:-}" != scheduler && "${UU_SCHEDULED_CHECK:-false}" != true ]]; then
       [[ "$email_single_runs" == true ]] || return 0
     fi
     render_target="${UU_SINGLE_TARGET_ID:-}"

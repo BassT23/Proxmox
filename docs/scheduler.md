@@ -30,6 +30,16 @@ include/exclude filters, safety rules, locks, lifecycle handling, notifications,
 status capture, and reboot policy therefore remain authoritative. `Run now`
 uses the same job entry point.
 
+Scheduled **Check** jobs select the existing read-only `initial-inventory`
+lifecycle, preserving the rule that stopped/paused VMs and containers must not
+be started or resumed just to collect update availability. A separate
+`UU_SCHEDULED_CHECK=true` environment marker controls scheduled notification
+policy without replacing the guest lifecycle selector. The marker is passed
+through background systemd check jobs and applies equally to timer and `Run now`
+execution. Scheduled **Update** jobs keep their existing operator-configured
+update behavior and remain distinct from read-only Checks. No new scheduler,
+collector, guest power action, or automatic package update is introduced.
+
 Times use the local system timezone shown in the WebUI. Schedules can be
 enabled, disabled, edited, or deleted without changing `update.conf`.
 

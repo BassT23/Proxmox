@@ -294,6 +294,16 @@ def scheduler_save(path, schedules):
             pass
 
 
+def scheduler_execution_env(schedule):
+    """Use read-only inventory for scheduled checks, not package updates."""
+    env = {"UU_NONINTERACTIVE": "true"}
+    if schedule["type"].startswith("check-"):
+        env.update({"UU_JOB_SOURCE": "initial-inventory", "UU_SCHEDULED_CHECK": "true"})
+    else:
+        env["UU_JOB_SOURCE"] = "scheduler"
+    return env
+
+
 def scheduler_unit_files(schedule, unit_dir, cli):
     unit = scheduler_unit_name(schedule["id"])
     service = unit_dir / f"{unit}.service"
@@ -301,8 +311,8 @@ def scheduler_unit_files(schedule, unit_dir, cli):
     action = schedule["type"]
     commands = scheduler_commands(schedule, cli)
     service_lines = ["[Unit]", f"Description=Ultimate Updater scheduled {action}", "", "[Service]",
-                     "Type=oneshot", "Environment=UU_JOB_SOURCE=scheduler",
-                     "Environment=UU_NONINTERACTIVE=true"]
+                     "Type=oneshot"]
+    service_lines.extend(f"Environment={key}={value}" for key, value in scheduler_execution_env(schedule).items())
     service_lines.extend(f"ExecStart={shlex.join(command)}" for command in commands)
     service_lines.append("")
     service_text = "\n".join(service_lines)
@@ -4000,9 +4010,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             raise KeyError(schedule_id)
         started, errors = [], []
         for command in scheduler_commands(schedule, self.server.cli):
-            result = self.run_command(command, timeout=30, extra_env={
-                "UU_JOB_SOURCE": "scheduler", "UU_NONINTERACTIVE": "true",
-            })
+            result = self.run_command(command, timeout=30, extra_env=scheduler_execution_env(schedule))
             output = f"{result.stdout}\n{result.stderr}"
             job_match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
             if result.returncode == 3:

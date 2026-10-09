@@ -972,6 +972,7 @@ start_check_job() {
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${CHECK_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
+  [[ "${UU_SCHEDULED_CHECK:-false}" == true ]] && systemd_env+=("--setenv=UU_SCHEDULED_CHECK=true")
   [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
   [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   [[ "${UU_REMOTE_TRACE:-false}" == true ]] && systemd_env+=("--setenv=UU_REMOTE_TRACE=true")
