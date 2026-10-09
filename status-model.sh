@@ -1033,11 +1033,16 @@ STATUS_MODEL_SEND_APPRISE() {
   local kind="$1" status_file="$2" state="$3" body="$4" run_started_at="${5:-}"
   [[ -n "${UU_APPRISE_URLS_FILE:-}" ]] || return 0
   local helper="${UU_APPRISE_HELPER:-$(dirname -- "${BASH_SOURCE[0]}")/notification-apprise.py}"
+  local interpreter="${UU_APPRISE_PYTHON:-python3}"
+  if [[ "$interpreter" != python3 && ( "$interpreter" != /* || ! -x "$interpreter" ) ]]; then
+    printf 'Apprise Python interpreter unavailable.\n' >&2
+    return 0
+  fi
   if [[ ! -f "$helper" ]]; then
     printf 'Apprise notification adapter unavailable.\n' >&2
     return 0
   fi
-  if ! printf '%s\n' "$body" | python3 "$helper" "$kind" "$status_file" "$state" "$run_started_at"; then
+  if ! printf '%s\n' "$body" | "$interpreter" "$helper" "$kind" "$status_file" "$state" "$run_started_at"; then
     printf 'Apprise delivery unavailable.\n' >&2
   fi
   return 0

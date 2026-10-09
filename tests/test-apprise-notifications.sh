@@ -45,6 +45,14 @@ export UU_APPRISE_STATE_FILE="$WORK/dedupe.json"
 export UU_APPRISE_HELPER="$ROOT/notification-apprise.py"
 export APPRISE_CAPTURE="$WORK/sent"
 export PYTHONPATH="$WORK${PYTHONPATH:+:$PYTHONPATH}"
+# Optional dedicated Python runtime must be honored without replacing system Python.
+cat > "$WORK/apprise-python" <<'WRAPPER'
+#!/usr/bin/env bash
+printf 'invoked\n' >> "${APPRISE_PYTHON_CAPTURE:?}"
+exec python3 "$@"
+WRAPPER
+chmod 0755 "$WORK/apprise-python"
+export UU_APPRISE_PYTHON="$WORK/apprise-python" APPRISE_PYTHON_CAPTURE="$WORK/python-invocations"
 export LOCAL_FILES="$WORK" STATUS_MODEL_FILE="$WORK/status.json" HOSTNAME=Test-Cluster
 # shellcheck disable=SC1091
 source "$ROOT/status-model.sh"
@@ -52,6 +60,7 @@ source "$ROOT/status-model.sh"
 # Apprise delivery is independent of disabled scheduled email.
 UU_JOB_SOURCE=scheduler STATUS_MODEL_SEND_NOTIFICATION "$WORK/status.json" "$WORK/update.conf"
 [[ $(wc -l < "$WORK/sent") -eq 1 ]]
+[[ $(wc -l < "$WORK/python-invocations") -eq 1 ]]
 UU_JOB_SOURCE=scheduler STATUS_MODEL_SEND_NOTIFICATION "$WORK/status.json" "$WORK/update.conf"
 [[ $(wc -l < "$WORK/sent") -eq 1 ]]
 grep -Fq 'check|info|2' "$WORK/sent"

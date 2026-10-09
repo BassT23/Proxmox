@@ -19,11 +19,23 @@ used by Ultimate Updater. Configuration is protected runtime state, not Git.
 - `UU_APPRISE_STATE_FILE`: optional absolute path to the dedupe state JSON;
   default `/var/lib/ultimate-updater/apprise-notification-state.json`.
 - `UU_APPRISE_HELPER`: optional absolute helper path for custom installations.
+- `UU_APPRISE_PYTHON`: optional absolute path to the executable inside a
+  separately provisioned, pinned Apprise virtual environment. The default
+  remains `python3`. Supply a path, never a shell command string. Using an
+  isolated environment avoids changing host-managed Python dependencies.
 
 The installer and upgrader install `notification-apprise.py` beside
 `status-model.sh`. Configuration URLs are never passed via argv, printed to
 terminal, copied to downstream source, or exposed through the Web UI.
 Use a protected secret-delivery mechanism when deploying provider URLs.
+
+For systemd jobs, `/etc/ultimate-updater/notification-integration.conf` is an
+optional operator-provisioned EnvironmentFile containing paths and non-secret
+integration settings. When present it must be a non-symlinked regular file
+owned by the invoking service UID, with mode `0600`. Its parent must be owned
+by that UID, not a symlink or group/other writable. Unsafe files prevent
+job startup; a missing file preserves disabled-by-default behavior. Never
+store provider URLs, tokens or other credentials in this EnvironmentFile.
 
 ## Semantics
 
@@ -53,6 +65,8 @@ during any eventual cutover.
 ## Test and maintenance
 
 `bash tests/test-apprise-notifications.sh` uses a fake Apprise module and
+an isolated interpreter wrapper. `bash tests/test-notification-unit-env.sh`
+checks safe and unsafe EnvironmentFile ownership, mode and symlink cases.
 never sends to external destinations. Existing
 `bash tests/test-scheduled-check-notification.sh` and
 `bash tests/test-mail-renderer.sh` verify email compatibility.
