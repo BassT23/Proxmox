@@ -1621,7 +1621,7 @@ CHECK_VM () {
         return 1
       fi
       if ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$package_count_command"); then
-        STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error PACKAGE_COUNT_FAILED \
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pkg "null" "null" error PACKAGE_COUNT_FAILED \
           "Could not determine pkg update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
