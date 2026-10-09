@@ -1309,15 +1309,22 @@ run_check() {
   fi
   if [[ -z "$target" ]]; then
     require_file "$CHECK_SCRIPT" "check script" || return 1
-    local check_result external_result
+    local check_result external_result notification_result=0
     UU_GLOBAL_CHECK=true UU_DEFER_NOTIFICATION=true "$CHECK_SCRIPT"; check_result=$?
     classify_collection_result "$check_result"; check_result=$?
     run_external_checks; external_result=$?
     classify_collection_result "$external_result"; external_result=$?
     if [[ ! -e "${STATUS_FILE}.zero-target" ]] && declare -f STATUS_MODEL_SEND_NOTIFICATION >/dev/null 2>&1; then
-      STATUS_MODEL_SEND_NOTIFICATION "$STATUS_FILE" "$LOCAL_FILES/update.conf" || true
+      STATUS_MODEL_SEND_NOTIFICATION "$STATUS_FILE" "$LOCAL_FILES/update.conf" || notification_result=$?
     fi
     print_global_check_summary "$check_result" "$external_result"
+    # No extra collection or check: only a completed read-only scheduled run
+    # can signal success to an optional operator-configured endpoint.
+    if [[ ! -e "${STATUS_FILE}.zero-target" ]] &&
+        declare -f STATUS_MODEL_SCHEDULED_HEARTBEAT_ELIGIBLE >/dev/null 2>&1 &&
+        STATUS_MODEL_SCHEDULED_HEARTBEAT_ELIGIBLE "$check_result" "$external_result" "$STATUS_FILE" "$notification_result"; then
+      STATUS_MODEL_SEND_SUCCESS_HEARTBEAT || true
+    fi
     [[ "$check_result" -eq 0 || "$check_result" -eq "$CHECK_WARNING_RC" ]] || return "$check_result"
     [[ "$external_result" -eq 0 || "$external_result" -eq "$CHECK_WARNING_RC" ]] || return "$external_result"
     if [[ "$check_result" -eq "$CHECK_WARNING_RC" || "$external_result" -eq "$CHECK_WARNING_RC" ]]; then
