@@ -1740,7 +1740,8 @@ html[data-theme="classic"] .day-toggles input:checked + span {
     background:#465159;
     border-color:#a9bbc5;
 }
-html[data-theme="classic"] #settings-page .settings-group {
+html[data-theme="classic"] #settings-page #config-form .settings-group,
+html[data-theme="classic"] #settings-page .internal-ssh-view .settings-group {
     border-radius:0;
     border-color:#69737b;
     background:#30373d;

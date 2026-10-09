@@ -60,7 +60,10 @@ assert 'html[data-theme="classic"] .help-trigger:focus-visible' in page
 assert 'html[data-theme="classic"] .filter-preview-toggle:hover' in page
 assert 'html[data-theme="classic"] .help-control.open .help-trigger' in page
 assert 'html[data-theme="classic"] .help-trigger {\n    border-radius:0;\n    border-color:#69737b;' in page
-assert 'html[data-theme="classic"] #settings-page .settings-group' in page
+assert 'html[data-theme="classic"] #settings-page #config-form .settings-group' in page
+assert 'html[data-theme="classic"] #settings-page .internal-ssh-view .settings-group' in page
+assert 'html[data-theme="classic"] #settings-page #config-form .settings-group,\nhtml[data-theme="classic"] #settings-page .internal-ssh-view .settings-group' in page
+assert 'html[data-theme="classic"] #settings-page .settings-group' not in page
 assert 'html[data-theme="classic"] #settings-page .filter-scope' in page
 assert 'html[data-theme="classic"] #settings-page .management-form input' in page
 assert 'html[data-theme="classic"] .filter-preview,' in page
