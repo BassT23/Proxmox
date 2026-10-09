@@ -18,6 +18,13 @@ Required environment settings:
   `Remote-User`. The gateway must strip all client-supplied instances and
   replace them with exactly one verified identity header.
 
+Additional mandatory gateway credential: `UU_TRUSTED_PROXY_ASSERTION_FILE`
+must reference a regular private file owned by the Web UI service UID and
+mode 0600. Its contents MUST be a high-entropy, URL-safe 43 to 128 character
+value. Caddy MUST replace (never forward) any client-supplied
+`X-UU-Gateway-Assertion` with exactly one value from a protected credential
+mount. Never put that credential in Git, logs or unrelated containers.
+
 Requests outside the configured source CIDRs, without an identity header,
 with duplicate/malformed identity headers or a non-allowlisted identity
 are denied. `X-Forwarded-For` never grants trust. The UI issues its existing
@@ -30,10 +37,13 @@ remain the default/supported recovery modes. Native credential login is
 disabled when trusted proxy SSO is selected. Local logout invalidates only
 the Ultimate Updater session; actual OIDC logout is owned by the gateway.
 
-**Critical deployment prerequisite:** the backend must be unreachable
-except from the trusted reverse proxy. Do not enable trusted proxy mode
-while port 8765 accepts arbitrary direct callers. Test a denied direct
-backend request and both a privileged authorized UI action and rejected
+**Critical deployment prerequisite:** the gateway assertion is mandatory
+because Docker shared NAT makes a source-CIDR allowlist insufficient.
+It is a confidential bearer capability, not a signed timestamped claim.
+Protect the gateway-to-backend transport, restrict backend exposure where
+possible, and prove that an unrelated container cannot authenticate with
+forged identity or assertion headers. Do not activate before live negative-path acceptance.
+Test a denied direct backend request and both a privileged authorized UI action and rejected
 unauthorized/CSRF request before retiring any existing recovery path.
 
 Automated acceptance: `python3 tests/test-trusted-proxy-auth.py`.

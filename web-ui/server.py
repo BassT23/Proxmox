@@ -2655,6 +2655,7 @@ class AuthStore:
         configured_backend = os.environ.get("UU_AUTH_BACKEND", "").strip().lower()
         self.backend = configured_backend or "proxmox"
         self.proxy_header = os.environ.get("UU_TRUSTED_PROXY_USER_HEADER", "Remote-User").strip()
+        self.proxy_assertion_file = Path(os.environ.get("UU_TRUSTED_PROXY_ASSERTION_FILE", ""))
         self.proxy_users = frozenset(x.strip() for x in os.environ.get("UU_TRUSTED_PROXY_ALLOWED_USERS", "").split(",") if x.strip())
         try:
             self.proxy_networks = tuple(ipaddress.ip_network(x.strip(), strict=False)
@@ -2673,7 +2674,7 @@ class AuthStore:
     @property
     def configured(self):
         if self.backend == "trusted_proxy":
-            return (bool(self.proxy_networks) and bool(self.proxy_users)
+            return (self.proxy_assertion_file.is_absolute() and bool(self.proxy_networks) and bool(self.proxy_users)
                     and bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9-]{0,79}", self.proxy_header))
                     and all(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}", u) for u in self.proxy_users))
         if self.backend == "proxmox":
@@ -2727,6 +2728,26 @@ class AuthStore:
             return hmac.compare_digest(actual, expected)
         except (OSError, ValueError, TypeError, KeyError):
             return False
+
+    def valid_proxy_assertion(self, values):
+        """Require a private gateway capability even when peers share NAT egress."""
+        if len(values) != 1 or not isinstance(values[0], str):
+            return False
+        actual = values[0]
+        if not re.fullmatch(r"[A-Za-z0-9_-]{43,128}", actual):
+            return False
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(self.proxy_assertion_file, flags)
+            with os.fdopen(fd, "r", encoding="ascii") as source:
+                info = os.fstat(source.fileno())
+                if not (stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600
+                        and info.st_uid == os.geteuid() and 43 <= info.st_size <= 130):
+                    return False
+                expected = source.read(131).strip()
+        except (OSError, ValueError, UnicodeError):
+            return False
+        return bool(re.fullmatch(r"[A-Za-z0-9_-]{43,128}", expected)) and hmac.compare_digest(actual, expected)
 
     def create_proxy_session(self, user):
         if self.backend != "trusted_proxy" or not self.configured or user not in self.proxy_users:
@@ -2805,6 +2826,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         except (ValueError, IndexError, TypeError):
             return None
         if not any(peer in network for network in auth.proxy_networks):
+            return None
+        if not auth.valid_proxy_assertion(self.headers.get_all("X-UU-Gateway-Assertion", [])):
             return None
         values = self.headers.get_all(auth.proxy_header, [])
         if len(values) != 1:
