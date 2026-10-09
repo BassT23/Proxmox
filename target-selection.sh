@@ -24,6 +24,32 @@ raise SystemExit(0 if isinstance(data, dict) and data.get("schema_version") == 1
 PY
 }
 
+# Create the persistent empty state once, without replacing a file that may
+# have been created concurrently or already contain user selections.
+TARGET_SELECTION_INITIALIZE() {
+  local directory temporary
+  [[ -e "$TARGET_SELECTION_FILE" || -L "$TARGET_SELECTION_FILE" ]] && return 0
+  directory="${TARGET_SELECTION_FILE%/*}"
+  [[ "$directory" != "$TARGET_SELECTION_FILE" ]] || directory=.
+  mkdir -p -- "$directory" || return 1
+  temporary=$(mktemp "$directory/.target-selection.XXXXXX") || return 1
+  if ! printf '%s\n' '{"schema_version":1,"check":{},"update":{}}' > "$temporary"; then
+    rm -f -- "$temporary"
+    return 1
+  fi
+  chmod 600 "$temporary" || { rm -f -- "$temporary"; return 1; }
+  if [[ "$(id -u)" -eq 0 ]]; then
+    chown root:root "$temporary" || { rm -f -- "$temporary"; return 1; }
+  fi
+  # A hard-link create is atomic and refuses to replace an existing path.
+  if ln -- "$temporary" "$TARGET_SELECTION_FILE" 2>/dev/null; then
+    rm -f -- "$temporary"
+    return 0
+  fi
+  rm -f -- "$temporary"
+  [[ -e "$TARGET_SELECTION_FILE" || -L "$TARGET_SELECTION_FILE" ]]
+}
+
 TARGET_SELECTION_STATE() {
   local scope="$1" candidate_ids="${2:-}"
   TARGET_SELECTION_ENABLED || return 1

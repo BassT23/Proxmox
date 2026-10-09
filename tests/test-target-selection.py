@@ -5,6 +5,7 @@ import json
 import tempfile
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "web-ui"))
@@ -48,5 +49,32 @@ with tempfile.TemporaryDirectory() as directory:
     else:
         raise AssertionError("strict API read must reject invalid persisted selection")
     assert invalid.read_bytes() == invalid_before
+
+    missing = Path(directory) / "missing-target-selection.json"
+    assert server.ensure_target_selection_file(missing) is True
+    assert json.loads(missing.read_text(encoding="utf-8")) == server.target_selection_default()
+    assert missing.stat().st_mode & 0o777 == 0o600
+    missing_before = missing.read_bytes()
+    assert server.ensure_target_selection_file(missing) is False
+    assert missing.read_bytes() == missing_before
+
+    config = Path(directory) / "update.conf"
+    config.write_text('USE_INTERNAL_TARGET_SELECTION="false"\nDEBUG="false"\n', encoding="utf-8")
+    activation_handler = object.__new__(server.StatusHandler)
+    activation_handler.server = SimpleNamespace(config_file=config, target_selection_file=missing)
+    activation_handler.responses = []
+    activation_handler.config_content = lambda: config.read_text(encoding="utf-8")
+    activation_handler.send_json = lambda payload: activation_handler.responses.append(payload)
+    missing.unlink()
+    server.StatusHandler.handle_config_update(activation_handler, {"values": {"USE_INTERNAL_TARGET_SELECTION": True}})
+    assert json.loads(missing.read_text(encoding="utf-8")) == server.target_selection_default()
+    assert 'USE_INTERNAL_TARGET_SELECTION="true"' in config.read_text(encoding="utf-8")
+    assert activation_handler.responses[-1]["message"] == "Configuration saved."
+
+    selected = {"schema_version": 1, "check": {"host:node1": "only"}, "update": {}}
+    server.write_target_selection(missing, selected)
+    selected_before = missing.read_bytes()
+    server.StatusHandler.handle_config_update(activation_handler, {"values": {"DEBUG": True}})
+    assert missing.read_bytes() == selected_before
 
 print("target selection validation tests: PASS")

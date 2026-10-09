@@ -9,7 +9,7 @@
 # product version by parsing this literal line from update.sh.  Runtime code
 # uses product-metadata.sh as the canonical source and tests must keep these
 # values aligned.
-VERSION="5.1.3"
+VERSION="5.2"
 
 # A protection failure must make the overall update job fail, even when the
 # configured continue-on-error mode allows other guests to be processed.
@@ -34,7 +34,7 @@ if [[ -f "$PRODUCT_METADATA_FILE" ]]; then
   # shellcheck disable=SC1090
   . "$PRODUCT_METADATA_FILE"
 fi
-PRODUCT_VERSION="${PRODUCT_VERSION:-5.1.3}"
+PRODUCT_VERSION="${PRODUCT_VERSION:-5.2}"
 BETA_VERSION="${BETA_VERSION:-}"
 VERSION="$PRODUCT_VERSION"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
@@ -1480,14 +1480,16 @@ UPDATE_HOST () {
       scp $LOCAL_FILES/update.conf.dist "$HOST":$LOCAL_FILES/update.conf.dist
     fi
     apt_count_file="$LOCAL_FILES/apt-count.py"
+    apt_count_shell_file="$LOCAL_FILES/apt-count.sh"
     rpm_count_file="$LOCAL_FILES/rpm-count.py"
     package_count_file="$LOCAL_FILES/package-count.sh"
     [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+    [[ -f "$apt_count_shell_file" ]] || apt_count_shell_file="$SCRIPT_DIR/apt-count.sh"
     [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
     [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
     for source in "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/status-model.sh" \
       "$LOCAL_FILES/notification-apprise.py" \
-      "$apt_count_file" "$rpm_count_file" "$package_count_file"; do
+      "$apt_count_file" "$apt_count_shell_file" "$rpm_count_file" "$package_count_file"; do
       [[ -f "$source" ]] || continue
       scp "$source" "$HOST:$LOCAL_FILES/$(basename -- "$source")"
     done

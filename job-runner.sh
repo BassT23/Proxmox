@@ -123,9 +123,19 @@ configured_headless_enabled() {
   [[ "${value,,}" == true || "${value,,}" == 1 || "${value,,}" == yes ]]
 }
 
+systemd_supports_log_filter_patterns() {
+  local version
+  version=$(systemd --version 2>/dev/null | awk 'NR == 1 { print $2; exit }')
+  [[ "$version" =~ ^[0-9]+$ ]] && (( version >= 253 ))
+}
+
 prepare_systemd_log_filters() {
   SYSTEMD_LOG_FILTER_ARGS=()
   configured_debug_enabled && return 0
+  # LogFilterPatterns= was added in systemd 253.  Debian 12 ships systemd
+  # 252, and passing this property to systemd-run makes the whole job fail
+  # before the runner can execute the updater.
+  systemd_supports_log_filter_patterns || return 0
 
   # Proxmox task clients write these messages directly to journald. They do
   # not travel through pct/qm stdout/stderr, so shell redirection cannot hide
