@@ -4,6 +4,8 @@
 import importlib.util
 import re
 import subprocess
+import tempfile
+from html.parser import HTMLParser
 from pathlib import Path
 
 
@@ -25,6 +27,41 @@ assert "finally{completeInitialSystemDataPart('inventory',generation);completeIn
 assert 'function resetInitialSystemDataLoading' in source
 assert 'html[data-theme="classic"] .system-data-loading' in module.PAGE
 assert 'setTimeout' not in source[source.index('function updateInitialSystemDataLoading'):source.index('function resetInitialSystemDataLoading')]
+
+
+class InlineScripts(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.scripts = []
+        self.current = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "script":
+            self.current = []
+
+    def handle_data(self, data):
+        if self.current is not None:
+            self.current.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "script" and self.current is not None:
+            self.scripts.append("".join(self.current))
+            self.current = None
+
+
+parser = InlineScripts()
+parser.feed(module.PAGE)
+assert any("async function ensureSession" in script for script in parser.scripts)
+assert any("bootstrap();" in script for script in parser.scripts)
+ensure_script = next(index for index, script in enumerate(parser.scripts) if "async function ensureSession" in script)
+bootstrap_script = next(index for index, script in enumerate(parser.scripts) if "bootstrap();" in script)
+assert ensure_script < bootstrap_script
+with tempfile.TemporaryDirectory() as directory:
+    for index, script in enumerate(parser.scripts, 1):
+        path = Path(directory) / f"web-ui-script-{index}.js"
+        path.write_text(script, encoding="utf-8")
+        result = subprocess.run(["node", "--check", str(path)], check=False, capture_output=True, text=True)
+        assert result.returncode == 0, f"script {index}: {result.stderr or result.stdout}"
 
 helpers = re.search(
     r"function updateInitialSystemDataLoading\(\).*?function resetInitialSystemDataLoading\(\).*?updateInitialSystemDataLoading\(\)\}",
