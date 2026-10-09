@@ -1322,7 +1322,7 @@ PAGE = PAGE.replace('</head>', '''<style>
     html[data-theme="classic"] .dashboard-meta .page-nav a.active { background:var(--theme-nav-active); border-color:#c4d5df66; box-shadow:none; }
     html[data-theme="classic"] .dashboard-meta .nav-toggle { background:var(--theme-nav); border-color:var(--line); }
     html[data-theme="classic"] .brand-header-art,html[data-theme="classic"] .login-branding { filter:none; }
-    html[data-theme="classic"] .systems-panel,html[data-theme="classic"] .management-panel,html[data-theme="classic"] .scheduler-placeholder,html[data-theme="classic"] .node-group,html[data-theme="classic"] .external-group,html[data-theme="classic"] .guest-panel { border-color:#69737b; background:#2b3238; box-shadow:none; }
+    html[data-theme="classic"] .systems-panel,html[data-theme="classic"] .management-panel,html[data-theme="classic"] .scheduler-placeholder,html[data-theme="classic"] .node-group,html[data-theme="classic"] .external-group,html[data-theme="classic"] .guest-panel { border-color:#69737b; border-radius:4px; background:#2b3238; box-shadow:none; }
     html[data-theme="classic"] .dashboard-kpis { border-color:#69737b; border-radius:4px; background:#2b3238; box-shadow:none; }
     html[data-theme="classic"] .dashboard-kpis .metric,html[data-theme="classic"] .metric,html[data-theme="classic"] .target-card,html[data-theme="classic"] .jobs,html[data-theme="classic"] .details { border-color:#69737b; border-radius:4px; background:#30373d; box-shadow:none; }
     html[data-theme="classic"] .dashboard-kpis .metric { border-color:#566169; background:#343b41; }
@@ -1379,7 +1379,10 @@ html[data-theme="classic"] .systems-panel,
 html[data-theme="classic"] .jobs,
 html[data-theme="classic"] .details,
 html[data-theme="classic"] .management-panel,
-html[data-theme="classic"] .scheduler-placeholder {
+html[data-theme="classic"] .scheduler-placeholder,
+html[data-theme="classic"] .node-group,
+html[data-theme="classic"] .external-group,
+html[data-theme="classic"] .guest-panel {
     border-color:#69737b;
     border-radius:4px;
     background:#2b3238;
@@ -1460,6 +1463,165 @@ html[data-theme="classic"] .target-selection-state:focus-visible,
 html[data-theme="classic"] .node-group .group-actions button:focus-visible,
 html[data-theme="classic"] .row-actions button:focus-visible {
     outline:2px solid var(--accent);
+    outline-offset:2px;
+}
+/* Keep the Classic skin angular and graphite even for the later feature
+   styles which are injected below the main stylesheet. */
+html[data-theme="classic"] .eyebrow,
+html[data-theme="classic"] .detail-sections h4,
+html[data-theme="classic"] .schedule-selected,
+html[data-theme="classic"] .dashboard-kpis .metric:nth-child(1) .metric-top,
+html[data-theme="classic"] .dashboard-kpis .metric:nth-child(6) .metric-top {
+    color:#c2ccd1;
+}
+html[data-theme="classic"] .config-field input[type="checkbox"],
+html[data-theme="classic"] .target-selection-state:focus-visible,
+html[data-theme="classic"] .theme-picker select:focus-visible {
+    accent-color:#a9bbc5;
+}
+html[data-theme="classic"] .settings-group h3,
+html[data-theme="classic"] .settings-group p,
+html[data-theme="classic"] .settings-page a,
+html[data-theme="classic"] #settings-page a,
+html[data-theme="classic"] .theme-picker,
+html[data-theme="classic"] .theme-picker label,
+html[data-theme="classic"] .config-field,
+html[data-theme="classic"] .config-field .field-unit {
+    color:#b8c3c9;
+}
+html[data-theme="classic"] #settings-page a:hover,
+html[data-theme="classic"] #settings-page a:focus-visible {
+    color:#f2f5f6;
+}
+html[data-theme="classic"] .dashboard-meta .nav-toggle,
+html[data-theme="classic"] .dashboard-meta .page-nav,
+html[data-theme="classic"] .dashboard-meta .page-nav a,
+html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout,
+html[data-theme="classic"] .dashboard-meta .page-nav .nav-support,
+html[data-theme="classic"] .dashboard-meta .page-nav a.active {
+    border-radius:4px;
+    color:#c2ccd1;
+    background:#30373d;
+    border-color:#69737b;
+    box-shadow:none;
+}
+html[data-theme="classic"] .dashboard-meta .page-nav a:hover,
+html[data-theme="classic"] .dashboard-meta .page-nav a:focus-visible,
+html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout:hover,
+html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout:focus-visible,
+html[data-theme="classic"] .dashboard-meta .nav-toggle:hover,
+html[data-theme="classic"] .dashboard-meta .nav-toggle:focus-visible {
+    color:#fff;
+    background:#465159;
+    border-color:#a9bbc5;
+    outline:2px solid #a9bbc588;
+}
+html[data-theme="classic"] .dashboard-meta .page-nav a.active {
+    color:#fff;
+    background:#566d7a;
+    border-color:#a9bbc5;
+}
+html[data-theme="classic"] .dashboard-meta .nav-separator {
+    border-color:#69737b;
+}
+html[data-theme="classic"] .version-dialog-footer a,
+html[data-theme="classic"] .version-dialog-footer a:hover,
+html[data-theme="classic"] .version-dialog-footer a:focus-visible {
+    color:#c2ccd1;
+}
+html[data-theme="classic"] .node-group .group-toggle,
+html[data-theme="classic"] .external-group .group-toggle,
+html[data-theme="classic"] .group-toggle {
+    border-radius:4px;
+    color:#c2ccd1;
+    background:transparent;
+}
+html[data-theme="classic"] .node-group .group-toggle:hover,
+html[data-theme="classic"] .external-group .group-toggle:hover,
+html[data-theme="classic"] .group-toggle:hover {
+    color:#fff;
+    background:#465159;
+}
+html[data-theme="classic"] .node-group.open .chevron,
+html[data-theme="classic"] .external-group.open .chevron {
+    color:#c2ccd1;
+}
+html[data-theme="classic"] .group-header:hover,
+html[data-theme="classic"] .node-group .group-header:hover,
+html[data-theme="classic"] .external-group .group-header:hover {
+    background:#394249;
+}
+html[data-theme="classic"] .reboot-required-badge,
+html[data-theme="classic"] .pill,
+html[data-theme="classic"] .schedule-state,
+html[data-theme="classic"] .day-toggles span,
+html[data-theme="classic"] .schedule-missing,
+html[data-theme="classic"] .scheduler-warning,
+html[data-theme="classic"] .scheduler-empty,
+html[data-theme="classic"] .schedule-days,
+html[data-theme="classic"] .schedule-targets,
+html[data-theme="classic"] .schedule-table-wrap,
+html[data-theme="classic"] .scheduler-modal,
+html[data-theme="classic"] .scheduler-modal form,
+html[data-theme="classic"] .scheduler-modal input,
+html[data-theme="classic"] .scheduler-modal select,
+html[data-theme="classic"] .node-group,
+html[data-theme="classic"] .external-group,
+html[data-theme="classic"] .guest-panel,
+html[data-theme="classic"] .guest-panel-title,
+html[data-theme="classic"] .management-form input,
+html[data-theme="classic"] .management-form select,
+html[data-theme="classic"] .config-field input,
+html[data-theme="classic"] .config-field select,
+html[data-theme="classic"] .modal label input,
+html[data-theme="classic"] .modal label select,
+html[data-theme="classic"] .theme-picker select,
+html[data-theme="classic"] .job-download,
+html[data-theme="classic"] .log,
+html[data-theme="classic"] .interactive-terminal,
+html[data-theme="classic"] .target-selection-state {
+    border-radius:4px;
+}
+html[data-theme="classic"] .node-group,
+html[data-theme="classic"] .external-group,
+html[data-theme="classic"] .guest-panel,
+html[data-theme="classic"] .guest-panel-title {
+    border-radius:4px;
+}
+html[data-theme="classic"] .day-toggles input:checked + span {
+    color:#fff;
+    border-color:#a9bbc5;
+    background:#566d7a;
+}
+html[data-theme="classic"] .schedule-targets,
+html[data-theme="classic"] .schedule-table-wrap,
+html[data-theme="classic"] .schedule-days,
+html[data-theme="classic"] .scheduler-summary > div,
+html[data-theme="classic"] .scheduler-card,
+html[data-theme="classic"] .scheduler-empty {
+    border-color:#69737b;
+    background:#30373d;
+}
+html[data-theme="classic"] .schedule-target-table th,
+html[data-theme="classic"] .schedule-target-table td {
+    border-color:#69737b;
+}
+html[data-theme="classic"] .schedule-target-table th {
+    background:#394249;
+}
+html[data-theme="classic"] .scheduler-summary > div,
+html[data-theme="classic"] .scheduler-card,
+html[data-theme="classic"] .scheduler-empty,
+html[data-theme="classic"] .scheduler-warning,
+html[data-theme="classic"] .schedule-missing {
+    box-shadow:none;
+}
+html[data-theme="classic"] input:focus-visible,
+html[data-theme="classic"] select:focus-visible,
+html[data-theme="classic"] textarea:focus-visible,
+html[data-theme="classic"] button:focus-visible,
+html[data-theme="classic"] a:focus-visible {
+    outline:2px solid #a9bbc5;
     outline-offset:2px;
 }
 </style></head>''', 1)

@@ -35,6 +35,23 @@ for button_class in ('node-action', 'node-details'):
     assert f'html[data-theme="classic"] .node-group .group-actions .{button_class}' in page
 assert 'html[data-theme="classic"] .node-group .group-summary .node-action' not in page
 
+# The final Classic cascade must also neutralize the later navigation and
+# scheduler styles, and keep inner controls angular rather than relying only
+# on the outer card radius.
+for selector in (
+    'html[data-theme="classic"] .dashboard-meta .page-nav',
+    'html[data-theme="classic"] .dashboard-meta .nav-toggle',
+    'html[data-theme="classic"] .settings-group h3',
+    'html[data-theme="classic"] .schedule-targets',
+    'html[data-theme="classic"] .day-toggles span',
+    'html[data-theme="classic"] .scheduler-card',
+    'html[data-theme="classic"] .node-group',
+):
+    assert selector in page
+assert 'border-radius:4px' in page
+assert 'html[data-theme="classic"] input:focus-visible' in page
+assert 'html[data-theme="classic"] .day-toggles input:checked + span' in page
+
 config_function = "function setConfigOpen" + page.split("function setConfigOpen", 1)[1].split("\n    function managementMessage", 1)[0]
 config_script = f"""
 const form = {{classList: {{toggle: () => {{}}}}}};
