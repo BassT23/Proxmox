@@ -2238,7 +2238,7 @@ EXIT () {
       # Apply the scheduled-check policy before any legacy renderer can run.
       # This keeps older fallback installations from bypassing the central
       # status-model gate when scheduled notifications are disabled.
-      if [[ "${UU_JOB_SOURCE:-}" == scheduler ]]; then
+      if [[ "${UU_JOB_SOURCE:-}" == scheduler || "${UU_SCHEDULED_CHECK:-false}" == true ]]; then
         local scheduled_email_enabled
         scheduled_email_enabled=$(awk -F'"' '/^EMAIL_DAILY_CHECK=/ {print $2}' "$CONFIG_FILE" 2>/dev/null)
         [[ "${scheduled_email_enabled:-true}" == true ]] || status_notification_sent=true
