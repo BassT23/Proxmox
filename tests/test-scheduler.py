@@ -77,7 +77,12 @@ with tempfile.TemporaryDirectory() as directory:
     assert path.with_name("schedules.json.bak").exists()
     service = server.scheduler_unit_files(selected, Path(directory), Path("/usr/local/sbin/ultimate-updater"))[3]
     timer = server.scheduler_unit_files(multiple, Path(directory), Path("/usr/local/sbin/ultimate-updater"))[4]
-    assert "Environment=UU_JOB_SOURCE=scheduler" in service
+    assert "Environment=UU_JOB_SOURCE=initial-inventory" in service
+    assert "Environment=UU_SCHEDULED_CHECK=true" in service
+    assert "Environment=UU_JOB_SOURCE=scheduler" not in service
+    update_unit=server.scheduler_unit_files({**base,"type":"update-all"},Path(directory),Path("/usr/local/sbin/ultimate-updater"))[3]
+    assert "Environment=UU_JOB_SOURCE=scheduler" in update_unit
+    assert "Environment=UU_SCHEDULED_CHECK" not in update_unit
     assert "Environment=UU_NONINTERACTIVE=true" in service
     assert "ExecStart=/usr/local/sbin/ultimate-updater check node1" in service
     assert "ExecStart=/usr/local/sbin/ultimate-updater check 101" in service
@@ -85,7 +90,17 @@ with tempfile.TemporaryDirectory() as directory:
     assert ";" not in service
 
 source = (root / "web-ui" / "server.py").read_text(encoding="utf-8")
-assert '"UU_JOB_SOURCE": "scheduler", "UU_NONINTERACTIVE": "true"' in source
+assert server.scheduler_execution_env(base)["UU_JOB_SOURCE"] == "initial-inventory"
+assert server.scheduler_execution_env(base)["UU_SCHEDULED_CHECK"] == "true"
+assert server.scheduler_execution_env({**base,"type":"update-all"})["UU_JOB_SOURCE"] == "scheduler"
+assert "scheduler_execution_env(schedule)" in source
 assert "EMAIL_DAILY_CHECK:'Email for scheduled checks'" in source
+
+job_runner = (root / "job-runner.sh").read_text(encoding="utf-8")
+assert '"--setenv=UU_SCHEDULED_CHECK=true"' in job_runner
+status_model = (root / "status-model.sh").read_text(encoding="utf-8")
+assert 'UU_SCHEDULED_CHECK:-false' in status_model
+check_script = (root / "check-updates.sh").read_text(encoding="utf-8")
+assert 'UU_SCHEDULED_CHECK:-false' in check_script
 
 print("scheduler tests: PASS")
