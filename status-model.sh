@@ -1027,6 +1027,65 @@ if external_targets:
 PY
 }
 
+# A success heartbeat cannot acknowledge an incomplete scheduled check.
+STATUS_MODEL_SCHEDULED_HEARTBEAT_ELIGIBLE() {
+  [[ "${UU_CHECK_JOB_EXECUTION:-false}" == true ]] || return 1
+  [[ "${UU_SCHEDULED_CHECK:-false}" == true ]] || return 1
+  [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]] || return 1
+  [[ "${UU_SINGLE_TARGET:-false}" != true ]] || return 1
+  [[ "$1" == 0 && "$2" == 0 && "$4" == 0 ]] || return 1
+  [[ -f "$3" && ! -L "$3" ]] || return 1
+  python3 - "$3" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        data = json.load(source)
+    if not isinstance(data, dict) or type(data.get("schema_version")) is not int:
+        raise ValueError("invalid status schema")
+    targets = data.get("targets")
+    if data["schema_version"] != 1 or not isinstance(targets, list) or not targets:
+        raise ValueError("missing status inventory")
+    if any(not isinstance(item, dict) or item.get("reachable") is not True
+           or item.get("check_status") not in ("ok", "updates_available")
+           for item in targets):
+        raise ValueError("incomplete collection")
+except (OSError, ValueError, TypeError, IndexError):
+    raise SystemExit(1)
+PY
+}
+
+STATUS_MODEL_SEND_SUCCESS_HEARTBEAT() {
+  local url="${UU_HEARTBEAT_URL:-}" path="${UU_HEARTBEAT_TOKEN_FILE:-}"
+  local mode owner file_type token
+  [[ -n "$url" ]] || return 0
+  case "$url" in http://*|https://*) ;; *)
+    printf 'Scheduled heartbeat URL invalid.\n' >&2; return 69 ;;
+  esac
+  if [[ "$url" == *'@'* || "$url" == *'#'* || "$url" == *' '* ||
+        "$url" == *$'\n'* || "$url" == *$'\r'* || "$url" == *$'\t'* ]]; then
+    printf 'Scheduled heartbeat URL invalid.\n' >&2; return 69
+  fi
+  if [[ "$path" != /* || ! -f "$path" || -L "$path" ]]; then
+    printf 'Scheduled heartbeat credential unavailable.\n' >&2; return 69
+  fi
+  read -r mode owner file_type < <(stat -c '%a %u %F' -- "$path" 2>/dev/null) || return 69
+  if [[ "$mode" != 600 || "$owner" != "$EUID" || "$file_type" != regular* ]]; then
+    printf 'Scheduled heartbeat credential permissions invalid.\n' >&2; return 69
+  fi
+  token=$(< "$path") || return 69
+  if [[ ${#token} -lt 8 || ${#token} -gt 512 || ! "$token" =~ ^[[:graph:]]+$ ]]; then
+    printf 'Scheduled heartbeat credential invalid.\n' >&2; return 69
+  fi
+  if ! printf 'Authorization: Bearer %s\n' "$token" |
+    curl --fail --silent --proto '=http,https' --max-redirs 0 \
+      --connect-timeout 10 --max-time 30 --header @- --request POST "$url" \
+      >/dev/null 2>&1; then
+    printf 'Scheduled heartbeat delivery failed.\n' >&2; return 69
+  fi
+}
+
 # Render and optionally send one notification from the unified status model.
 # The first output line is an internal decision marker; callers remove it
 # before writing the human-readable mail body.
@@ -1081,12 +1140,12 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   case "$state" in
     updates|issues)
       printf '%s\n' "$body" | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$email_sender" \
-        -s "Ultimate Updater summary - $HOSTNAME" "$email_user" || true
+        -s "Ultimate Updater summary - $HOSTNAME" "$email_user" || { [[ "${UU_SCHEDULED_CHECK:-false}" == true ]] && return 69; true; }
       ;;
     current)
       if [[ "$email_no_updates" == true ]]; then
         echo "No updates found during search" | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$email_sender" \
-          -s "Ultimate Updater" "$email_user" || true
+          -s "Ultimate Updater" "$email_user" || { [[ "${UU_SCHEDULED_CHECK:-false}" == true ]] && return 69; true; }
       fi
       ;;
     empty)
