@@ -1624,6 +1624,220 @@ html[data-theme="classic"] a:focus-visible {
     outline:2px solid #a9bbc5;
     outline-offset:2px;
 }
+/* Settings-specific neutralization: these controls retain Modern's blue
+   defaults unless they are explicitly restyled in the Classic cascade. */
+html[data-theme="classic"] {
+    --theme-card-radius:0;
+    --theme-control-radius:0;
+    --theme-nav-active:#465159;
+}
+html[data-theme="classic"] .settings-group,
+html[data-theme="classic"] .filter-scope,
+html[data-theme="classic"] .filter-preview,
+html[data-theme="classic"] .internal-ssh-target-summary,
+html[data-theme="classic"] .help-popover,
+html[data-theme="classic"] .settings-config-area,
+html[data-theme="classic"] .settings-management-title,
+html[data-theme="classic"] .connection-management-grid {
+    border-radius:0;
+    border-color:#69737b;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] .filter-preview-toggle,
+html[data-theme="classic"] .filter-preview-toggle:hover,
+html[data-theme="classic"] .filter-preview.open .filter-preview-toggle,
+html[data-theme="classic"] .filter-scope h4,
+html[data-theme="classic"] .filter-preview-chevron,
+html[data-theme="classic"] .filter-preview.open .filter-preview-chevron,
+html[data-theme="classic"] .help-trigger,
+html[data-theme="classic"] .help-control.open .help-trigger {
+    color:#c2ccd1;
+}
+html[data-theme="classic"] .filter-preview-toggle:hover,
+html[data-theme="classic"] .filter-preview.open .filter-preview-toggle,
+html[data-theme="classic"] .filter-preview-toggle:hover .filter-preview-chevron,
+html[data-theme="classic"] .help-trigger:hover,
+html[data-theme="classic"] .help-control.open .help-trigger {
+    background:#465159;
+    border-color:#a9bbc5;
+    box-shadow:none;
+}
+html[data-theme="classic"] .filter-preview-toggle:focus-visible,
+html[data-theme="classic"] .help-trigger:focus-visible {
+    outline:2px solid #a9bbc5;
+    outline-offset:2px;
+}
+html[data-theme="classic"] .filter-preview-chevron,
+html[data-theme="classic"] .help-trigger {
+    border-radius:0;
+}
+html[data-theme="classic"] .help-popover {
+    background:#30373d;
+}
+html[data-theme="classic"] .management-form input,
+html[data-theme="classic"] .management-form select,
+html[data-theme="classic"] .config-field input[type="text"],
+html[data-theme="classic"] .config-field input[type="number"],
+html[data-theme="classic"] .config-field select,
+html[data-theme="classic"] .internal-ssh-target-picker select,
+html[data-theme="classic"] .theme-picker select,
+html[data-theme="classic"] .modal label input,
+html[data-theme="classic"] .modal label select {
+    border-radius:0;
+    border-color:#69737b;
+    background:#252a2e;
+    color:#eef1f3;
+}
+html[data-theme="classic"] .filter-scope,
+html[data-theme="classic"] .internal-ssh-target-summary {
+    background:#2b3034;
+}
+html[data-theme="classic"] .filter-preview-details {
+    border-color:#69737b;
+}
+html[data-theme="classic"] .filter-preview-list,
+html[data-theme="classic"] .filter-preview-note,
+html[data-theme="classic"] .internal-ssh-target-summary strong {
+    color:#b8c0c5;
+}
+html[data-theme="classic"] .settings-group,
+html[data-theme="classic"] .filter-scope,
+html[data-theme="classic"] .filter-preview,
+html[data-theme="classic"] .internal-ssh-target-summary,
+html[data-theme="classic"] .help-popover,
+html[data-theme="classic"] .settings-config-area,
+html[data-theme="classic"] .settings-management-title,
+html[data-theme="classic"] .connection-management-grid,
+html[data-theme="classic"] .filter-preview-chevron,
+html[data-theme="classic"] .help-trigger,
+html[data-theme="classic"] .management-form input,
+html[data-theme="classic"] .management-form select,
+html[data-theme="classic"] .config-field input,
+html[data-theme="classic"] .config-field select,
+html[data-theme="classic"] .internal-ssh-target-picker select,
+html[data-theme="classic"] .theme-picker select,
+html[data-theme="classic"] .modal label input,
+html[data-theme="classic"] .modal label select,
+html[data-theme="classic"] button,
+html[data-theme="classic"] .job-download,
+html[data-theme="classic"] .node-group,
+html[data-theme="classic"] .external-group,
+html[data-theme="classic"] .guest-panel,
+html[data-theme="classic"] .scheduler-card,
+html[data-theme="classic"] .schedule-targets,
+html[data-theme="classic"] .schedule-table-wrap,
+html[data-theme="classic"] .schedule-days,
+html[data-theme="classic"] .modal,
+html[data-theme="classic"] .interactive-terminal-dialog,
+html[data-theme="classic"] .interactive-terminal,
+html[data-theme="classic"] .log,
+html[data-theme="classic"] .target-selection-state {
+    border-radius:0;
+}
+html[data-theme="classic"] .dashboard-meta .page-nav a.active,
+html[data-theme="classic"] .day-toggles input:checked + span {
+    background:#465159;
+    border-color:#a9bbc5;
+}
+html[data-theme="classic"] #settings-page .settings-group {
+    border-radius:0;
+    border-color:#69737b;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .filter-scope {
+    border-radius:0;
+    border-color:#69737b;
+    background:#2b3034;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .filter-preview {
+    border-radius:0;
+    border-color:#69737b;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .help-trigger {
+    border-radius:0;
+    border-color:#69737b;
+    color:#c2ccd1;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .help-trigger:hover,
+html[data-theme="classic"] #settings-page .help-control.open .help-trigger {
+    border-color:#a9bbc5;
+    color:#fff;
+    background:#465159;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .help-trigger:focus-visible {
+    outline:2px solid #a9bbc5;
+    outline-offset:2px;
+}
+html[data-theme="classic"] #settings-page .help-popover {
+    border-radius:0;
+    border-color:#69737b;
+    color:#eef1f3;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .filter-preview-toggle,
+html[data-theme="classic"] #settings-page .filter-preview-toggle:hover,
+html[data-theme="classic"] #settings-page .filter-preview.open .filter-preview-toggle,
+html[data-theme="classic"] #settings-page .filter-scope h4,
+html[data-theme="classic"] #settings-page .filter-preview-chevron,
+html[data-theme="classic"] #settings-page .filter-preview.open .filter-preview-chevron {
+    color:#c2ccd1;
+}
+html[data-theme="classic"] #settings-page .filter-preview-toggle:hover,
+html[data-theme="classic"] #settings-page .filter-preview.open .filter-preview-toggle,
+html[data-theme="classic"] #settings-page .filter-preview-toggle:focus-visible,
+html[data-theme="classic"] #settings-page .filter-preview-toggle:hover .filter-preview-chevron {
+    background:#465159;
+    border-color:#a9bbc5;
+    box-shadow:none;
+    outline-color:#a9bbc5;
+}
+html[data-theme="classic"] #settings-page .management-form input,
+html[data-theme="classic"] #settings-page .management-form select,
+html[data-theme="classic"] #settings-page .config-field input,
+html[data-theme="classic"] #settings-page .config-field select,
+html[data-theme="classic"] #settings-page .internal-ssh-target-picker select,
+html[data-theme="classic"] #settings-page .theme-picker select {
+    border-radius:0;
+    border-color:#69737b;
+    color:#eef1f3;
+    background:#252a2e;
+}
+html[data-theme="classic"] #settings-page .config-field input[type="checkbox"] {
+    accent-color:#a9bbc5;
+}
+html[data-theme="classic"] .help-trigger {
+    border-radius:0;
+    border-color:#69737b;
+    color:#c2ccd1;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] .help-trigger:hover,
+html[data-theme="classic"] .help-control.open .help-trigger {
+    border-color:#a9bbc5;
+    color:#fff;
+    background:#465159;
+    box-shadow:none;
+}
+html[data-theme="classic"] .help-trigger:focus-visible {
+    outline:2px solid #a9bbc5;
+    outline-offset:2px;
+}
+html[data-theme="classic"] .dashboard-meta .nav-toggle,
+html[data-theme="classic"] .dashboard-meta .page-nav,
+html[data-theme="classic"] .dashboard-meta .page-nav a,
+html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout {
+    border-radius:0;
+}
 </style></head>''', 1)
 
 

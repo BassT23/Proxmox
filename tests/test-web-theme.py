@@ -48,7 +48,25 @@ for selector in (
     'html[data-theme="classic"] .node-group',
 ):
     assert selector in page
-assert 'border-radius:4px' in page
+assert '--theme-card-radius:0' in page
+assert '--theme-control-radius:0' in page
+assert 'html[data-theme="classic"] .filter-preview' in page
+assert 'html[data-theme="classic"] .filter-preview-chevron' in page
+assert 'html[data-theme="classic"] .help-trigger' in page
+assert 'html[data-theme="classic"] .config-field input[type="text"]' in page
+assert 'html[data-theme="classic"] .internal-ssh-target-picker select' in page
+assert 'html[data-theme="classic"] .filter-preview-toggle:focus-visible' in page
+assert 'html[data-theme="classic"] .help-trigger:focus-visible' in page
+assert 'html[data-theme="classic"] .filter-preview-toggle:hover' in page
+assert 'html[data-theme="classic"] .help-control.open .help-trigger' in page
+assert 'html[data-theme="classic"] .help-trigger {\n    border-radius:0;\n    border-color:#69737b;' in page
+assert 'html[data-theme="classic"] #settings-page .settings-group' in page
+assert 'html[data-theme="classic"] #settings-page .filter-scope' in page
+assert 'html[data-theme="classic"] #settings-page .management-form input' in page
+assert 'html[data-theme="classic"] .filter-preview,' in page
+assert 'html[data-theme="classic"] .help-trigger,' in page
+assert 'background:#252a2e' in page
+assert 'background:#30373d' in page
 assert 'html[data-theme="classic"] input:focus-visible' in page
 assert 'html[data-theme="classic"] .day-toggles input:checked + span' in page
 
