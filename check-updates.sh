@@ -1635,7 +1635,7 @@ CHECK_VM () {
       fi
       local package_count_command package_count_result
       if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pkg); then
-        STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pkg "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
           "pkg count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi

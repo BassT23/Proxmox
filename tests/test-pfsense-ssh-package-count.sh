@@ -78,7 +78,12 @@ LOG="$PWD/status.log"
 source "$PWD/target-runtime.sh"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
 PRINT_UPDATE_TOTAL() { :; }
-PACKAGE_COUNT_REMOTE_COMMAND() { printf 'pkg-helper'; }
+PACKAGE_COUNT_REMOTE_COMMAND() {
+  if [[ "${PACKAGE_HELPER_AVAILABLE:-yes}" != yes ]]; then
+    return 1
+  fi
+  printf 'pkg-helper'
+}
 INTERNAL_SSH_USE_IDENTITY() { :; }
 GUEST_INTERNET_PREFLIGHT_SSH() { return 0; }
 RUN_SSH_COMMAND() {
@@ -111,6 +116,10 @@ chmod 750 "$WORK_DIR/harness.sh"
 (cd "$WORK_DIR" && PACKAGE_RESULT=fail bash harness.sh)
 grep -Fq 'record:100 vm ssh true pfSense' "$WORK_DIR/status.log"
 grep -Fq 'PACKAGE_COUNT_FAILED' "$WORK_DIR/status.log"
+
+(cd "$WORK_DIR" && PACKAGE_HELPER_AVAILABLE=no bash harness.sh)
+grep -Fq 'record:100 vm ssh true pfSense' "$WORK_DIR/status.log"
+grep -Fq 'PACKAGE_COUNT_UNAVAILABLE' "$WORK_DIR/status.log"
 
 (cd "$WORK_DIR" && PACKAGE_RESULT=success bash harness.sh)
 grep -Fq 'record:100 vm ssh true pfSense' "$WORK_DIR/status.log"

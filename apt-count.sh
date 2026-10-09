@@ -37,14 +37,46 @@ simulation=$(LC_ALL=C LANG=C apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/
 counts=$(printf '%s\n' "$simulation" | awk '
   BEGIN { valid = 1; total = 0; normal = 0; security = 0 }
   /^Inst[[:space:]]/ {
-    if ($0 !~ /^Inst[[:space:]][^[:space:]]+[[:space:]]+\[[^]]*\][[:space:]]+\([^)]/) {
+    # APT writes the candidate as:
+    #   Inst package [old-version] (new-version archive/suite [arch])
+    # Dependency annotations can follow the closing parenthesis.  Only the
+    # archive/suite tokens inside that candidate section are relevant for the
+    # security classification; package names and versions are not.
+    if (NF < 6 || $1 != "Inst" || $2 == "" ||
+        $3 !~ /^\[[^]]*\]$/ || $4 !~ /^\(/) {
       valid = 0
       next
     }
+
+    candidate_closed = 0
+    repository = ""
+    for (i = 5; i <= NF; i++) {
+      token = $i
+      if (token ~ /\)$/) {
+        sub(/\)$/, "", token)
+        if (token !~ /^\[[^]]+\]$/) {
+          valid = 0
+        } else {
+          candidate_closed = 1
+        }
+        break
+      }
+      repository = repository " " token
+    }
+    if (!candidate_closed || repository ~ /^[[:space:]]*$/) {
+      valid = 0
+      next
+    }
+
     total++
-    line = tolower($0)
-    if (line ~ /security/) security++
-    else normal++
+    repository = tolower(repository)
+    # Match a complete security component in repository/archive metadata,
+    # such as stable-security or Debian-Security:13/stable-security.  This
+    # deliberately does not match names such as security-tools.
+    if (repository ~ /(^|[[:space:]\/:,-])security([[:space:]\/:,-]|$)/)
+      security++
+    else
+      normal++
   }
   END {
     if (!valid || normal + security != total)
