@@ -576,6 +576,8 @@ INSTALL () {
     cp "$TEMP_FILES"/target-runtime.sh $LOCAL_FILES/target-runtime.sh
     cp "$TEMP_FILES"/apt-count.py $LOCAL_FILES/apt-count.py
     chmod 750 "$LOCAL_FILES"/apt-count.py
+    cp "$TEMP_FILES"/apt-count.sh $LOCAL_FILES/apt-count.sh
+    chmod 750 "$LOCAL_FILES"/apt-count.sh
     cp "$TEMP_FILES"/rpm-count.py $LOCAL_FILES/rpm-count.py
     chmod 750 "$LOCAL_FILES"/rpm-count.py
     cp "$TEMP_FILES"/package-count.sh $LOCAL_FILES/package-count.sh
@@ -804,6 +806,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/apt-count.py ]]; then
       mv "$TEMP_FILES"/apt-count.py $LOCAL_FILES/apt-count.py
       chmod 750 $LOCAL_FILES/apt-count.py
+    fi
+    if [[ -f "$TEMP_FILES"/apt-count.sh ]]; then
+      mv "$TEMP_FILES"/apt-count.sh $LOCAL_FILES/apt-count.sh
+      chmod 750 $LOCAL_FILES/apt-count.sh
     fi
     if [[ -f "$TEMP_FILES"/rpm-count.py ]]; then
       mv "$TEMP_FILES"/rpm-count.py $LOCAL_FILES/rpm-count.py

@@ -48,14 +48,30 @@ RUN_SSH_COMMAND() {
 }
 
 READ_APT_UPDATE_COUNTS() {
-  local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+  local script="${APT_COUNT_SHELL_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.sh}"
+  local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
   local result
-  result=$(python3 "$script") || {
+  if [[ ! -f "$script" ]]; then
+    result=$(python3 "$python_script") || {
+      SECURITY_APT_UPDATES=null
+      NORMAL_APT_UPDATES=null
+      APT_COUNTS_TOTAL=null
+      return 1
+    }
+  else
+    result=$(APT_COUNT_PYTHON_SCRIPT="$python_script" sh "$script") || {
+      SECURITY_APT_UPDATES=null
+      NORMAL_APT_UPDATES=null
+      APT_COUNTS_TOTAL=null
+      return 1
+    }
+  fi
+  if [[ -z "$result" ]]; then
     SECURITY_APT_UPDATES=null
     NORMAL_APT_UPDATES=null
     APT_COUNTS_TOTAL=null
     return 1
-  }
+  fi
   PARSE_APT_UPDATE_COUNTS "$result"
 }
 
@@ -79,10 +95,18 @@ PARSE_APT_UPDATE_COUNTS() {
 }
 
 APT_COUNT_REMOTE_COMMAND() {
-  local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
-  local encoded
-  encoded=$(base64 -w0 "$script") || return 1
-  printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
+  local shell_script="${APT_COUNT_SHELL_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.sh}"
+  local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+  local shell_encoded python_encoded
+  if [[ ! -f "$shell_script" ]]; then
+    python_encoded=$(base64 -w0 "$python_script") || return 1
+    printf 'python3 -c %q' "import base64;exec(base64.b64decode('$python_encoded'))"
+    return 0
+  fi
+  shell_encoded=$(base64 -w0 "$shell_script") || return 1
+  python_encoded=$(base64 -w0 "$python_script") || return 1
+  printf 'printf %%s %q | base64 -d | APT_COUNT_PYTHON_B64=%q sh -s' \
+    "$shell_encoded" "$python_encoded"
 }
 
 READ_RPM_UPDATE_COUNTS() {

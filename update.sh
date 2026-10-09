@@ -1480,13 +1480,15 @@ UPDATE_HOST () {
       scp $LOCAL_FILES/update.conf.dist "$HOST":$LOCAL_FILES/update.conf.dist
     fi
     apt_count_file="$LOCAL_FILES/apt-count.py"
+    apt_count_shell_file="$LOCAL_FILES/apt-count.sh"
     rpm_count_file="$LOCAL_FILES/rpm-count.py"
     package_count_file="$LOCAL_FILES/package-count.sh"
     [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+    [[ -f "$apt_count_shell_file" ]] || apt_count_shell_file="$SCRIPT_DIR/apt-count.sh"
     [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
     [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
     for source in "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/status-model.sh" \
-      "$apt_count_file" "$rpm_count_file" "$package_count_file"; do
+      "$apt_count_file" "$apt_count_shell_file" "$rpm_count_file" "$package_count_file"; do
       [[ -f "$source" ]] || continue
       scp "$source" "$HOST:$LOCAL_FILES/$(basename -- "$source")"
     done

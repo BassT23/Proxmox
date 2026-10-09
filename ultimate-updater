@@ -250,8 +250,8 @@ external_setup() {
   local defaults_file
   defaults_file=$(external_defaults_file "$target") || return 1
   printf 'Bootstrap (administrator runs this on the External host):\n'
-  printf '  scp -i %q %q %q %q %q %s@%s:/tmp/\n' "$key_path" "$EXTERNAL_BOOTSTRAP_FILE" "$EXTERNAL_HELPER_FILE" "$LOCAL_FILES/apt-count.py" "$defaults_file" "$user" "$host"
-  printf '  sudo /tmp/external-bootstrap.sh /tmp/external-helper.sh %s /tmp/%s.conf /tmp/apt-count.py\n' "$user" "$target"
+  printf '  scp -i %q %q %q %q %q %q %s@%s:/tmp/\n' "$key_path" "$EXTERNAL_BOOTSTRAP_FILE" "$EXTERNAL_HELPER_FILE" "$LOCAL_FILES/apt-count.py" "$LOCAL_FILES/apt-count.sh" "$defaults_file" "$user" "$host"
+  printf '  sudo /tmp/external-bootstrap.sh /tmp/external-helper.sh %s /tmp/%s.conf /tmp/apt-count.py /tmp/apt-count.sh\n' "$user" "$target"
   printf 'The bootstrap installs the root-owned helper and /etc/sudoers.d/ultimate-updater after visudo validation.\n'
 }
 
@@ -624,6 +624,7 @@ remote_node_check_via_cluster_transport() {
   remote_cluster_target="$remote_check_dir/cluster-target.sh"
   remote_runtime="$remote_check_dir/target-runtime.sh"
   local remote_apt_count="$remote_check_dir/apt-count.py"
+  local remote_apt_count_shell="$remote_check_dir/apt-count.sh"
   local remote_rpm_count="$remote_check_dir/rpm-count.py"
   local remote_package_count="$remote_check_dir/package-count.sh"
   remote_status_model="$remote_check_dir/status-model.sh"
@@ -632,12 +633,14 @@ remote_node_check_via_cluster_transport() {
   target_selection_script="$LOCAL_FILES/target-selection.sh"
   target_runtime_file="$LOCAL_FILES/target-runtime.sh"
   local apt_count_file="$LOCAL_FILES/apt-count.py"
+  local apt_count_shell_file="$LOCAL_FILES/apt-count.sh"
   local rpm_count_file="$LOCAL_FILES/rpm-count.py"
   local package_count_file="$LOCAL_FILES/package-count.sh"
   [[ -f "$tag_filter_script" ]] || tag_filter_script="$SCRIPT_DIR/tag-filter.sh"
   [[ -f "$target_selection_script" ]] || target_selection_script="$SCRIPT_DIR/target-selection.sh"
   [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
   [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+  [[ -f "$apt_count_shell_file" ]] || apt_count_shell_file="$SCRIPT_DIR/apt-count.sh"
   [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
   [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
   local_file=$(mktemp)
@@ -659,6 +662,8 @@ remote_node_check_via_cluster_transport() {
       "$target_runtime_file" "$user@$host:$remote_runtime" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$apt_count_file" "$user@$host:$remote_apt_count" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$apt_count_shell_file" "$user@$host:$remote_apt_count_shell" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$rpm_count_file" "$user@$host:$remote_rpm_count" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
@@ -752,6 +757,7 @@ remote_update_job() {
   local legacy_profile="$LOCAL_FILES/VMs/$target"
   local user="${REMOTE_NODE_USER:-root}" output job_unit command remote_update_dir source scope_env=''
   local apt_count_file="$LOCAL_FILES/apt-count.py"
+  local apt_count_shell_file="$LOCAL_FILES/apt-count.sh"
   local rpm_count_file="$LOCAL_FILES/rpm-count.py"
   local package_count_file="$LOCAL_FILES/package-count.sh"
   local target_selection_file="${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}"
@@ -759,6 +765,7 @@ remote_update_job() {
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
   remote_update_dir="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
   [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+  [[ -f "$apt_count_shell_file" ]] || apt_count_shell_file="$SCRIPT_DIR/apt-count.sh"
   [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
   [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
   if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "mkdir -p -- '$remote_update_dir'"; then
@@ -772,7 +779,7 @@ remote_update_job() {
     "$LOCAL_FILES/job-pty-bridge.py" \
     "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/ultimate-updater" \
     "$LOCAL_FILES/qga-guest-exec.sh" \
-    "$LOCAL_FILES/target-runtime.sh" "$apt_count_file" "$rpm_count_file" "$package_count_file" "$LOCAL_FILES/cluster-target.sh" \
+    "$LOCAL_FILES/target-runtime.sh" "$apt_count_file" "$apt_count_shell_file" "$rpm_count_file" "$package_count_file" "$LOCAL_FILES/cluster-target.sh" \
     "$LOCAL_FILES/internal-ssh.sh" "$LOCAL_FILES/update-extras.sh" \
     "$LOCAL_FILES/windows-update.sh" "$package_count_file"; do
     [[ -f "$source" ]] || continue
@@ -907,6 +914,7 @@ remote_target_check() {
   remote_cluster_target="$remote_check_dir/cluster-target.sh"
   remote_runtime="$remote_check_dir/target-runtime.sh"
   local remote_apt_count="$remote_check_dir/apt-count.py"
+  local remote_apt_count_shell="$remote_check_dir/apt-count.sh"
   local remote_rpm_count="$remote_check_dir/rpm-count.py"
   local remote_package_count="$remote_check_dir/package-count.sh"
   remote_qga="$remote_check_dir/qga-guest-exec.sh"
@@ -919,6 +927,7 @@ remote_target_check() {
   target_selection_script="$LOCAL_FILES/target-selection.sh"
   target_runtime_file="$LOCAL_FILES/target-runtime.sh"
   local apt_count_file="$LOCAL_FILES/apt-count.py"
+  local apt_count_shell_file="$LOCAL_FILES/apt-count.sh"
   local rpm_count_file="$LOCAL_FILES/rpm-count.py"
   local package_count_file="$LOCAL_FILES/package-count.sh"
   qga_helper="$LOCAL_FILES/qga-guest-exec.sh"
@@ -930,6 +939,7 @@ remote_target_check() {
   [[ -f "$target_selection_script" ]] || target_selection_script="$SCRIPT_DIR/target-selection.sh"
   [[ -f "$target_runtime_file" ]] || target_runtime_file="$SCRIPT_DIR/target-runtime.sh"
   [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+  [[ -f "$apt_count_shell_file" ]] || apt_count_shell_file="$SCRIPT_DIR/apt-count.sh"
   [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
   [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
   [[ -f "$qga_helper" ]] || qga_helper="$SCRIPT_DIR/qga-guest-exec.sh"
@@ -954,6 +964,8 @@ remote_target_check() {
       "$target_runtime_file" "$user@$host:$remote_runtime" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$apt_count_file" "$user@$host:$remote_apt_count" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$apt_count_shell_file" "$user@$host:$remote_apt_count_shell" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "$rpm_count_file" "$user@$host:$remote_rpm_count" ||
     ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \

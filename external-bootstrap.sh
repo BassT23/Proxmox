@@ -13,7 +13,9 @@ source_helper="${1:-}"
 target_user="${2:-${SUDO_USER:-}}"
 source_config="${3:-}"
 source_apt_count="${4:-}"
+source_apt_count_shell="${5:-}"
 APT_COUNT_PATH=/usr/local/lib/ultimate-updater/apt-count.py
+APT_COUNT_SHELL_PATH=/usr/local/lib/ultimate-updater/apt-count.sh
 temporary_helper=""
 temporary_sudoers=""
 temporary_config=""
@@ -70,6 +72,10 @@ if [ -n "$source_apt_count" ] && { [ ! -f "$source_apt_count" ] || [ ! -r "$sour
   printf 'external-bootstrap: supplied APT count helper is not readable\n' >&2
   exit 64
 fi
+if [ -n "$source_apt_count_shell" ] && { [ ! -f "$source_apt_count_shell" ] || [ ! -r "$source_apt_count_shell" ]; }; then
+  printf 'external-bootstrap: supplied APT shell helper is not readable\n' >&2
+  exit 64
+fi
 
 temporary_helper=$(mktemp /tmp/ultimate-updater-helper.XXXXXX)
 temporary_sudoers=$(mktemp /tmp/ultimate-updater-sudoers.XXXXXX)
@@ -91,6 +97,10 @@ temporary_helper=""
 if [ -n "$source_apt_count" ]; then
   install -d -o root -g root -m 0755 "${APT_COUNT_PATH%/*}"
   install -o root -g root -m 0755 "$source_apt_count" "$APT_COUNT_PATH"
+fi
+if [ -n "$source_apt_count_shell" ]; then
+  install -d -o root -g root -m 0755 "${APT_COUNT_SHELL_PATH%/*}"
+  install -o root -g root -m 0755 "$source_apt_count_shell" "$APT_COUNT_SHELL_PATH"
 fi
 
 if [ ! -e "$CONFIG_PATH" ]; then

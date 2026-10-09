@@ -33,14 +33,21 @@ else
   # shellcheck disable=SC2317,SC2329
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
   READ_APT_UPDATE_COUNTS() {
-    local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+    local script="${APT_COUNT_SHELL_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.sh}"
+    local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
     local result
-    result=$(python3 "$script") || {
-      SECURITY_APT_UPDATES=null
-      NORMAL_APT_UPDATES=null
-      APT_COUNTS_TOTAL=null
-      return 1
-    }
+    if [[ ! -f "$script" ]]; then
+      result=$(python3 "$python_script") || {
+        SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
+      }
+    else
+      result=$(APT_COUNT_PYTHON_SCRIPT="$python_script" sh "$script") || {
+        SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
+      }
+    fi
+    if [[ -z "$result" ]]; then
+      SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
+    fi
     PARSE_APT_UPDATE_COUNTS "$result"
   }
   PARSE_APT_UPDATE_COUNTS() {
@@ -54,9 +61,18 @@ else
     [[ $((normal + security)) -eq $total ]]
   }
   APT_COUNT_REMOTE_COMMAND() {
-    local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}" encoded
-    encoded=$(base64 -w0 "$script") || return 1
-    printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
+    local shell_script="${APT_COUNT_SHELL_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.sh}"
+    local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+    local shell_encoded python_encoded
+    if [[ ! -f "$shell_script" ]]; then
+      python_encoded=$(base64 -w0 "$python_script") || return 1
+      printf 'python3 -c %q' "import base64;exec(base64.b64decode('$python_encoded'))"
+      return 0
+    fi
+    shell_encoded=$(base64 -w0 "$shell_script") || return 1
+    python_encoded=$(base64 -w0 "$python_script") || return 1
+    printf 'printf %%s %q | base64 -d | APT_COUNT_PYTHON_B64=%q sh -s' \
+      "$shell_encoded" "$python_encoded"
   }
   PARSE_RPM_UPDATE_COUNTS() {
     local result="$1" marker status total normal security known
@@ -669,7 +685,7 @@ HOST_CHECK_START () {
 # Host Check
 CHECK_HOST () {
   local HOST=$1 remote_check_dir remote_status remote_status_file remote_done_file
-  local remote_apt_count remote_rpm_count
+  local remote_apt_count remote_apt_count_shell remote_rpm_count
   local remote_done_value remote_status_attempt HOST_NODE HOST_ID remote_done_error_file remote_status_error_file remote_diagnostics_error_file
   local remote_diagnostics_file remote_diagnostics_local_file remote_diagnostics_attempt
   local remote_done_found=false remote_done_transport_rc=0 remote_status_transport_rc=0
@@ -697,6 +713,7 @@ CHECK_HOST () {
   # dispatch and let the remote wrapper signal completion explicitly.
   remote_check_dir="/tmp/ultimate-updater-check-${$}-${RANDOM}-${RANDOM}"
   remote_apt_count="$remote_check_dir/apt-count.py"
+  remote_apt_count_shell="$remote_check_dir/apt-count.sh"
   remote_rpm_count="$remote_check_dir/rpm-count.py"
   remote_done_file="$remote_check_dir/completed"
   remote_runtime_env=""
@@ -744,12 +761,14 @@ CHECK_HOST () {
     if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
       "$LOCAL_FILES/apt-count.py" "$HOST:$remote_apt_count" >/dev/null 2>&1 ||
       ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
+      "$LOCAL_FILES/apt-count.sh" "$HOST:$remote_apt_count_shell" >/dev/null 2>&1 ||
+      ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
       "$LOCAL_FILES/rpm-count.py" "$HOST:$remote_rpm_count" >/dev/null 2>&1; then
       CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
       echo -e "${RD}Could not prepare package count helpers on remote host $HOST${CL}"
       return 1
     fi
-    remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh' APT_COUNT_SCRIPT='$remote_apt_count' RPM_COUNT_SCRIPT='$remote_rpm_count'"
+    remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh' APT_COUNT_SCRIPT='$remote_apt_count' APT_COUNT_SHELL_SCRIPT='$remote_apt_count_shell' RPM_COUNT_SCRIPT='$remote_rpm_count'"
   fi
   if [[ -f "$STATUS_MODEL_SCRIPT" ]]; then
     if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$STATUS_MODEL_SCRIPT" "$HOST:$remote_check_dir/status-model.sh" >/dev/null 2>&1; then
