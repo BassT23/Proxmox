@@ -89,14 +89,39 @@ exit code before using the updater. A responding agent without working
    `reboot required`, schedule and perform the reboot deliberately, then run
    another check.
 
-The updater now performs a Windows-specific preflight before installation. It
-blocks a new run when a pending reboot or measurable activity from common
-servicing processes (`TrustedInstaller`, `TiWorker`, `MoUsoCoreWorker`,
-`UsoClient`, `Dism`, or `DismHost`) indicates that a previous operation may
-still be active. Process existence alone is not treated as proof of active
-servicing, but an existing process whose state cannot be proven idle is treated
-as unclear and fails closed. A running `wuauserv` service by itself is also not
-a blocker.
+The updater performs a Windows-specific preflight before installation. A
+pending reboot blocks a new run. Process names and CPU activity are not used as
+the installation lock: a read-only COM search can legitimately start
+`TrustedInstaller` or `TiWorker`.
+
+## Windows update job lifecycle
+
+The mutating operation is started by a short QGA command and then runs as a
+detached PowerShell process in the guest. Its state is stored atomically as a
+JSON file below:
+
+```text
+C:\ProgramData\Ultimate-Updater\WindowsUpdate\<job-id>.json
+```
+
+The state records the job ID, phase (`pending`, `search`, `download`,
+`install`, `completed`, `failed`, or `unknown`), result codes, processed count,
+reboot requirement, and the last message. A named Windows mutex and the
+guest-state directory prevent two mutating Ultimate Updater jobs from running
+at the same time. A repeated start request reuses an existing job ID. If a
+controller starts with a new request while an active or unknown guest job is
+found, it does not start another job; it adopts the existing job ID for
+status recovery.
+
+QGA status calls only read this state. Losing QGA or restarting the controller
+does not prove that Windows Update stopped, so the updater does not issue a
+second install or use `taskkill` as timeout recovery. The unresolved job stays
+unknown/blocked until a later status read or deliberate operator recovery makes
+the result clear. A QGA timeout is therefore not reported as a successful
+installation.
+
+The state file is not a substitute for a backup. Keep a recovery point before a
+mutating update, and do not remove an `unknown` state merely to force a retry.
 
 ## Troubleshooting
 

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2016
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -13,26 +14,24 @@ if grep -Fq "elif [[ \"\$PRE_OS\" =~ w ]]" "$ROOT_DIR/update.sh"; then
   exit 1
 fi
 grep -Fq 'UPDATE_VM_QEMU_WINDOWS' "$ROOT_DIR/update.sh"
-grep -Fq 'QEMU_GUEST_EXEC_KILL_WINDOWS' "$ROOT_DIR/update.sh"
+grep -Fq 'WINDOWS_POWERSHELL_ENCODE install-start' "$ROOT_DIR/update.sh"
+grep -Fq 'WINDOWS_POWERSHELL_ENCODE install-status' "$ROOT_DIR/update.sh"
 # Windows Update must not start while a previous servicing operation or a
 # pending reboot is still active.  wuauserv alone is intentionally not used as
 # the guard because it is commonly running while the guest is idle.
 grep -Fq 'WINDOWS_POWERSHELL_ENCODE preflight' "$ROOT_DIR/update.sh"
-# Process existence alone is not enough: the preflight samples CPU activity
-# before blocking a new update, and also covers DISM servicing processes.
-grep -Fq "'TrustedInstaller','TiWorker','MoUsoCoreWorker','UsoClient','Dism','DismHost'" "$ROOT_DIR/windows-update.sh"
-grep -Fq 'Start-Sleep -Seconds 2' "$ROOT_DIR/windows-update.sh"
-grep -Fq 'cpuAdvanced' "$ROOT_DIR/windows-update.sh"
+# Process names and CPU activity are intentionally not an installation lock:
+# a read-only COM search can start servicing helpers. The persistent guest
+# state/mutex is the mutating-operation guard.
+grep -Fq 'Global\Ultimate-Updater-WindowsUpdate' "$ROOT_DIR/windows-update.sh"
+grep -Fq 'ProgramData\Ultimate-Updater\WindowsUpdate' "$ROOT_DIR/windows-update.sh"
+grep -Fq "phase -in @('pending','search','download','install','unknown')" "$ROOT_DIR/windows-update.sh"
 grep -Fq "UU_WINDOWS|preflight|blocked|reboot-required" "$ROOT_DIR/windows-update.sh"
-grep -Fq "UU_WINDOWS|preflight|blocked|servicing-active" "$ROOT_DIR/windows-update.sh"
-grep -Fq "UU_WINDOWS|preflight|blocked|servicing-unclear" "$ROOT_DIR/windows-update.sh"
-# Windows installs must cancel inside the guest before the outer QGA timeout;
-# otherwise a timed-out host request can leave Windows Update running and a
-# later update job can start a duplicate operation.
-grep -Fq 'Start-Job -ScriptBlock' "$ROOT_DIR/windows-update.sh"
-grep -Fq 'Wait-Job -Job $worker -Timeout 840' "$ROOT_DIR/windows-update.sh"
-grep -Fq 'Stop-Job -Job $worker' "$ROOT_DIR/windows-update.sh"
-grep -Fq "UU_WINDOWS|error|0|false|Windows Update timed out" "$ROOT_DIR/windows-update.sh"
+grep -Fq 'UU_WINDOWS|status|' "$ROOT_DIR/windows-update.sh"
+if grep -Fq 'QEMU_GUEST_EXEC_KILL_WINDOWS "$VM"' "$ROOT_DIR/update.sh"; then
+  echo 'Windows update path still tries to kill a timed-out guest job' >&2
+  exit 1
+fi
 
 # ------------------------------------------------------------------
 # Windows QGA result parsing
@@ -208,5 +207,58 @@ awk '
 ' "$ROOT_DIR/ultimate-updater" > "$WORK_DIR/remote-target.sh"
 
 grep -Fq 'windows-update.sh' "$WORK_DIR/remote-target.sh"
+
+# The mutating command is short and detached; status is the only operation
+# repeated after launch. These contracts protect against QGA loss and replay.
+grep -Fq 'Start-Process powershell.exe' "$ROOT_DIR/windows-update.sh"
+grep -Fq 'Move-Item -LiteralPath' "$ROOT_DIR/windows-update.sh"
+grep -Fq 'start|existing' "$ROOT_DIR/windows-update.sh"
+grep -Fq 'start|existing-active' "$ROOT_DIR/windows-update.sh"
+if grep -Fq 'Start-Job' "$ROOT_DIR/windows-update.sh"; then
+  echo 'Windows update still uses controller-bound Start-Job' >&2
+  exit 1
+fi
+
+# ------------------------------------------------------------------
+# Windows update lifecycle: a status timeout must not replay the mutation.
+# ------------------------------------------------------------------
+
+awk '/^UPDATE_VM_QEMU_WINDOWS \(\) \{/{copy=1} /^## General ##/{if(copy) exit} copy' \
+  "$ROOT_DIR/update.sh" > "$WORK_DIR/windows-update-function.sh"
+cat > "$WORK_DIR/windows-update-harness.sh" <<'HARNESS'
+#!/bin/bash
+set -euo pipefail
+VM=986
+OR='' RD='' CL=''
+ERROR_COUNT=0
+STATUS_RESULT=''
+ERROR() { ERROR_COUNT=$((ERROR_COUNT + 1)); }
+STATUS_MODEL_UPDATE_RESULT() { STATUS_RESULT="$*"; }
+WINDOWS_POWERSHELL_ENCODE() { printf '%s %s' "$1" "${2:-}"; }
+QEMU_GUEST_EXEC() {
+  local command=''
+  local arg
+  for arg in "$@"; do command+=" $arg"; done
+  QEMU_EXEC_STDERR=''; QEMU_EXEC_OUTPUT=''; QEMU_EXEC_EXITCODE=0
+  QEMU_EXEC_TRANSPORT_RC=0; QEMU_EXEC_ERROR_CLASS=''
+  if [[ "$command" == *'preflight'* ]]; then
+    QEMU_EXEC_STDOUT='UU_WINDOWS|preflight|ok|ready'
+  elif [[ "$command" == *'install-start'* ]]; then
+    local job_id=${command##*install-start }
+    QEMU_EXEC_STDOUT="UU_WINDOWS|start|started|$job_id|1234"
+  else
+    QEMU_EXEC_STDOUT=''
+    QEMU_EXEC_TRANSPORT_RC=1
+    QEMU_EXEC_ERROR_CLASS=QGA_TIMEOUT
+    QEMU_EXEC_OUTPUT='simulated status timeout'
+  fi
+}
+source "$PWD/windows-update-function.sh"
+UPDATE_VM_QEMU_WINDOWS || true
+[[ "$ERROR_COUNT" == 1 ]]
+[[ "$STATUS_RESULT" == '986 failed 1' ]]
+HARNESS
+chmod 750 "$WORK_DIR/windows-update-harness.sh"
+(cd "$WORK_DIR" && bash windows-update-harness.sh)
 
 echo 'QGA and Windows check regression tests: PASS'

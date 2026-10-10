@@ -2163,6 +2163,7 @@ UPDATE_VM_QEMU () {
 
 UPDATE_VM_QEMU_WINDOWS () {
   local encoded result marker update_status processed reboot message preflight_status preflight_reason
+  local job_id start_state start_job status_phase status_result status_message deadline
 
   if ! declare -f WINDOWS_POWERSHELL_ENCODE >/dev/null 2>&1; then
     ERROR_CODE=1
@@ -2201,7 +2202,8 @@ UPDATE_VM_QEMU_WINDOWS () {
     return
   fi
 
-  if ! encoded=$(WINDOWS_POWERSHELL_ENCODE install); then
+  job_id="uu-${VM}-$(date -u '+%Y%m%d%H%M%S')-$$-${RANDOM}"
+  if ! encoded=$(WINDOWS_POWERSHELL_ENCODE install-start "$job_id"); then
     ERROR_CODE=1
     ID=$VM
     ERROR_MSG="Could not encode the Windows Update PowerShell command"
@@ -2211,11 +2213,8 @@ UPDATE_VM_QEMU_WINDOWS () {
   fi
 
   echo -e "${OR:-}--- WINDOWS UPDATE ---${CL:-}"
-  QEMU_GUEST_EXEC "$VM" --timeout 900 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
-  if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 && "$QEMU_EXEC_ERROR_CLASS" == QGA_TIMEOUT ]]; then
-    QEMU_GUEST_EXEC_KILL_WINDOWS "$VM" "${QEMU_EXEC_PID:-}" || true
-  fi
-  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+  QEMU_GUEST_EXEC "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+  if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
     ERROR_CODE=${QEMU_EXEC_EXITCODE:-1}
     ID=$VM
     ERROR_MSG="${QEMU_EXEC_OUTPUT:-Windows Update command failed}"
@@ -2224,23 +2223,68 @@ UPDATE_VM_QEMU_WINDOWS () {
     return
   fi
 
-  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | tail -n 1)
-  # shellcheck disable=SC2034
-  IFS='|' read -r marker update_status processed reboot message <<< "$result"
-  if [[ "$marker" != UU_WINDOWS || "$update_status" != ok || ! "$processed" =~ ^[0-9]+$ || ("$reboot" != true && "$reboot" != false) ]]; then
+  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n '/^UU_WINDOWS|start|/p' | tail -n 1)
+  IFS='|' read -r marker update_status start_state start_job message <<< "$result"
+  if [[ "$marker" != UU_WINDOWS || "$update_status" != start ||
+    ("$start_state" != started && "$start_state" != existing && "$start_state" != existing-active) ||
+    ("$start_state" != existing-active && "$start_job" != "$job_id") ||
+    ! "$start_job" =~ ^[A-Za-z0-9._-]+$ ]]; then
     ERROR_CODE=1
     ID=$VM
-    ERROR_MSG="Invalid Windows Update response: $result"
+    ERROR_MSG="Invalid Windows Update start response: $result"
     declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
     ERROR
     return
   fi
 
-  echo "Windows updates processed: $processed"
-  declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" success 0 || true
-  if [[ "$reboot" == true ]]; then
-    echo -e "${OR:-}Reboot required; no automatic reboot was performed.${CL:-}"
-  fi
+  # Only short status reads use QGA now.  A transport timeout leaves the
+  # guest job and its durable state untouched; never issue taskkill or start
+  # another mutating command as a reaction to it.
+  deadline=$((SECONDS + ${UU_WINDOWS_UPDATE_STATUS_TIMEOUT:-900}))
+  while :; do
+    if ! encoded=$(WINDOWS_POWERSHELL_ENCODE install-status "$start_job"); then
+      ERROR_CODE=1; ID=$VM; ERROR_MSG="Could not encode Windows Update status command"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+      ERROR; return
+    fi
+    QEMU_GUEST_EXEC "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+    if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+      ERROR_CODE=1; ID=$VM
+      ERROR_MSG="Windows Update status is unknown after QGA communication failure: ${QEMU_EXEC_OUTPUT:-unknown}"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+      ERROR; return
+    fi
+    result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n '/^UU_WINDOWS|status|/p' | tail -n 1)
+    IFS='|' read -r marker update_status start_job status_phase processed reboot status_result status_message <<< "$result"
+    if [[ "$marker" != UU_WINDOWS || "$update_status" != status || "$start_job" != "$job_id" ||
+      ! "$processed" =~ ^[0-9]+$ || ("$reboot" != true && "$reboot" != false) ]]; then
+      ERROR_CODE=1; ID=$VM; ERROR_MSG="Invalid Windows Update status response: $result"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+      ERROR; return
+    fi
+    if [[ "$status_phase" == completed ]]; then
+      if [[ "$status_result" != ok ]]; then
+        ERROR_CODE=1; ID=$VM; ERROR_MSG="Windows Update failed: ${status_message:-unknown}"
+        declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+        ERROR; return
+      fi
+      echo "Windows updates processed: $processed"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" success 0 || true
+      [[ "$reboot" == true ]] && echo -e "${OR:-}Reboot required; no automatic reboot was performed.${CL:-}"
+      return
+    fi
+    if [[ "$status_phase" == failed || "$status_phase" == unknown ]]; then
+      ERROR_CODE=1; ID=$VM; ERROR_MSG="Windows Update state is ${status_phase}: ${status_message:-unknown}"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+      ERROR; return
+    fi
+    if [[ "$deadline" -gt 0 && "$SECONDS" -ge "$deadline" ]]; then
+      ERROR_CODE=1; ID=$VM; ERROR_MSG="Windows Update status timed out; guest job $job_id remains unresolved"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+      ERROR; return
+    fi
+    sleep 2
+  done
 }
 
 ## General ##
