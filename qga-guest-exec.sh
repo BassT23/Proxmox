@@ -12,6 +12,7 @@ QEMU_GUEST_EXEC () {
   QEMU_EXEC_EXITCODE=""
   QEMU_EXEC_TRANSPORT_RC=0
   QEMU_EXEC_ERROR_CLASS=""
+  QEMU_EXEC_PID=""
 
   local vmid="${1:-}" raw start_rc pid parsed timeout=30 deadline
   shift || true
@@ -85,6 +86,7 @@ raise SystemExit(1)
     QEMU_EXEC_TRANSPORT_RC=1
     return 0
   fi
+  QEMU_EXEC_PID="$pid"
 
   if [[ "$timeout" -gt 0 ]]; then
     deadline=$((SECONDS + timeout))
@@ -92,8 +94,18 @@ raise SystemExit(1)
     deadline=0
   fi
   while :; do
-    raw=$(qm guest exec-status "$vmid" "$pid" 2>&1)
+    raw=$(timeout 10 qm guest exec-status "$vmid" "$pid" 2>&1)
     start_rc=$?
+    if [[ $start_rc -eq 124 ]]; then
+      if [[ "$deadline" -gt 0 && "$SECONDS" -ge "$deadline" ]]; then
+        QEMU_EXEC_ERROR_CLASS=QGA_TIMEOUT
+        QEMU_EXEC_OUTPUT="QEMU guest-exec status timed out after ${timeout}s"
+        QEMU_EXEC_TRANSPORT_RC=1
+        return 0
+      fi
+      sleep 1
+      continue
+    fi
     if [[ $start_rc -ne 0 ]]; then
       QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC_STATUS
       QEMU_EXEC_STDERR="$raw"
@@ -180,6 +192,15 @@ ${QEMU_EXEC_STDERR}"
     fi
     sleep 1
   done
+}
+
+# Best-effort cleanup for a timed-out Windows guest-exec process. The caller
+# must opt in explicitly; Linux/QGA callers must not receive a Windows command.
+QEMU_GUEST_EXEC_KILL_WINDOWS () {
+  local vmid="${1:-}" pid="${2:-}"
+  [[ "$vmid" =~ ^[0-9]+$ && "$pid" =~ ^[1-9][0-9]*$ ]] || return 2
+  timeout 10 qm guest exec "$vmid" --synchronous 1 -- \
+    cmd.exe /c taskkill /PID "$pid" /T /F >/dev/null 2>&1
 }
 
 # Run a guest command in a transient systemd job whose lifetime is independent

@@ -2176,6 +2176,9 @@ UPDATE_VM_QEMU_WINDOWS () {
 
   echo -e "${OR:-}--- WINDOWS UPDATE ---${CL:-}"
   QEMU_GUEST_EXEC "$VM" --timeout 180 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+  if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 && "$QEMU_EXEC_ERROR_CLASS" == QGA_TIMEOUT ]]; then
+    QEMU_GUEST_EXEC_KILL_WINDOWS "$VM" "${QEMU_EXEC_PID:-}" || true
+  fi
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
     ERROR_CODE=${QEMU_EXEC_EXITCODE:-1}
     ID=$VM

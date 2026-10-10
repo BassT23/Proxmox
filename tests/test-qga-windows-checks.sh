@@ -13,12 +13,13 @@ if grep -Fq "elif [[ \"\$PRE_OS\" =~ w ]]" "$ROOT_DIR/update.sh"; then
   exit 1
 fi
 grep -Fq 'UPDATE_VM_QEMU_WINDOWS' "$ROOT_DIR/update.sh"
+grep -Fq 'QEMU_GUEST_EXEC_KILL_WINDOWS' "$ROOT_DIR/update.sh"
 # Windows installs must cancel inside the guest before the outer QGA timeout;
 # otherwise a timed-out host request can leave Windows Update running and a
 # later update job can start a duplicate operation.
 grep -Fq 'Start-Job -ScriptBlock' "$ROOT_DIR/windows-update.sh"
-grep -Fq 'Wait-Job -Job "$worker" -Timeout 150' "$ROOT_DIR/windows-update.sh"
-grep -Fq 'Stop-Job -Job "$worker"' "$ROOT_DIR/windows-update.sh"
+grep -Fq 'Wait-Job -Job $worker -Timeout 150' "$ROOT_DIR/windows-update.sh"
+grep -Fq 'Stop-Job -Job $worker' "$ROOT_DIR/windows-update.sh"
 grep -Fq "UU_WINDOWS|error|0|false|Windows Update timed out" "$ROOT_DIR/windows-update.sh"
 
 # ------------------------------------------------------------------

@@ -81,6 +81,14 @@ QEMU_GUEST_EXEC 310 --timeout 5 -- /bin/true
 [[ "$QEMU_EXEC_TRANSPORT_RC" == 0 && "$QEMU_EXEC_EXITCODE" == 42 ]]
 [[ "$QEMU_EXEC_STDERR" == $'failed\n' ]]
 
+# A timed-out Windows command exposes its guest PID so the Windows update
+# path can terminate that exact process tree without affecting Linux callers.
+export QGA_EXEC_RESPONSE='{"pid":9}'
+export QGA_STATUS_RESPONSE='{"exited":false}'
+QEMU_GUEST_EXEC 310 --timeout 1 -- /bin/true
+[[ "$QEMU_EXEC_ERROR_CLASS" == QGA_TIMEOUT && "$QEMU_EXEC_PID" == 9 ]]
+grep -Fq 'QEMU_GUEST_EXEC_KILL_WINDOWS' "$ROOT_DIR/qga-guest-exec.sh"
+
 # Guest-side failures remain guest command results regardless of the language
 # or wording used by the guest command's stderr.
 for guest_stderr in \
