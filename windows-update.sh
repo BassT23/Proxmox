@@ -14,7 +14,7 @@ WINDOWS_POWERSHELL_INSTALL_WORKER() {
 function Write-UUState([string]\$phase, [string]\$result, [int]\$processed, [bool]\$reboot, \$resultCode, [string]\$message) {
   \$startedAt = (Get-Date).ToUniversalTime().ToString('o')
   try { \$startedAt = (Get-Content -LiteralPath \$statePath -Raw | ConvertFrom-Json).started_at } catch {}
-  \$state = [ordered]@{ job_id = \$jobId; phase = \$phase; result = \$result; processed = \$processed; reboot_required = \$reboot; result_code = \$resultCode; message = (\$message -replace '[\r\n|]',' '); started_at = \$startedAt; updated_at = (Get-Date).ToUniversalTime().ToString('o') }
+  \$state = [ordered]@{ job_id = \$jobId; phase = \$phase; result = \$result; processed = \$processed; reboot_required = \$reboot; result_code = \$resultCode; message = (\$message -replace '[\r\n|]',' '); launcher_pid = \$old.launcher_pid; worker_pid = \$old.worker_pid; started_at = \$startedAt; updated_at = (Get-Date).ToUniversalTime().ToString('o') }
   \$tmp = "\$statePath.tmp.\$PID"
   \$state | ConvertTo-Json -Compress | Set-Content -LiteralPath \$tmp -Encoding UTF8
   Move-Item -LiteralPath \$tmp -Destination \$statePath -Force
@@ -108,11 +108,21 @@ try {
     if (\$candidate.phase -in @('pending','search','download','install','unknown')) { \$active = \$true; if (-not \$activeCandidate) { \$activeCandidate = \$candidate }; if ([string]\$candidate.job_id -eq \$jobId) { \$existing = \$candidate } }
   }
   if (\$active) { if (\$existing) { Write-Output ("UU_WINDOWS|start|existing|{0}|{1}" -f \$jobId, \$existing.phase); exit 0 }; Write-Output ("UU_WINDOWS|start|existing-active|{0}|{1}" -f \$activeCandidate.job_id, \$activeCandidate.phase); exit 0 }
-  \$state = [ordered]@{ job_id = \$jobId; phase = 'pending'; result = 'running'; processed = 0; reboot_required = \$false; result_code = \$null; message = ''; started_at = (Get-Date).ToUniversalTime().ToString('o'); updated_at = (Get-Date).ToUniversalTime().ToString('o') }
+  \$state = [ordered]@{ job_id = \$jobId; phase = 'pending'; result = 'running'; processed = 0; reboot_required = \$false; result_code = \$null; message = 'worker launch pending'; launcher_pid = \$PID; worker_pid = \$null; started_at = (Get-Date).ToUniversalTime().ToString('o'); updated_at = (Get-Date).ToUniversalTime().ToString('o') }
   \$tmp = "\$statePath.tmp.\$PID"; \$state | ConvertTo-Json -Compress | Set-Content -LiteralPath \$tmp -Encoding UTF8; Move-Item -LiteralPath \$tmp -Destination \$statePath -Force
   \$process = Start-Process powershell.exe -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','$worker_encoded') -WindowStyle Hidden -PassThru
+  \$state.worker_pid = \$process.Id; \$state.message = 'worker started'; \$state.updated_at = (Get-Date).ToUniversalTime().ToString('o')
+  \$tmp = "\$statePath.tmp.\$PID"; \$state | ConvertTo-Json -Compress | Set-Content -LiteralPath \$tmp -Encoding UTF8; Move-Item -LiteralPath \$tmp -Destination \$statePath -Force
   Write-Output ("UU_WINDOWS|start|started|{0}|{1}" -f \$jobId, \$process.Id); exit 0
-} catch { Write-Output ("UU_WINDOWS|start|error|{0}" -f (\$_.Exception.Message -replace '[\r\n|]',' ')); exit 23
+} catch {
+  try {
+    if (Test-Path -LiteralPath \$statePath) {
+      \$failed = Get-Content -LiteralPath \$statePath -Raw | ConvertFrom-Json
+      \$failed.phase = 'unknown'; \$failed.result = 'unknown'; \$failed.message = 'worker launch was not confirmed'; \$failed.updated_at = (Get-Date).ToUniversalTime().ToString('o')
+      \$tmp = "\$statePath.tmp.\$PID"; \$failed | ConvertTo-Json -Compress | Set-Content -LiteralPath \$tmp -Encoding UTF8; Move-Item -LiteralPath \$tmp -Destination \$statePath -Force
+    }
+  } catch {}
+  Write-Output ("UU_WINDOWS|start|error|{0}" -f (\$_.Exception.Message -replace '[\r\n|]',' ')); exit 23
 } finally { if (\$mutex) { try { \$mutex.ReleaseMutex() } catch {} ; \$mutex.Dispose() } }
 POWERSHELL
       ;;
@@ -123,7 +133,13 @@ POWERSHELL
 \$ErrorActionPreference = 'Stop'; \$jobId = '$job_id'; \$path = Join-Path 'C:\ProgramData\Ultimate-Updater\WindowsUpdate' ("\$jobId.json")
 try {
   if (-not (Test-Path -LiteralPath \$path -PathType Leaf)) { Write-Output ("UU_WINDOWS|status|{0}|unknown|0|false|unknown|state-missing" -f \$jobId); exit 0 }
-  \$state = Get-Content -LiteralPath \$path -Raw | ConvertFrom-Json; \$message = ([string]\$state.message -replace '[\r\n|]',' ')
+  \$state = Get-Content -LiteralPath \$path -Raw | ConvertFrom-Json
+  if (\$state.phase -eq 'pending' -and -not \$state.worker_pid) {
+    \$launcherAlive = \$false
+    if (\$state.launcher_pid) { try { Get-Process -Id ([int]\$state.launcher_pid) -ErrorAction Stop | Out-Null; \$launcherAlive = \$true } catch {} }
+    if (-not \$launcherAlive) { Write-Output ("UU_WINDOWS|status|{0}|unknown|0|false|unknown|worker-start-not-confirmed" -f \$jobId); exit 0 }
+  }
+  \$message = ([string]\$state.message -replace '[\r\n|]',' ')
   Write-Output ("UU_WINDOWS|status|{0}|{1}|{2}|{3}|{4}|{5}" -f \$jobId, \$state.phase, \$state.processed, ([string]\$state.reboot_required).ToLower(), \$state.result, \$message); exit 0
 } catch { Write-Output ("UU_WINDOWS|status|{0}|unknown|0|false|unknown|state-invalid" -f \$jobId); exit 0 }
 POWERSHELL
