@@ -98,6 +98,9 @@ Start with these three guides:
 2. Review [configuration and safety settings](docs/configuration.md).
 3. Learn the difference between [checks and updates](docs/checks-and-updates.md).
 
+For Windows VMs, read the [Windows preparation and troubleshooting guide](docs/windows.md)
+before enabling an update path.
+
 Then use the [Web UI](docs/web-ui.md) to review the inventory and run a check
 before deliberately starting an update.
 

@@ -14,7 +14,7 @@ mutating path.
 | Arch Pacman | Total-only | Counts come from the Pacman path. |
 | Alpine APK | Total-only | Counts come from the APK path. |
 | FreeBSD/pfSense `pkg` | Total-only | Read-only `pkg version -U -l '<'` check. |
-| Windows | Current path is experimental/deferred | Requires working QGA and `guest-exec`; not in the supported 5.1 baseline. |
+| Windows | Total-only, validated for Windows Server 2025 checks | Requires working QGA and `guest-exec`; see the [Windows guide](windows.md). A complete mutating run remains subject to servicing and recovery-point validation. |
 
 ## FreeBSD and pfSense
 

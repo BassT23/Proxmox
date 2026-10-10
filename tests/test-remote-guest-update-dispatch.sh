@@ -24,6 +24,15 @@ grep -Fq "chmod 750 '\$remote_update_dir/job-runner.sh' '\$remote_update_dir/upd
 grep -Fq "'\$remote_update_dir/job-pty-bridge.py'" "$UPDATER"
 grep -Fq 'CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-$LOCAL_FILES/update.conf}"' "$ROOT_DIR/update-extras.sh"
 
+# Build identity is used by the remote update job and must be part of the
+# temporary payload; otherwise the staged update.sh calls an undefined helper.
+grep -Fq 'local product_metadata_file="$LOCAL_FILES/product-metadata.sh"' "$UPDATER"
+grep -Fq '"$LOCAL_FILES/windows-update.sh" "$product_metadata_file" "$package_count_file"' "$UPDATER"
+grep -Fq 'local apt_count_file rpm_count_file package_count_file product_metadata_file source' "$ROOT_DIR/update.sh"
+grep -Fq '"$product_metadata_file"; do' "$ROOT_DIR/update.sh"
+grep -Fq 'Could not stage product metadata for remote update on %s.' "$UPDATER"
+grep -Fq 'Could not stage product metadata for remote host $HOST' "$ROOT_DIR/update.sh"
+
 # A remote guest update must not depend on a complete UU installation on the owner node.
 if grep -Fq '"/etc/ultimate-updater/job-runner.sh" start "$target"' "$UPDATER"; then
   printf 'legacy remote guest runner path still present\n' >&2

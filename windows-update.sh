@@ -28,6 +28,34 @@ try {
 }
 POWERSHELL
       ;;
+    preflight)
+      cat <<'POWERSHELL'
+$ErrorActionPreference = 'Stop'
+function Test-UURebootRequired {
+  return (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or
+    (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or
+    (Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\PendingFileRenameOperations')
+}
+try {
+  if (Test-UURebootRequired) {
+    Write-Output 'UU_WINDOWS|preflight|blocked|reboot-required'
+    exit 21
+  }
+  $active = @(Get-Process -Name TrustedInstaller,TiWorker,MoUsoCoreWorker,UsoClient -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty ProcessName -Unique)
+  if ($active.Count -gt 0) {
+    Write-Output ('UU_WINDOWS|preflight|blocked|servicing-active:{0}' -f ($active -join ','))
+    exit 22
+  }
+  Write-Output 'UU_WINDOWS|preflight|ok|ready'
+  exit 0
+} catch {
+  $message = $_.Exception.Message -replace '[\r\n|]', ' '
+  Write-Output ('UU_WINDOWS|preflight|error|{0}' -f $message)
+  exit 23
+}
+POWERSHELL
+      ;;
     install)
       cat <<'POWERSHELL'
 $ErrorActionPreference = 'Stop'

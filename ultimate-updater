@@ -643,6 +643,11 @@ remote_node_check_via_cluster_transport() {
   [[ -f "$apt_count_shell_file" ]] || apt_count_shell_file="$SCRIPT_DIR/apt-count.sh"
   [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
   [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
+  [[ -f "$product_metadata_file" ]] || product_metadata_file="$SCRIPT_DIR/product-metadata.sh"
+  if [[ ! -f "$product_metadata_file" ]]; then
+    printf 'Could not stage product metadata for remote update on %s.\n' "$node" >&2
+    return 6
+  fi
   local_file=$(mktemp)
   if ! STATUS_MODEL_INIT; then
     rm -f -- "$local_file"
@@ -760,6 +765,7 @@ remote_update_job() {
   local apt_count_shell_file="$LOCAL_FILES/apt-count.sh"
   local rpm_count_file="$LOCAL_FILES/rpm-count.py"
   local package_count_file="$LOCAL_FILES/package-count.sh"
+  local product_metadata_file="$LOCAL_FILES/product-metadata.sh"
   local target_selection_file="${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}"
   local interactive_env=''
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
@@ -781,7 +787,7 @@ remote_update_job() {
     "$LOCAL_FILES/qga-guest-exec.sh" \
     "$LOCAL_FILES/target-runtime.sh" "$apt_count_file" "$apt_count_shell_file" "$rpm_count_file" "$package_count_file" "$LOCAL_FILES/cluster-target.sh" \
     "$LOCAL_FILES/internal-ssh.sh" "$LOCAL_FILES/update-extras.sh" \
-    "$LOCAL_FILES/windows-update.sh" "$package_count_file"; do
+    "$LOCAL_FILES/windows-update.sh" "$product_metadata_file" "$package_count_file"; do
     [[ -f "$source" ]] || continue
     if ! timeout 15 scp -q "${ssh_args[@]}" -P "$port" "$source" \
       "$user@$host:$remote_update_dir/$(basename -- "$source")"; then

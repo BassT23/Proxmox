@@ -14,6 +14,13 @@ if grep -Fq "elif [[ \"\$PRE_OS\" =~ w ]]" "$ROOT_DIR/update.sh"; then
 fi
 grep -Fq 'UPDATE_VM_QEMU_WINDOWS' "$ROOT_DIR/update.sh"
 grep -Fq 'QEMU_GUEST_EXEC_KILL_WINDOWS' "$ROOT_DIR/update.sh"
+# Windows Update must not start while a previous servicing operation or a
+# pending reboot is still active.  wuauserv alone is intentionally not used as
+# the guard because it is commonly running while the guest is idle.
+grep -Fq 'WINDOWS_POWERSHELL_ENCODE preflight' "$ROOT_DIR/update.sh"
+grep -Fq 'Get-Process -Name TrustedInstaller,TiWorker,MoUsoCoreWorker,UsoClient' "$ROOT_DIR/windows-update.sh"
+grep -Fq "UU_WINDOWS|preflight|blocked|reboot-required" "$ROOT_DIR/windows-update.sh"
+grep -Fq "UU_WINDOWS|preflight|blocked|servicing-active" "$ROOT_DIR/windows-update.sh"
 # Windows installs must cancel inside the guest before the outer QGA timeout;
 # otherwise a timed-out host request can leave Windows Update running and a
 # later update job can start a duplicate operation.

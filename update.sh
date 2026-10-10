@@ -1459,7 +1459,7 @@ UPDATE_HOST () {
   local remote_workspace="" remote_job_unit="" remote_state_dir=""
   local remote_started_at="" remote_finished_at="" remote_state=""
   local remote_finalize_command="" remote_handoff_rc=0
-  local apt_count_file rpm_count_file package_count_file source
+  local apt_count_file rpm_count_file package_count_file product_metadata_file source
   [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_update_env="UU_INTERNAL_SKIP_HOST_TARGET=true "
   START_HOST=$(hostname -i | cut -d ' ' -f1)
   if [[ "$HOST" != "$START_HOST" ]]; then
@@ -1483,12 +1483,20 @@ UPDATE_HOST () {
     apt_count_shell_file="$LOCAL_FILES/apt-count.sh"
     rpm_count_file="$LOCAL_FILES/rpm-count.py"
     package_count_file="$LOCAL_FILES/package-count.sh"
+    product_metadata_file="$LOCAL_FILES/product-metadata.sh"
     [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
     [[ -f "$apt_count_shell_file" ]] || apt_count_shell_file="$SCRIPT_DIR/apt-count.sh"
     [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
     [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
+    [[ -f "$product_metadata_file" ]] || product_metadata_file="$SCRIPT_DIR/product-metadata.sh"
+    if [[ ! -f "$product_metadata_file" ]]; then
+      echo "Could not stage product metadata for remote host $HOST" >&2
+      UPDATE_FAILURE=true
+      continue
+    fi
     for source in "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/status-model.sh" \
-      "$apt_count_file" "$apt_count_shell_file" "$rpm_count_file" "$package_count_file"; do
+      "$apt_count_file" "$apt_count_shell_file" "$rpm_count_file" "$package_count_file" \
+      "$product_metadata_file"; do
       [[ -f "$source" ]] || continue
       scp "$source" "$HOST:$LOCAL_FILES/$(basename -- "$source")"
     done
@@ -2154,12 +2162,40 @@ UPDATE_VM_QEMU () {
 }
 
 UPDATE_VM_QEMU_WINDOWS () {
-  local encoded result marker update_status processed reboot message
+  local encoded result marker update_status processed reboot message preflight_status preflight_reason
 
   if ! declare -f WINDOWS_POWERSHELL_ENCODE >/dev/null 2>&1; then
     ERROR_CODE=1
     ID=$VM
     ERROR_MSG="Windows update helper is not installed"
+    declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+    ERROR
+    return
+  fi
+
+  if ! encoded=$(WINDOWS_POWERSHELL_ENCODE preflight); then
+    ERROR_CODE=1
+    ID=$VM
+    ERROR_MSG="Could not encode the Windows Update preflight command"
+    declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+    ERROR
+    return
+  fi
+  QEMU_GUEST_EXEC "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+  if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+    ERROR_CODE=${QEMU_EXEC_EXITCODE:-1}
+    ID=$VM
+    ERROR_MSG="${QEMU_EXEC_OUTPUT:-Windows Update preflight failed}"
+    declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+    ERROR
+    return
+  fi
+  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | tail -n 1)
+  IFS='|' read -r marker preflight_status preflight_reason message <<< "$result"
+  if [[ "$marker" != UU_WINDOWS || "$preflight_status" != preflight || "$preflight_reason" != ok ]]; then
+    ERROR_CODE=1
+    ID=$VM
+    ERROR_MSG="Windows Update preflight blocked: ${message:-unknown reason}"
     declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
     ERROR
     return
