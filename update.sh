@@ -1490,9 +1490,9 @@ UPDATE_HOST () {
     [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
     [[ -f "$product_metadata_file" ]] || product_metadata_file="$SCRIPT_DIR/product-metadata.sh"
     if [[ ! -f "$product_metadata_file" ]]; then
+      ssh -q -p "$SSH_PORT" "$HOST" "rm -rf -- $(printf '%q' "$remote_workspace")" >/dev/null 2>&1 || true
       echo "Could not stage product metadata for remote host $HOST" >&2
-      UPDATE_FAILURE=true
-      continue
+      return 6
     fi
     for source in "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/status-model.sh" \
       "$apt_count_file" "$apt_count_shell_file" "$rpm_count_file" "$package_count_file" \

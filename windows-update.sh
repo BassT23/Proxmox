@@ -41,8 +41,18 @@ try {
     Write-Output 'UU_WINDOWS|preflight|blocked|reboot-required'
     exit 21
   }
-  $active = @(Get-Process -Name TrustedInstaller,TiWorker,MoUsoCoreWorker,UsoClient -ErrorAction SilentlyContinue |
-    Select-Object -ExpandProperty ProcessName -Unique)
+  $names = 'TrustedInstaller','TiWorker','MoUsoCoreWorker','UsoClient','Dism','DismHost'
+  $before = @{}
+  Get-Process -Name $names -ErrorAction SilentlyContinue | ForEach-Object {
+    $before[$_.Id] = [pscustomobject]@{ Cpu = $_.CPU; Started = $_.StartTime }
+  }
+  Start-Sleep -Seconds 2
+  $active = @(Get-Process -Name $names -ErrorAction SilentlyContinue | Where-Object {
+    $old = $before[$_.Id]
+    $newProcess = -not $old
+    $cpuAdvanced = $old -and ($_.CPU - $old.Cpu -gt 0.1)
+    $newProcess -or $cpuAdvanced
+  } | Select-Object -ExpandProperty ProcessName -Unique)
   if ($active.Count -gt 0) {
     Write-Output ('UU_WINDOWS|preflight|blocked|servicing-active:{0}' -f ($active -join ','))
     exit 22

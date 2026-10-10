@@ -18,7 +18,11 @@ grep -Fq 'QEMU_GUEST_EXEC_KILL_WINDOWS' "$ROOT_DIR/update.sh"
 # pending reboot is still active.  wuauserv alone is intentionally not used as
 # the guard because it is commonly running while the guest is idle.
 grep -Fq 'WINDOWS_POWERSHELL_ENCODE preflight' "$ROOT_DIR/update.sh"
-grep -Fq 'Get-Process -Name TrustedInstaller,TiWorker,MoUsoCoreWorker,UsoClient' "$ROOT_DIR/windows-update.sh"
+# Process existence alone is not enough: the preflight samples CPU activity
+# before blocking a new update, and also covers DISM servicing processes.
+grep -Fq "'TrustedInstaller','TiWorker','MoUsoCoreWorker','UsoClient','Dism','DismHost'" "$ROOT_DIR/windows-update.sh"
+grep -Fq 'Start-Sleep -Seconds 2' "$ROOT_DIR/windows-update.sh"
+grep -Fq 'cpuAdvanced' "$ROOT_DIR/windows-update.sh"
 grep -Fq "UU_WINDOWS|preflight|blocked|reboot-required" "$ROOT_DIR/windows-update.sh"
 grep -Fq "UU_WINDOWS|preflight|blocked|servicing-active" "$ROOT_DIR/windows-update.sh"
 # Windows installs must cancel inside the guest before the outer QGA timeout;

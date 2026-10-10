@@ -90,10 +90,11 @@ exit code before using the updater. A responding agent without working
    another check.
 
 The updater now performs a Windows-specific preflight before installation. It
-blocks a new run when a pending reboot or common servicing processes
-(`TrustedInstaller`, `TiWorker`, `MoUsoCoreWorker`, or `UsoClient`) indicate
-that a previous operation may still be active. A running `wuauserv` service by
-itself is not treated as proof of active servicing.
+blocks a new run when a pending reboot or measurable activity from common
+servicing processes (`TrustedInstaller`, `TiWorker`, `MoUsoCoreWorker`,
+`UsoClient`, `Dism`, or `DismHost`) indicates that a previous operation may
+still be active. Process existence alone is not treated as proof of active
+servicing. A running `wuauserv` service by itself is also not a blocker.
 
 ## Troubleshooting
 
