@@ -79,7 +79,7 @@ $worker = Start-Job -ScriptBlock {
 try {
   # Keep this below the outer QGA timeout so a timed-out update is stopped in
   # the guest instead of continuing invisibly and allowing a duplicate run.
-  if (-not (Wait-Job -Job $worker -Timeout 150)) {
+  if (-not (Wait-Job -Job $worker -Timeout 840)) {
     Stop-Job -Job $worker -ErrorAction SilentlyContinue
     Remove-Job -Job $worker -Force -ErrorAction SilentlyContinue
     Write-Output 'UU_WINDOWS|error|0|false|Windows Update timed out'
