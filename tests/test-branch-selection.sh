@@ -37,7 +37,26 @@ printf 'USED_BRANCH="develop"\n' > "$work_dir/update.conf"
 printf 'NEW_OPTION=true\n' > "$work_dir/update.conf.dist"
 # shellcheck disable=SC1091
 source "$ROOT_DIR/config-merge.sh"
-MERGE_UPDATE_CONFIG "$work_dir/update.conf" "$work_dir/update.conf.dist" beta
+
+assert_clean_merge () {
+  local stderr_file rc
+  stderr_file=$(mktemp)
+  set +e
+  MERGE_UPDATE_CONFIG "$work_dir/update.conf" "$work_dir/update.conf.dist" "$1" 2>"$stderr_file"
+  rc=$?
+  set -e
+  if [[ $rc -ne 0 || -s "$stderr_file" ]]; then
+    cat "$stderr_file" >&2
+    echo "branch merge failed or wrote stderr: $1" >&2
+    exit 1
+  fi
+  rm -f "$stderr_file"
+}
+
+assert_clean_merge develop
+grep -Fqx 'USED_BRANCH="develop"' "$work_dir/update.conf"
+
+assert_clean_merge beta
 grep -Fqx 'USED_BRANCH="beta"    # could be "master/beta/develop"' "$work_dir/update.conf"
 
 grep -Fq 'https://raw.githubusercontent.com/BassT23/Proxmox/' "$ROOT_DIR/update.sh"
