@@ -36,36 +36,63 @@ function Test-UURebootRequired {
     (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or
     (Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\PendingFileRenameOperations')
 }
+$worker = Start-Job -ScriptBlock {
+  $ErrorActionPreference = 'Stop'
+  function Test-UURebootRequired {
+    return (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or
+      (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or
+      (Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\PendingFileRenameOperations')
+  }
+  try {
+    $session = New-Object -ComObject Microsoft.Update.Session
+    $searcher = $session.CreateUpdateSearcher()
+    $available = $searcher.Search("IsInstalled=0 and Type='Software' and IsHidden=0").Updates
+    if ($available.Count -eq 0) {
+      Write-Output 'UU_WINDOWS|ok|0|false|no updates'
+      return
+    }
+    $downloader = $session.CreateUpdateDownloader()
+    $downloader.Updates = $available
+    $download = $downloader.Download()
+    if ($download.ResultCode -notin 2, 3) {
+      Write-Output ("UU_WINDOWS|error|0|false|download failed (result {0})" -f $download.ResultCode)
+      return
+    }
+    $installer = $session.CreateUpdateInstaller()
+    $installer.Updates = $available
+    $installation = $installer.Install()
+    $failed = 0
+    for ($index = 0; $index -lt $available.Count; $index++) {
+      if ($installation.GetUpdateResult($index).ResultCode -in 3, 4, 5) { $failed++ }
+    }
+    $reboot = [bool]$installation.RebootRequired -or (Test-UURebootRequired)
+    if ($failed -gt 0 -or $installation.ResultCode -in 4, 5) {
+      Write-Output ("UU_WINDOWS|error|{0}|{1}|{2} update(s) failed" -f $failed, $reboot.ToString().ToLower(), $failed)
+      return
+    }
+    Write-Output ("UU_WINDOWS|ok|{0}|{1}|installed" -f $available.Count, $reboot.ToString().ToLower())
+  } catch {
+    $message = $_.Exception.Message -replace '[\r\n|]', ' '
+    Write-Output ("UU_WINDOWS|error|0|false|{0}" -f $message)
+  }
+}
 try {
-  $session = New-Object -ComObject Microsoft.Update.Session
-  $searcher = $session.CreateUpdateSearcher()
-  $available = $searcher.Search("IsInstalled=0 and Type='Software' and IsHidden=0").Updates
-  if ($available.Count -eq 0) {
-    Write-Output 'UU_WINDOWS|ok|0|false|no updates'
-    exit 0
+  # Keep this below the outer QGA timeout so a timed-out update is stopped in
+  # the guest instead of continuing invisibly and allowing a duplicate run.
+  if (-not (Wait-Job -Job $worker -Timeout 150)) {
+    Stop-Job -Job $worker -ErrorAction SilentlyContinue
+    Remove-Job -Job $worker -Force -ErrorAction SilentlyContinue
+    Write-Output 'UU_WINDOWS|error|0|false|Windows Update timed out'
+    exit 24
   }
-  $downloader = $session.CreateUpdateDownloader()
-  $downloader.Updates = $available
-  $download = $downloader.Download()
-  if ($download.ResultCode -notin 2, 3) {
-    Write-Output ("UU_WINDOWS|error|0|false|download failed (result {0})" -f $download.ResultCode)
-    exit 21
-  }
-  $installer = $session.CreateUpdateInstaller()
-  $installer.Updates = $available
-  $installation = $installer.Install()
-  $failed = 0
-  for ($index = 0; $index -lt $available.Count; $index++) {
-    if ($installation.GetUpdateResult($index).ResultCode -in 3, 4, 5) { $failed++ }
-  }
-  $reboot = [bool]$installation.RebootRequired -or (Test-UURebootRequired)
-  if ($failed -gt 0 -or $installation.ResultCode -in 4, 5) {
-    Write-Output ("UU_WINDOWS|error|{0}|{1}|{2} update(s) failed" -f $failed, $reboot.ToString().ToLower(), $failed)
-    exit 22
-  }
-  Write-Output ("UU_WINDOWS|ok|{0}|{1}|installed" -f $available.Count, $reboot.ToString().ToLower())
-  exit 0
+  $output = @(Receive-Job -Job $worker -ErrorAction Stop)
+  $output | ForEach-Object { Write-Output $_ }
+  Remove-Job -Job $worker -Force -ErrorAction SilentlyContinue
+  if ($output -match '^UU_WINDOWS\|ok\|') { exit 0 }
+  exit 23
 } catch {
+  Stop-Job -Job $worker -ErrorAction SilentlyContinue
+  Remove-Job -Job $worker -Force -ErrorAction SilentlyContinue
   $message = $_.Exception.Message -replace '[\r\n|]', ' '
   Write-Output ("UU_WINDOWS|error|0|false|{0}" -f $message)
   exit 23
