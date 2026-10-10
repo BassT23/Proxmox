@@ -1838,7 +1838,6 @@ VM_UPDATE_START () {
   fi
   # Loop through the VMs
   for VM in $VMS; do
-    PRE_OS=$(qm config "$VM" | grep ostype || true)
     if [[ "$SINGLE_UPDATE" == true && "$VM" != "$ONLY" ]]; then
       continue
     elif [[ "$SINGLE_UPDATE" != true && "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS update "$VM" "$VMS"; then
@@ -1850,9 +1849,6 @@ VM_UPDATE_START () {
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
       echo -e "⏩${BL:-} ${OR:-}VM $VM is a template - skip update${CL:-}\n\n"
       continue
-    elif [[ "$PRE_OS" =~ w ]]; then
-      echo -e "⚠ ${BL:-} Skipped VM $VM${CL:-}\n"
-      echo -e "${OR:-}  Windows is not supported for now.\n  I'm working on it ;)${CL:-}\n\n"
     else
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then

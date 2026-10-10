@@ -5,6 +5,15 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
+# Windows VMs must reach UPDATE_VM_QEMU, where the QGA/PowerShell update path
+# is implemented.  The former PRE_OS shortcut silently skipped them before
+# QGA was even consulted.
+if grep -Fq "elif [[ \"\$PRE_OS\" =~ w ]]" "$ROOT_DIR/update.sh"; then
+  echo 'legacy Windows update skip is still present' >&2
+  exit 1
+fi
+grep -Fq 'UPDATE_VM_QEMU_WINDOWS' "$ROOT_DIR/update.sh"
+
 # ------------------------------------------------------------------
 # Windows QGA result parsing
 # ------------------------------------------------------------------
