@@ -1027,13 +1027,34 @@ if external_targets:
 PY
 }
 
+# Optional provider-neutral delivery reuses the existing renderer. Never turn
+# a completed check or update into a failure because a notification failed.
+STATUS_MODEL_SEND_APPRISE() {
+  local kind="$1" status_file="$2" state="$3" body="$4" run_started_at="${5:-}"
+  [[ -n "${UU_APPRISE_URLS_FILE:-}" ]] || return 0
+  local helper="${UU_APPRISE_HELPER:-$(dirname -- "${BASH_SOURCE[0]}")/notification-apprise.py}"
+  local interpreter="${UU_APPRISE_PYTHON:-python3}"
+  if [[ "$interpreter" != python3 && ( "$interpreter" != /* || ! -x "$interpreter" ) ]]; then
+    printf 'Apprise Python interpreter unavailable.\n' >&2
+    return 0
+  fi
+  if [[ ! -f "$helper" ]]; then
+    printf 'Apprise notification adapter unavailable.\n' >&2
+    return 0
+  fi
+  if ! printf '%s\n' "$body" | "$interpreter" "$helper" "$kind" "$status_file" "$state" "$run_started_at"; then
+    printf 'Apprise delivery unavailable.\n' >&2
+  fi
+  return 0
+}
+
 # Render and optionally send one notification from the unified status model.
 # The first output line is an internal decision marker; callers remove it
 # before writing the human-readable mail body.
 STATUS_MODEL_SEND_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
   local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
-  local email_user email_sender email_no_updates email_only_security email_daily_check email_single_runs
+  local email_user email_sender email_no_updates email_only_security email_daily_check email_single_runs email_suppressed=false
 
   email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
   email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
@@ -1054,13 +1075,13 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   # Keep it before the single-target policy so a scheduled selected-target
   # check is governed by EMAIL_DAILY_CHECK rather than the manual-run switch.
   if [[ "${UU_JOB_SOURCE:-}" == scheduler && "$email_daily_check" != true ]]; then
-    return 0
+    email_suppressed=true
   fi
 
   local render_target="" render_kind=""
   if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
     if [[ "${UU_JOB_SOURCE:-}" != scheduler ]]; then
-      [[ "$email_single_runs" == true ]] || return 0
+      [[ "$email_single_runs" == true ]] || email_suppressed=true
     fi
     render_target="${UU_SINGLE_TARGET_ID:-}"
     render_kind="${UU_SINGLE_TARGET_KIND:-target}"
@@ -1071,6 +1092,8 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   state=${notification%%$'\n'*}
   state=${state#STATE=}
   body=${notification#*$'\n'}
+  STATUS_MODEL_SEND_APPRISE check "$status_file" "$state" "$body"
+  [[ "$email_suppressed" == true ]] && return 0
 
   if [[ "$email_only_security" == true ]]; then
     if ! STATUS_MODEL_HAS_SECURITY_UPDATES "$status_file" "$render_target" "$render_kind"; then
@@ -1105,7 +1128,7 @@ STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-${LOCAL_FILES:-/etc/ultimate-updater}/status.json}}"
   local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
   local run_started_at="${3:-}"
-  local email_user email_sender email_only_error email_single_runs notification state body
+  local email_user email_sender email_only_error email_single_runs notification state body email_suppressed=false
 
   email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
   email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
@@ -1119,7 +1142,7 @@ STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
 
   local render_target="" render_kind=""
   if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
-    [[ "$email_single_runs" == true ]] || return 0
+    [[ "$email_single_runs" == true ]] || email_suppressed=true
     render_target="${UU_SINGLE_TARGET_ID:-}"
     render_kind="${UU_SINGLE_TARGET_KIND:-target}"
   fi
@@ -1128,6 +1151,8 @@ STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
   state=${notification%%$'\n'*}
   state=${state#STATE=}
   body=${notification#*$'\n'}
+  STATUS_MODEL_SEND_APPRISE update "$status_file" "$state" "$body" "$run_started_at"
+  [[ "$email_suppressed" == true ]] && return 0
 
   [[ "$email_only_error" == true && "$state" != issues ]] && return 0
   printf '%s\n' "$body" | mail -a 'Content-Type: text/plain; charset=UTF-8' \

@@ -6,6 +6,35 @@
 
 set -o pipefail
 
+append_notification_envfile() {
+  local -n options="$1"
+  local config="${2:-/etc/ultimate-updater/notification-integration.conf}" attrs
+  local parent parent_attrs parent_uid parent_mode
+  [[ -e "$config" || -L "$config" ]] || return 0
+  if [[ -L "$config" || ! -f "$config" || ! -r "$config" ]]; then
+    printf 'Notification environment configuration is unsafe.\n' >&2
+    return 78
+  fi
+  attrs=$(stat -c '%u:%a' -- "$config" 2>/dev/null) || return 78
+  if [[ "$attrs" != "$EUID:600" ]]; then
+    printf 'Notification environment configuration permissions are unsafe.\n' >&2
+    return 78
+  fi
+  parent=${config%/*}
+  if [[ -L "$parent" || ! -d "$parent" ]]; then
+    printf 'Notification environment configuration directory is unsafe.\n' >&2
+    return 78
+  fi
+  parent_attrs=$(stat -c '%u %a' -- "$parent" 2>/dev/null) || return 78
+  read -r parent_uid parent_mode <<< "$parent_attrs"
+  if [[ "$parent_uid" != "$EUID" ]] || (( (8#$parent_mode & 8#022) != 0 )); then
+    printf 'Notification environment configuration directory permissions are unsafe.\n' >&2
+    return 78
+  fi
+  options+=("--property=EnvironmentFile=$config")
+}
+
+
 JOB_STATE_DIR="${UU_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
 REMOTE_REF_DIR="$JOB_STATE_DIR/remote"
 JOB_PREFIX="ultimate-updater-update-"
@@ -661,6 +690,7 @@ start_job() {
   local update_script="$1" target="$2" unit timestamp
   local conflict conflict_target conflict_unit interactive=false socket_path
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
+  append_notification_envfile systemd_env || return 78
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_target "$target" || { printf 'Unsupported target: %s\n' "$target" >&2; return 2; }
   command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start update jobs.\n' >&2; return 5; }
@@ -723,6 +753,7 @@ start_global_job() {
   local update_script="$1" unit timestamp target=all-systems
   local socket_path interactive=false
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
+  append_notification_envfile systemd_env || return 78
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_global_target "$target" || return 2
   command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start update jobs.\n' >&2; return 5; }
@@ -968,6 +999,7 @@ run_global_job() {
 start_check_job() {
   local target="$1" cli="$2" mode="$3" unit timestamp
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR" "--setenv=UU_JOB_TYPE=check")
+  append_notification_envfile systemd_env || return 78
   [[ -x "$cli" ]] || { printf 'CLI is not executable: %s\n' "$cli" >&2; return 1; }
   valid_target "$target" || { printf 'Unsupported check target: %s\n' "$target" >&2; return 2; }
   [[ "$mode" == target || "$mode" == node || "$mode" == all ]] || return 2

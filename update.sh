@@ -1488,6 +1488,7 @@ UPDATE_HOST () {
     [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
     [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
     for source in "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/status-model.sh" \
+      "$LOCAL_FILES/notification-apprise.py" \
       "$apt_count_file" "$apt_count_shell_file" "$rpm_count_file" "$package_count_file"; do
       [[ -f "$source" ]] || continue
       scp "$source" "$HOST:$LOCAL_FILES/$(basename -- "$source")"
