@@ -3600,6 +3600,67 @@ class AuthStore:
         self.sessions.pop(token, None)
 
 
+def build_status_summary(payload, max_age_seconds=86400, now=None):
+    """Return bounded aggregate observability, never target inventory or control URLs."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
+        raise ValueError("invalid status payload")
+    targets = payload["targets"]
+    if len(targets) > 10000 or any(not isinstance(item, dict) for item in targets):
+        raise ValueError("invalid status target list")
+    stamp = payload.get("generated_at")
+    if not isinstance(stamp, str):
+        generated = None
+    else:
+        try:
+            generated = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            if generated.tzinfo is None:
+                generated = None
+        except ValueError:
+            generated = None
+    current = now if now is not None else datetime.now(timezone.utc)
+    if generated is not None:
+        age = (current - generated).total_seconds()
+        fresh = 0 <= age <= max_age_seconds
+    else:
+        fresh = False
+
+    reachable = sum(item.get("reachable") is True for item in targets)
+    unreachable = sum(item.get("reachable") is False for item in targets)
+    failed = sum(item.get("check_status") in ("error", "offline") for item in targets)
+    unknown_updates = 0
+    known_updates = 0
+    unknown_reboot = 0
+    required_reboot = 0
+    for item in targets:
+        available = item.get("updates")
+        available = available.get("available") if isinstance(available, dict) else None
+        if type(available) is int and available >= 0:
+            known_updates += available
+        else:
+            unknown_updates += 1
+        reboot = item.get("reboot_required")
+        if reboot is True:
+            required_reboot += 1
+        elif reboot is not False:
+            unknown_reboot += 1
+
+    return {
+        "schema_version": 1,
+        "state": "current" if fresh else "stale",
+        "generated_at": stamp if generated else None,
+        "targets": {
+            "total": len(targets),
+            "reachable": reachable,
+            "unreachable": unreachable,
+            "failed": failed,
+            "unknown_updates": unknown_updates,
+            "unknown_reboot": unknown_reboot,
+        },
+        "updates_available": known_updates if not unknown_updates else None,
+        "reboot_required": required_reboot if not unknown_reboot else None,
+    }
+
+
 class StatusHandler(BaseHTTPRequestHandler):
     server_version = "UltimateUpdaterUI/1"
     protocol_version = "HTTP/1.1"
@@ -3628,6 +3689,55 @@ class StatusHandler(BaseHTTPRequestHandler):
         except AuthorizationUnavailableError:
             return self.authorization_unavailable()
         return bool(session) or self.auth_error()
+
+    def status_api_authorized(self):
+        """Read-only machine credentials are separate from admin browser sessions."""
+        path = getattr(self.server, "status_api_token_file", None)
+        if path is None:
+            self.send_json(error_payload("STATUS_API_DISABLED", "Status API is not configured."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return False
+        if not path.is_absolute():
+            self.send_json(error_payload("STATUS_API_UNAVAILABLE", "Machine credential is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return False
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                details = os.fstat(descriptor)
+                if (not stat.S_ISREG(details.st_mode) or details.st_mode & 0o077
+                        or details.st_uid != os.geteuid() or details.st_size > 4096):
+                    raise ValueError("invalid credential file")
+                with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as source:
+                    configured = source.read(4097).strip()
+            finally:
+                os.close(descriptor)
+            if not 24 <= len(configured) <= 4096 or any(ord(char) < 33 or ord(char) > 126 for char in configured):
+                raise ValueError("invalid credential")
+        except (OSError, UnicodeError, ValueError):
+            self.send_json(error_payload("STATUS_API_UNAVAILABLE", "Machine credential is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return False
+        headers = self.headers.get_all("Authorization", [])
+        expected = "Bearer " + configured
+        if len(headers) != 1 or not hmac.compare_digest(headers[0], expected):
+            self.send_json(error_payload("AUTH_REQUIRED", "A valid machine token is required."), HTTPStatus.UNAUTHORIZED)
+            return False
+        return True
+
+    def handle_status_summary(self):
+        try:
+            with self.server.status_file.open("rb") as source:
+                raw = source.read(4 * 1024 * 1024 + 1)
+            if len(raw) > 4 * 1024 * 1024:
+                raise ValueError("oversized status file")
+            payload = json.loads(raw)
+            summary = build_status_summary(
+                payload, max_age_seconds=self.server.status_api_max_age_seconds
+            )
+        except FileNotFoundError:
+            self.send_json(error_payload("STATUS_NOT_FOUND", "No status file is available yet."), HTTPStatus.NOT_FOUND)
+        except (OSError, UnicodeError, ValueError, TypeError):
+            self.send_json(error_payload("STATUS_INVALID", "The status file is invalid."), HTTPStatus.UNPROCESSABLE_ENTITY)
+        else:
+            self.send_json(summary)
 
     def same_origin(self):
         origin = self.headers.get("Origin")
@@ -4936,6 +5046,10 @@ class StatusHandler(BaseHTTPRequestHandler):
             except (OSError, UnicodeError):
                 self.send_json(error_payload("ASSET_NOT_FOUND", "The requested UI asset is unavailable."), HTTPStatus.NOT_FOUND)
             return
+        if path == "/api/status-summary":
+            if self.status_api_authorized():
+                self.handle_status_summary()
+            return
         if path == "/api/public-version":
             try:
                 self.send_json(self.public_version())
@@ -5697,6 +5811,14 @@ def main():
     if tls_context is not None:
         server.socket = tls_context.wrap_socket(server.socket, server_side=True)
     server.status_file, server.cli = args.status_file, args.cli
+    token_file = os.environ.get("UU_STATUS_API_TOKEN_FILE", "").strip()
+    server.status_api_token_file = Path(token_file) if token_file else None
+    try:
+        server.status_api_max_age_seconds = int(os.environ.get("UU_STATUS_API_MAX_AGE_SECONDS", "86400"))
+        if not 60 <= server.status_api_max_age_seconds <= 604800:
+            raise ValueError
+    except ValueError:
+        raise SystemExit("UU_STATUS_API_MAX_AGE_SECONDS must be between 60 and 604800")
     server.config_file, server.inventory_file = args.config_file, args.inventory_file
     server.target_selection_file = args.config_file.parent / "target-selection.json"
     server.internal_ssh_file = args.config_file.parent / "internal-ssh.conf"
