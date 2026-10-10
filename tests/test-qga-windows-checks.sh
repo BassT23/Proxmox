@@ -25,6 +25,7 @@ grep -Fq 'Start-Sleep -Seconds 2' "$ROOT_DIR/windows-update.sh"
 grep -Fq 'cpuAdvanced' "$ROOT_DIR/windows-update.sh"
 grep -Fq "UU_WINDOWS|preflight|blocked|reboot-required" "$ROOT_DIR/windows-update.sh"
 grep -Fq "UU_WINDOWS|preflight|blocked|servicing-active" "$ROOT_DIR/windows-update.sh"
+grep -Fq "UU_WINDOWS|preflight|blocked|servicing-unclear" "$ROOT_DIR/windows-update.sh"
 # Windows installs must cancel inside the guest before the outer QGA timeout;
 # otherwise a timed-out host request can leave Windows Update running and a
 # later update job can start a duplicate operation.

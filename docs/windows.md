@@ -94,7 +94,9 @@ blocks a new run when a pending reboot or measurable activity from common
 servicing processes (`TrustedInstaller`, `TiWorker`, `MoUsoCoreWorker`,
 `UsoClient`, `Dism`, or `DismHost`) indicates that a previous operation may
 still be active. Process existence alone is not treated as proof of active
-servicing. A running `wuauserv` service by itself is also not a blocker.
+servicing, but an existing process whose state cannot be proven idle is treated
+as unclear and fails closed. A running `wuauserv` service by itself is also not
+a blocker.
 
 ## Troubleshooting
 

@@ -47,7 +47,8 @@ try {
     $before[$_.Id] = [pscustomobject]@{ Cpu = $_.CPU; Started = $_.StartTime }
   }
   Start-Sleep -Seconds 2
-  $active = @(Get-Process -Name $names -ErrorAction SilentlyContinue | Where-Object {
+  $present = @(Get-Process -Name $names -ErrorAction SilentlyContinue)
+  $active = @($present | Where-Object {
     $old = $before[$_.Id]
     $newProcess = -not $old
     $cpuAdvanced = $old -and ($_.CPU - $old.Cpu -gt 0.1)
@@ -55,6 +56,11 @@ try {
   } | Select-Object -ExpandProperty ProcessName -Unique)
   if ($active.Count -gt 0) {
     Write-Output ('UU_WINDOWS|preflight|blocked|servicing-active:{0}' -f ($active -join ','))
+    exit 22
+  }
+  if ($present.Count -gt 0) {
+    $namesPresent = @($present | Select-Object -ExpandProperty ProcessName -Unique)
+    Write-Output ('UU_WINDOWS|preflight|blocked|servicing-unclear:{0}' -f ($namesPresent -join ','))
     exit 22
   }
   Write-Output 'UU_WINDOWS|preflight|ok|ready'
