@@ -91,6 +91,47 @@ DOWNLOAD_INSTALLER() {
   fi
 }
 
+# A native install/update may consume an already accepted, private source tree.
+# Artifact provenance, checksum, TAR inspection and target staging belong to
+# the external release/deployment owner, not to this installer.
+PREPARE_SOURCE_FILES() {
+  local source="${UU_STAGED_SOURCE_DIR:-}"
+  local commit="${UU_STAGED_SOURCE_COMMIT:-}" tag="${UU_STAGED_SOURCE_TAG:-}"
+  local identity resolved uid mode
+  if [[ -n "${source}${commit}${tag}" ]]; then
+    if [[ "$BRANCH" != master || "$source" != /* ||
+          ! "$commit" =~ ^[0-9a-fA-F]{40}$ ||
+          ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9][A-Za-z0-9._-]*)?$ ||
+          ! -d "$source" || -L "$source" ]]; then
+      echo "Staged source identity or directory is invalid." >&2
+      return 78
+    fi
+    if [[ "$source" == "$TEMP_FOLDER" || "$source" == "$TEMP_FOLDER/"* ]]; then
+      echo "Staged source must be outside the native temporary directory." >&2
+      return 78
+    fi
+    resolved=$(realpath -e -- "$source" 2>/dev/null) || return 78
+    identity=$(stat -c '%u %a' -- "$source" 2>/dev/null) || return 78
+    read -r uid mode <<< "$identity"
+    if [[ "$resolved" != "$source" || "$uid" != "$EUID" ||
+          ! -f "$source/update.sh" || -L "$source/update.sh" ||
+          ! -f "$source/product-metadata.sh" || -L "$source/product-metadata.sh" ]] ||
+          (( (8#$mode & 8#077) != 0 )); then
+      echo "Staged source trust boundary is invalid." >&2
+      return 78
+    fi
+    TEMP_FILES="$source"
+    ARCHIVE_COMMIT="${commit,,}"
+    ARCHIVE_TAG="$tag"
+  else
+    DOWNLOAD_ARCHIVE || return 1
+    tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || return 1
+    rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
+    SET_TEMP_FILES || return 1
+  fi
+  READ_PAYLOAD_METADATA
+}
+
 DOWNLOAD_ARCHIVE() {
   local archive="$TEMP_FOLDER/ultimate-updater.tar.gz" release_json asset_url archive_root release_tag
   ARCHIVE_COMMIT=""
@@ -531,11 +572,7 @@ INSTALL () {
     mkdir -p $LOCAL_FILES/scripts.d/000
     # Download latest release
     if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-      DOWNLOAD_ARCHIVE || exit 1
-      tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || exit 1
-      rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
-      SET_TEMP_FILES || exit 1
-      READ_PAYLOAD_METADATA || exit 1
+      PREPARE_SOURCE_FILES || exit 1
     # Copy files
     cp "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
@@ -685,14 +722,12 @@ UPDATE () {
     # Update
     echo -e "\nℹ ${GN:-} Updating Ultimate Updater...${CL:-}\n"
     # Cleaning
-    rm -rf "$TEMP_FOLDER" || true
-    # Download files
+    if [[ -z "${UU_STAGED_SOURCE_DIR:-}" ]]; then
+      rm -rf "$TEMP_FOLDER" || true
+    fi
+    # Online downloads use the old temporary path; native trusted staging is external.
     if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
-    DOWNLOAD_ARCHIVE || return 1
-    tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || return 1
-    rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
-    SET_TEMP_FILES || return 1
-    READ_PAYLOAD_METADATA || return 1
+    PREPARE_SOURCE_FILES || return 1
     installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
     target_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$TEMP_FILES/update.sh" 2>/dev/null || true)
     installed_major=''

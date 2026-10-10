@@ -27,6 +27,40 @@ rm -f "$installer"
 
 The installer validates its inputs and keeps the existing configuration.
 
+## Operator-provided staged source (native install input)
+
+When an external release/deployment authority has **already** independently
+verified a source artifact and extracted it into a protected local directory,
+the existing native `install` and `update` actions can consume that source
+without fetching a new archive:
+
+```bash
+UU_STAGED_SOURCE_DIR=/root/accepted-source \
+UU_STAGED_SOURCE_COMMIT=<accepted-40-character-Git-SHA> \
+UU_STAGED_SOURCE_TAG=<accepted-release-tag> \
+  bash /root/accepted-source/install.sh update
+```
+
+**This is a native source-directory input, not an offline artifact verifier or
+a second deployment system.** The external authority owns the archive
+checksum, immutable release/tag and provenance checks, safe TAR extraction,
+root-private staged source, exact preimage/rollback and live runtime parity.
+The source directory must be a non-symlinked absolute canonical directory
+owned by the installer's execution identity, with no group/other access
+(e.g. mode `0700` or setgid-inherited `2700`), outside the installer's own
+temporary directory, and include regular non-symlinked
+`update.sh` and `product-metadata.sh`. All three environment values are
+required together; a missing or invalid value fails closed. An accepted
+staging directory must be **disposable**: the native update lifecycle moves
+source files as part of installation and may consume its contents.
+
+The default online installer path remains unchanged when no staged-source
+values are supplied. This interface does not independently prove the Git
+source commit generated the staged files and does not grant permission for a
+privileged installation. The external operator must independently approve
+and test an exact rollback before running `install` or `update` on a real
+Proxmox host.
+
 ## First steps
 
 1. Review `/etc/ultimate-updater/update.conf`.
