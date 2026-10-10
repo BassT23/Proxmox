@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
+from unittest.mock import patch
 from threading import Thread
 from http.server import ThreadingHTTPServer
 from datetime import datetime, timedelta, timezone
@@ -14,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 import server as updater  # noqa: E402
 
 
-def exercise(status, token_content="fixture-secret-not-for-production", configured=True, credential_mode=0o600):
+def exercise(status, token_content="fixture-secret-not-for-production", configured=True, credential_mode=0o600, security_checks=False):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         status_path = root / "status.json"
@@ -27,6 +29,12 @@ def exercise(status, token_content="fixture-secret-not-for-production", configur
         httpd.status_file = status_path
         httpd.status_api_token_file = credential if configured else None
         httpd.status_api_max_age_seconds = 86400
+        # Fake native login without invoking PAM, Proxmox, jobs or update actions.
+        httpd.auth = SimpleNamespace(
+            configured=True,
+            session=lambda token: {"user": "fixture-user", "csrf": "fixture-csrf"}
+            if token == "fixture-session" else None,
+        )
         thread = Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         try:
@@ -38,6 +46,25 @@ def exercise(status, token_content="fixture-secret-not-for-production", configur
                 raw = response.read()
                 connection.close()
                 return response.status, json.loads(raw)
+
+            def raw_request(path, header_pairs, method="GET"):
+                """Send real duplicate headers and inert JSON POSTs over loopback."""
+                connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=3)
+                try:
+                    connection.putrequest(method, path)
+                    for name, value in header_pairs:
+                        connection.putheader(name, value)
+                    if method == "POST":
+                        connection.putheader("Content-Type", "application/json")
+                        connection.putheader("Content-Length", "2")
+                        connection.endheaders(b"{}")
+                    else:
+                        connection.endheaders()
+                    response = connection.getresponse()
+                    payload = json.loads(response.read())
+                    return response.status, payload
+                finally:
+                    connection.close()
 
             if not configured:
                 code, payload = request("/api/status-summary")
@@ -54,6 +81,49 @@ def exercise(status, token_content="fixture-secret-not-for-production", configur
             assert invalid_status == 401, (invalid_status, invalid)
             method_status, _ = request("/api/status-summary", token=token_content, method="POST")
             assert method_status != 200
+            if security_checks:
+                valid = "Bearer " + token_content
+                for bad in ("Bearer", "bearer " + token_content,
+                            "Bearer  " + token_content, "Basic " + token_content):
+                    code, _ = raw_request("/api/status-summary", [("Authorization", bad)])
+                    assert code == 401, (bad.split(" ", 1)[0], code)
+                code, _ = raw_request("/api/status-summary", [
+                    ("Authorization", valid), ("Authorization", valid)])
+                assert code == 401, ("duplicate Authorization", code)
+
+                actual = root / "real-status-token"
+                credential.replace(actual)
+                credential.symlink_to(actual)
+                try:
+                    code, _ = request("/api/status-summary", token=token_content)
+                    assert code == 503, ("symlink token file", code)
+                finally:
+                    credential.unlink()
+                    actual.replace(credential)
+                with patch.object(updater.os, "geteuid", return_value=os.geteuid() + 1):
+                    code, _ = request("/api/status-summary", token=token_content)
+                assert code == 503, ("wrong token-file owner", code)
+
+                # Machine credentials cannot replace browser sessions or CSRF.
+                for path in ("/api/session", "/api/status", "/api/jobs"):
+                    code, _ = request(path, token=token_content)
+                    assert code == 401, (path, code)
+                code, _ = raw_request("/api/status-summary", [
+                    ("Cookie", "UU_SESSION=fixture-session")])
+                assert code == 401, ("browser cookie on machine endpoint", code)
+                code, _ = raw_request("/api/update-all", [
+                    ("Authorization", valid)], method="POST")
+                assert code == 401, ("machine token on update action", code)
+                code, _ = raw_request("/api/update-all", [
+                    ("Cookie", "UU_SESSION=fixture-session"),
+                    ("Authorization", valid)], method="POST")
+                assert code == 403, ("native session without CSRF", code)
+                code, _ = raw_request("/api/update-all", [
+                    ("Cookie", "UU_SESSION=fixture-session"),
+                    ("X-CSRF-Token", "fixture-csrf"),
+                    ("Origin", "https://untrusted.invalid")], method="POST")
+                assert code == 403, ("invalid Origin with native session", code)
+                print("status summary API auth-boundary negative tests: PASS")
             return request("/api/status-summary", token=token_content)
         finally:
             httpd.shutdown()
@@ -69,7 +139,7 @@ status = {
         {"id": "912", "reachable": True, "check_status": "updates_available", "updates": {"available": 2}, "reboot_required": True},
     ]
 }
-code, payload = exercise(status)
+code, payload = exercise(status, security_checks=True)
 assert code == 200, (code, payload)
 assert payload["schema_version"] == 1
 assert payload["state"] == "current"
