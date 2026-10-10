@@ -86,7 +86,7 @@ POWERSHELL
       local job_id="${2:-}" worker worker_encoded
       [[ "$job_id" =~ ^[A-Za-z0-9._-]+$ ]] || return 2
       worker=$(WINDOWS_POWERSHELL_INSTALL_WORKER "$job_id") || return 1
-      worker_encoded=$(printf '%s' "$worker" | python3 -c 'import base64,sys; print(base64.b64encode(sys.stdin.buffer.read()).decode())') || return 1
+      worker_encoded=$(printf '%s' "$worker" | python3 -c 'import base64,sys; print(base64.b64encode(sys.stdin.read().encode("utf-16le")).decode())') || return 1
       cat <<POWERSHELL
 \$ErrorActionPreference = 'Stop'
 \$jobId = '$job_id'; \$root = 'C:\ProgramData\Ultimate-Updater\WindowsUpdate'; \$statePath = Join-Path \$root ("\$jobId.json")

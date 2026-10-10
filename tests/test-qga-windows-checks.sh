@@ -26,6 +26,7 @@ grep -Fq 'WINDOWS_POWERSHELL_ENCODE preflight' "$ROOT_DIR/update.sh"
 grep -Fq 'Global\Ultimate-Updater-WindowsUpdate' "$ROOT_DIR/windows-update.sh"
 grep -Fq 'ProgramData\Ultimate-Updater\WindowsUpdate' "$ROOT_DIR/windows-update.sh"
 grep -Fq "phase -in @('pending','search','download','install','unknown')" "$ROOT_DIR/windows-update.sh"
+grep -Fq 'encode("utf-16le")' "$ROOT_DIR/windows-update.sh"
 grep -Fq "UU_WINDOWS|preflight|blocked|reboot-required" "$ROOT_DIR/windows-update.sh"
 grep -Fq 'UU_WINDOWS|status|' "$ROOT_DIR/windows-update.sh"
 if grep -Fq 'QEMU_GUEST_EXEC_KILL_WINDOWS "$VM"' "$ROOT_DIR/update.sh"; then
