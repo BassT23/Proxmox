@@ -97,6 +97,9 @@ for name in ("INSTALL","UPDATE"):
     assert hit, name
     body=hit.group("body")
     assert "PREPARE_SOURCE_FILES" in body, name
+    if name == "INSTALL":
+        assert 'if [[ -n "${UU_STAGED_SOURCE_DIR:-}${UU_STAGED_SOURCE_COMMIT:-}${UU_STAGED_SOURCE_TAG:-}" ]]; then' in body
+        assert body.index('      UPDATE\n      return $?\n') < body.index('DOWNLOAD_INSTALLER "$SERVER_URL/install.sh" update')
     if name == "UPDATE":
         assert 'if [[ -z "${UU_STAGED_SOURCE_DIR:-}" ]]; then' in body
         assert body.index('if [[ -z "${UU_STAGED_SOURCE_DIR:-}" ]]; then') < body.index('rm -rf "$TEMP_FOLDER"')

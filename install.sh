@@ -559,6 +559,10 @@ INSTALL () {
   echo -e "\nℹ ${GN:-} Installing The Ultimate Updater${CL:-}\n"
   if [ -f "/usr/local/sbin/update" ]; then
     echo -e "${OR:-}The Ultimate Updater is already installed.${CL:-}"
+    if [[ -n "${UU_STAGED_SOURCE_DIR:-}${UU_STAGED_SOURCE_COMMIT:-}${UU_STAGED_SOURCE_TAG:-}" ]]; then
+      UPDATE
+      return $?
+    fi
     read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
       DOWNLOAD_INSTALLER "$SERVER_URL/install.sh" update
