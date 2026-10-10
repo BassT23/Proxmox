@@ -13,8 +13,15 @@ WINDOWS_POWERSHELL_INSTALL_WORKER() {
 \$statePath = Join-Path \$root ("\$jobId.json")
 function Write-UUState([string]\$phase, [string]\$result, [int]\$processed, [bool]\$reboot, \$resultCode, [string]\$message) {
   \$startedAt = (Get-Date).ToUniversalTime().ToString('o')
-  try { \$startedAt = (Get-Content -LiteralPath \$statePath -Raw | ConvertFrom-Json).started_at } catch {}
-  \$state = [ordered]@{ job_id = \$jobId; phase = \$phase; result = \$result; processed = \$processed; reboot_required = \$reboot; result_code = \$resultCode; message = (\$message -replace '[\r\n|]',' '); launcher_pid = \$old.launcher_pid; worker_pid = \$old.worker_pid; started_at = \$startedAt; updated_at = (Get-Date).ToUniversalTime().ToString('o') }
+  \$oldLauncherPid = \$null
+  \$oldWorkerPid = \$null
+  try {
+    \$old = Get-Content -LiteralPath \$statePath -Raw | ConvertFrom-Json
+    \$startedAt = \$old.started_at
+    \$oldLauncherPid = \$old.launcher_pid
+    \$oldWorkerPid = \$old.worker_pid
+  } catch {}
+  \$state = [ordered]@{ job_id = \$jobId; phase = \$phase; result = \$result; processed = \$processed; reboot_required = \$reboot; result_code = \$resultCode; message = (\$message -replace '[\r\n|]',' '); launcher_pid = \$oldLauncherPid; worker_pid = \$oldWorkerPid; started_at = \$startedAt; updated_at = (Get-Date).ToUniversalTime().ToString('o') }
   \$tmp = "\$statePath.tmp.\$PID"
   \$state | ConvertTo-Json -Compress | Set-Content -LiteralPath \$tmp -Encoding UTF8
   Move-Item -LiteralPath \$tmp -Destination \$statePath -Force

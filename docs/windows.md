@@ -19,6 +19,13 @@ detected corruption, while a later `ScanHealth` attempt lost its QGA session.
 Treat the Windows path as validated for checks and as requiring a recovery
 point and servicing diagnosis before an update.
 
+The detached-job smoke test also confirmed that a guest worker can continue
+after the initiating QGA request times out. Its durable state retained the
+launcher and worker PIDs through the phase transitions. This is lifecycle
+validation only; it is not a successful product-path Windows update
+acceptance. A later central check may still fail independently if the
+Proxmox/QGA transport times out.
+
 ## Requirements
 
 - A Proxmox VM with QEMU Guest Agent enabled.
@@ -122,6 +129,10 @@ installation.
 
 The state file is not a substitute for a backup. Keep a recovery point before a
 mutating update, and do not remove an `unknown` state merely to force a retry.
+State metadata is updated atomically and carries the launcher/worker identity
+across phase changes. If a start acknowledgement is lost, retain the state and
+recover it explicitly; never start a second Windows mutation merely because the
+original QGA request timed out.
 
 ## Troubleshooting
 
