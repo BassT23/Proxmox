@@ -45,6 +45,9 @@ assert "document.querySelector('.dashboard-kpis').hidden=page!=='overview'" in p
 assert "applyPageRoute(true,link.dataset.page)" in page
 assert 'id="config-form"' in page
 assert 'id="config-message"' in page
+assert 'WINDOWS_UPDATE_ENABLED' in page
+assert "Windows updates" in page
+assert 'Windows checks remain available and installation requires explicit enablement.' in page
 # Overview keeps status/action content only; management is on Settings.
 overview = page.split('id="overview-page"', 1)[1].split('id="settings-page"', 1)[0]
 assert 'id="settings-entry"' not in overview

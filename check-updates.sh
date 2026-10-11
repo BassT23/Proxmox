@@ -1465,8 +1465,6 @@ VM_CHECK_START () {
         continue
       elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
         continue
-      elif [[ "$PRE_OS" =~ w ]]; then
-        continue
       else
         CHECK_VM_LIFECYCLE "$VM"
       fi
@@ -1576,8 +1574,10 @@ CHECK_VM_LIFECYCLE () {
 
 # VM Check
 CHECK_VM () {
-  local IP USER SSH_VM_PORT SSH_START_DELAY_TIME ssh_profile_configured=false ssh_error
+  local IP USER SSH_VM_PORT SSH_START_DELAY_TIME ssh_profile_configured=false ssh_error ostype
+  local qga_os_info
   REBOOT_REQUIRED=false
+  CHECK_SSH_FALLBACK_ERROR=""
   if [[ "$RDU" != true ]]; then
     VM=$1
   else
@@ -1604,6 +1604,14 @@ CHECK_VM () {
   fi
   INTERNAL_SSH_RESOLVE_VM "$VM" "${IP:-}" "${USER:-root}" "${SSH_VM_PORT:-22}" || return 1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
+  ostype=$(qm config "$VM" | awk '$1 == "ostype:" {print $2; exit}')
+  # Windows has no native SSH update/check implementation here.  Respect the
+  # explicit Proxmox guest type before probing SSH, so Windows always uses the
+  # native QGA/Windows Update Agent path.
+  if [[ "$ostype" =~ ^win ]]; then
+    CHECK_VM_QEMU
+    return $?
+  fi
   # A stored Internal SSH entry may be deliberately disabled.  That state
   # means "do not use SSH", not "the VM check failed": continue with the
   # normal QGA path instead.
@@ -1619,14 +1627,19 @@ CHECK_VM () {
   fi
   if ! ssh_error=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "true" 2>&1); then
     ssh_error=$(printf '%s' "$ssh_error" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | cut -c1-300)
-    if [[ "$ssh_profile_configured" == true ]]; then
-      STATUS_MODEL_RECORD "$VM" vm ssh false "" "" "null" "null" error SSH_TRANSPORT \
-        "Internal SSH connection failed for VM $VM${ssh_error:+: $ssh_error}" \
-        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-      return 1
-    fi
+    # SSH_TRANSPORT remains the classification for the first failed leg;
+    # the QGA fallback below decides whether the overall check can recover.
+    CHECK_SSH_FALLBACK_ERROR="SSH connection failed for VM $VM${ssh_error:+: $ssh_error}"
     CHECK_VM_QEMU
     return
+  fi
+  # SSH is preferred for supported Linux/FreeBSD paths. Windows has no
+  # native SSH updater here, so identify it through the read-only QGA metadata
+  # and use the existing Windows Update Agent/COM path instead.
+  qga_os_info=$(timeout 10 qm guest cmd "$VM" get-osinfo 2>/dev/null || true)
+  if [[ "${qga_os_info,,}" =~ windows ]]; then
+    CHECK_VM_QEMU
+    return $?
   fi
   if ! GUEST_INTERNET_PREFLIGHT_SSH "$IP" "$SSH_VM_PORT" "$USER"; then
     GUEST_CONNECTIVITY_FAILURE VM "$VM" "Internet connectivity check failed for VM $VM; package check skipped" ssh
@@ -1813,7 +1826,9 @@ CHECK_VM_QEMU () {
   # guest contains a Linux executable such as /bin/true.  FreeBSD/pfSense
   # commonly has a working agent but no Linux guest-exec environment.
   if ! timeout 10 qm agent "$VM" ping >/dev/null 2>&1; then
-    STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" error QGA_TRANSPORT "QEMU Guest Agent ping failed"
+    local qga_message="QEMU Guest Agent ping failed"
+    [[ -n "${CHECK_SSH_FALLBACK_ERROR:-}" ]] && qga_message="${CHECK_SSH_FALLBACK_ERROR}; ${qga_message}"
+    STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" error QGA_TRANSPORT "$qga_message"
     return 1
   fi
   OS_INFO=$(qm guest cmd "$VM" get-osinfo 2>/dev/null || true)
@@ -2228,7 +2243,9 @@ CHECK_VM_QEMU_WINDOWS () {
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     reachable=false
     error_code=QGA_TRANSPORT
-    STATUS_MODEL_RECORD "$VM" vm qga "$reachable" "$windows_os" windows-update "null" "null" error "$error_code" "${QEMU_EXEC_OUTPUT}"
+    local qga_message="${QEMU_EXEC_OUTPUT}"
+    [[ -n "${CHECK_SSH_FALLBACK_ERROR:-}" ]] && qga_message="${CHECK_SSH_FALLBACK_ERROR}; QGA: ${qga_message}"
+    STATUS_MODEL_RECORD "$VM" vm qga "$reachable" "$windows_os" windows-update "null" "null" error "$error_code" "$qga_message"
     return 1
   fi
   if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then

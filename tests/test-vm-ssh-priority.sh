@@ -147,6 +147,77 @@ HARNESS
 chmod 750 "$WORK_DIR/disabled-ssh-harness.sh"
 (cd "$WORK_DIR" && bash disabled-ssh-harness.sh)
 
+# A configured but unavailable SSH transport must fall back to QGA. The SSH
+# diagnostic is retained only if the QGA path also fails; a successful fallback
+# is a successful check rather than an SSH failure.
+cat > "$WORK_DIR/internal-ssh.conf" <<'EOF'
+schema_version=1
+
+[vm:100]
+host=192.0.2.100
+user=root
+port=22
+enabled=true
+EOF
+cat > "$WORK_DIR/fallback-harness.sh" <<'HARNESS'
+#!/bin/bash
+set -euo pipefail
+LOCAL_FILES="$PWD"
+INTERNAL_SSH_CONFIG_FILE="$PWD/internal-ssh.conf"
+INITIAL_INVENTORY=false RDU=false VM=100
+STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME=""
+LOG="$PWD/fallback-result"
+SANITIZE_NUMBER() { printf '%s' "$1"; }
+INTERNAL_SSH_USE_IDENTITY() { :; }
+INTERNAL_SSH_RESOLVE_VM() { source "$PWD/internal-ssh.sh"; INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "$4"; }
+RUN_SSH_COMMAND() { printf 'ssh-called\n' >> "$LOG"; return 255; }
+CHECK_VM_QEMU() { printf 'qga-called:%s\n' "${CHECK_SSH_FALLBACK_ERROR:-}" >> "$LOG"; return 0; }
+STATUS_MODEL_RECORD() { printf 'record:%s\n' "$*" >> "$LOG"; }
+qm() { [[ "$1" == config ]] && printf 'ostype: l2\nname: linux\n'; }
+source "$PWD/internal-ssh.sh"
+source "$PWD/check-vm.sh"
+CHECK_VM 100
+grep -Fq 'ssh-called' "$LOG"
+grep -Fq 'qga-called:SSH connection failed' "$LOG"
+HARNESS
+chmod 750 "$WORK_DIR/fallback-harness.sh"
+(cd "$WORK_DIR" && bash fallback-harness.sh)
+
+# A reachable SSH login on a Windows VM still uses QGA because the project
+# has no native Windows SSH updater.
+cat > "$WORK_DIR/windows-ssh-harness.sh" <<'HARNESS'
+#!/bin/bash
+set -euo pipefail
+LOCAL_FILES="$PWD"
+INTERNAL_SSH_CONFIG_FILE="$PWD/internal-ssh.conf"
+INITIAL_INVENTORY=false RDU=false VM=100
+STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME=""
+LOG="$PWD/windows-ssh-result"
+SANITIZE_NUMBER() { printf '%s' "$1"; }
+INTERNAL_SSH_USE_IDENTITY() { :; }
+INTERNAL_SSH_RESOLVE_VM() { source "$PWD/internal-ssh.sh"; INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "$4"; }
+RUN_SSH_COMMAND() { printf 'ssh-called:%s\n' "$*" >> "$LOG"; return 0; }
+timeout() { shift; "$@"; }
+CHECK_VM_QEMU() { printf 'qga-called\n' >> "$LOG"; return 0; }
+STATUS_MODEL_RECORD() { :; }
+qm() {
+  case "$1" in
+    config) printf 'ostype: win10\nname: windows\n' ;;
+    guest) printf '{"name":"Microsoft Windows","pretty-name":"Windows Server 2025"}\n' ;;
+  esac
+}
+source "$PWD/internal-ssh.sh"
+source "$PWD/check-vm.sh"
+CHECK_VM 100
+grep -Fxq 'qga-called' "$LOG"
+if grep -Fq 'ssh-called' "$LOG"; then
+  echo 'Windows SSH path was used instead of QGA' >&2
+  exit 1
+fi
+HARNESS
+chmod 750 "$WORK_DIR/windows-ssh-harness.sh"
+(cd "$WORK_DIR" && bash windows-ssh-harness.sh)
+
 # With no SSH override, a reachable FreeBSD-shaped QGA uses the read-only pkg
 # check and must not run the Linux /bin/true probe.
 awk '/^CHECK_VM_QEMU \(\) \{/{copy=1} /^CHECK_VM_QEMU_WINDOWS \(\) \{/{if(copy) exit} copy' \

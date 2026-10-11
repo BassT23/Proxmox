@@ -1307,6 +1307,8 @@ def update_status(target):
     status = str(result.get("status") or "").lower()
     if status in ("failed", "interrupted"):
         return "failed"
+    if status == "skipped":
+        return "skipped"
     if status in ("success", "completed"):
         return "success"
     return "unknown"
@@ -1319,6 +1321,8 @@ def update_line(target):
     if skipped is not None:
         return "💤", skipped
     status = update_status(target)
+    if status == "skipped":
+        return "💤", "Windows update installation disabled"
     if status == "failed":
         return "❌", "Update failed"
     if status != "success":

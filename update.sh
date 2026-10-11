@@ -733,6 +733,8 @@ READ_CONFIG () {
   RUNNING_VM=$(awk -F'"' '/^RUNNING_VM=/ {print $2}' "$CONFIG_FILE")
   STOPPED_VM=$(awk -F'"' '/^STOPPED_VM=/ {print $2}' "$CONFIG_FILE")
   FREEBSD_UPDATES=$(awk -F'"' '/^FREEBSD_UPDATES=/ {print $2}' "$CONFIG_FILE")
+  WINDOWS_UPDATE_ENABLED=$(awk -F'"' '/^WINDOWS_UPDATE_ENABLED=/ {print $2}' "$CONFIG_FILE")
+  WINDOWS_UPDATE_ENABLED="${WINDOWS_UPDATE_ENABLED:-false}"
   SNAPSHOT=$(awk -F'"' '/^SNAPSHOT/ {print $2}' "$CONFIG_FILE")
   KEEP_SNAPSHOT=$(awk -F'"' '/^KEEP_SNAPSHOTS=/ {print $2}' "$CONFIG_FILE")
   KEEP_SNAPSHOT="${KEEP_SNAPSHOT:-$(awk -F'"' '/^KEEP_SNAPSHOT=/ {print $2}' "$CONFIG_FILE")}"
@@ -1897,6 +1899,15 @@ VM_UPDATE_START () {
   done
 }
 
+# Detect the Proxmox guest OS without contacting the guest.  This guard is
+# deliberately used before snapshot/backup so a disabled Windows install has
+# no protection side effects.
+VM_IS_WINDOWS() {
+  local vmid="$1" ostype
+  ostype=$(qm config "$vmid" 2>/dev/null | awk -F': ' '$1 == "ostype" {print tolower($2); exit}')
+  [[ "$ostype" =~ ^win ]]
+}
+
 # VM Update
 # shellcheck disable=SC2015
 UPDATE_VM () {
@@ -1905,6 +1916,14 @@ UPDATE_VM () {
   CVM="true"
   echo 'VM="'"$VM"'"' > "$TEMP_STATE_DIR/var"
   echo -e "🔄${GN:-} Updating VM ${BL:-}$VM${CL:-} : ${GN:-}$NAME${CL:-}\n"
+  if VM_IS_WINDOWS "$VM" && [[ "$WINDOWS_UPDATE_ENABLED" != true ]]; then
+    echo -e "⏩${YL:-} Windows update installation skipped for VM $VM: WINDOWS_UPDATE_ENABLED=false${CL:-}\n"
+    if declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
+      STATUS_MODEL_UPDATE_RESULT "$VM" skipped 0 || true
+    fi
+    CVM=""
+    return 0
+  fi
   # Backup
   echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
   if ! VM_BACKUP; then
@@ -1926,6 +1945,13 @@ UPDATE_VM () {
     CVM=""
     return
   fi
+  # Windows updates are supported through the native QGA/COM path only.
+  # Do not attempt a partial SSH implementation even when SSH is configured.
+  if VM_IS_WINDOWS "$VM"; then
+    UPDATE_VM_QEMU
+    CVM=""
+    return $?
+  fi
   # Read SSH config file - check how update is possible
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
@@ -1935,8 +1961,14 @@ UPDATE_VM () {
     SSH_VM_PORT="${SSH_VM_PORT:-22}"
     SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-45}"
-    INTERNAL_SSH_RESOLVE_VM "$VM" "${IP:-}" "${USER:-root}" "${SSH_VM_PORT:-22}" || return 1
-    [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]] || return 1
+    if ! INTERNAL_SSH_RESOLVE_VM "$VM" "${IP:-}" "${USER:-root}" "${SSH_VM_PORT:-22}"; then
+      UPDATE_VM_QEMU
+      return $?
+    fi
+    if [[ "${INTERNAL_SSH_ENABLED:-true}" != true ]]; then
+      UPDATE_VM_QEMU
+      return $?
+    fi
     IP="${INTERNAL_SSH_HOST:-$IP}"; USER="${INTERNAL_SSH_USER:-$USER}"; SSH_VM_PORT="${INTERNAL_SSH_PORT:-$SSH_VM_PORT}"; INTERNAL_SSH_USE_IDENTITY
     if [[ "$START_WAITING" == true ]]; then
       echo -e "⏳${OR:-} Wait for bootup${CL:-}"
@@ -1955,9 +1987,17 @@ UPDATE_VM () {
       START_WAITING=false
       UPDATE_VM_QEMU
     else
-      # Run SSH Update
+      # Run SSH Update. Windows has no native SSH updater in this project;
+      # keep SSH preferred for Unix guests but use the proven QGA/COM path
+      # when read-only guest metadata identifies Windows.
       SSH_CONNECTION="true"
-      KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
+      local qga_os_info
+      qga_os_info=$(timeout 10 qm guest cmd "$VM" get-osinfo 2>/dev/null || true)
+      if [[ "${qga_os_info,,}" =~ windows ]]; then
+        UPDATE_VM_QEMU
+        return $?
+      fi
+      KERNEL=$(printf '%s\n' "$qga_os_info" | grep kernel-version || true)
       OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
       # Free-BSD
       if [[ $KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true ]]; then
