@@ -26,4 +26,16 @@ TARGET_SELECTION_HOST_REQUIRED update host:node2
 
 USE_INTERNAL_TARGET_SELECTION=false
 TARGET_SELECTION_ALLOWS check 200 '100 200'
+
+INIT_FILE="$WORK_DIR/initial-target-selection.json"
+export UU_TARGET_SELECTION_FILE="$INIT_FILE"
+TARGET_SELECTION_FILE="$INIT_FILE"
+TARGET_SELECTION_INITIALIZE
+[[ "$(stat -c '%a' "$INIT_FILE")" == 600 ]]
+[[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["schema_version"])' "$INIT_FILE")" == 1 ]]
+[[ "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["check"], d["update"])' "$INIT_FILE")" == '{} {}' ]]
+printf '%s\n' '{"schema_version":1,"check":{"host:node1":"only"},"update":{}}' > "$INIT_FILE"
+before=$(sha256sum "$INIT_FILE")
+TARGET_SELECTION_INITIALIZE
+[[ "$(sha256sum "$INIT_FILE")" == "$before" ]]
 echo 'target selection engine tests: PASS'

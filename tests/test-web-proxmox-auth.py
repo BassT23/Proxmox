@@ -2,7 +2,11 @@
 """Regression tests for Proxmox-native Web UI authentication."""
 
 import importlib.util
+import json
+import threading
+import time
 from pathlib import Path
+from urllib.parse import quote
 
 
 ROOT = Path(__file__).parents[1]
@@ -69,8 +73,179 @@ assert auth.authenticate("admin", "secret", "pam")["code"] == "LOGIN_UNAUTHORIZE
 auth._request = lambda path, fields=None: (_ for _ in ()).throw(server.ProxmoxAuthError())
 assert auth.authenticate("admin", "secret", "pam")["code"] == "LOGIN_FAILED"
 
+# Proxmox rejects invalid first-factor credentials with HTTP 401/403. Those
+# responses are authentication failures, not an unavailable Proxmox service.
+auth._request = lambda path, fields=None: (_ for _ in ()).throw(
+    server.ProxmoxAuthError(authentication_failure=True))
+assert auth.authenticate("admin", "secret", "pam")["code"] == "LOGIN_FAILED"
+
 auth._request = lambda path, fields=None: REALMS
 assert auth.authenticate("admin", "secret", "unknown")["code"] == "LOGIN_FAILED"
+
+# The generic Proxmox challenge flow keeps the signed partial ticket internal
+# and sends the factor response in password when tfa-challenge is present.
+partial = "PVE:!tfa!" + quote('{"type":"tfa"}', safe="")
+complete_calls = []
+auth, _ = make_auth()
+def challenge_request(path, fields=None):
+    if path == "/access/domains":
+        return REALMS
+    if path == "/access/ticket":
+        complete_calls.append(fields)
+        if fields and fields.get("tfa-challenge"):
+            return {"ticket": "PVE:complete-ticket", "username": "admin@pam"}
+        return {"ticket": partial, "username": "admin@pam"}
+    raise AssertionError(f"unexpected API request: {path}")
+auth._request = challenge_request
+started = auth.authenticate("admin", "secret", "pam")
+assert started["code"] == "TFA_REQUIRED"
+assert started["challenge"]["methods"] == ["totp"]
+assert started["challenge"]["partial_ticket"] == partial
+assert auth.complete_tfa("admin", "pam", partial, "totp", "123456")["ok"] is True
+assert complete_calls[-1]["password"] == "totp:123456"
+assert complete_calls[-1]["tfa-challenge"] == partial
+
+auth._request = lambda path, fields=None: (_ for _ in ()).throw(
+    server.ProxmoxAuthError(authentication_failure=True))
+assert auth.complete_tfa("admin", "pam", partial, "totp", "123456")["code"] == "TFA_FAILED"
+
+# WebAuthn uses the same Proxmox partial-ticket flow. The browser receives only
+# the public options; the signed partial ticket stays in the server-side state.
+webauthn_public = {
+    "webauthn": {"publicKey": {
+        "challenge": "public-challenge",
+        "rpId": "proxmox-test-2.internal",
+        "allowCredentials": [{"type": "public-key", "id": "credential-id"}],
+        "userVerification": "discouraged",
+    }}
+}
+webauthn_partial = "PVE:!tfa!" + quote(json.dumps(webauthn_public, separators=(",", ":")), safe="") + ":signature"
+webauthn_calls = []
+auth, _ = make_auth()
+def webauthn_request(path, fields=None, request_host=None, request_origin=None):
+    if path == "/access/domains":
+        return REALMS
+    if path == "/access/ticket":
+        webauthn_calls.append((fields, request_host, request_origin))
+        if fields and fields.get("tfa-challenge"):
+            return {"ticket": "PVE:complete-webauthn-ticket", "username": "admin@pam"}
+        return {"ticket": webauthn_partial, "username": "admin@pam"}
+    raise AssertionError(f"unexpected API request: {path}")
+auth._request = webauthn_request
+webauthn_started = auth.authenticate("admin", "secret", "pam", "proxmox-test-2.internal:8765",
+                                     "https://proxmox-test-2.internal:8765")
+assert webauthn_started["challenge"]["methods"] == ["webauthn"]
+assert webauthn_started["challenge"]["public_challenge"] == webauthn_public
+assert auth.complete_tfa("admin", "pam", webauthn_partial, "webauthn",
+                         json.dumps({"id": "id", "type": "public-key", "challenge": "public",
+                                     "rawId": "raw", "response": {"authenticatorData": "a",
+                                     "clientDataJSON": "b", "signature": "c"}}),
+                         "proxmox-test-2.internal:8765",
+                         "https://proxmox-test-2.internal:8765")["ok"] is True
+assert webauthn_calls[-1][0]["password"].startswith("webauthn:{")
+assert webauthn_calls[-1][0]["tfa-challenge"] == webauthn_partial
+assert webauthn_calls[-1][1:] == ("proxmox-test-2.internal:8765", "https://proxmox-test-2.internal:8765")
+
+# An AuthStore exposes only an opaque challenge id to the caller and creates
+# the Ultimate Updater session only after Proxmox returns a complete ticket.
+auth, _ = make_auth()
+auth._request = challenge_request
+store = server.AuthStore(Path("/tmp/unused-proxmox-tfa-test.json"))
+store.backend = "proxmox"
+store.proxmox = auth
+pending = store.login("admin", "secret", "pam", "127.0.0.1")
+assert pending["code"] == "TFA_REQUIRED"
+assert "partial_ticket" not in pending
+assert pending["challenge_id"] in store.tfa_challenges
+assert pending["_tfa_binding"] not in pending["challenge_id"]
+assert store.complete_tfa(pending["challenge_id"], "totp", "123456", "wrong-binding")["code"] == "TFA_EXPIRED"
+assert pending["challenge_id"] in store.tfa_challenges
+session = store.complete_tfa(pending["challenge_id"], "totp", "123456", pending["_tfa_binding"])
+assert session["ok"] is True
+assert pending["challenge_id"] not in store.tfa_challenges
+assert store.session(session["token"])["user"] == "admin@pam"
+
+# A technical RBAC revalidation failure must preserve the session and surface
+# an unavailable-authorizer result to the HTTP layer instead of becoming 401.
+transient_store = server.AuthStore(Path("/tmp/unused-proxmox-transient-auth-test.json"))
+transient_store.backend = "proxmox"
+transient_store.proxmox.authorized = lambda userid: (_ for _ in ()).throw(server.ProxmoxAuthError())
+transient_token = "transient-token"
+transient_store.sessions[transient_token] = {
+    "user": "admin@pam", "csrf": "csrf-token", "expires": time.time() + 60,
+}
+try:
+    transient_store.session(transient_token)
+except server.AuthorizationUnavailableError:
+    pass
+else:
+    raise AssertionError("transient authorization failure was not surfaced")
+assert transient_token in transient_store.sessions
+
+# A confirmed authorization revoke still removes the session and is handled as
+# an unauthenticated request.
+revoked_store = server.AuthStore(Path("/tmp/unused-proxmox-revoked-auth-test.json"))
+revoked_store.backend = "proxmox"
+revoked_store.proxmox.authorized = lambda userid: False
+revoked_token = "revoked-token"
+revoked_store.sessions[revoked_token] = {
+    "user": "admin@pam", "csrf": "csrf-token", "expires": time.time() + 60,
+}
+assert revoked_store.session(revoked_token) is None
+assert revoked_token not in revoked_store.sessions
+assert server.ProxmoxAuth.AUTHORIZATION_TTL == 300
+
+# Challenges are client-bound and cannot be replayed after completion.
+assert store.complete_tfa(pending["challenge_id"], "totp", "123456", pending["_tfa_binding"])["code"] == "TFA_EXPIRED"
+
+# TFA challenges use bounded in-memory state and opportunistic cleanup, not a
+# timer thread per pending login.
+def tfa_store():
+    item = server.AuthStore(Path("/tmp/unused-proxmox-tfa-limit-test.json"))
+    item.backend = "proxmox"
+    item.proxmox.authenticate = lambda username, password, realm, *_context: {
+        "ok": False, "code": "TFA_REQUIRED", "message": "TFA required.",
+        "challenge": {"username": f"{username}@{realm}", "realm": realm,
+                       "partial_ticket": partial, "methods": ["totp"],
+                       "public_challenge": {"totp": True}},
+    }
+    return item
+
+threads_before = {thread.ident for thread in threading.enumerate()}
+limited_store = tfa_store()
+first = limited_store.login("admin", "secret", "pam", "client-a")
+assert first["code"] == "TFA_REQUIRED"
+assert "timer" not in limited_store.tfa_challenges[first["challenge_id"]]
+assert len({thread.ident for thread in threading.enumerate()} - threads_before) == 0
+second = limited_store.login("admin", "secret", "pam", "client-a")
+assert second["code"] == "TFA_REQUIRED"
+third = limited_store.login("admin", "secret", "pam", "client-a")
+assert third["code"] == "TFA_RATE_LIMITED"
+assert len(limited_store.tfa_challenges) == 2
+
+global_store = tfa_store()
+global_store.TFA_MAX_ACTIVE = 2
+assert global_store.login("admin", "secret", "pam", "client-a")["code"] == "TFA_REQUIRED"
+assert global_store.login("other", "secret", "pam", "client-b")["code"] == "TFA_REQUIRED"
+assert global_store.login("third", "secret", "pam", "client-c")["code"] == "TFA_RATE_LIMITED"
+
+# A different user can still start a parallel challenge, while repeated starts
+# for one user are rate-limited even when old challenges are cancelled.
+parallel_store = tfa_store()
+assert parallel_store.login("admin", "secret", "pam", "client-a")["code"] == "TFA_REQUIRED"
+assert parallel_store.login("other", "secret", "pam", "client-a")["code"] == "TFA_REQUIRED"
+for _ in range(parallel_store.TFA_MAX_STARTS_PER_USER - 1):
+    pending_start = parallel_store.login("admin", "secret", "pam", "client-b")
+    assert pending_start["code"] == "TFA_REQUIRED"
+    parallel_store.cancel_tfa(pending_start["challenge_id"], pending_start["_tfa_binding"])
+assert parallel_store.login("admin", "secret", "pam", "client-c")["code"] == "TFA_RATE_LIMITED"
+
+# Expiry is removed during the next authenticated operation without a timer.
+expired_store = tfa_store()
+expired = expired_store.login("admin", "secret", "pam", "client-a")
+expired_store.tfa_challenges[expired["challenge_id"]]["expires"] = time.time() - 1
+assert expired_store.login("other", "secret", "pam", "client-a")["code"] == "TFA_REQUIRED"
+assert expired["challenge_id"] not in expired_store.tfa_challenges
 
 # Proxmox usernames are not restricted by the legacy local-PAM regex.
 auth, _ = make_auth()
@@ -93,7 +268,7 @@ assert calls == {"permissions": 2, "roles": 1}
 
 # Expired entries force fresh lookups and never reuse a stale allow decision.
 auth, calls = make_auth()
-clock = iter((100.0, 100.0, 131.0, 131.0, 131.0))
+clock = iter((100.0, 100.0, 401.0, 401.0, 401.0))
 old_monotonic = server.time.monotonic
 server.time.monotonic = lambda: next(clock)
 try:

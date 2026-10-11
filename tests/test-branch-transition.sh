@@ -33,13 +33,13 @@ assert_installer_required() {
 }
 
 set_identity() {
-  INSTALLED_VERSION=5.1.3
-  target_version=5.1.3
+  INSTALLED_VERSION=5.2
+  target_version=5.2
   INSTALLED_COMMIT=8915edfe6652b504fd8762ebe743fc7883a621b1
   installed_commit=$INSTALLED_COMMIT
   target_commit=$INSTALLED_COMMIT
-  INSTALLED_BETA=7
-  target_beta=7
+  INSTALLED_BETA=1
+  target_beta=1
   INSTALLED_BRANCH=$1
   BRANCH=$2
 }
@@ -68,9 +68,9 @@ set_identity master master
 assert_installer_required 'master true up to date' uptodate SAME_INSTALLED_TARGET_IDENTITY
 
 installer_called=false
-FETCH_REMOTE_VERSION() { printf '5.1.3'; }
+FETCH_REMOTE_VERSION() { printf '5.2'; }
 FETCH_REMOTE_COMMIT() { printf '%s' "$REMOTE_COMMIT"; }
-FETCH_REMOTE_BETA() { [[ "$BRANCH" == beta ]] && printf '7'; }
+FETCH_REMOTE_BETA() { [[ "$BRANCH" == beta ]] && printf '1'; }
 RUN_DOWNLOADED_INSTALLER() { installer_called=true; }
 version_is_less() { return 1; }
 
@@ -80,13 +80,13 @@ run_update_gate() {
   LOCAL_FILES="$WORK_DIR/runtime"
   BUILD_METADATA_FILE="$LOCAL_FILES/build-metadata"
   mkdir -p "$LOCAL_FILES"
-  printf 'VERSION="5.1.3"\n' > "$LOCAL_FILES/update.sh"
-  printf 'branch="%s"\ncommit="%s"\nbeta="%s"\nversion="5.1.3"\n' \
+  printf 'VERSION="5.2"\n' > "$LOCAL_FILES/update.sh"
+  printf 'branch="%s"\ncommit="%s"\nbeta="%s"\nversion="5.2"\n' \
     "$INSTALLED_BRANCH" "$INSTALLED_COMMIT" "$INSTALLED_BETA" > "$BUILD_METADATA_FILE"
-  INSTALLED_BUILD_IDENTITY="5.1.3 $INSTALLED_BRANCH · 8915edf"
+  INSTALLED_BUILD_IDENTITY="5.2 $INSTALLED_BRANCH · 8915edf"
   installer_called=false
   REMOTE_COMMIT="$INSTALLED_COMMIT"
-  target_beta=7
+  target_beta=1
   UU_NONINTERACTIVE=true
   UPDATE >/dev/null
 }

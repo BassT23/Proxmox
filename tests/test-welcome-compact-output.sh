@@ -148,7 +148,7 @@ ONLY_UPDATE_CHECK=""
 USE_INTERNAL_TARGET_SELECTION="true"
 EOF
 cat > "$WORK_DIR/update.sh" <<'EOF'
-VERSION="5.1.3"
+VERSION="5.2"
 EOF
 cp "$ROOT_DIR/tag-filter.sh" "$WORK_DIR/tag-filter.sh"
 cp "$ROOT_DIR/target-selection.sh" "$WORK_DIR/target-selection.sh"

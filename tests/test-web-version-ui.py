@@ -12,14 +12,14 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 sample = """Version overview (beta)
-Installed product version: 5.1.3
-Installed beta: 7
+Installed product version: 5.2
+Installed beta: 1
 Installed commit: 0123456789abcdef0123456789abcdef01234567
-Available beta: 8
+Available beta: 2
 Available commit: 89abcdef0123456789abcdef0123456789abcdef
 Installed tag: —
 Component    Local     Server
-Updater      5.1       5.2
+Updater      5.2       5.2
 Extras       3.1       3.1
 Config       2.1       2.1
 Welcome      3.0       3.0
@@ -28,9 +28,9 @@ Check        2.1       2.1
 parsed = module.parse_updater_version_output(sample)
 assert parsed["state"] == "ok"
 assert parsed["branch"] == "beta"
-assert parsed["installed"] == "5.1.3"
-assert parsed["beta"] == 7
-assert parsed["available_beta"] == 8
+assert parsed["installed"] == "5.2"
+assert parsed["beta"] == 1
+assert parsed["available_beta"] == 2
 assert parsed["available"] == "5.2"
 assert parsed["update_available"] is True
 assert parsed["commit"] == "0123456789abcdef0123456789abcdef01234567"
@@ -92,6 +92,40 @@ assert "shortCommit" in source
 assert "data.update_available===true" in source
 assert "updateButton.textContent=data.state==='ok'&&data.update_available===true?'Update now':'Up to date'" in source
 assert "scheduleUpdaterVersionCheck" in source
+assert "function stopAuthenticatedBackgroundWork" in source
+assert "function startAuthenticatedBackgroundWork" in source
+assert "clearTimeout(pollTimer);pollTimer=null" in source
+assert "authGeneration" in source
+assert "authRealmsLoadGeneration" in source
+assert "function resetTfaFormState" in source
+assert "response.required=false" in source
+assert "logoutInProgress" in source
+assert "response.ok" in source
+assert "data.authenticated!==false" in source
+assert "AUTHORIZATION_UNAVAILABLE" in source or "Proxmox authorization is temporarily unavailable." in source
+assert "if(r.status===401)showLogin(error.message)" in source
+assert 'id="auth-loading-message"' in module.PAGE
+assert 'id="auth-loading-retry"' in module.PAGE
+assert "error.status===401)return" in source
+assert "bootstrapInProgress" in source
+assert "document.getElementById('auth-loading-retry').onclick=bootstrap" in module.PAGE
+assert "Logout failed. Your session may still be active." in source
+assert "showLogin('You have been signed out.')" in source
+assert "if(logoutInProgress)return" in source
+logout_source = source[source.index("const logout="):source.index("document.getElementById('logout').onclick=logout")]
+assert logout_source.count("showLogin('You have been signed out.')") == 1
+assert "showLogin('Signing out…')" not in logout_source
+assert "startAuthenticatedBackgroundWork(generation)" in logout_source
+assert "finally{logoutInProgress=false;setLogoutLoading(false)}" in logout_source
+assert "r.status===401&&!logoutInProgress&&requestGeneration===authGeneration&&window.__uu_authenticated" in source
+assert "const request=++authRealmsLoadGeneration" in source
+assert "if(request!==authRealmsLoadGeneration)return" in source
+assert "resetTfaFormState();pendingTfa=challenge" in source
+assert "const challenge=pendingTfa;resetTfaFormState();setLoginLoading(false)" in source
+assert "showDashboard();startDashboardLoad()" in source
+assert "pollTimer=setTimeout(()=>loadJobs(generation)" in source
+assert "const token=csrfToken,generation=authGeneration;stopAuthenticatedBackgroundWork();setLogoutLoading(true)" in source
+assert "await Promise.all([loadStatus(),loadJobs(),loadTargets(),loadTargetSelection()])" not in source
 assert "2500" in source and "7000" in source
 assert "self.server.version_cache = {\"at\": now, \"data\": data} if data.get(\"state\") == \"ok\" else None" in source
 assert "/api/public-version" in source
@@ -122,7 +156,16 @@ assert 'name="username"' in login_markup
 assert 'name="password"' in login_markup
 assert 'name="realm"' in login_markup
 assert 'id="login-realm"' in login_markup
-assert '<label>Domain<select name="realm" id="login-realm"' in login_markup
+assert '<label data-login-factor="first">Domain<select name="realm" id="login-realm"' in login_markup
+assert 'id="login-tfa"' in login_markup
+assert 'id="login-tfa-type"' in login_markup
+assert 'id="login-tfa-response"' in login_markup
+assert 'id="login-tfa-webauthn"' in login_markup
+assert '/api/login/tfa' in module.PAGE
+assert 'navigator.credentials.get' in module.PAGE
+assert 'isSecureContext' in module.PAGE
+assert "submitTfaResponse('webauthn'" in module.PAGE
+assert 'public_challenge?.webauthn' in module.PAGE
 assert '.modal label input,.modal label select' in module.PAGE
 assert '.modal label select { appearance:none;' in module.PAGE
 assert 'Authentication required.' not in login_markup
@@ -148,20 +191,20 @@ with tempfile.TemporaryDirectory() as directory:
     )
     assert local["beta"] is None
     (root_dir / "build-metadata").write_text(
-        'schema_version=2\nversion="5.1.3"\nbranch="beta"\nbeta="7"\n'
+        'schema_version=2\nversion="5.2"\nbranch="beta"\nbeta="1"\n'
         'commit="0123456789abcdef0123456789abcdef01234567"\ntag=""\n',
         encoding="utf-8",
     )
     modern_local = handler.local_version()
     assert (modern_local["installed"], modern_local["beta"], modern_local["branch"]) == (
-        "5.1.3", 7, "beta"
+        "5.2", 1, "beta"
     )
     handler.start_version_refresh = lambda: setattr(handler.server, "refresh_started", True)
     handler.server.version_last_data = None
     public = handler.public_version()
-    assert public["installed"] == "5.1.3"
+    assert public["installed"] == "5.2"
     assert public["branch"] == "beta"
-    assert public["beta"] == 7
+    assert public["beta"] == 1
     assert public["update_state"] == "checking"
     assert handler.server.refresh_started is True
     handler.server.version_last_data = {
@@ -169,8 +212,8 @@ with tempfile.TemporaryDirectory() as directory:
         "installed": None, "branch": None, "commit": "unknown",
     }
     offline = handler.public_version()
-    assert offline["installed"] == "5.1.3"
+    assert offline["installed"] == "5.2"
     assert offline["branch"] == "beta"
-    assert offline["beta"] == 7
+    assert offline["beta"] == 1
     assert offline["update_state"] == "unavailable"
 print("web updater version/self-update tests: PASS")
