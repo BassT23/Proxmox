@@ -221,7 +221,16 @@ def main(argv=None):
                 state_data[key] = entry
                 atomic_save(state_file, state_data)
                 return 0
-            delivered = set(entry.get("delivered_providers", []))
+            # A malformed provider list is recoverable state, not a reason to
+            # permanently suppress notifications. Never trust stored values.
+            saved_providers = entry.get("delivered_providers")
+            delivered = (
+                {item for item in saved_providers
+                 if isinstance(item, str) and len(item) == 64
+                 and all(c in "0123456789abcdef" for c in item)}
+                if isinstance(saved_providers, list) else set()
+            )
+            entry["delivered_providers"] = sorted(delivered)
             failed = False
             deadline = time.monotonic() + DELIVERY_BUDGET_SECONDS
             for url in urls:

@@ -216,4 +216,24 @@ UU_JOB_SOURCE=scheduler STATUS_MODEL_SEND_NOTIFICATION "$WORK/status.json" "$WOR
 [[ $(wc -l < "$WORK/sent") -eq $((before + 2)) ]]
 [[ $(wc -l < "$WORK/mail-events") -eq 1 ]]
 
+# Malformed per-provider bookkeeping must recover without muting all notifications.
+export UU_APPRISE_STATE_FILE="$WORK/malformed-provider-state.json"
+python3 - "$ROOT/notification-apprise.py" "$WORK/status.json" "$UU_APPRISE_STATE_FILE" <<'PY'
+import hashlib,importlib.util,json,pathlib,sys,time
+spec=importlib.util.spec_from_file_location("notification",sys.argv[1])
+mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
+_,rows=mod.read_status(pathlib.Path(sys.argv[2]),"")
+marker={"kind":"check","state":"updates","targets":rows}
+fingerprint=hashlib.sha256(json.dumps(marker,sort_keys=True,default=str,separators=(",",":")).encode()).hexdigest()
+p=pathlib.Path(sys.argv[3])
+p.write_text(json.dumps({"check:all":{"fingerprint":fingerprint,"state":"updates",
+    "updated_at":time.time(),"delivered_providers":42}}))
+p.chmod(0o600)
+PY
+before=$(wc -l < "$WORK/sent")
+UU_JOB_SOURCE=scheduler STATUS_MODEL_SEND_NOTIFICATION "$WORK/status.json" "$WORK/update.conf"
+[[ $(wc -l < "$WORK/sent") -eq $((before + 2)) ]]
+UU_JOB_SOURCE=scheduler STATUS_MODEL_SEND_NOTIFICATION "$WORK/status.json" "$WORK/update.conf"
+[[ $(wc -l < "$WORK/sent") -eq $((before + 2)) ]]
+
 echo "Apprise notification integration tests: PASS"
