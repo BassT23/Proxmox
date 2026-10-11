@@ -959,16 +959,18 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const isWindowsTarget=t=>/windows/i.test(String(t?.os||t?.os_detail_display||t?.os_display||''));
     const windowsInstallationLabel=t=>{const status=String(t?.last_update?.status||'').toLowerCase();if(status==='success'||status==='completed')return'Installation successful';if(status==='failed'||status==='interrupted')return'Installation failed';return'Unknown';};
     const windowsLastCheck=t=>['ok','updates_available'].includes(t?.check_status)&&t?.last_check?date(t.last_check):'Unknown';
-    const windowsVerificationLabel=t=>{const history=t?.windows_update;if(history?.post_reboot_verified===true)return'Post-reboot check successful';if(history?.post_reboot_verified===false)return'Post-reboot check pending';return['ok','updates_available'].includes(t?.check_status)&&t?.last_check?'Latest check successful':'Unknown';};
+    const windowsVerificationLabel=t=>{const history=t?.windows_update;if(history?.post_reboot_verified===true)return'Post-reboot check successful';if(history?.post_reboot_verified===false)return'Post-reboot check pending';return'Unknown';};
     const windowsWuaResult=value=>{const number=Number(value),labels={0:'Not started',1:'In progress',2:'Succeeded',3:'Succeeded with errors',4:'Failed',5:'Aborted'};return Number.isInteger(number)&&Object.prototype.hasOwnProperty.call(labels,number)?labels[number]:`Unknown (${value===null||value===undefined?'—':value})`};
     const windowsHresult=value=>{if(value===null||value===undefined||value==='')return'—';const number=Number(value);if(!Number.isInteger(number))return String(value);return`0x${(number>>>0).toString(16).padStart(8,'0').toUpperCase()}`};
-    const windowsHistoryTable=history=>{if(!Array.isArray(history))return'<p class="windows-history-empty">History unavailable.</p>';if(!history.length)return'<p class="windows-history-empty">No Windows Update Agent history entries were returned.</p>';const rows=history.map(entry=>{const kb=Array.isArray(entry?.kb)?entry.kb.filter(item=>typeof item==='string'&&item).join(', '):'Unknown';return`<tr><td>${esc(date(entry?.date))}</td><td>${esc(kb)}</td><td>${esc(entry?.title||'Unknown')}</td><td>${esc(windowsWuaResult(entry?.result_code))}</td><td>${esc(windowsHresult(entry?.hresult))}</td></tr>`}).join('');return`<div class="windows-history-table-wrap"><table class="windows-history"><thead><tr><th>Date</th><th>KB</th><th>Update title</th><th>Result</th><th>HRESULT</th></tr></thead><tbody>${rows}</tbody></table></div>`};
-    const windowsUpdateSection=t=>{if(!isWindowsTarget(t))return'';const last=t?.last_update&&typeof t.last_update==='object'?t.last_update:{};const available=Number.isInteger(t?.updates?.available)?String(t.updates.available):'Unknown';const reboot=t?.reboot_required===true?'Yes':t?.reboot_required===false?'No':'Unknown';const history=t?.windows_update?.history;const resultCode=last.result_code===null||last.result_code===undefined?'Unknown':String(last.result_code);return`<section class="windows-update-status"><h4>Windows Update</h4><p class="windows-update-note">Updates are installed through the Windows Update Agent. Windows Settings may temporarily display outdated update information. The current update status is determined by the latest Windows Update Agent check.</p><div class="detail-grid"><div><span>Update source</span><strong>Windows Update Agent</strong></div><div><span>Last successful check</span><strong>${esc(windowsLastCheck(t))}</strong></div><div><span>Available updates</span><strong>${esc(available)}</strong></div><div><span>Last known installation</span><strong>${esc(date(last.timestamp))}</strong></div><div><span>Installation result</span><strong>${esc(windowsInstallationLabel(t))}</strong></div><div><span>Agent result code</span><strong>${esc(resultCode)}</strong></div><div><span>Reboot required</span><strong>${esc(reboot)}</strong></div><div><span>Verification</span><strong>${esc(windowsVerificationLabel(t))}</strong></div></div><h5>Windows Update Agent history</h5>${windowsHistoryTable(history)}</section>`;};
+    const windowsHistoryMeta=t=>{const metadata=t?.windows_update;if(!metadata||!Array.isArray(metadata.history))return'History unavailable';if(!metadata.queried_at)return'Cached history';const queried=Date.parse(metadata.queried_at);const stale=!Number.isFinite(queried)||Date.now()-queried>300000;return`${stale?'Cached history · stale':'History last updated'}: ${esc(date(metadata.queried_at))}`;};
+    const windowsHistoryTable=history=>{if(!Array.isArray(history))return'<p class="windows-history-empty">History unavailable.</p>';if(!history.length)return'<p class="windows-history-empty">No Windows Update Agent history entries were returned.</p>';const rows=history.map(entry=>{const kb=Array.isArray(entry?.kb)?entry.kb.filter(item=>typeof item==='string'&&item).join(', '):'Unknown';return`<tr><td>${esc(date(entry?.date))}</td><td>${esc(kb)}</td><td>${esc(entry?.title||'Unknown')}</td><td>${esc(entry?.operation||'Unknown')}</td><td>${esc(windowsWuaResult(entry?.result_code))}</td><td>${esc(windowsHresult(entry?.hresult))}</td></tr>`}).join('');return`<div class="windows-history-table-wrap"><table class="windows-history"><thead><tr><th>Date</th><th>KB</th><th>Update title</th><th>Operation</th><th>Result</th><th>HRESULT</th></tr></thead><tbody>${rows}</tbody></table></div>`};
+    const windowsUpdateSection=t=>{if(!isWindowsTarget(t))return'';const last=t?.last_update&&typeof t.last_update==='object'?t.last_update:{};const available=Number.isInteger(t?.updates?.available)?String(t.updates.available):'Unknown';const reboot=t?.reboot_required===true?'Yes':t?.reboot_required===false?'No':'Unknown';const history=t?.windows_update?.history;const resultCode=last.result_code===null||last.result_code===undefined?'Unknown':String(last.result_code);return`<section class="windows-update-status"><h4>Windows Update</h4><p class="windows-update-note">Updates are installed through the Windows Update Agent. Windows Settings may temporarily display outdated update information. The current update status is determined by the latest Windows Update Agent check.</p><div class="detail-grid"><div><span>Update source</span><strong>Windows Update Agent</strong></div><div><span>Last successful check</span><strong>${esc(windowsLastCheck(t))}</strong></div><div><span>Available updates</span><strong>${esc(available)}</strong></div><div><span>Last known installation</span><strong>${esc(date(last.timestamp))}</strong></div><div><span>Installation result</span><strong>${esc(windowsInstallationLabel(t))}</strong></div><div><span>Agent result code</span><strong>${esc(resultCode)}</strong></div><div><span>Reboot required</span><strong>${esc(reboot)}</strong></div><div><span>Verification</span><strong>${esc(windowsVerificationLabel(t))}</strong></div></div><h5>Windows Update Agent history</h5><p class="windows-history-meta">${windowsHistoryMeta(t)}</p>${windowsHistoryTable(history)}</section>`;};
     function closeDetails(){const n=document.getElementById('details');openDetailId=null;n.hidden=true;n.replaceChildren()}
     function rebootTargetSupported(t){return ['host','lxc','vm'].includes(t.type)&&t.reboot_required===true}
     function rebootTargetBlocked(t){return running(t.id)||running(t.node||'')||t.reachable!==true||t.check_status==='offline'}
     async function rebootTarget(t){if(!rebootTargetSupported(t)||rebootTargetBlocked(t))return;const label=t.type==='host'?`node ${friendlyTarget(t)}`:`${t.type==='lxc'?'CT':'VM'} ${t.id} · ${friendlyTarget(t)}`;if(t.type==='host'){if(!confirm(`Reboot ${label}?\n\nRunning guests on this node may be affected.`))return;if(!confirm('Confirm node reboot\n\nThis will reboot the entire Proxmox node.'))return}else if(!confirm(`Reboot ${label} now?\n\nThe system will be restarted.`))return;const button=document.querySelector('[data-reboot-target]');if(button)button.disabled=true;try{const result=await api(`/api/targets/${encodeURIComponent(t.id)}/reboot`,{method:'POST',body:'{}'});notice(result.message||'Reboot initiated.');await loadJobs();await loadStatus()}catch(error){notice(error.message||'Reboot could not be started.',true)}finally{if(button&&document.body.contains(button))button.disabled=false}}
-    function renderDetails(t){const n=document.getElementById('details');if(openDetailId===t.id){closeDetails();return}const [errorText,errorTone]=detailError(t),rebootAction=rebootTargetSupported(t)?`<button type="button" class="danger" data-reboot-target="${esc(t.id)}" ${rebootTargetBlocked(t)?'disabled':''}>Reboot now</button>`:'',rebootDetail=['host','lxc','vm'].includes(t.type)?`<div><span>Reboot required</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong>${rebootAction?`<div class="reboot-detail-action">${rebootAction}</div>`:''}</div>`:'',backup=t.type==='external'&&t.backup_status?text(t.backup_status.status,'Unknown'):'Not applicable';openDetailId=t.id;n.hidden=false;n.innerHTML=`<div class="details-heading"><h3>${esc(friendlyTarget(t))}</h3><button type="button" class="details-close">Close details</button></div><div class="detail-sections"><section><h4>System</h4><div class="detail-grid"><div><span>Type</span><strong>${esc(friendlyType(t))}</strong></div><div><span>Node</span><strong>${esc(t.node||'Not assigned')}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(osDetailName(t))}</strong></div></div></section><section><h4>Updates</h4><div class="detail-grid"><div><span>Updater</span><strong>${esc(t.updater)}</strong></div>${updateFields(t)}${rebootDetail}</div></section>${windowsUpdateSection(t)}<section><h4>Status</h4><div class="detail-grid"><div><span>Check status</span><strong>${statusTone(t)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div><div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Backup safety</span><strong>${esc(backup)}</strong></div><div><span>Error</span><strong class="error-text ${errorTone}">${esc(errorText)}</strong></div></div></section></div>`;n.querySelector('.details-close').onclick=closeDetails;if(rebootAction)n.querySelector('[data-reboot-target]').onclick=()=>rebootTarget(t);n.scrollIntoView({behavior:'smooth',block:'nearest'})}
+    async function refreshWindowsHistory(t){if(!isWindowsTarget(t)||!t.id)return;const metadata=t.windows_update;if(metadata&&Array.isArray(metadata.history)&&metadata.queried_at){const age=Date.now()-Date.parse(metadata.queried_at);if(Number.isFinite(age)&&age<300000)return}try{await api(`/api/windows-history/${encodeURIComponent(t.id)}/refresh`,{method:'POST',body:'{}'});notice('Windows Update history refresh started.');setTimeout(()=>loadStatus(),1500)}catch(error){if(error?.code!=='JOB_ALREADY_RUNNING')notice(error.message||'Windows Update history is currently unavailable.',true)}}
+    function renderDetails(t){const n=document.getElementById('details');if(openDetailId===t.id){closeDetails();return}const [errorText,errorTone]=detailError(t),rebootAction=rebootTargetSupported(t)?`<button type="button" class="danger" data-reboot-target="${esc(t.id)}" ${rebootTargetBlocked(t)?'disabled':''}>Reboot now</button>`:'',rebootDetail=['host','lxc','vm'].includes(t.type)?`<div><span>Reboot required</span><strong class="${t.reboot_required===true?'reboot-required':''}">${t.reboot_required===null?'Unknown':t.reboot_required?'Yes':'No'}</strong>${rebootAction?`<div class="reboot-detail-action">${rebootAction}</div>`:''}</div>`:'',backup=t.type==='external'&&t.backup_status?text(t.backup_status.status,'Unknown'):'Not applicable';openDetailId=t.id;n.hidden=false;n.innerHTML=`<div class="details-heading"><h3>${esc(friendlyTarget(t))}</h3><button type="button" class="details-close">Close details</button></div><div class="detail-sections"><section><h4>System</h4><div class="detail-grid"><div><span>Type</span><strong>${esc(friendlyType(t))}</strong></div><div><span>Node</span><strong>${esc(t.node||'Not assigned')}</strong></div><div><span>Transport</span><strong>${esc(t.transport)}</strong></div><div><span>Operating system</span><strong>${esc(osDetailName(t))}</strong></div></div></section><section><h4>Updates</h4><div class="detail-grid"><div><span>Updater</span><strong>${esc(t.updater)}</strong></div>${updateFields(t)}${rebootDetail}</div></section>${windowsUpdateSection(t)}<section><h4>Status</h4><div class="detail-grid"><div><span>Check status</span><strong>${statusTone(t)}</strong></div><div><span>Last check</span><strong>${esc(date(t.last_check))}</strong></div><div><span>Last update</span><strong>${esc(t.last_update&&t.last_update.status)}</strong></div><div><span>Backup safety</span><strong>${esc(backup)}</strong></div><div><span>Error</span><strong class="error-text ${errorTone}">${esc(errorText)}</strong></div></div></section></div>`;n.querySelector('.details-close').onclick=closeDetails;if(rebootAction)n.querySelector('[data-reboot-target]').onclick=()=>rebootTarget(t);n.scrollIntoView({behavior:'smooth',block:'nearest'});refreshWindowsHistory(t)}
     function guestIdentity(t){return esc(friendlyTarget(t))}
     function toggleGroup(key){if(openNodes.has(key))openNodes.clear();else{openNodes.clear();openNodes.add(key)}render(currentStatus)}
     async function nodeAction(node,update=false,target=null){const key=`${update?'update':'check'}:${node}`,button=document.querySelector(`[data-node-action="${CSS.escape(key)}"]`);if(button?.disabled)return;const gate=update&&target?updateGate(target):{enabled:true,warning:null};if(update&&!gate.enabled)return;if(update&&!confirm(`${gate.warning?`${gate.warning}\n\n`:''}Update ${node.replace(/^host:/,'')}?\n\nOnly this Proxmox node will be updated. LXCs and VMs are not updated.`))return;document.querySelectorAll(`[data-node="${CSS.escape(node)}"]`).forEach(item=>{item.disabled=true});try{const d=await api(`/api/${update?'update-node':'check-node'}/${encodeURIComponent(node)}`,{method:'POST',body:'{}'});notice(d.message||'Action accepted.');await loadStatus();await loadJobs()}catch(error){notice(error.message,true)}finally{document.querySelectorAll(`[data-node="${CSS.escape(node)}"]`).forEach(item=>{item.disabled=false})}}
@@ -5318,6 +5320,9 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         if not self.write_allowed():
             return
+        if len(parts) == 4 and parts[:2] == ["api", "windows-history"] and parts[3] == "refresh":
+            self.action_windows_history(parts[2])
+            return
         if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "cancel":
             self.handle_job_cancel(parts[2])
             return
@@ -5451,6 +5456,55 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         self.send_json({"target": target, "job": job_match.group(1), "type": "check",
                         "state": "running", "message": "Check job started."}, HTTPStatus.ACCEPTED)
+
+    def action_windows_history(self, target):
+        if not target.isdigit() or not self.valid_target(target):
+            self.send_json(error_payload("INVALID_TARGET", "The Windows VM target is invalid."), HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            with self.server.status_file.open(encoding="utf-8") as source:
+                payload = json.load(source)
+            record = next((item for item in payload.get("targets", [])
+                           if isinstance(item, dict) and str(item.get("id")) == target), None)
+            if not record or record.get("type") != "vm" or not re.search(
+                    r"windows", str(record.get("os") or record.get("os_detail_display") or "", re.IGNORECASE)):
+                self.send_json(error_payload("WINDOWS_TARGET_REQUIRED", "Windows Update history is only available for Windows VMs."), HTTPStatus.BAD_REQUEST)
+                return
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+            self.send_json(error_payload("STATUS_UNAVAILABLE", "The target status is currently unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        now = time.monotonic()
+        with self.server.windows_history_refresh_lock:
+            active_until = self.server.windows_history_refreshes.get(target, 0)
+            if active_until > now:
+                self.send_json({"target": target, "state": "running", "message": "Windows Update history refresh is already running."}, HTTPStatus.ACCEPTED)
+                return
+            self.server.windows_history_refreshes[target] = now + 300
+        try:
+            result = self.run_command(
+                [str(self.server.job_runner), "start-check", target, str(self.server.cli), "target"],
+                timeout=15,
+                extra_env={"UU_JOB_INTERACTIVE": "true", "UU_WINDOWS_HISTORY_ONLY": "true"},
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            with self.server.windows_history_refresh_lock:
+                self.server.windows_history_refreshes.pop(target, None)
+            self.send_json(error_payload("WINDOWS_HISTORY_START_FAILED", "The Windows Update history refresh could not be started."), HTTPStatus.BAD_GATEWAY)
+            return
+        output = f"{result.stdout}\n{result.stderr}"
+        job_match = re.search(r"^Check job started\nTarget:\s*\S+\nJob:\s*(\S+)", output, re.MULTILINE)
+        if result.returncode == 3:
+            with self.server.windows_history_refresh_lock:
+                self.server.windows_history_refreshes.pop(target, None)
+            self.send_json(error_payload("JOB_ALREADY_RUNNING", "Another job is already running for this target."), HTTPStatus.CONFLICT)
+            return
+        if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
+            with self.server.windows_history_refresh_lock:
+                self.server.windows_history_refreshes.pop(target, None)
+            self.send_json(error_payload("WINDOWS_HISTORY_START_FAILED", "The Windows Update history refresh could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        self.send_json({"target": target, "job": job_match.group(1), "type": "windows-history",
+                        "state": "running", "message": "Windows Update history refresh started."}, HTTPStatus.ACCEPTED)
 
     def action_update(self, target, payload=None):
         if not self.valid_target(target):
@@ -5809,6 +5863,8 @@ def main():
     server.asset_dir = args.asset_dir
     server.job_runner, server.jobs_dir = args.job_runner, args.jobs_dir
     server.remote_reconcile_lock = threading.Lock()
+    server.windows_history_refresh_lock = threading.Lock()
+    server.windows_history_refreshes = {}
     server.interactive_broker = InteractiveJobBroker(
         Path(os.environ.get("UU_INTERACTIVE_RUNTIME_DIR", DEFAULT_INTERACTIVE_RUNTIME_DIR))
     )

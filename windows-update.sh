@@ -77,6 +77,16 @@ WINDOWS_POWERSHELL_SCRIPT() {
     check)
       cat <<'POWERSHELL'
 $ErrorActionPreference = 'Stop'
+function Get-UUKB([string]$text) {
+  $seen = @{}
+  foreach ($match in [regex]::Matches($text, '(?i)\bKB\d{4,10}\b')) {
+    $value = $match.Value.ToUpperInvariant()
+    if (-not $seen.ContainsKey($value)) { $seen[$value] = $true; Write-Output $value }
+  }
+}
+function Get-UUOperation([int]$value) {
+  switch ($value) { 1 { 'Installation' } 2 { 'Uninstallation' } default { "Unknown ($value)" } }
+}
 function Test-UURebootRequired {
   return (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or
     (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or
@@ -90,14 +100,14 @@ try {
     $total = [int]$searcher.GetTotalHistoryCount()
     $limit = [Math]::Min(20, [Math]::Max(0, $total))
     $entries = @()
-    if ($limit -gt 0) { $entries = @($searcher.QueryHistory($total - $limit, $limit)) }
+    if ($limit -gt 0) { $entries = @($searcher.QueryHistory(0, $limit)) }
     $history = @(
       foreach ($entry in $entries) {
         [ordered]@{
           date = if ($entry.Date) { $entry.Date.ToUniversalTime().ToString('o') } else { $null }
           title = [string]$entry.Title
-          kb = @($entry.KBArticleIDs | ForEach-Object { [string]$_ })
-          operation = [string]$entry.Operation
+          kb = @(Get-UUKB (([string]$entry.Title) + ' ' + ([string]$entry.Description)))
+          operation = Get-UUOperation ([int]$entry.Operation)
           result_code = [int]$entry.ResultCode
           hresult = if ($null -eq $entry.HResult) { $null } else { [int]$entry.HResult }
           source = 'Windows Update Agent'
@@ -119,22 +129,32 @@ POWERSHELL
       local history_limit="${2:-20}"
       [[ "$history_limit" =~ ^[0-9]+$ ]] || return 2
       (( history_limit > 0 && history_limit <= 50 )) || return 2
-      cat <<POWERSHELL
+cat <<POWERSHELL
 \$ErrorActionPreference = 'Stop'
 try {
+function Get-UUKB([string]\$text) {
+  \$seen = @{}
+  foreach (\$match in [regex]::Matches(\$text, '(?i)\bKB\d{4,10}\b')) {
+    \$value = \$match.Value.ToUpperInvariant()
+    if (-not \$seen.ContainsKey(\$value)) { \$seen[\$value] = \$true; Write-Output \$value }
+  }
+}
+function Get-UUOperation([int]\$value) {
+  switch (\$value) { 1 { 'Installation' } 2 { 'Uninstallation' } default { "Unknown (\$value)" } }
+}
   \$session = New-Object -ComObject Microsoft.Update.Session
   \$searcher = \$session.CreateUpdateSearcher()
   \$total = [int]\$searcher.GetTotalHistoryCount()
   \$limit = [Math]::Min($history_limit, [Math]::Max(0, \$total))
   \$entries = @()
-  if (\$limit -gt 0) { \$entries = @(\$searcher.QueryHistory(\$total - \$limit, \$limit)) }
+  if (\$limit -gt 0) { \$entries = @(\$searcher.QueryHistory(0, \$limit)) }
   \$history = @(
     foreach (\$entry in \$entries) {
       [ordered]@{
         date = if (\$entry.Date) { \$entry.Date.ToUniversalTime().ToString('o') } else { \$null }
         title = [string]\$entry.Title
-        kb = @(\$entry.KBArticleIDs | ForEach-Object { [string]\$_ })
-        operation = [string]\$entry.Operation
+        kb = @(Get-UUKB (([string]\$entry.Title) + ' ' + ([string]\$entry.Description)))
+        operation = Get-UUOperation ([int]\$entry.Operation)
         result_code = [int]\$entry.ResultCode
         hresult = if (\$null -eq \$entry.HResult) { \$null } else { [int]\$entry.HResult }
         source = 'Windows Update Agent'

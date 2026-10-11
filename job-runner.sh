@@ -1077,6 +1077,7 @@ start_check_job() {
   [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && systemd_env+=("--setenv=UU_REMOTE_WORK_DIR=$UU_REMOTE_WORK_DIR")
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
   [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
+  [[ "${UU_WINDOWS_HISTORY_ONLY:-false}" == true ]] && systemd_env+=("--setenv=UU_WINDOWS_HISTORY_ONLY=true")
   [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   [[ "${UU_REMOTE_TRACE:-false}" == true ]] && systemd_env+=("--setenv=UU_REMOTE_TRACE=true")
   if [[ "$mode" == target || "$mode" == node ]]; then

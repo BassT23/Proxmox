@@ -812,6 +812,7 @@ CHECK_HOST () {
     remote_status_validation=" if [[ \"\$remote_rc\" -eq 0 && ! -s '$remote_check_dir/status.json' ]]; then remote_rc=86; elif [[ \"\$remote_rc\" -eq 0 ]] && ! python3 -c 'import json,sys; payload=json.load(open(sys.argv[1], encoding=\"utf-8\")); assert isinstance(payload, dict) and isinstance(payload.get(\"targets\"), list)' '$remote_check_dir/status.json'; then remote_rc=87; fi;"
   fi
   [[ "${UU_REMOTE_TRACE:-false}" == true ]] && remote_status_env=" UU_REMOTE_TRACE=true$remote_status_env"
+  [[ "${UU_WINDOWS_HISTORY_ONLY:-false}" == true ]] && remote_status_env=" UU_WINDOWS_HISTORY_ONLY=true$remote_status_env"
   REMOTE_TRACE "host=host:$HOST_NODE step=helper_copy rc=0"
   if [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]]; then
     # The remote check derives its lifecycle-safe mode from this explicit
@@ -2246,7 +2247,7 @@ CHECK_VM_QEMU_HAOS () {
 
 CHECK_VM_QEMU_WINDOWS () {
   local result marker check_status updates reboot message windows_os reachable=true error_code=WINDOWS_UPDATE_CHECK
-  local history_b64 history_json=""
+  local history_b64 history_json="" history_only="${UU_WINDOWS_HISTORY_ONLY:-false}"
   windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"pretty-name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
   if [[ -z "$windows_os" ]]; then
     windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
@@ -2256,7 +2257,11 @@ CHECK_VM_QEMU_WINDOWS () {
     STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_HELPER_MISSING "Windows update helper is not installed"
     return 1
   fi
-  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE check)"
+  if [[ "$history_only" == true ]]; then
+    QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE history 20)"
+  else
+    QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE check)"
+  fi
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     reachable=false
     error_code=QGA_TRANSPORT
@@ -2269,6 +2274,43 @@ CHECK_VM_QEMU_WINDOWS () {
     error_code=GUEST_COMMAND_FAILED
     STATUS_MODEL_RECORD "$VM" vm qga "$reachable" "$windows_os" windows-update "null" "null" error "$error_code" "${QEMU_EXEC_OUTPUT}"
     return 1
+  fi
+  if [[ "$history_only" == true ]]; then
+    history_b64=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n 's/^UU_WINDOWS|history|//p' | tail -n 1)
+    if [[ -z "$history_b64" ]]; then
+      STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_HISTORY_UNAVAILABLE "Windows Update Agent history was not returned"
+      return 1
+    fi
+    history_json=$(python3 - "$history_b64" <<'PY'
+import base64
+import json
+import sys
+
+try:
+    raw = base64.b64decode(sys.argv[1], validate=True)
+    if len(raw) > 262144:
+        raise ValueError("history payload is too large")
+    payload = json.loads(raw.decode("utf-8"))
+    entries = payload.get("entries") if isinstance(payload, dict) else None
+    if not isinstance(entries, list) or len(entries) > 50:
+        raise ValueError("history payload is invalid")
+    if payload.get("source") != "Windows Update Agent":
+        raise ValueError("history source is invalid")
+    normalized = {"source": payload["source"], "history": entries}
+    if isinstance(payload.get("queried_at"), str):
+        normalized["queried_at"] = payload["queried_at"]
+    print(json.dumps(normalized, ensure_ascii=False, separators=(",", ":")))
+except (ValueError, UnicodeError, json.JSONDecodeError, KeyError):
+    raise SystemExit(1)
+PY
+    ) || history_json=""
+    if [[ -z "$history_json" ]]; then
+      STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_HISTORY_INVALID "Windows Update Agent history was invalid"
+      return 1
+    fi
+    STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" history_only "" "" \
+      "${STATUS_MODEL_NODE:-}" "${STATUS_MODEL_GUEST_NAME:-}" "null" "null" "$history_json"
+    return 0
   fi
   result=$(printf '%s' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n '/^UU_WINDOWS|/p' | tail -n 1)
   IFS='|' read -r marker check_status updates reboot message <<< "$result"

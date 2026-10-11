@@ -79,9 +79,15 @@ assert 'Post-reboot check successful' in page
 assert 'History unavailable' in page
 assert 'windowsHistoryTable=' in page
 assert 'Update title' in page
+assert 'Operation' in page
 assert 'HRESULT' in page
 assert 'windowsWuaResult=' in page
 assert 'windowsHresult=' in page
+assert 'History last updated' in page
+assert 'Cached history · stale' in page
+assert 'windows-history' in page
+assert 'api/windows-history/' in page
+assert 'post_reboot_verified===true' in page
 assert 'Windows Settings may temporarily display outdated update information.' in page
 assert '[str(runner), "list", "--cached"]' in (root / 'web-ui' / 'server.py').read_text(encoding='utf-8')
 assert 'class="overview-actions-card"' in overview

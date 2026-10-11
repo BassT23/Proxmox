@@ -197,6 +197,7 @@ STATUS_MODEL_FINISH() {
 import base64
 import json
 import os
+import re
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -252,43 +253,66 @@ with open(record_file, encoding="utf-8") as records:
         (target_id, target_type, transport, reachable, os_name, updater,
          updates, reboot_required, check_status, error_code, error_message,
          node, *optional_fields) = map(decode, fields)
-        name_fields = optional_fields[:1]
         imported_last_update = None
         normal_updates = security_updates = None
         security_split_supported = None
         windows_update = None
-        optional_offset = 1
-        # Records written before the split-update schema used the second
-        # optional field for last_update. Keep those records readable.
-        if len(optional_fields) > 1:
-            normal_updates = None if optional_fields[1] in ("", "null") else int(optional_fields[1])
-        if len(optional_fields) > 2:
-            security_updates = None if optional_fields[2] in ("", "null") else int(optional_fields[2])
 
         def parse_json_field(value):
             if not value:
                 return None, None
-            parsed = json.loads(value)
+            try:
+                parsed = json.loads(value)
+            except (TypeError, ValueError):
+                # Optional remote metadata must not make the complete target
+                # record unimportable.  Core status fields remain usable.
+                return None, None
             if isinstance(parsed, dict) and isinstance(parsed.get("history"), list):
                 return None, parsed
             return parsed, None
 
-        next_field = 3
-        if len(optional_fields) > next_field:
-            if optional_fields[next_field] in ("true", "false"):
-                security_split_supported = optional_fields[next_field] == "true"
-                next_field += 1
-            elif optional_fields[next_field]:
-                imported_last_update, windows_update = parse_json_field(optional_fields[next_field])
-                next_field += 1
-        if len(optional_fields) > next_field and optional_fields[next_field]:
-            candidate_last, candidate_windows = parse_json_field(optional_fields[next_field])
-            if candidate_windows is not None:
-                windows_update = candidate_windows
-            elif imported_last_update is None:
-                imported_last_update = candidate_last
-            next_field += 1
-        name = name_fields[0] if name_fields else ""
+        def nullable_int(value):
+            if value in ("", "null"):
+                return None
+            if not re.fullmatch(r"-?\d+", value):
+                raise ValueError("invalid numeric optional status field")
+            return int(value)
+
+        def is_json_field(value):
+            return value.lstrip().startswith(("{", "["))
+
+        # Optional fields have had two compatible layouts over time:
+        # name,last_update and name,normal_updates,security_updates,
+        # security_split_supported,last_update,windows_update.  Parse by
+        # shape, not by blindly converting every field to an integer, so old
+        # records remain importable when both JSON objects are present.
+        name = optional_fields[0] if optional_fields else ""
+        cursor = 1
+        split_fields = False
+        if cursor < len(optional_fields) and is_json_field(optional_fields[cursor]):
+            imported_last_update, windows_update = parse_json_field(optional_fields[cursor])
+            cursor += 1
+        else:
+            if cursor < len(optional_fields):
+                normal_updates = nullable_int(optional_fields[cursor])
+                split_fields = True
+                cursor += 1
+            if cursor < len(optional_fields) and is_json_field(optional_fields[cursor]):
+                imported_last_update, windows_update = parse_json_field(optional_fields[cursor])
+                cursor += 1
+            elif cursor < len(optional_fields):
+                security_updates = nullable_int(optional_fields[cursor])
+                cursor += 1
+            if cursor < len(optional_fields) and optional_fields[cursor] in ("true", "false"):
+                security_split_supported = optional_fields[cursor] == "true"
+                cursor += 1
+            while cursor < len(optional_fields):
+                candidate_last, candidate_windows = parse_json_field(optional_fields[cursor])
+                if candidate_windows is not None:
+                    windows_update = candidate_windows
+                elif imported_last_update is None:
+                    imported_last_update = candidate_last
+                cursor += 1
         available = None if updates in ("", "null") else int(updates)
         reboot = None if reboot_required in ("", "null") else reboot_required == "true"
         error = None
@@ -299,6 +323,7 @@ with open(record_file, encoding="utf-8") as records:
         if (error_code or error_message) and not neutral_check:
             error = {"code": error_code or None, "message": error_message or None}
         record = targets.setdefault(target_id, {})
+        existing_record = existing_targets.get(target_id, {})
         record.update({
             "id": target_id,
             "type": target_type or None,
@@ -308,8 +333,8 @@ with open(record_file, encoding="utf-8") as records:
             "os_version": None,
             "updater": updater or None,
             "updates": {"available": available},
-            **({"normal_updates": normal_updates} if len(optional_fields) > 1 and optional_offset == 1 else {}),
-            **({"security_updates": security_updates} if len(optional_fields) > 2 and optional_offset == 1 else {}),
+            **({"normal_updates": normal_updates} if split_fields else {}),
+            **({"security_updates": security_updates} if split_fields else {}),
             "reboot_required": reboot,
             "last_check": generated_at,
             "check_status": check_status or "not_checked",
@@ -320,6 +345,15 @@ with open(record_file, encoding="utf-8") as records:
                 updater == "apt" or security_updates is not None
             ),
         })
+        if check_status == "history_only" and isinstance(existing_record, dict):
+            # A history refresh is read-only and must not replace the latest
+            # check observation, update count, reboot flag, or error state.
+            for key in ("type", "transport", "reachable", "os", "os_version",
+                        "updater", "updates", "normal_updates", "security_updates",
+                        "reboot_required", "check_status", "error", "node",
+                        "security_split_supported"):
+                if key in existing_record:
+                    record[key] = existing_record[key]
         if target_type == "host":
             # Host identity comes from the cluster resolver, never from a
             # stale guest name carried by an older status record.
