@@ -325,6 +325,7 @@ ARGUMENTS () {
       -u) RDU=true ;;
       chost)
         COMMAND=true
+        STATUS_MODEL_PARTIAL=true
         OUTPUT_TO_FILE
         CHECK_HOST_ITSELF || CHECK_FAILURE=1
         ;;
@@ -332,11 +333,13 @@ ARGUMENTS () {
         # Dedicated explicit node-check entry point. This path cannot
         # expand into guest checks, regardless of update.conf guest flags.
         COMMAND=true
+        STATUS_MODEL_PARTIAL=true
         OUTPUT_TO_FILE
         CHECK_HOST_ITSELF || CHECK_FAILURE=1
         ;;
       ccontainer)
         COMMAND=true
+        STATUS_MODEL_PARTIAL=true
         OUTPUT_TO_FILE
         if [[ -n "${2:-}" ]]; then
           if CHECK_SINGLE_CONTAINER "$2"; then check_rc=0; else check_rc=$?; fi
@@ -348,6 +351,7 @@ ARGUMENTS () {
         ;;
       cvm)
         COMMAND=true
+        STATUS_MODEL_PARTIAL=true
         OUTPUT_TO_FILE
         if [[ -n "${2:-}" ]]; then
           if declare -f CHECK_VM_LIFECYCLE >/dev/null 2>&1; then
