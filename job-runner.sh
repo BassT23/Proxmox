@@ -486,6 +486,20 @@ remote_cached_state_line() {
   printf '%s\n' "$line"
 }
 
+cached_local_state_line() {
+  local file="$1"
+  [[ -f "$file" && -r "$file" ]] || return 1
+  awk -F= '
+    { values[$1]=$0; sub(/^[^=]*=/, "", values[$1]) }
+    END {
+      if (values["unit"] == "" || values["target"] == "" || values["state"] == "") exit 1
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t%s\t%s\tfalse\n",
+        values["unit"], values["target"], values["state"], values["started_at"],
+        values["finished_at"], values["exit_code"], values["type"], values["source"],
+        values["interactive"]
+    }' "$file"
+}
+
 sync_remote_last_update() {
   local target="$1" state="$2" finished="$3" exit_code="$4"
   local status_file="${UU_STATUS_MODEL_FILE:-/etc/ultimate-updater/status.json}"
@@ -1423,6 +1437,10 @@ list_jobs_cached() {
   local owner_node owner_host port remote_state cached_file
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
+    if ! grep -Fqx 'interactive=true' "$file" 2>/dev/null; then
+      cached_local_state_line "$file" || true
+      continue
+    fi
     unit=$(state_value "$file" unit)
     target=$(state_value "$file" target)
     state=$(state_value "$file" state)
