@@ -50,7 +50,7 @@ remote_node_ssh() {
 }
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | recover UNIT | recover-local UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list | show UNIT\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | recover UNIT | recover-local UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list | show UNIT | reconcile-remote UNIT\n' "$0"
 }
 
 valid_target() {
@@ -304,11 +304,14 @@ mark_remote_status_refresh() {
 
 refresh_remote_target_status() {
   local unit="$1" owner_node="$2" target="$3" refresh_state refresh_rc=0 lock
-  local ref_file workspace local_status_file remote_refresh_rc remote_status_file filtered_status_file
+  local ref_file workspace local_status_file remote_status_file filtered_status_file
   local expected_status_target expected_node
   ref_file=$(remote_ref_file "$unit")
   refresh_state=$(state_value "$ref_file" status_refresh)
-  [[ "$refresh_state" == "done" || "$refresh_state" == "failed" ]] && return 0
+  # A failed refresh is retryable.  It may only mean that the remote host or
+  # its workspace was temporarily unavailable; it must not become a stale
+  # terminal state that hides a later completed remote job.
+  [[ "$refresh_state" == "done" ]] && return 0
   lock="$ref_file.refresh.lock"
   mkdir "$lock" 2>/dev/null || return 0
   workspace=$(state_value "$ref_file" workspace)
@@ -346,11 +349,18 @@ PY
       if validate_status_target "$local_status_file" "$expected_status_target" &&
         "$CHECK_CLI" status-import "$local_status_file" </dev/null &&
         validate_status_target "$STATUS_MODEL_FILE" "$expected_status_target"; then
-        remote_refresh_rc=$(remote_node_ssh "$(state_value "$ref_file" owner_node)" \
+        # The status artifact is the authoritative reconciliation result.  In
+        # particular, a remote update may legitimately have a non-zero
+        # update exit code while its terminal status was imported correctly.
+        # Do not use post-update-status.rc to decide whether reconciliation
+        # succeeded; sync_remote_last_update() preserves that result below.
+        refresh_rc=0
+        # Read the capture marker for compatibility/diagnostics, but do not
+        # let a non-zero update result turn a successful status import into a
+        # failed reconciliation.
+        remote_node_ssh "$(state_value "$ref_file" owner_node)" \
           "$(state_value "$ref_file" owner_host)" "$(state_value "$ref_file" port)" \
-          "cat $(printf '%q' "$workspace/post-update-status.rc")" 2>/dev/null || printf '0')
-        [[ "$remote_refresh_rc" =~ ^[0-9]+$ ]] || remote_refresh_rc=1
-        refresh_rc="$remote_refresh_rc"
+          "cat $(printf '%q' "$workspace/post-update-status.rc")" >/dev/null 2>&1 || true
         remote_node_ssh "$(state_value "$ref_file" owner_node)" \
           "$(state_value "$ref_file" owner_host)" "$(state_value "$ref_file" port)" \
           "rm -rf -- $(printf '%q' "$workspace")" >/dev/null 2>&1 || true
@@ -374,7 +384,9 @@ PY
   if [[ "$refresh_rc" -eq 0 ]]; then
     mark_remote_status_refresh "$unit" "done" || true
   else
-    mark_remote_status_refresh "$unit" "failed" || true
+    # Keep the reference eligible for a later status refresh.  The remote job
+    # itself is not retried and no new worker is started here.
+    mark_remote_status_refresh "$unit" "pending" || true
     printf 'Remote post-update status refresh failed for %s (exit code %s).\n' \
       "$target" "$refresh_rc" >&2
   fi
@@ -490,9 +502,24 @@ if not isinstance(last_update, dict):
     last_update = {}
 else:
     last_update = dict(last_update)
+candidate_timestamp = finished or None
+current_timestamp = last_update.get("timestamp")
+if candidate_timestamp and current_timestamp:
+    from datetime import datetime
+    try:
+        candidate_time = datetime.fromisoformat(candidate_timestamp.replace("Z", "+00:00"))
+        current_time = datetime.fromisoformat(str(current_timestamp).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        candidate_time = current_time = None
+    # A late status refresh must never project an older remote snapshot over
+    # a result already recorded by a newer job. Equal timestamps are also
+    # left untouched so two terminal references cannot overwrite each other
+    # merely because directory enumeration order differs.
+    if candidate_time is not None and current_time is not None and candidate_time <= current_time:
+        raise SystemExit(0)
 last_update.update({
     "status": status,
-    "timestamp": finished or None,
+    "timestamp": candidate_timestamp,
     "exit_code": int(exit_code),
 })
 record["last_update"] = last_update
@@ -1365,6 +1392,21 @@ list_jobs() {
   done
 }
 
+reconcile_remote_job() {
+  local unit="$1" ref_line target owner_node owner_host port remote_state
+  ref_line=$(remote_ref_line "$unit") || return 1
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  remote_state=$(remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port") || return 1
+  printf '%s\n' "$remote_state"
+  local remote_target remote_status remote_finished remote_exit
+  IFS=$'\t' read -r _ remote_target remote_status _ remote_finished remote_exit _ <<< "$remote_state"
+  if [[ "$remote_status" == completed || "$remote_status" == completed_with_warnings ||
+    "$remote_status" == failed || "$remote_status" == interrupted ]]; then
+    refresh_remote_target_status "$unit" "$owner_node" "$remote_target"
+    sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true
+  fi
+}
+
 remote_log() {
   local unit="$1" ref_line target owner_node owner_host port remote_command
   ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
@@ -1494,6 +1536,10 @@ case "${1:-}" in
   show)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     show_job "$2"
+    ;;
+  reconcile-remote)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    reconcile_remote_job "$2"
     ;;
   record-remote)
     [[ $# -eq 6 || $# -eq 7 ]] || { usage >&2; exit 2; }
