@@ -134,6 +134,20 @@ unknown/blocked until a later status read or deliberate operator recovery makes
 the result clear. A QGA timeout is therefore not reported as a successful
 installation.
 
+When the controller reaches its bounded monitoring deadline, it records the
+controller job as `unresolved` and preserves the guest job ID. This state
+continues to block a new update for the target. After QGA is available again,
+an operator can recover the same guest job read-only with:
+
+```text
+ultimate-updater job recover JOB_ID
+```
+
+Recovery reads the existing guest state, never calls `install-start`, and
+changes the controller job to completed or failed only after the guest reports
+a terminal result. If the guest state remains unavailable, the job stays
+unresolved.
+
 Read-only QGA operations, including Windows preflight and job-status reads,
 use a small bounded retry for transient transport failures. A status retry
 uses the already confirmed guest-exec PID; it never starts a second guest

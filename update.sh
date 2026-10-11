@@ -2176,6 +2176,9 @@ UPDATE_VM_QEMU_WINDOWS () {
     return
   fi
 
+  if [[ "${WINDOWS_UPDATE_STATUS_ONLY:-false}" == true ]]; then
+    job_id="$UU_WINDOWS_STATUS_ONLY_JOB_ID"
+  else
   if ! encoded=$(WINDOWS_POWERSHELL_ENCODE preflight); then
     ERROR_CODE=1
     ID=$VM
@@ -2239,6 +2242,7 @@ UPDATE_VM_QEMU_WINDOWS () {
     ERROR
     return
   fi
+  fi
 
   # Only short status reads use QGA now.  A transport timeout leaves the
   # guest job and its durable state untouched; never issue taskkill or start
@@ -2288,8 +2292,22 @@ UPDATE_VM_QEMU_WINDOWS () {
       ERROR; return
     fi
     if [[ "$deadline" -gt 0 && "$SECONDS" -ge "$deadline" ]]; then
-      ERROR_CODE=1; ID=$VM; ERROR_MSG="Windows Update status timed out; guest job $job_id remains unresolved"
-      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+      # The controller deadline is not a guest-job deadline. Preserve the
+      # guest job identity for a later read-only recovery and let job-runner
+      # publish an unresolved state instead of a false installation failure.
+      local unresolved_dir unresolved_file
+      unresolved_dir="${UU_REMOTE_WORK_DIR:-${LOCAL_FILES:-/etc/ultimate-updater}/temp}"
+      unresolved_file="$unresolved_dir/windows-update-unresolved"
+      mkdir -p -- "$unresolved_dir" 2>/dev/null || true
+      {
+        printf 'job_id=%s\n' "$job_id"
+        printf 'target=%s\n' "$VM"
+        printf 'reason=controller-timeout\n'
+        printf 'recorded_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+      } > "${unresolved_file}.tmp.$$" 2>/dev/null &&
+        mv -f -- "${unresolved_file}.tmp.$$" "$unresolved_file" 2>/dev/null || true
+      WINDOWS_UPDATE_UNRESOLVED=true
+      ERROR_CODE=75; ID=$VM; ERROR_MSG="Windows Update controller timeout; guest job $job_id remains unresolved"
       ERROR; return
     fi
     sleep 2
@@ -2337,7 +2355,8 @@ CLEAN_LOGFILE () {
 # Error handling
 ERROR () {
   UPDATE_FAILURE=true
-  if [[ "${CCONTAINER:-}" == true && "${ID:-}" =~ ^[0-9]+$ ]] &&
+  if [[ "${WINDOWS_UPDATE_UNRESOLVED:-false}" != true &&
+    "${CCONTAINER:-}" == true && "${ID:-}" =~ ^[0-9]+$ ]] &&
     declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
     STATUS_MODEL_UPDATE_RESULT "$ID" failed "${ERROR_CODE:-1}" || true
   fi
@@ -2498,6 +2517,24 @@ if [[ "$ARGUMENT_RESULT" -ne 0 ]]; then
 fi
 if [[ "$REMOTE_TARGET_DISPATCHED" == true ]]; then
   exit 0
+fi
+
+# Recovery is deliberately a separate, read-only guest-state path.  It is
+# used only by job-runner for an already-started Windows job and must never
+# enter the normal target loop, backup flow, or install-start path.
+if [[ -n "${UU_WINDOWS_STATUS_ONLY_JOB_ID:-}" ]]; then
+  if [[ ! "${UU_WINDOWS_STATUS_ONLY_JOB_ID}" =~ ^[A-Za-z0-9._-]+$ ||
+    ! "${UU_WINDOWS_STATUS_ONLY_VM:-}" =~ ^[0-9]+$ ]]; then
+    printf 'Invalid Windows recovery identity.\n' >&2
+    exit 2
+  fi
+  VM="$UU_WINDOWS_STATUS_ONLY_VM"
+  NAME="Windows VM $VM"
+  OS="Windows"
+  CVM=true
+  WINDOWS_UPDATE_STATUS_ONLY=true
+  UPDATE_VM_QEMU_WINDOWS
+  exit $?
 fi
 
 # Run without commands (Automatic Mode)
