@@ -36,6 +36,15 @@ for value in (False, None, 1, "true", {"value": True}):
     server.StatusHandler.action_check_all(handler, remote_trace=value)
     assert handler.calls[0][2] == {"UU_JOB_INTERACTIVE": "true"}
 
+failed = Handler()
+failed.run_command = lambda args, timeout=15, extra_env=None: SimpleNamespace(
+    returncode=1, stdout="", stderr="Unknown assignment: LogFilterPatterns=...\n"
+)
+server.StatusHandler.action_check_all(failed)
+assert failed.responses[0][0]["error"]["message"] == (
+    "The installed systemd does not support the job log filter."
+)
+
 source = (Path(__file__).parents[1] / "web-ui/server.py").read_text(encoding="utf-8")
 assert 'payload.get("remote_trace") is True' in source
 assert 'extra_env["UU_REMOTE_TRACE"] = "true"' in source

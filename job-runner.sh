@@ -50,7 +50,7 @@ remote_node_ssh() {
 }
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list | show UNIT\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | recover UNIT | recover-local UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list | show UNIT\n' "$0"
 }
 
 valid_target() {
@@ -94,9 +94,19 @@ configured_headless_enabled() {
   [[ "${value,,}" == true || "${value,,}" == 1 || "${value,,}" == yes ]]
 }
 
+systemd_supports_log_filter_patterns() {
+  local version
+  version=$(systemd --version 2>/dev/null | awk 'NR == 1 { print $2; exit }')
+  [[ "$version" =~ ^[0-9]+$ ]] && (( version >= 253 ))
+}
+
 prepare_systemd_log_filters() {
   SYSTEMD_LOG_FILTER_ARGS=()
   configured_debug_enabled && return 0
+  # LogFilterPatterns= was added in systemd 253.  Debian 12 ships systemd
+  # 252, and passing this property to systemd-run makes the whole job fail
+  # before the runner can execute the updater.
+  systemd_supports_log_filter_patterns || return 0
 
   # Proxmox task clients write these messages directly to journald. They do
   # not travel through pct/qm stdout/stderr, so shell redirection cannot hide
@@ -189,6 +199,7 @@ write_state() {
     printf 'type=%s\n' "$type"
     printf 'message=%s\n' "$message"
     printf 'source=%s\n' "$source"
+    printf 'guest_job_id=%s\n' "${UU_GUEST_JOB_ID:-}"
     printf 'interactive=%s\n' "${UU_JOB_INTERACTIVE:-false}"
     if [[ "${UU_JOB_INTERACTIVE:-false}" == true ]]; then
       printf 'socket_path=%s\n' "$(interactive_socket "$unit")"
@@ -526,13 +537,17 @@ running_job_conflict() {
   for file in "$JOB_STATE_DIR"/*.state; do
     target=$(state_value "$file" target)
     state=$(state_value "$file" state)
-    [[ "$state" == running ]] || continue
+    [[ "$state" == running || "$state" == unresolved ]] || continue
     if [[ "$requested" == all-systems || "$target" == all-systems || "$target" == "$requested" ]]; then
       printf '%s\t%s\n' "$target" "$(state_value "$file" unit)"
       return 0
     fi
   done
   return 1
+}
+
+windows_unresolved_file() {
+  printf '%s/windows-update-unresolved' "${UU_REMOTE_WORK_DIR:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/temp}"
 }
 
 acquire_start_lock() {
@@ -763,7 +778,7 @@ start_global_job() {
 
 run_job() {
   local unit="$1" target="$2" update_script="$3" file started exit_code lock_file
-  local post_check_rc=0 post_check_message="" captured_status_file captured_status_rc
+  local post_check_rc=0 post_check_message="" captured_status_file captured_status_rc unresolved_file unresolved_job
   valid_target "$target" || return 2
   file=$(state_file "$unit")
   started=$(state_value "$file" started_at)
@@ -786,6 +801,17 @@ run_job() {
     UU_DEFER_UPDATE_MAIL=true "$update_script" "$target" </dev/null
   fi
   exit_code=$?
+  unresolved_file=$(windows_unresolved_file)
+  if [[ -f "$unresolved_file" && "$exit_code" -ne 0 ]]; then
+    unresolved_job=$(state_value "$unresolved_file" job_id 2>/dev/null || printf '')
+    if [[ "$unresolved_job" =~ ^[A-Za-z0-9._-]+$ ]]; then
+      rm -f -- "$unresolved_file"
+      UU_GUEST_JOB_ID="$unresolved_job" write_state "$unit" "$target" unresolved "$started" '' '' \
+        "Windows guest job $unresolved_job remains active or unknown; recovery required" || return 1
+      printf 'Windows guest job unresolved: %s\n' "$unresolved_job" >&2
+      return 0
+    fi
+  fi
   if cancel_requested "$unit"; then
     write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." || return 1
     cleanup_interactive_runtime "$unit" || true
@@ -1177,6 +1203,68 @@ run_check_job() {
   return "$exit_code"
 }
 
+recover_local_job() {
+  local unit="$1" target="$2" update_script="$3" file state started exit_code guest_job_id
+  valid_unit "$unit" || return 2
+  valid_target "$target" || return 2
+  [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
+  file=$(state_file "$unit")
+  [[ -f "$file" ]] || { printf 'Job not found: %s\n' "$unit" >&2; return 1; }
+  state=$(state_value "$file" state)
+  [[ "$state" == unresolved ]] || {
+    printf 'Job is not unresolved: %s (%s)\n' "$unit" "$state" >&2
+    return 3
+  }
+  started=$(state_value "$file" started_at)
+  guest_job_id=$(state_value "$file" guest_job_id 2>/dev/null || printf '')
+  [[ "$guest_job_id" =~ ^[A-Za-z0-9._-]+$ ]] || {
+    printf 'Unresolved job has no valid guest job ID: %s\n' "$unit" >&2
+    return 1
+  }
+  UU_WINDOWS_STATUS_ONLY_JOB_ID="$guest_job_id" \
+    UU_WINDOWS_STATUS_ONLY_VM="$target" \
+    "$update_script" >/dev/null
+  exit_code=$?
+  if [[ "$exit_code" -eq 0 ]]; then
+    write_state "$unit" "$target" completed "$started" "$(now)" 0 \
+      "Windows guest job recovered from controller timeout" || return 1
+  elif [[ "$exit_code" -eq 75 ]]; then
+    write_state "$unit" "$target" unresolved "$started" '' '' \
+      "Windows guest job remains unresolved after recovery attempt" || return 1
+  else
+    write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" \
+      "Windows guest job recovery failed" || return 1
+  fi
+  return "$exit_code"
+}
+
+recover_remote_job() {
+  local unit="$1" ref_line target owner_node owner_host port workspace runner remote_command
+  ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  workspace=$(state_value "$(remote_ref_file "$unit")" workspace 2>/dev/null || true)
+  if [[ -n "$workspace" ]]; then
+    [[ "$workspace" =~ ^/tmp/ultimate-updater-update-node-[0-9]+-[0-9]+-[0-9]+$ ]] || return 1
+    runner="$workspace/job-runner.sh"
+    remote_command="exec env UU_LOCAL_FILES=$(printf '%q' "$workspace") UU_REMOTE_WORK_DIR=$(printf '%q' "$workspace") $(printf '%q' "$runner") recover-local $(printf '%q' "$unit") $(printf '%q' "$target") $(printf '%q' "$workspace/update.sh")"
+  else
+    runner="/etc/ultimate-updater/job-runner.sh"
+    remote_command="exec $(printf '%q' "$runner") recover-local $(printf '%q' "$unit") $(printf '%q' "$target") /etc/ultimate-updater/update.sh"
+  fi
+  remote_node_ssh "$owner_node" "$owner_host" "$port" "$remote_command"
+}
+
+recover_job() {
+  local unit="$1" file
+  valid_unit "$unit" || { printf 'Invalid job ID: %s\n' "$unit" >&2; return 2; }
+  file=$(state_file "$unit")
+  if [[ -f "$file" ]]; then
+    recover_local_job "$unit" "$(state_value "$file" target)" "${UU_RECOVERY_UPDATE_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/update.sh}"
+  else
+    recover_remote_job "$unit"
+  fi
+}
+
 refresh_running_jobs() {
   local file unit target state active_state load_state started age_seconds type show_rc systemd_details
   command -v systemctl >/dev/null 2>&1 || return 0
@@ -1362,6 +1450,14 @@ case "${1:-}" in
   run)
     [[ $# -eq 4 ]] || { usage >&2; exit 2; }
     run_job "$2" "$3" "$4"
+    ;;
+  recover)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    recover_job "$2"
+    ;;
+  recover-local)
+    [[ $# -eq 4 ]] || { usage >&2; exit 2; }
+    recover_local_job "$2" "$3" "$4"
     ;;
   run-global)
     [[ $# -eq 3 ]] || { usage >&2; exit 2; }

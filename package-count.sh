@@ -28,6 +28,31 @@ if ! output=$(sh -c "$command" 2>/dev/null); then
   exit 2
 fi
 
+if [ "$manager" = pkg ]; then
+  # FreeBSD pkg prints the package name and the '<' marker as two columns.
+  # Whitespace between those columns is part of the normal output format,
+  # unlike the one-entry-per-line output used by pacman and apk.
+  if ! count=$(printf '%s\n' "$output" | awk '
+    BEGIN { valid = 1; count = 0 }
+    NF {
+      if (NF != 2 || $2 != "<")
+        valid = 0
+      else
+        count++
+    }
+    END {
+      if (!valid)
+        exit 1
+      print count
+    }
+  '); then
+    printf 'UU_PACKAGE_COUNTS|unknown|%s|unknown|null|null|false\n' "$manager"
+    exit 2
+  fi
+  printf 'UU_PACKAGE_COUNTS|ok|%s|%s|null|null|false\n' "$manager" "$count"
+  exit 0
+fi
+
 count=0
 while IFS= read -r package; do
   [ -n "$package" ] || continue
