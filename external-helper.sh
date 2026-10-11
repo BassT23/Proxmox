@@ -9,6 +9,7 @@ set -eu
 HELPER_VERSION=1
 CONFIG_PATH=/etc/ultimate-updater/external.conf
 APT_COUNT_SCRIPT=${UU_APT_COUNT_SCRIPT:-/usr/local/lib/ultimate-updater/apt-count.py}
+APT_COUNT_SHELL_SCRIPT=${UU_APT_COUNT_SHELL_SCRIPT:-/usr/local/lib/ultimate-updater/apt-count.sh}
 
 usage() {
   printf 'Usage: %s version | status | config-read | config-write | update\n' "$0" >&2
@@ -73,11 +74,14 @@ detect_os() {
 }
 
 apt_status() {
-  [ -r "$APT_COUNT_SCRIPT" ] || {
+  if [ -r "$APT_COUNT_SHELL_SCRIPT" ]; then
+    APT_COUNT_PYTHON_SCRIPT="$APT_COUNT_SCRIPT" sh "$APT_COUNT_SHELL_SCRIPT"
+  elif [ -r "$APT_COUNT_SCRIPT" ]; then
+    /usr/bin/python3 "$APT_COUNT_SCRIPT"
+  else
     printf 'APT_COUNTS|unknown|unknown|unknown|false\n'
     return 2
-  }
-  /usr/bin/python3 "$APT_COUNT_SCRIPT"
+  fi
 }
 
 dnf_status() {

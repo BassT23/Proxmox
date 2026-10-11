@@ -9,7 +9,7 @@
 # product version by parsing this literal line from update.sh.  Runtime code
 # uses product-metadata.sh as the canonical source and tests must keep these
 # values aligned.
-VERSION="5.1.3"
+VERSION="5.2"
 
 # A protection failure must make the overall update job fail, even when the
 # configured continue-on-error mode allows other guests to be processed.
@@ -34,7 +34,7 @@ if [[ -f "$PRODUCT_METADATA_FILE" ]]; then
   # shellcheck disable=SC1090
   . "$PRODUCT_METADATA_FILE"
 fi
-PRODUCT_VERSION="${PRODUCT_VERSION:-5.1.3}"
+PRODUCT_VERSION="${PRODUCT_VERSION:-5.2}"
 BETA_VERSION="${BETA_VERSION:-}"
 VERSION="$PRODUCT_VERSION"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
@@ -1373,6 +1373,7 @@ else
     QEMU_EXEC_EXITCODE=""
     QEMU_EXEC_TRANSPORT_RC=1
   }
+  QEMU_GUEST_EXEC_READONLY() { QEMU_GUEST_EXEC "$@"; }
 fi
 
 # Run a QEMU command once, display its output, and return the guest exit code.
@@ -1402,7 +1403,7 @@ RUN_QEMU_DURABLE () {
 }
 
 CHECK_QGA_EXEC () {
-  QEMU_GUEST_EXEC "$VM" -- true
+  QEMU_GUEST_EXEC_READONLY "$VM" -- true
   if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
     return 0
   fi
@@ -1459,7 +1460,7 @@ UPDATE_HOST () {
   local remote_workspace="" remote_job_unit="" remote_state_dir=""
   local remote_started_at="" remote_finished_at="" remote_state=""
   local remote_finalize_command="" remote_handoff_rc=0
-  local apt_count_file rpm_count_file package_count_file source
+  local apt_count_file rpm_count_file package_count_file product_metadata_file source
   [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_update_env="UU_INTERNAL_SKIP_HOST_TARGET=true "
   START_HOST=$(hostname -i | cut -d ' ' -f1)
   if [[ "$HOST" != "$START_HOST" ]]; then
@@ -1480,13 +1481,23 @@ UPDATE_HOST () {
       scp $LOCAL_FILES/update.conf.dist "$HOST":$LOCAL_FILES/update.conf.dist
     fi
     apt_count_file="$LOCAL_FILES/apt-count.py"
+    apt_count_shell_file="$LOCAL_FILES/apt-count.sh"
     rpm_count_file="$LOCAL_FILES/rpm-count.py"
     package_count_file="$LOCAL_FILES/package-count.sh"
+    product_metadata_file="$LOCAL_FILES/product-metadata.sh"
     [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
+    [[ -f "$apt_count_shell_file" ]] || apt_count_shell_file="$SCRIPT_DIR/apt-count.sh"
     [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
     [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
+    [[ -f "$product_metadata_file" ]] || product_metadata_file="$SCRIPT_DIR/product-metadata.sh"
+    if [[ ! -f "$product_metadata_file" ]]; then
+      ssh -q -p "$SSH_PORT" "$HOST" "rm -rf -- $(printf '%q' "$remote_workspace")" >/dev/null 2>&1 || true
+      echo "Could not stage product metadata for remote host $HOST" >&2
+      return 6
+    fi
     for source in "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/status-model.sh" \
-      "$apt_count_file" "$rpm_count_file" "$package_count_file"; do
+      "$apt_count_file" "$apt_count_shell_file" "$rpm_count_file" "$package_count_file" \
+      "$product_metadata_file"; do
       [[ -f "$source" ]] || continue
       scp "$source" "$HOST:$LOCAL_FILES/$(basename -- "$source")"
     done
@@ -1836,7 +1847,6 @@ VM_UPDATE_START () {
   fi
   # Loop through the VMs
   for VM in $VMS; do
-    PRE_OS=$(qm config "$VM" | grep ostype || true)
     if [[ "$SINGLE_UPDATE" == true && "$VM" != "$ONLY" ]]; then
       continue
     elif [[ "$SINGLE_UPDATE" != true && "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS update "$VM" "$VMS"; then
@@ -1848,9 +1858,6 @@ VM_UPDATE_START () {
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
       echo -e "⏩${BL:-} ${OR:-}VM $VM is a template - skip update${CL:-}\n\n"
       continue
-    elif [[ "$PRE_OS" =~ w ]]; then
-      echo -e "⚠ ${BL:-} Skipped VM $VM${CL:-}\n"
-      echo -e "${OR:-}  Windows is not supported for now.\n  I'm working on it ;)${CL:-}\n\n"
     else
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
@@ -2156,7 +2163,9 @@ UPDATE_VM_QEMU () {
 }
 
 UPDATE_VM_QEMU_WINDOWS () {
-  local encoded result marker update_status processed reboot message
+  local encoded result marker update_status processed reboot message preflight_status preflight_reason
+  local job_id start_state start_job status_phase status_result status_message deadline
+  local status_read_retries=0
 
   if ! declare -f WINDOWS_POWERSHELL_ENCODE >/dev/null 2>&1; then
     ERROR_CODE=1
@@ -2167,7 +2176,40 @@ UPDATE_VM_QEMU_WINDOWS () {
     return
   fi
 
-  if ! encoded=$(WINDOWS_POWERSHELL_ENCODE install); then
+  if [[ "${WINDOWS_UPDATE_STATUS_ONLY:-false}" == true ]]; then
+    job_id="$UU_WINDOWS_STATUS_ONLY_JOB_ID"
+  else
+  if ! encoded=$(WINDOWS_POWERSHELL_ENCODE preflight); then
+    ERROR_CODE=1
+    ID=$VM
+    ERROR_MSG="Could not encode the Windows Update preflight command"
+    declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+    ERROR
+    return
+  fi
+  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+  if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+    ERROR_CODE=${QEMU_EXEC_EXITCODE:-1}
+    ID=$VM
+    ERROR_MSG="${QEMU_EXEC_OUTPUT:-Windows Update preflight failed}"
+    declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+    ERROR
+    return
+  fi
+  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" |
+    tr -d '\r' | sed -n '/^UU_WINDOWS|preflight|/p' | tail -n 1)
+  IFS='|' read -r marker preflight_status preflight_reason message <<< "$result"
+  if [[ "$marker" != UU_WINDOWS || "$preflight_status" != preflight || "$preflight_reason" != ok ]]; then
+    ERROR_CODE=1
+    ID=$VM
+    ERROR_MSG="Windows Update preflight blocked: ${message:-unknown reason}"
+    declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+    ERROR
+    return
+  fi
+
+  job_id="uu-${VM}-$(date -u '+%Y%m%d%H%M%S')-$$-${RANDOM}"
+  if ! encoded=$(WINDOWS_POWERSHELL_ENCODE install-start "$job_id"); then
     ERROR_CODE=1
     ID=$VM
     ERROR_MSG="Could not encode the Windows Update PowerShell command"
@@ -2177,8 +2219,8 @@ UPDATE_VM_QEMU_WINDOWS () {
   fi
 
   echo -e "${OR:-}--- WINDOWS UPDATE ---${CL:-}"
-  QEMU_GUEST_EXEC "$VM" --timeout 180 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
-  if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+  QEMU_GUEST_EXEC "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+  if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
     ERROR_CODE=${QEMU_EXEC_EXITCODE:-1}
     ID=$VM
     ERROR_MSG="${QEMU_EXEC_OUTPUT:-Windows Update command failed}"
@@ -2187,23 +2229,89 @@ UPDATE_VM_QEMU_WINDOWS () {
     return
   fi
 
-  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | tail -n 1)
-  # shellcheck disable=SC2034
-  IFS='|' read -r marker update_status processed reboot message <<< "$result"
-  if [[ "$marker" != UU_WINDOWS || "$update_status" != ok || ! "$processed" =~ ^[0-9]+$ || ("$reboot" != true && "$reboot" != false) ]]; then
+  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n '/^UU_WINDOWS|start|/p' | tail -n 1)
+  IFS='|' read -r marker update_status start_state start_job message <<< "$result"
+  if [[ "$marker" != UU_WINDOWS || "$update_status" != start ||
+    ("$start_state" != started && "$start_state" != existing && "$start_state" != existing-active) ||
+    ("$start_state" != existing-active && "$start_job" != "$job_id") ||
+    ! "$start_job" =~ ^[A-Za-z0-9._-]+$ ]]; then
     ERROR_CODE=1
     ID=$VM
-    ERROR_MSG="Invalid Windows Update response: $result"
+    ERROR_MSG="Invalid Windows Update start response: $result"
     declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
     ERROR
     return
   fi
-
-  echo "Windows updates processed: $processed"
-  declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" success 0 || true
-  if [[ "$reboot" == true ]]; then
-    echo -e "${OR:-}Reboot required; no automatic reboot was performed.${CL:-}"
   fi
+
+  # Only short status reads use QGA now.  A transport timeout leaves the
+  # guest job and its durable state untouched; never issue taskkill or start
+  # another mutating command as a reaction to it.
+  deadline=$((SECONDS + ${UU_WINDOWS_UPDATE_STATUS_TIMEOUT:-900}))
+  while :; do
+    if ! encoded=$(WINDOWS_POWERSHELL_ENCODE install-status "$start_job"); then
+      ERROR_CODE=1; ID=$VM; ERROR_MSG="Could not encode Windows Update status command"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+      ERROR; return
+    fi
+    QEMU_GUEST_EXEC_READONLY "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+    if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+      if [[ "$QEMU_EXEC_ERROR_CLASS" == QGA_TRANSIENT && "$status_read_retries" -lt 2 ]]; then
+        status_read_retries=$((status_read_retries + 1))
+        sleep "$status_read_retries"
+        continue
+      fi
+      ERROR_CODE=1; ID=$VM
+      ERROR_MSG="Windows Update status is unknown after QGA communication failure: ${QEMU_EXEC_OUTPUT:-unknown}"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+      ERROR; return
+    fi
+    status_read_retries=0
+    result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n '/^UU_WINDOWS|status|/p' | tail -n 1)
+    IFS='|' read -r marker update_status start_job status_phase processed reboot status_result status_message <<< "$result"
+    if [[ "$marker" != UU_WINDOWS || "$update_status" != status || "$start_job" != "$job_id" ||
+      ! "$processed" =~ ^[0-9]+$ || ("$reboot" != true && "$reboot" != false) ]]; then
+      ERROR_CODE=1; ID=$VM; ERROR_MSG="Invalid Windows Update status response: $result"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+      ERROR; return
+    fi
+    if [[ "$status_phase" == completed ]]; then
+      if [[ "$status_result" != ok ]]; then
+        ERROR_CODE=1; ID=$VM; ERROR_MSG="Windows Update failed: ${status_message:-unknown}"
+        declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+        ERROR; return
+      fi
+      echo "Windows updates processed: $processed"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" success 0 || true
+      [[ "$reboot" == true ]] && echo -e "${OR:-}Reboot required; no automatic reboot was performed.${CL:-}"
+      return
+    fi
+    if [[ "$status_phase" == failed || "$status_phase" == unknown ]]; then
+      ERROR_CODE=1; ID=$VM; ERROR_MSG="Windows Update state is ${status_phase}: ${status_message:-unknown}"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+      ERROR; return
+    fi
+    if [[ "$deadline" -gt 0 && "$SECONDS" -ge "$deadline" ]]; then
+      # The controller deadline is not a guest-job deadline. Preserve the
+      # guest job identity for a later read-only recovery and let job-runner
+      # publish an unresolved state instead of a false installation failure.
+      local unresolved_dir unresolved_file
+      unresolved_dir="${UU_REMOTE_WORK_DIR:-${LOCAL_FILES:-/etc/ultimate-updater}/temp}"
+      unresolved_file="$unresolved_dir/windows-update-unresolved"
+      mkdir -p -- "$unresolved_dir" 2>/dev/null || true
+      {
+        printf 'job_id=%s\n' "$job_id"
+        printf 'target=%s\n' "$VM"
+        printf 'reason=controller-timeout\n'
+        printf 'recorded_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+      } > "${unresolved_file}.tmp.$$" 2>/dev/null &&
+        mv -f -- "${unresolved_file}.tmp.$$" "$unresolved_file" 2>/dev/null || true
+      WINDOWS_UPDATE_UNRESOLVED=true
+      ERROR_CODE=75; ID=$VM; ERROR_MSG="Windows Update controller timeout; guest job $job_id remains unresolved"
+      ERROR; return "$ERROR_CODE"
+    fi
+    sleep 2
+  done
 }
 
 ## General ##
@@ -2247,7 +2355,8 @@ CLEAN_LOGFILE () {
 # Error handling
 ERROR () {
   UPDATE_FAILURE=true
-  if [[ "${CCONTAINER:-}" == true && "${ID:-}" =~ ^[0-9]+$ ]] &&
+  if [[ "${WINDOWS_UPDATE_UNRESOLVED:-false}" != true &&
+    "${CCONTAINER:-}" == true && "${ID:-}" =~ ^[0-9]+$ ]] &&
     declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
     STATUS_MODEL_UPDATE_RESULT "$ID" failed "${ERROR_CODE:-1}" || true
   fi
@@ -2408,6 +2517,24 @@ if [[ "$ARGUMENT_RESULT" -ne 0 ]]; then
 fi
 if [[ "$REMOTE_TARGET_DISPATCHED" == true ]]; then
   exit 0
+fi
+
+# Recovery is deliberately a separate, read-only guest-state path.  It is
+# used only by job-runner for an already-started Windows job and must never
+# enter the normal target loop, backup flow, or install-start path.
+if [[ -n "${UU_WINDOWS_STATUS_ONLY_JOB_ID:-}" ]]; then
+  if [[ ! "${UU_WINDOWS_STATUS_ONLY_JOB_ID}" =~ ^[A-Za-z0-9._-]+$ ||
+    ! "${UU_WINDOWS_STATUS_ONLY_VM:-}" =~ ^[0-9]+$ ]]; then
+    printf 'Invalid Windows recovery identity.\n' >&2
+    exit 2
+  fi
+  VM="$UU_WINDOWS_STATUS_ONLY_VM"
+  NAME="Windows VM $VM"
+  OS="Windows"
+  CVM=true
+  WINDOWS_UPDATE_STATUS_ONLY=true
+  UPDATE_VM_QEMU_WINDOWS
+  exit $?
 fi
 
 # Run without commands (Automatic Mode)

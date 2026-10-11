@@ -137,6 +137,7 @@ QEMU_GUEST_EXEC() {
 }
 
 source "$PWD/haos-functions.sh"
+QEMU_GUEST_EXEC_READONLY() { QEMU_GUEST_EXEC "$@"; }
 
 
 # No updates.
