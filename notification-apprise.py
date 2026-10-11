@@ -83,7 +83,9 @@ def atomic_save(path, data):
                                          prefix=".apprise-state-", delete=False) as handle:
             tmp_path = Path(handle.name)
             os.fchmod(handle.fileno(), 0o600)
-            json.dump(data, handle, sort_keys=True, separators=(",", ":"))
+            # Apply the cap to the final persisted map, including a new event.
+            json.dump(prune_delivery_state(data, time.time()), handle,
+                      sort_keys=True, separators=(",", ":"))
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp_path, path)

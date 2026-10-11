@@ -161,6 +161,10 @@ m.MAX_STATE_ENTRIES=2
 assert len(m.prune_delivery_state({str(i):{'updated_at':now+i} for i in range(5)},now))<=2
 import json,tempfile,pathlib
 with tempfile.TemporaryDirectory() as d:
+ # Enforce the retention cap at the actual persistent state write boundary.
+ capped=pathlib.Path(d)/'capped.json'
+ m.atomic_save(capped,{str(i):{'updated_at':time.time()} for i in range(3)})
+ assert len(json.loads(capped.read_text()))<=m.MAX_STATE_ENTRIES
  p=pathlib.Path(d)/'state.json'
  p.write_text('{invalid',encoding='utf-8');p.chmod(0o600)
  assert m.read_delivery_state(p)=={}
