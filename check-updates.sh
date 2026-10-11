@@ -1446,10 +1446,16 @@ VM_CHECK_START () {
   fi
   # Loop through VMs
   for VM in $VMS; do
-    local vm_has_internal_ssh=false
-    if declare -f INTERNAL_SSH_HAS_OVERRIDE >/dev/null 2>&1 &&
-      INTERNAL_SSH_HAS_OVERRIDE vm "$VM"; then
-      vm_has_internal_ssh=true
+    local vm_has_internal_ssh=false vm_internal_ssh_state=3
+    if declare -f INTERNAL_SSH_TARGET_STATE >/dev/null 2>&1; then
+      if INTERNAL_SSH_TARGET_STATE vm "$VM"; then
+        vm_internal_ssh_state=0
+      else
+        vm_internal_ssh_state=$?
+      fi
+      if [[ "$vm_internal_ssh_state" -eq 0 || "$vm_internal_ssh_state" -eq 2 ]]; then
+        vm_has_internal_ssh=true
+      fi
     fi
     STATUS_MODEL_GUEST_NAME=""
     if declare -f cluster_target_guest_name >/dev/null 2>&1; then
@@ -1606,7 +1612,13 @@ CHECK_VM () {
     INTERNAL_SSH_HAS_OVERRIDE vm "$VM"; then
     ssh_profile_configured=true
   fi
-  INTERNAL_SSH_RESOLVE_VM "$VM" "${IP:-}" "${USER:-root}" "${SSH_VM_PORT:-22}" || return 1
+  if ! INTERNAL_SSH_RESOLVE_VM "$VM" "${IP:-}" "${USER:-root}" "${SSH_VM_PORT:-22}"; then
+    local ssh_config_error="${INTERNAL_SSH_ERROR:-invalid Internal SSH configuration}"
+    STATUS_MODEL_RECORD "$VM" vm ssh false "" "" "null" "null" error SSH_CONFIG_INVALID \
+      "Internal SSH configuration for VM $VM is invalid: $ssh_config_error" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+    return 1
+  fi
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   ostype=$(qm config "$VM" | awk '$1 == "ostype:" {print $2; exit}')
   # Windows has no native SSH update/check implementation here.  Respect the

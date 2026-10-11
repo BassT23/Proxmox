@@ -73,6 +73,9 @@ INTERNAL_SSH_RESOLVE() {
 
 INTERNAL_SSH_USE_IDENTITY() {
   INTERNAL_SSH_ARGS=(-o BatchMode=yes -o ConnectTimeout=5)
+  # target-runtime.sh uses this scalar for its bounded SSH wrapper; keep it
+  # aligned with the legacy `ssh()` wrapper's argument array.
+  RUN_SSH_IDENTITY_FILE="$INTERNAL_SSH_IDENTITY_FILE"
   if [[ -n "${INTERNAL_SSH_IDENTITY_FILE:-}" ]]; then
     INTERNAL_SSH_ARGS+=(-o IdentitiesOnly=yes -i "$INTERNAL_SSH_IDENTITY_FILE")
   fi
@@ -94,4 +97,24 @@ INTERNAL_SSH_HAS_OVERRIDE() {
     [[ -n "${INTERNAL_SSH_VALUES[$section|port]+x}" ]] ||
     [[ -n "${INTERNAL_SSH_VALUES[$section|identity_file]+x}" ]] || return 1
   [[ "${INTERNAL_SSH_VALUES[$section|enabled]:-true}" == true ]]
+}
+
+# Classify the VM/node entry without attempting a connection.
+# Return values: 0=enabled entry, 1=explicitly disabled entry,
+# 2=invalid configuration, 3=no entry.  Callers can therefore distinguish a
+# deliberate SSH disablement from an absent profile and must not silently
+# bypass malformed configuration.
+INTERNAL_SSH_TARGET_STATE() {
+  local kind="${1:-}" id="${2:-}" section key found=false
+  section="$kind:$id"
+  INTERNAL_SSH_LOAD "${INTERNAL_SSH_CONFIG_FILE}" || return 2
+  for key in host user port identity_file enabled; do
+    if [[ -n "${INTERNAL_SSH_VALUES[$section|$key]+x}" ]]; then
+      found=true
+      break
+    fi
+  done
+  [[ "$found" == true ]] || return 3
+  [[ "${INTERNAL_SSH_VALUES[$section|enabled]:-true}" == true ]] || return 1
+  return 0
 }

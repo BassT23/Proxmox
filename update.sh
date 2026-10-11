@@ -1842,6 +1842,7 @@ UPDATE_CONTAINER () {
 # VM Update Start
 VM_UPDATE_START () {
   USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
+  local vm_internal_ssh_state
   # Get the list of VMs
   VMS=$(qm list | tail -n +2 | cut -c -10)
   if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
@@ -1849,6 +1850,14 @@ VM_UPDATE_START () {
   fi
   # Loop through the VMs
   for VM in $VMS; do
+    vm_internal_ssh_state=3
+    if declare -f INTERNAL_SSH_TARGET_STATE >/dev/null 2>&1; then
+      if INTERNAL_SSH_TARGET_STATE vm "$VM"; then
+        vm_internal_ssh_state=0
+      else
+        vm_internal_ssh_state=$?
+      fi
+    fi
     if [[ "$SINGLE_UPDATE" == true && "$VM" != "$ONLY" ]]; then
       continue
     elif [[ "$SINGLE_UPDATE" != true && "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS update "$VM" "$VMS"; then
@@ -1860,11 +1869,16 @@ VM_UPDATE_START () {
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
       echo -e "⏩${BL:-} ${OR:-}VM $VM is a template - skip update${CL:-}\n\n"
       continue
+    elif ! QGA_CONFIG_ENABLED "$VM" &&
+      ! { [[ "$vm_internal_ssh_state" -ne 1 ]] && [[ -f $LOCAL_FILES/VMs/$VM || "$vm_internal_ssh_state" -eq 0 || "$vm_internal_ssh_state" -eq 2 ]]; }; then
+      echo -e "⏩${BL:-} Skipped VM $VM because, QEMU or enabled Internal SSH hasn't initialized${CL:-}\n\n"
+      continue
     else
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
         # Check if update is possible
-        if QGA_CONFIG_ENABLED "$VM" || [[ -f $LOCAL_FILES/VMs/$VM ]]; then
+        if QGA_CONFIG_ENABLED "$VM" ||
+          { [[ "$vm_internal_ssh_state" -ne 1 ]] && [[ -f $LOCAL_FILES/VMs/$VM || "$vm_internal_ssh_state" -eq 0 || "$vm_internal_ssh_state" -eq 2 ]]; }; then
           # Start the VM
           WILL_STOP="true"
           echo -e " ▶${GN:-} Starting VM${BL:-} $VM ${CL:-}"
@@ -1911,6 +1925,7 @@ VM_IS_WINDOWS() {
 # VM Update
 # shellcheck disable=SC2015
 UPDATE_VM () {
+  local ssh_profile_configured=false internal_ssh_state=3
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   CVM="true"
@@ -1952,8 +1967,11 @@ UPDATE_VM () {
     CVM=""
     return $?
   fi
-  # Read SSH config file - check how update is possible
+  # Resolve Internal SSH independently of the legacy VM profile.  The WebUI
+  # configuration is the preferred source, while legacy VM files remain a
+  # compatible fallback for guests without an Internal SSH entry.
   if [[ -f $LOCAL_FILES/VMs/"$VM" ]]; then
+    ssh_profile_configured=true
     IP=$(awk -F'"' '/^IP=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     USER=$(awk -F'"' '/^USER=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     USER="${USER:-root}"
@@ -1961,9 +1979,34 @@ UPDATE_VM () {
     SSH_VM_PORT="${SSH_VM_PORT:-22}"
     SSH_START_DELAY_TIME=$(awk -F'"' '/^SSH_START_DELAY_TIME=/ {print $2}' $LOCAL_FILES/VMs/"$VM")
     SSH_START_DELAY_TIME="${SSH_START_DELAY_TIME:-45}"
+  fi
+  if declare -f INTERNAL_SSH_TARGET_STATE >/dev/null 2>&1; then
+    if INTERNAL_SSH_TARGET_STATE vm "$VM"; then
+      internal_ssh_state=0
+    else
+      internal_ssh_state=$?
+    fi
+    case "$internal_ssh_state" in
+      0) ssh_profile_configured=true ;;
+      1) ssh_profile_configured=false ;;
+      2)
+        echo -e "${RD:-}  ❌ Invalid Internal SSH configuration for VM $VM: ${INTERNAL_SSH_ERROR:-unable to parse configuration}${CL:-}" >&2
+        ERROR_CODE=2
+        ID=$VM
+        ERROR_MSG="Invalid Internal SSH configuration for VM $VM: ${INTERNAL_SSH_ERROR:-unable to parse configuration}"
+        ERROR
+        return 2
+        ;;
+    esac
+  fi
+  if [[ "$ssh_profile_configured" == true ]]; then
     if ! INTERNAL_SSH_RESOLVE_VM "$VM" "${IP:-}" "${USER:-root}" "${SSH_VM_PORT:-22}"; then
-      UPDATE_VM_QEMU
-      return $?
+      echo -e "${RD:-}  ❌ Could not resolve SSH configuration for VM $VM: ${INTERNAL_SSH_ERROR:-unknown error}${CL:-}" >&2
+      ERROR_CODE=2
+      ID=$VM
+      ERROR_MSG="Could not resolve SSH configuration for VM $VM: ${INTERNAL_SSH_ERROR:-unknown error}"
+      ERROR
+      return 2
     fi
     if [[ "${INTERNAL_SSH_ENABLED:-true}" != true ]]; then
       UPDATE_VM_QEMU
