@@ -160,5 +160,7 @@ WINDOWS_POWERSHELL_ENCODE() {
   local action="${1:-}" script
   shift || true
   script=$(WINDOWS_POWERSHELL_SCRIPT "$action" "$@") || return
-  python3 -c 'import base64,sys; print(base64.b64encode(sys.stdin.buffer.read()).decode())' <<< "$script"
+  # powershell.exe -EncodedCommand consumes UTF-16LE bytes, not UTF-8.
+  # Keep this identical to the encoding used for the detached install worker.
+  python3 -c 'import base64,sys; print(base64.b64encode(sys.stdin.read().encode("utf-16le")).decode())' <<< "$script"
 }

@@ -10,14 +10,21 @@ PSWindowsUpdate, winget, or an additional Ultimate Updater agent in Windows.
 
 The live test environment validated Windows Server 2025 Standard Evaluation
 on VM 986 over the remote cluster path. QGA detection, `guest-exec`,
-PowerShell, the built-in Windows Update COM search, the five-update count, and
-reboot-state detection worked. A complete mutating update run was not accepted:
-the first run exceeded the bounded timeout and Windows servicing continued
-after the guest command ended. The component store diagnosis also reported
-CBS error `0x800F0983`; `DISM /Online /Cleanup-Image /CheckHealth` reported no
-detected corruption, while a later `ScanHealth` attempt lost its QGA session.
-Treat the Windows path as validated for checks and as requiring a recovery
-point and servicing diagnosis before an update.
+PowerShell, the built-in Windows Update COM search, update result handling,
+and reboot-state detection worked. The direct detached worker installed five
+updates in one run (about 1 h 52 min), reported COM result code `2`, and
+correctly required a reboot; Windows was then rebooted deliberately and the
+post-reboot check completed successfully.
+
+The central product-path check was also validated after the remote payload
+was corrected to encode every PowerShell `-EncodedCommand` as UTF-16LE. A
+later central product-path update attempt reached VM 986 but stopped in the
+read-only servicing preflight after a QGA `guest-exec-status` timeout; it did
+not install another update. Therefore the direct Windows update is live
+validated, while a complete successful *central product-path installation*
+remains pending a stable QGA run. The component store diagnosis previously
+reported CBS error `0x800F0983`; `DISM /Online /Cleanup-Image /CheckHealth`
+reported no detected corruption.
 
 The detached-job smoke test also confirmed that a guest worker can continue
 after the initiating QGA request times out. Its durable state retained the
