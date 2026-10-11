@@ -16,6 +16,10 @@ fi
 grep -Fq 'UPDATE_VM_QEMU_WINDOWS' "$ROOT_DIR/update.sh"
 grep -Fq 'WINDOWS_POWERSHELL_ENCODE install-start' "$ROOT_DIR/update.sh"
 grep -Fq 'WINDOWS_POWERSHELL_ENCODE install-status' "$ROOT_DIR/update.sh"
+# Status-only recovery must poll the supplied guest job ID and must not rely
+# on the install-start response variable, which does not exist in that mode.
+grep -Fq 'start_job="$job_id"' "$ROOT_DIR/update.sh"
+grep -Fq 'UU_WINDOWS_STATUS_ONLY_JOB_ID' "$ROOT_DIR/job-runner.sh"
 # Windows Update must not start while a previous servicing operation or a
 # pending reboot is still active.  wuauserv alone is intentionally not used as
 # the guard because it is commonly running while the guest is idle.

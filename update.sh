@@ -2178,6 +2178,9 @@ UPDATE_VM_QEMU_WINDOWS () {
 
   if [[ "${WINDOWS_UPDATE_STATUS_ONLY:-false}" == true ]]; then
     job_id="$UU_WINDOWS_STATUS_ONLY_JOB_ID"
+    # Recovery is status-only: reuse the already confirmed guest job and
+    # never enter the mutating install-start path.
+    start_job="$job_id"
   else
   if ! encoded=$(WINDOWS_POWERSHELL_ENCODE preflight); then
     ERROR_CODE=1

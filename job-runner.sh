@@ -1304,13 +1304,13 @@ recover_local_job() {
     "$update_script" >/dev/null
   exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then
-    write_state "$unit" "$target" completed "$started" "$(now)" 0 \
+    UU_GUEST_JOB_ID="$guest_job_id" write_state "$unit" "$target" completed "$started" "$(now)" 0 \
       "Windows guest job recovered from controller timeout" || return 1
   elif [[ "$exit_code" -eq 75 ]]; then
-    write_state "$unit" "$target" unresolved "$started" '' '' \
+    UU_GUEST_JOB_ID="$guest_job_id" write_state "$unit" "$target" unresolved "$started" '' '' \
       "Windows guest job remains unresolved after recovery attempt" || return 1
   else
-    write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" \
+    UU_GUEST_JOB_ID="$guest_job_id" write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" \
       "Windows guest job recovery failed" || return 1
   fi
   return "$exit_code"

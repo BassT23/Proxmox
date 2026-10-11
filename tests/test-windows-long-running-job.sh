@@ -24,7 +24,7 @@ cat > "$WORK_DIR/recover-update.sh" <<'EOF'
 set -euo pipefail
 [[ "${UU_WINDOWS_STATUS_ONLY_JOB_ID:-}" == uu-test-long-running ]]
 [[ "${UU_WINDOWS_STATUS_ONLY_VM:-}" == 986 ]]
-exit 0
+exit "${RECOVERY_RESULT:-0}"
 EOF
 chmod +x "$WORK_DIR/recover-update.sh"
 
@@ -40,6 +40,7 @@ exit_code=
 type=update
 message=
 source=
+guest_job_id=uu-test-long-running
 interactive=false
 EOF
 
@@ -83,6 +84,39 @@ if [[ "$recover_rc" -ne 0 ]]; then
 fi
 grep -Fxq 'state=completed' "$JOBS/$unit.state" || { cat "$JOBS/$unit.state" >&2; exit 1; }
 grep -Fxq 'exit_code=0' "$JOBS/$unit.state" || { cat "$JOBS/$unit.state" >&2; exit 1; }
+grep -Fxq 'guest_job_id=uu-test-long-running' "$JOBS/$unit.state" || { cat "$JOBS/$unit.state" >&2; exit 1; }
+grep -Fxq 'started_at=2026-10-11T00:00:00Z' "$JOBS/$unit.state" || { cat "$JOBS/$unit.state" >&2; exit 1; }
 grep -Fq 'recovered from controller timeout' "$JOBS/$unit.state" || { cat "$JOBS/$unit.state" >&2; exit 1; }
+
+run_recovery_case() {
+  local expected_state="$1" expected_exit="$2" expected_message="$3" actual_exit
+  cat > "$JOBS/$unit.state" <<EOF
+schema_version=1
+unit=$unit
+target=986
+state=unresolved
+started_at=2026-10-11T00:00:00Z
+finished_at=
+exit_code=
+type=update
+message=
+source=
+guest_job_id=uu-test-long-running
+interactive=false
+EOF
+  set +e
+  RECOVERY_RESULT="$expected_exit" UU_JOB_STATE_DIR="$JOBS" UU_LOCAL_FILES="$LOCAL" \
+    "$ROOT_DIR/job-runner.sh" recover-local "$unit" 986 "$WORK_DIR/recover-update.sh"
+  actual_exit=$?
+  set -e
+  [[ "$actual_exit" -eq "$expected_exit" ]] || exit 1
+  grep -Fxq "state=$expected_state" "$JOBS/$unit.state"
+  grep -Fxq 'guest_job_id=uu-test-long-running' "$JOBS/$unit.state"
+  grep -Fxq 'started_at=2026-10-11T00:00:00Z' "$JOBS/$unit.state"
+  grep -Fq "$expected_message" "$JOBS/$unit.state"
+}
+
+run_recovery_case unresolved 75 'remains unresolved after recovery attempt'
+run_recovery_case failed 24 'Windows guest job recovery failed'
 
 echo 'Windows long-running job lifecycle: PASS'
