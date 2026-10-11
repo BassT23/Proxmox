@@ -62,6 +62,19 @@ assert "Remote state unavailable" in page
 assert 'Starting another update is blocked until the existing job state has been resolved.' in page
 assert 'Job list could not be refreshed. Existing job data is retained; retrying shortly.' in page
 assert "jobsLoadError=false" in page
+assert 'const isWindowsTarget=' in page
+assert 'const windowsUpdateSection=' in page
+assert '<h4>Windows Update</h4>' in page
+assert 'Update source' in page
+assert 'Windows Update Agent' in page
+assert 'Last successful check' in page
+assert 'Last known installation' in page
+assert 'Installation successful' in page
+assert 'Installation failed' in page
+assert 'Agent result code' in page
+assert 'Post-reboot check successful' in page
+assert 'History unavailable' in page
+assert 'Windows Settings may temporarily display outdated update information.' in page
 assert '[str(runner), "list", "--cached"]' in (root / 'web-ui' / 'server.py').read_text(encoding='utf-8')
 assert 'class="overview-actions-card"' in overview
 assert 'id="check-all"' in overview
