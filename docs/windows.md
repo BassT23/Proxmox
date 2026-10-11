@@ -148,6 +148,14 @@ across phase changes. If a start acknowledgement is lost, retain the state and
 recover it explicitly; never start a second Windows mutation merely because the
 original QGA request timed out.
 
+The detached worker is transferred through a short QGA PowerShell launcher. Its
+UTF-16LE script is gzip-compressed and base64-encoded before being embedded in
+that launcher, avoiding the Windows command-line limit that the former nested
+base64 payload could exceed. The launcher rejects an oversized encoded command
+instead of truncating it. A no-updates run may still create the short-lived
+worker; it performs a read/search, records `completed` with `processed=0`, and
+does not download, install, or reboot.
+
 ## Troubleshooting
 
 - **QGA not ready:** verify the Proxmox option, the Windows QGA service, and

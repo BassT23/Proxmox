@@ -56,6 +56,22 @@ try {
 POWERSHELL
 }
 
+WINDOWS_POWERSHELL_WORKER_COMPRESSED() {
+  local job_id="${1:-}" worker
+  worker=$(WINDOWS_POWERSHELL_INSTALL_WORKER "$job_id") || return 1
+  # QGA/Windows receive the launcher as one command line.  Compress the
+  # worker's UTF-16LE bytes before embedding them so the launcher remains
+  # safely below CreateProcess and helper argument limits.
+  printf '%s' "$worker" | python3 -c '
+import base64
+import gzip
+import sys
+
+payload = sys.stdin.buffer.read().decode().encode("utf-16le")
+print(base64.b64encode(gzip.compress(payload, compresslevel=9)).decode())
+'
+}
+
 WINDOWS_POWERSHELL_SCRIPT() {
   case "$1" in
     check)
@@ -90,10 +106,9 @@ try {
 POWERSHELL
       ;;
     install-start)
-      local job_id="${2:-}" worker worker_encoded
+      local job_id="${2:-}" worker_encoded
       [[ "$job_id" =~ ^[A-Za-z0-9._-]+$ ]] || return 2
-      worker=$(WINDOWS_POWERSHELL_INSTALL_WORKER "$job_id") || return 1
-      worker_encoded=$(printf '%s' "$worker" | python3 -c 'import base64,sys; print(base64.b64encode(sys.stdin.read().encode("utf-16le")).decode())') || return 1
+      worker_encoded=$(WINDOWS_POWERSHELL_WORKER_COMPRESSED "$job_id") || return 1
       cat <<POWERSHELL
 \$ErrorActionPreference = 'Stop'
 \$jobId = '$job_id'; \$root = 'C:\ProgramData\Ultimate-Updater\WindowsUpdate'; \$statePath = Join-Path \$root ("\$jobId.json")
@@ -117,7 +132,15 @@ try {
   if (\$active) { if (\$existing) { Write-Output ("UU_WINDOWS|start|existing|{0}|{1}" -f \$jobId, \$existing.phase); exit 0 }; Write-Output ("UU_WINDOWS|start|existing-active|{0}|{1}" -f \$activeCandidate.job_id, \$activeCandidate.phase); exit 0 }
   \$state = [ordered]@{ job_id = \$jobId; phase = 'pending'; result = 'running'; processed = 0; reboot_required = \$false; result_code = \$null; message = 'worker launch pending'; launcher_pid = \$PID; worker_pid = \$null; started_at = (Get-Date).ToUniversalTime().ToString('o'); updated_at = (Get-Date).ToUniversalTime().ToString('o') }
   \$tmp = "\$statePath.tmp.\$PID"; \$state | ConvertTo-Json -Compress | Set-Content -LiteralPath \$tmp -Encoding UTF8; Move-Item -LiteralPath \$tmp -Destination \$statePath -Force
-  \$process = Start-Process powershell.exe -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','$worker_encoded') -WindowStyle Hidden -PassThru
+\$compressedBytes = [Convert]::FromBase64String('$worker_encoded')
+\$compressedStream = New-Object System.IO.MemoryStream(,\$compressedBytes)
+\$gzip = New-Object System.IO.Compression.GzipStream(\$compressedStream,[System.IO.Compression.CompressionMode]::Decompress)
+\$workerStream = New-Object System.IO.MemoryStream
+\$gzip.CopyTo(\$workerStream)
+\$gzip.Dispose(); \$compressedStream.Dispose()
+\$workerEncoded = [Convert]::ToBase64String(\$workerStream.ToArray())
+\$workerStream.Dispose()
+\$process = Start-Process powershell.exe -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',\$workerEncoded) -WindowStyle Hidden -PassThru
   \$state.worker_pid = \$process.Id; \$state.message = 'worker started'; \$state.updated_at = (Get-Date).ToUniversalTime().ToString('o')
   \$tmp = "\$statePath.tmp.\$PID"; \$state | ConvertTo-Json -Compress | Set-Content -LiteralPath \$tmp -Encoding UTF8; Move-Item -LiteralPath \$tmp -Destination \$statePath -Force
   Write-Output ("UU_WINDOWS|start|started|{0}|{1}" -f \$jobId, \$process.Id); exit 0
@@ -157,10 +180,18 @@ POWERSHELL
 }
 
 WINDOWS_POWERSHELL_ENCODE() {
-  local action="${1:-}" script
+  local action="${1:-}" script encoded max_chars
   shift || true
   script=$(WINDOWS_POWERSHELL_SCRIPT "$action" "$@") || return
   # powershell.exe -EncodedCommand consumes UTF-16LE bytes, not UTF-8.
   # Keep this identical to the encoding used for the detached install worker.
-  python3 -c 'import base64,sys; print(base64.b64encode(sys.stdin.read().encode("utf-16le")).decode())' <<< "$script"
+  encoded=$(python3 -c 'import base64,sys; print(base64.b64encode(sys.stdin.read().encode("utf-16le")).decode())' <<< "$script") || return 1
+  if [[ "$action" == install-start ]]; then
+    max_chars="${UU_WINDOWS_MAX_ENCODED_COMMAND_CHARS:-30000}"
+    if [[ ! "$max_chars" =~ ^[0-9]+$ ]] || (( ${#encoded} > max_chars )); then
+      printf 'Windows install-start command exceeds the safe encoded-command limit (%s characters).\n' "$max_chars" >&2
+      return 1
+    fi
+  fi
+  printf '%s\n' "$encoded"
 }
