@@ -21,6 +21,9 @@ case "$1 ${2:-}" in
   *)
     n=$(($(grep -c '^exec$' "$QGA_CALLS" 2>/dev/null || true) + 1))
     printf '%s\n' exec >> "$QGA_CALLS"
+    if [[ "${QGA_START_HANG:-false}" == true ]]; then
+      sleep 10
+    fi
     if [[ "$QGA_START_FAIL_ONCE" == true && "$n" == 1 ]]; then
       printf '%s\n' 'guest-exec timeout' >&2
       exit 255
@@ -52,5 +55,13 @@ QEMU_GUEST_EXEC_READONLY 310 --timeout 5 -- /bin/true
 QEMU_GUEST_EXEC 310 --timeout 5 -- /bin/true || true
 [[ "$QEMU_EXEC_TRANSPORT_RC" == 255 ]]
 [[ $(grep -c '^exec$' "$QGA_CALLS") == 1 ]]
+
+: > "$QGA_CALLS"
+export QGA_START_HANG=true UU_QGA_GUEST_EXEC_START_TIMEOUT=1
+QEMU_GUEST_EXEC_READONLY 310 --timeout 5 -- /bin/true || true
+[[ "$QEMU_EXEC_ERROR_CLASS" == QGA_START_TIMEOUT ]]
+[[ "$QEMU_EXEC_TRANSPORT_RC" == 124 ]]
+[[ $(grep -c '^exec$' "$QGA_CALLS") == 1 ]]
+unset QGA_START_HANG UU_QGA_GUEST_EXEC_START_TIMEOUT
 
 echo 'QGA read-only retry and mutation safety: PASS'

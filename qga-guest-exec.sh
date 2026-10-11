@@ -14,7 +14,7 @@ QEMU_GUEST_EXEC () {
   QEMU_EXEC_ERROR_CLASS=""
   QEMU_EXEC_PID=""
 
-  local vmid="${1:-}" raw start_rc pid parsed timeout=30 deadline
+  local vmid="${1:-}" raw start_rc pid parsed timeout=30 deadline start_timeout
   local readonly_retry=false start_attempt=1 status_failures=0
   shift || true
   [[ "$vmid" =~ ^[0-9]+$ ]] || {
@@ -45,12 +45,26 @@ QEMU_GUEST_EXEC () {
     shift
   done
   [[ "$timeout" =~ ^[0-9]+$ ]] || timeout=30
+  start_timeout="${UU_QGA_GUEST_EXEC_START_TIMEOUT:-15}"
+  [[ "$start_timeout" =~ ^[0-9]+$ && "$start_timeout" -gt 0 ]] || start_timeout=15
 
   while :; do
-    if raw=$(qm guest exec "$vmid" "${exec_args[@]}" 2>&1); then
+    # The guest-exec request itself can block before QGA returns a PID.  Keep
+    # this phase bounded independently from status polling: a timeout here
+    # leaves the guest-side start result unknown and must never be retried as
+    # a mutating operation (or blindly duplicated for a read-only search).
+    if raw=$(timeout --kill-after=2s "$start_timeout" qm guest exec "$vmid" "${exec_args[@]}" 2>&1); then
       start_rc=0
     else
       start_rc=$?
+    fi
+    if [[ "$start_rc" -eq 124 ]]; then
+      QEMU_EXEC_ERROR_CLASS=QGA_START_TIMEOUT
+      QEMU_EXEC_STDERR="$raw"
+      QEMU_EXEC_OUTPUT="QEMU guest-exec start timed out after ${start_timeout}s; guest process state is unknown"
+      [[ -n "$raw" ]] && QEMU_EXEC_OUTPUT+=" ($raw)"
+      QEMU_EXEC_TRANSPORT_RC=124
+      return 0
     fi
     if [[ $start_rc -eq 0 ]]; then
       break
