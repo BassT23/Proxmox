@@ -79,7 +79,7 @@ remote_node_ssh() {
 }
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list | show UNIT\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | recover UNIT | recover-local UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list | show UNIT | reconcile-remote UNIT\n' "$0"
 }
 
 valid_target() {
@@ -228,6 +228,7 @@ write_state() {
     printf 'type=%s\n' "$type"
     printf 'message=%s\n' "$message"
     printf 'source=%s\n' "$source"
+    printf 'guest_job_id=%s\n' "${UU_GUEST_JOB_ID:-}"
     printf 'interactive=%s\n' "${UU_JOB_INTERACTIVE:-false}"
     if [[ "${UU_JOB_INTERACTIVE:-false}" == true ]]; then
       printf 'socket_path=%s\n' "$(interactive_socket "$unit")"
@@ -332,11 +333,14 @@ mark_remote_status_refresh() {
 
 refresh_remote_target_status() {
   local unit="$1" owner_node="$2" target="$3" refresh_state refresh_rc=0 lock
-  local ref_file workspace local_status_file remote_refresh_rc remote_status_file filtered_status_file
+  local ref_file workspace local_status_file remote_status_file filtered_status_file
   local expected_status_target expected_node
   ref_file=$(remote_ref_file "$unit")
   refresh_state=$(state_value "$ref_file" status_refresh)
-  [[ "$refresh_state" == "done" || "$refresh_state" == "failed" ]] && return 0
+  # A failed refresh is retryable.  It may only mean that the remote host or
+  # its workspace was temporarily unavailable; it must not become a stale
+  # terminal state that hides a later completed remote job.
+  [[ "$refresh_state" == "done" ]] && return 0
   lock="$ref_file.refresh.lock"
   mkdir "$lock" 2>/dev/null || return 0
   workspace=$(state_value "$ref_file" workspace)
@@ -374,11 +378,18 @@ PY
       if validate_status_target "$local_status_file" "$expected_status_target" &&
         "$CHECK_CLI" status-import "$local_status_file" </dev/null &&
         validate_status_target "$STATUS_MODEL_FILE" "$expected_status_target"; then
-        remote_refresh_rc=$(remote_node_ssh "$(state_value "$ref_file" owner_node)" \
+        # The status artifact is the authoritative reconciliation result.  In
+        # particular, a remote update may legitimately have a non-zero
+        # update exit code while its terminal status was imported correctly.
+        # Do not use post-update-status.rc to decide whether reconciliation
+        # succeeded; sync_remote_last_update() preserves that result below.
+        refresh_rc=0
+        # Read the capture marker for compatibility/diagnostics, but do not
+        # let a non-zero update result turn a successful status import into a
+        # failed reconciliation.
+        remote_node_ssh "$(state_value "$ref_file" owner_node)" \
           "$(state_value "$ref_file" owner_host)" "$(state_value "$ref_file" port)" \
-          "cat $(printf '%q' "$workspace/post-update-status.rc")" 2>/dev/null || printf '0')
-        [[ "$remote_refresh_rc" =~ ^[0-9]+$ ]] || remote_refresh_rc=1
-        refresh_rc="$remote_refresh_rc"
+          "cat $(printf '%q' "$workspace/post-update-status.rc")" >/dev/null 2>&1 || true
         remote_node_ssh "$(state_value "$ref_file" owner_node)" \
           "$(state_value "$ref_file" owner_host)" "$(state_value "$ref_file" port)" \
           "rm -rf -- $(printf '%q' "$workspace")" >/dev/null 2>&1 || true
@@ -402,7 +413,9 @@ PY
   if [[ "$refresh_rc" -eq 0 ]]; then
     mark_remote_status_refresh "$unit" "done" || true
   else
-    mark_remote_status_refresh "$unit" "failed" || true
+    # Keep the reference eligible for a later status refresh.  The remote job
+    # itself is not retried and no new worker is started here.
+    mark_remote_status_refresh "$unit" "pending" || true
     printf 'Remote post-update status refresh failed for %s (exit code %s).\n' \
       "$target" "$refresh_rc" >&2
   fi
@@ -518,9 +531,24 @@ if not isinstance(last_update, dict):
     last_update = {}
 else:
     last_update = dict(last_update)
+candidate_timestamp = finished or None
+current_timestamp = last_update.get("timestamp")
+if candidate_timestamp and current_timestamp:
+    from datetime import datetime
+    try:
+        candidate_time = datetime.fromisoformat(candidate_timestamp.replace("Z", "+00:00"))
+        current_time = datetime.fromisoformat(str(current_timestamp).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        candidate_time = current_time = None
+    # A late status refresh must never project an older remote snapshot over
+    # a result already recorded by a newer job. Equal timestamps are also
+    # left untouched so two terminal references cannot overwrite each other
+    # merely because directory enumeration order differs.
+    if candidate_time is not None and current_time is not None and candidate_time <= current_time:
+        raise SystemExit(0)
 last_update.update({
     "status": status,
-    "timestamp": finished or None,
+    "timestamp": candidate_timestamp,
     "exit_code": int(exit_code),
 })
 record["last_update"] = last_update
@@ -565,13 +593,17 @@ running_job_conflict() {
   for file in "$JOB_STATE_DIR"/*.state; do
     target=$(state_value "$file" target)
     state=$(state_value "$file" state)
-    [[ "$state" == running ]] || continue
+    [[ "$state" == running || "$state" == unresolved ]] || continue
     if [[ "$requested" == all-systems || "$target" == all-systems || "$target" == "$requested" ]]; then
       printf '%s\t%s\n' "$target" "$(state_value "$file" unit)"
       return 0
     fi
   done
   return 1
+}
+
+windows_unresolved_file() {
+  printf '%s/windows-update-unresolved' "${UU_REMOTE_WORK_DIR:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/temp}"
 }
 
 acquire_start_lock() {
@@ -804,7 +836,7 @@ start_global_job() {
 
 run_job() {
   local unit="$1" target="$2" update_script="$3" file started exit_code lock_file
-  local post_check_rc=0 post_check_message="" captured_status_file captured_status_rc
+  local post_check_rc=0 post_check_message="" captured_status_file captured_status_rc unresolved_file unresolved_job
   valid_target "$target" || return 2
   file=$(state_file "$unit")
   started=$(state_value "$file" started_at)
@@ -827,6 +859,17 @@ run_job() {
     UU_DEFER_UPDATE_MAIL=true "$update_script" "$target" </dev/null
   fi
   exit_code=$?
+  unresolved_file=$(windows_unresolved_file)
+  if [[ -f "$unresolved_file" && "$exit_code" -ne 0 ]]; then
+    unresolved_job=$(state_value "$unresolved_file" job_id 2>/dev/null || printf '')
+    if [[ "$unresolved_job" =~ ^[A-Za-z0-9._-]+$ ]]; then
+      rm -f -- "$unresolved_file"
+      UU_GUEST_JOB_ID="$unresolved_job" write_state "$unit" "$target" unresolved "$started" '' '' \
+        "Windows guest job $unresolved_job remains active or unknown; recovery required" || return 1
+      printf 'Windows guest job unresolved: %s\n' "$unresolved_job" >&2
+      return 0
+    fi
+  fi
   if cancel_requested "$unit"; then
     write_state "$unit" "$target" cancelled "$started" "$(now)" 130 "Job cancelled by user." || return 1
     cleanup_interactive_runtime "$unit" || true
@@ -1219,6 +1262,68 @@ run_check_job() {
   return "$exit_code"
 }
 
+recover_local_job() {
+  local unit="$1" target="$2" update_script="$3" file state started exit_code guest_job_id
+  valid_unit "$unit" || return 2
+  valid_target "$target" || return 2
+  [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
+  file=$(state_file "$unit")
+  [[ -f "$file" ]] || { printf 'Job not found: %s\n' "$unit" >&2; return 1; }
+  state=$(state_value "$file" state)
+  [[ "$state" == unresolved ]] || {
+    printf 'Job is not unresolved: %s (%s)\n' "$unit" "$state" >&2
+    return 3
+  }
+  started=$(state_value "$file" started_at)
+  guest_job_id=$(state_value "$file" guest_job_id 2>/dev/null || printf '')
+  [[ "$guest_job_id" =~ ^[A-Za-z0-9._-]+$ ]] || {
+    printf 'Unresolved job has no valid guest job ID: %s\n' "$unit" >&2
+    return 1
+  }
+  UU_WINDOWS_STATUS_ONLY_JOB_ID="$guest_job_id" \
+    UU_WINDOWS_STATUS_ONLY_VM="$target" \
+    "$update_script" >/dev/null
+  exit_code=$?
+  if [[ "$exit_code" -eq 0 ]]; then
+    write_state "$unit" "$target" completed "$started" "$(now)" 0 \
+      "Windows guest job recovered from controller timeout" || return 1
+  elif [[ "$exit_code" -eq 75 ]]; then
+    write_state "$unit" "$target" unresolved "$started" '' '' \
+      "Windows guest job remains unresolved after recovery attempt" || return 1
+  else
+    write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" \
+      "Windows guest job recovery failed" || return 1
+  fi
+  return "$exit_code"
+}
+
+recover_remote_job() {
+  local unit="$1" ref_line target owner_node owner_host port workspace runner remote_command
+  ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  workspace=$(state_value "$(remote_ref_file "$unit")" workspace 2>/dev/null || true)
+  if [[ -n "$workspace" ]]; then
+    [[ "$workspace" =~ ^/tmp/ultimate-updater-update-node-[0-9]+-[0-9]+-[0-9]+$ ]] || return 1
+    runner="$workspace/job-runner.sh"
+    remote_command="exec env UU_LOCAL_FILES=$(printf '%q' "$workspace") UU_REMOTE_WORK_DIR=$(printf '%q' "$workspace") $(printf '%q' "$runner") recover-local $(printf '%q' "$unit") $(printf '%q' "$target") $(printf '%q' "$workspace/update.sh")"
+  else
+    runner="/etc/ultimate-updater/job-runner.sh"
+    remote_command="exec $(printf '%q' "$runner") recover-local $(printf '%q' "$unit") $(printf '%q' "$target") /etc/ultimate-updater/update.sh"
+  fi
+  remote_node_ssh "$owner_node" "$owner_host" "$port" "$remote_command"
+}
+
+recover_job() {
+  local unit="$1" file
+  valid_unit "$unit" || { printf 'Invalid job ID: %s\n' "$unit" >&2; return 2; }
+  file=$(state_file "$unit")
+  if [[ -f "$file" ]]; then
+    recover_local_job "$unit" "$(state_value "$file" target)" "${UU_RECOVERY_UPDATE_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/update.sh}"
+  else
+    recover_remote_job "$unit"
+  fi
+}
+
 refresh_running_jobs() {
   local file unit target state active_state load_state started age_seconds type show_rc systemd_details
   command -v systemctl >/dev/null 2>&1 || return 0
@@ -1319,6 +1424,21 @@ list_jobs() {
   done
 }
 
+reconcile_remote_job() {
+  local unit="$1" ref_line target owner_node owner_host port remote_state
+  ref_line=$(remote_ref_line "$unit") || return 1
+  IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  remote_state=$(remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port") || return 1
+  printf '%s\n' "$remote_state"
+  local remote_target remote_status remote_finished remote_exit
+  IFS=$'\t' read -r _ remote_target remote_status _ remote_finished remote_exit _ <<< "$remote_state"
+  if [[ "$remote_status" == completed || "$remote_status" == completed_with_warnings ||
+    "$remote_status" == failed || "$remote_status" == interrupted ]]; then
+    refresh_remote_target_status "$unit" "$owner_node" "$remote_target"
+    sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true
+  fi
+}
+
 remote_log() {
   local unit="$1" ref_line target owner_node owner_host port remote_command
   ref_line=$(remote_ref_line "$unit") || { printf 'Remote job reference not found: %s\n' "$unit" >&2; return 1; }
@@ -1405,6 +1525,14 @@ case "${1:-}" in
     [[ $# -eq 4 ]] || { usage >&2; exit 2; }
     run_job "$2" "$3" "$4"
     ;;
+  recover)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    recover_job "$2"
+    ;;
+  recover-local)
+    [[ $# -eq 4 ]] || { usage >&2; exit 2; }
+    recover_local_job "$2" "$3" "$4"
+    ;;
   run-global)
     [[ $# -eq 3 ]] || { usage >&2; exit 2; }
     run_global_job "$2" "$3"
@@ -1440,6 +1568,10 @@ case "${1:-}" in
   show)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     show_job "$2"
+    ;;
+  reconcile-remote)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    reconcile_remote_job "$2"
     ;;
   record-remote)
     [[ $# -eq 6 || $# -eq 7 ]] || { usage >&2; exit 2; }

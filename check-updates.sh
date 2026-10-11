@@ -313,6 +313,7 @@ else
     QEMU_EXEC_TRANSPORT_RC=1
     QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC
   }
+  QEMU_GUEST_EXEC_READONLY() { QEMU_GUEST_EXEC "$@"; }
 fi
 
 ARGUMENTS () {
@@ -478,7 +479,7 @@ GUEST_INTERNET_PREFLIGHT_SSH() {
 GUEST_INTERNET_PREFLIGHT_QGA() {
   local command
   command=$(GUEST_INTERNET_PREFLIGHT_COMMAND) || return 1
-  QEMU_GUEST_EXEC "$1" --timeout "${UU_GUEST_PREFLIGHT_TIMEOUT:-5}" -- bash -c "$command"
+  QEMU_GUEST_EXEC_READONLY "$1" --timeout "${UU_GUEST_PREFLIGHT_TIMEOUT:-5}" -- bash -c "$command"
   [[ "$QEMU_EXEC_TRANSPORT_RC" -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]
 }
 
@@ -1869,7 +1870,7 @@ print(data.get("id") or "")
         "pkg count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
       return 1
     fi
-    QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
+    QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- sh -c "$package_count_command"
     if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
       STATUS_MODEL_RECORD "$VM" vm qga false "$OS_NAME" pkg "null" "null" \
         error QGA_TRANSPORT "QEMU Guest Agent transport failed during pkg check: ${QEMU_EXEC_OUTPUT}" \
@@ -1914,7 +1915,7 @@ print(data.get("id") or "")
   # Use an explicit successful command for the QGA readiness probe.  The
   # shell builtin/executable `test` without arguments intentionally exits 1,
   # which must not be mistaken for a guest-agent transport failure.
-  QEMU_GUEST_EXEC "$VM" --timeout 30 -- /bin/true
+  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 30 -- /bin/true
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" error QGA_TRANSPORT "${QEMU_EXEC_OUTPUT}"
     return 1
@@ -1941,7 +1942,7 @@ print(data.get("id") or "")
           "APT count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$apt_count_command"
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- bash -c "$apt_count_command"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
           "Could not determine APT update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -1953,7 +1954,7 @@ print(data.get("id") or "")
         return 1
       fi
       if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c '[ -f /var/run/reboot-required.pkgs ]'
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- bash -c '[ -f /var/run/reboot-required.pkgs ]'
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
         echo -e "${RD}QEMU reboot check failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
         return 1
@@ -1981,7 +1982,7 @@ print(data.get("id") or "")
           "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$rpm_count_command"
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- bash -c "$rpm_count_command"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
           "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -2008,7 +2009,7 @@ print(data.get("id") or "")
           "Pacman count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- sh -c "$package_count_command"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "null" "null" error PACKAGE_COUNT_FAILED \
           "Could not determine Pacman update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -2035,7 +2036,7 @@ print(data.get("id") or "")
           "APK count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- sh -c "$package_count_command"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "null" "null" error PACKAGE_COUNT_FAILED \
           "Could not determine APK update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -2062,7 +2063,7 @@ print(data.get("id") or "")
           "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$rpm_count_command"
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- bash -c "$rpm_count_command"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
           "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -2122,7 +2123,7 @@ CHECK_VM_QEMU_HAOS () {
   local os_version os_update core_version core_update
   local updates=0 status=ok display_os
 
-  QEMU_GUEST_EXEC "$VM" --timeout 60 -- /usr/bin/ha os info --raw-json
+  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 60 -- /usr/bin/ha os info --raw-json
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     STATUS_MODEL_RECORD "$VM" vm qga false "Home Assistant OS" ha \
       "null" false error QGA_TRANSPORT \
@@ -2149,7 +2150,7 @@ CHECK_VM_QEMU_HAOS () {
 
   IFS=$'\t' read -r os_version os_update <<< "$os_parsed"
 
-  QEMU_GUEST_EXEC "$VM" --timeout 60 -- /usr/bin/ha core info --raw-json
+  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 60 -- /usr/bin/ha core info --raw-json
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     STATUS_MODEL_RECORD "$VM" vm qga false "Home Assistant OS ${os_version}" ha \
       "null" false error QGA_TRANSPORT \
@@ -2206,7 +2207,7 @@ CHECK_VM_QEMU_WINDOWS () {
     STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_HELPER_MISSING "Windows update helper is not installed"
     return 1
   fi
-  QEMU_GUEST_EXEC "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE check)"
+  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE check)"
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     reachable=false
     error_code=QGA_TRANSPORT
