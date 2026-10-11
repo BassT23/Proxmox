@@ -2192,7 +2192,8 @@ UPDATE_VM_QEMU_WINDOWS () {
     ERROR
     return
   fi
-  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | tail -n 1)
+  result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" |
+    tr -d '\r' | sed -n '/^UU_WINDOWS|preflight|/p' | tail -n 1)
   IFS='|' read -r marker preflight_status preflight_reason message <<< "$result"
   if [[ "$marker" != UU_WINDOWS || "$preflight_status" != preflight || "$preflight_reason" != ok ]]; then
     ERROR_CODE=1

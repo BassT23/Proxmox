@@ -252,7 +252,7 @@ QEMU_GUEST_EXEC() {
   QEMU_EXEC_STDERR=''; QEMU_EXEC_OUTPUT=''; QEMU_EXEC_EXITCODE=0
   QEMU_EXEC_TRANSPORT_RC=0; QEMU_EXEC_ERROR_CLASS=''
   if [[ "$command" == *'preflight'* ]]; then
-    QEMU_EXEC_STDOUT='UU_WINDOWS|preflight|ok|ready'
+    QEMU_EXEC_STDOUT=$'UU_WINDOWS|preflight|ok|ready\n'
   elif [[ "$command" == *'install-start'* ]]; then
     local job_id=${command##*install-start }
     QEMU_EXEC_STDOUT="UU_WINDOWS|start|started|$job_id|1234"
