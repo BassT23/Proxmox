@@ -2308,7 +2308,7 @@ UPDATE_VM_QEMU_WINDOWS () {
         mv -f -- "${unresolved_file}.tmp.$$" "$unresolved_file" 2>/dev/null || true
       WINDOWS_UPDATE_UNRESOLVED=true
       ERROR_CODE=75; ID=$VM; ERROR_MSG="Windows Update controller timeout; guest job $job_id remains unresolved"
-      ERROR; return
+      ERROR; return "$ERROR_CODE"
     fi
     sleep 2
   done
