@@ -25,11 +25,14 @@ run_start() {
   rm -f "$WORK_DIR/jobs"/*.state
   : > "$WORK_DIR/systemd.args"
   UU_SYSTEMD_ARGS="$WORK_DIR/systemd.args" UU_JOB_STATE_DIR="$WORK_DIR/jobs" \
+    UU_LOCAL_FILES="$WORK_DIR/runtime" \
     PATH="$WORK_DIR/bin:$PATH" "$@" "$ROOT_DIR/job-runner.sh" start \
     "$WORK_DIR/runtime/update.sh" target
 }
 
 run_start env -u UU_TARGET_SELECTION_FILE
+grep -Fq -- '--setenv=UU_LOCAL_FILES=/tmp/' "$WORK_DIR/systemd.args"
+grep -Fq -- '--setenv=LOCAL_FILES=/tmp/' "$WORK_DIR/systemd.args"
 if grep -Fq -- '--setenv=UU_TARGET_SELECTION_FILE=' "$WORK_DIR/systemd.args"; then
   exit 1
 fi

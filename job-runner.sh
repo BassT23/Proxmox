@@ -757,7 +757,13 @@ start_job() {
   if [[ "${UU_UPDATE_SCOPE:-}" == host ]]; then
     systemd_env+=("--setenv=UU_UPDATE_SCOPE=host")
   fi
-  [[ -n "${UU_LOCAL_FILES:-}" ]] && systemd_env+=("--setenv=UU_LOCAL_FILES=$UU_LOCAL_FILES")
+  # update.sh derives its own paths from UU_LOCAL_FILES, but its child
+  # helpers still consume the legacy LOCAL_FILES variable.  Propagate both
+  # values so an isolated update unit cannot fall back to /etc/ultimate-updater.
+  [[ -n "${UU_LOCAL_FILES:-}" ]] && systemd_env+=(
+    "--setenv=UU_LOCAL_FILES=$UU_LOCAL_FILES"
+    "--setenv=LOCAL_FILES=$UU_LOCAL_FILES"
+  )
   [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && systemd_env+=("--setenv=UU_REMOTE_WORK_DIR=$UU_REMOTE_WORK_DIR")
   [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   [[ "$target" =~ ^[0-9]+$ ]] && systemd_env+=("--setenv=UU_POST_UPDATE_STATUS_CAPTURE=true")
