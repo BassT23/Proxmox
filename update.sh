@@ -2165,6 +2165,7 @@ UPDATE_VM_QEMU () {
 UPDATE_VM_QEMU_WINDOWS () {
   local encoded result marker update_status processed reboot message preflight_status preflight_reason
   local job_id start_state start_job status_phase status_result status_message deadline
+  local status_read_retries=0
 
   if ! declare -f WINDOWS_POWERSHELL_ENCODE >/dev/null 2>&1; then
     ERROR_CODE=1
@@ -2251,11 +2252,17 @@ UPDATE_VM_QEMU_WINDOWS () {
     fi
     QEMU_GUEST_EXEC_READONLY "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
     if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
+      if [[ "$QEMU_EXEC_ERROR_CLASS" == QGA_TRANSIENT && "$status_read_retries" -lt 2 ]]; then
+        status_read_retries=$((status_read_retries + 1))
+        sleep "$status_read_retries"
+        continue
+      fi
       ERROR_CODE=1; ID=$VM
       ERROR_MSG="Windows Update status is unknown after QGA communication failure: ${QEMU_EXEC_OUTPUT:-unknown}"
       declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
       ERROR; return
     fi
+    status_read_retries=0
     result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n '/^UU_WINDOWS|status|/p' | tail -n 1)
     IFS='|' read -r marker update_status start_job status_phase processed reboot status_result status_message <<< "$result"
     if [[ "$marker" != UU_WINDOWS || "$update_status" != status || "$start_job" != "$job_id" ||

@@ -242,6 +242,8 @@ VM=986
 OR='' RD='' CL=''
 ERROR_COUNT=0
 STATUS_RESULT=''
+START_CALLS=0
+STATUS_CALLS=0
 ERROR() { ERROR_COUNT=$((ERROR_COUNT + 1)); }
 STATUS_MODEL_UPDATE_RESULT() { STATUS_RESULT="$*"; }
 WINDOWS_POWERSHELL_ENCODE() { printf '%s %s' "$1" "${2:-}"; }
@@ -254,20 +256,29 @@ QEMU_GUEST_EXEC() {
   if [[ "$command" == *'preflight'* ]]; then
     QEMU_EXEC_STDOUT=$'UU_WINDOWS|preflight|ok|ready\n'
   elif [[ "$command" == *'install-start'* ]]; then
+    START_CALLS=$((START_CALLS + 1))
     local job_id=${command##*install-start }
     QEMU_EXEC_STDOUT="UU_WINDOWS|start|started|$job_id|1234"
   else
-    QEMU_EXEC_STDOUT=''
-    QEMU_EXEC_TRANSPORT_RC=1
-    QEMU_EXEC_ERROR_CLASS=QGA_TIMEOUT
-    QEMU_EXEC_OUTPUT='simulated status timeout'
+    STATUS_CALLS=$((STATUS_CALLS + 1))
+    if [[ "$STATUS_CALLS" == 1 ]]; then
+      QEMU_EXEC_STDOUT=''
+      QEMU_EXEC_TRANSPORT_RC=1
+      QEMU_EXEC_ERROR_CLASS=QGA_TRANSIENT
+      QEMU_EXEC_OUTPUT='simulated status transport failure'
+    else
+      local job_id=${command##*install-status }
+      QEMU_EXEC_STDOUT="UU_WINDOWS|status|$job_id|completed|0|false|ok|no updates"
+    fi
   fi
 }
 QEMU_GUEST_EXEC_READONLY() { QEMU_GUEST_EXEC "$@"; }
 source "$PWD/windows-update-function.sh"
 UPDATE_VM_QEMU_WINDOWS || true
-[[ "$ERROR_COUNT" == 1 ]]
-[[ "$STATUS_RESULT" == '986 failed 1' ]]
+[[ "$ERROR_COUNT" == 0 ]]
+[[ "$STATUS_RESULT" == '986 success 0' ]]
+[[ "$START_CALLS" == 1 ]]
+[[ "$STATUS_CALLS" == 2 ]]
 HARNESS
 chmod 750 "$WORK_DIR/windows-update-harness.sh"
 (cd "$WORK_DIR" && bash windows-update-harness.sh)

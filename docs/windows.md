@@ -141,6 +141,11 @@ process. Mutating operations such as `install-start` are never automatically
 retried when their start result is unknown. They recover the existing guest
 state or remain blocked/unknown instead.
 
+After a confirmed worker start, a transient failure while launching the
+short-lived read-only status probe may cause the status probe itself to be
+retried a small number of times. This never repeats `install-start` and keeps
+the original job ID as the recovery key.
+
 The state file is not a substitute for a backup. Keep a recovery point before a
 mutating update, and do not remove an `unknown` state merely to force a retry.
 State metadata is updated atomically and carries the launcher/worker identity
