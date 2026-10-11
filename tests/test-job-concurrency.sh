@@ -9,6 +9,8 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 # otherwise a direct check could bypass an active update lock.
 # shellcheck disable=SC2016 # literal shell fragments are assertion targets.
 grep -Fq '"$JOB_RUNNER" start-check "$target" "$SCRIPT_DIR/ultimate-updater" target' "$ROOT_DIR/ultimate-updater"
+grep -Fq '"--setenv=LOCAL_FILES=$UU_LOCAL_FILES"' "$ROOT_DIR/job-runner.sh"
+grep -Fq '"--setenv=UU_LOCAL_FILES=$UU_LOCAL_FILES"' "$ROOT_DIR/job-runner.sh"
 # shellcheck disable=SC2016 # literal shell fragments are assertion targets.
 grep -Fq 'UU_CHECK_JOB_EXECUTION=true "$cli" check "$target"' "$ROOT_DIR/job-runner.sh"
 

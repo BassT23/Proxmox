@@ -1063,6 +1063,12 @@ start_check_job() {
   fi
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${CHECK_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
+  # Check helpers use LOCAL_FILES as their legacy-compatible runtime root,
+  # while the controller and update jobs use UU_LOCAL_FILES.  Propagate both
+  # names so an isolated/remote check cannot silently fall back to the
+  # controller's installed configuration and transport overrides.
+  [[ -n "${UU_LOCAL_FILES:-}" ]] && systemd_env+=("--setenv=UU_LOCAL_FILES=$UU_LOCAL_FILES" "--setenv=LOCAL_FILES=$UU_LOCAL_FILES")
+  [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && systemd_env+=("--setenv=UU_REMOTE_WORK_DIR=$UU_REMOTE_WORK_DIR")
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
   [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
   [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
