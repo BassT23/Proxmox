@@ -16,7 +16,8 @@ HEADER = "X-UU-Gateway-Assertion"
 
 
 def test_sso(trusted_cidr, include_identity=True, allowed="operator@example.com",
-             proof=PROOF, secret_mode=0o600, file_enabled=True, symlink=False):
+             proof=PROOF, secret_mode=0o600, file_enabled=True, symlink=False,
+             forwarded=None):
     environ = ("UU_AUTH_BACKEND", "UU_TRUSTED_PROXY_CIDRS",
                "UU_TRUSTED_PROXY_ALLOWED_USERS", "UU_TRUSTED_PROXY_ASSERTION_FILE")
     old = {name: os.environ.get(name) for name in environ}
@@ -45,7 +46,8 @@ def test_sso(trusted_cidr, include_identity=True, allowed="operator@example.com"
             thread.start()
             try:
                 def call(path, identity="operator@example.com", cookie=None, csrf=None,
-                         forwarded=None, method="GET", duplicate_proof=False):
+                         forwarded=None, method="GET", duplicate_proof=False,
+                         duplicate_identity=False):
                     headers = {}
                     if include_identity and identity is not None:
                         headers["Remote-User"] = identity
@@ -63,6 +65,8 @@ def test_sso(trusted_cidr, include_identity=True, allowed="operator@example.com"
                         conn.putheader(name, value)
                     if duplicate_proof:
                         conn.putheader(HEADER, "B" * 48)
+                    if duplicate_identity:
+                        conn.putheader("Remote-User", "intruder@example.com")
                     conn.endheaders()
                     res = conn.getresponse()
                     import json
@@ -72,7 +76,7 @@ def test_sso(trusted_cidr, include_identity=True, allowed="operator@example.com"
                     conn.close()
                     return status, data, set_cookie
 
-                status, session, cookie = call("/api/session")
+                status, session, cookie = call("/api/session", forwarded=forwarded)
                 valid = (trusted_cidr == "127.0.0.1/32" and include_identity and allowed
                          and proof == PROOF and secret_mode == 0o600 and file_enabled and not symlink)
                 if not valid:
@@ -84,7 +88,9 @@ def test_sso(trusted_cidr, include_identity=True, allowed="operator@example.com"
                 cookie = cookie.split(";", 1)[0]
                 assert call("/api/session", cookie=cookie)[0] == 200
                 assert call("/api/session", cookie=cookie, duplicate_proof=True)[0] == 401
+                assert call("/api/session", cookie=cookie, duplicate_identity=True)[0] == 401
                 assert call("/api/session", cookie=cookie, identity="intruder@example.com")[0] == 401
+                assert call("/api/session", cookie=cookie, identity="operator@example.com, intruder@example.com")[0] == 401
                 assert call("/api/status", cookie=cookie, identity=None)[0] == 401
                 assert call("/api/status", cookie=cookie, identity="intruder@example.com")[0] == 401
                 assert call("/api/logout", cookie=cookie, method="POST")[0] == 403
@@ -114,6 +120,8 @@ assert updater.StatusHandler.current_session(read_only_handler) is None
 
 test_sso("127.0.0.1/32")
 test_sso("192.0.2.0/24")
+# A spoofed X-Forwarded-For must not turn an untrusted backend peer into the proxy.
+test_sso("192.0.2.0/24", forwarded="127.0.0.1")
 test_sso("127.0.0.1/32", include_identity=False)
 test_sso("127.0.0.1/32", allowed="")
 test_sso("127.0.0.1/32", proof=None)
