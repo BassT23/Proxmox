@@ -99,8 +99,9 @@ STATUS_MODEL_RECORD() {
   local node="${12:-$STATUS_MODEL_NODE}"
   local name="${13:-${STATUS_MODEL_GUEST_NAME:-}}"
   local normal_updates="${14:-null}" security_updates="${15:-null}"
+  local windows_update="${16:-}"
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(STATUS_MODEL_B64 "$id")" \
     "$(STATUS_MODEL_B64 "$type")" \
     "$(STATUS_MODEL_B64 "$transport")" \
@@ -115,7 +116,8 @@ STATUS_MODEL_RECORD() {
     "$(STATUS_MODEL_B64 "$node")" \
     "$(STATUS_MODEL_B64 "$name")" \
     "$(STATUS_MODEL_B64 "$normal_updates")" \
-    "$(STATUS_MODEL_B64 "$security_updates")" >> "$STATUS_MODEL_RECORD_FILE"
+    "$(STATUS_MODEL_B64 "$security_updates")" \
+    "$(STATUS_MODEL_B64 "$windows_update")" >> "$STATUS_MODEL_RECORD_FILE"
 }
 
 STATUS_MODEL_IMPORT_FILE() {
@@ -176,6 +178,9 @@ with open(record_file, "a", encoding="utf-8") as records:
         last_update = target.get("last_update")
         if isinstance(last_update, dict):
             fields.append(encode(json.dumps(last_update, separators=(",", ":"))))
+        windows_update = target.get("windows_update")
+        if isinstance(windows_update, dict):
+            fields.append(encode(json.dumps(windows_update, separators=(",", ":"))))
         records.write("\t".join(fields) + "\n")
 PY
 }
@@ -242,7 +247,7 @@ def is_newer_or_equal(candidate, current):
 with open(record_file, encoding="utf-8") as records:
     for line in records:
         fields = line.rstrip("\n").split("\t")
-        if len(fields) not in (12, 13, 14, 15, 16, 17):
+        if len(fields) not in (12, 13, 14, 15, 16, 17, 18):
             raise ValueError("invalid status record")
         (target_id, target_type, transport, reachable, os_name, updater,
          updates, reboot_required, check_status, error_code, error_message,
@@ -251,24 +256,38 @@ with open(record_file, encoding="utf-8") as records:
         imported_last_update = None
         normal_updates = security_updates = None
         security_split_supported = None
+        windows_update = None
         optional_offset = 1
         # Records written before the split-update schema used the second
         # optional field for last_update. Keep those records readable.
-        if len(optional_fields) > 1 and optional_fields[1].lstrip().startswith("{"):
-            imported_last_update = json.loads(optional_fields[1])
-            optional_offset = 3
-        else:
-            if len(optional_fields) > 1:
-                normal_updates = None if optional_fields[1] in ("", "null") else int(optional_fields[1])
-            if len(optional_fields) > 2:
-                security_updates = None if optional_fields[2] in ("", "null") else int(optional_fields[2])
-            if len(optional_fields) > 3:
-                if optional_fields[3] in ("true", "false"):
-                    security_split_supported = optional_fields[3] == "true"
-                    if len(optional_fields) > 4 and optional_fields[4]:
-                        imported_last_update = json.loads(optional_fields[4])
-                elif optional_fields[3]:
-                    imported_last_update = json.loads(optional_fields[3])
+        if len(optional_fields) > 1:
+            normal_updates = None if optional_fields[1] in ("", "null") else int(optional_fields[1])
+        if len(optional_fields) > 2:
+            security_updates = None if optional_fields[2] in ("", "null") else int(optional_fields[2])
+
+        def parse_json_field(value):
+            if not value:
+                return None, None
+            parsed = json.loads(value)
+            if isinstance(parsed, dict) and isinstance(parsed.get("history"), list):
+                return None, parsed
+            return parsed, None
+
+        next_field = 3
+        if len(optional_fields) > next_field:
+            if optional_fields[next_field] in ("true", "false"):
+                security_split_supported = optional_fields[next_field] == "true"
+                next_field += 1
+            elif optional_fields[next_field]:
+                imported_last_update, windows_update = parse_json_field(optional_fields[next_field])
+                next_field += 1
+        if len(optional_fields) > next_field and optional_fields[next_field]:
+            candidate_last, candidate_windows = parse_json_field(optional_fields[next_field])
+            if candidate_windows is not None:
+                windows_update = candidate_windows
+            elif imported_last_update is None:
+                imported_last_update = candidate_last
+            next_field += 1
         name = name_fields[0] if name_fields else ""
         available = None if updates in ("", "null") else int(updates)
         reboot = None if reboot_required in ("", "null") else reboot_required == "true"
@@ -317,6 +336,10 @@ with open(record_file, encoding="utf-8") as records:
             if (imported_status != "unknown" or existing_status in (None, "unknown")) and \
                is_newer_or_equal(imported_last_update, existing_last_update):
                 record["last_update"] = imported_last_update
+        if isinstance(windows_update, dict) and isinstance(windows_update.get("history"), list):
+            record["windows_update"] = windows_update
+        elif target_id in existing_targets and isinstance(existing_targets[target_id].get("windows_update"), dict):
+            record["windows_update"] = existing_targets[target_id]["windows_update"]
         # A check refreshes observation fields, but must not erase the last
         # update result.  This applies to full checks as well as partial ones.
         if "last_update" not in record:
@@ -642,20 +665,22 @@ PY
 STATUS_MODEL_UPDATE_RESULT() {
   local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
   local target_id="$1" update_status="$2" exit_code="$3"
+  local result_code="${4:-}" reboot_required="${5:-}" processed="${6:-}"
   local status_lock_file="${status_file}.lock" status_lock_fd
   exec {status_lock_fd}>"$status_lock_file" || return 1
   if ! flock -x "$status_lock_fd"; then
     exec {status_lock_fd}>&-
     return 1
   fi
-  python3 - "$status_file" "$target_id" "$update_status" "$exit_code" <<'PY'
+  python3 - "$status_file" "$target_id" "$update_status" "$exit_code" \
+    "$result_code" "$reboot_required" "$processed" <<'PY'
 import json
 import os
 import sys
 import tempfile
 from datetime import datetime, timezone
 
-status_file, target_id, update_status, exit_code = sys.argv[1:]
+status_file, target_id, update_status, exit_code, result_code, reboot_required, processed = sys.argv[1:]
 try:
     with open(status_file, encoding="utf-8") as source:
         payload = json.load(source)
@@ -682,6 +707,12 @@ if isinstance(existing_updates, dict):
 last_update = {"status": update_status, "timestamp": timestamp, "exit_code": int(exit_code)}
 if pending_before is not None:
     last_update["pending_before"] = pending_before
+if result_code not in ("", "null"):
+    last_update["result_code"] = int(result_code)
+if reboot_required in ("true", "false"):
+    last_update["reboot_required"] = reboot_required == "true"
+if processed not in ("", "null"):
+    last_update["processed"] = int(processed)
 record["last_update"] = last_update
 payload["generated_at"] = timestamp
 directory = os.path.dirname(os.path.abspath(status_file)) or "."

@@ -2246,6 +2246,7 @@ CHECK_VM_QEMU_HAOS () {
 
 CHECK_VM_QEMU_WINDOWS () {
   local result marker check_status updates reboot message windows_os reachable=true error_code=WINDOWS_UPDATE_CHECK
+  local history_b64 history_json=""
   windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"pretty-name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
   if [[ -z "$windows_os" ]]; then
     windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
@@ -2277,7 +2278,34 @@ CHECK_VM_QEMU_WINDOWS () {
   fi
   STATUS_MODEL_STATUS=ok
   [[ "$updates" -gt 0 || "$reboot" == true ]] && STATUS_MODEL_STATUS=updates_available
-  STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "$updates" "$reboot" "$STATUS_MODEL_STATUS" "" ""
+  history_b64=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n 's/^UU_WINDOWS|history|//p' | tail -n 1)
+  if [[ -n "$history_b64" ]]; then
+    history_json=$(python3 - "$history_b64" <<'PY'
+import base64
+import json
+import sys
+
+try:
+    raw = base64.b64decode(sys.argv[1], validate=True)
+    if len(raw) > 262144:
+        raise ValueError("history payload is too large")
+    payload = json.loads(raw.decode("utf-8"))
+    entries = payload.get("entries") if isinstance(payload, dict) else None
+    if not isinstance(entries, list) or len(entries) > 50:
+        raise ValueError("history payload is invalid")
+    if payload.get("source") != "Windows Update Agent":
+        raise ValueError("history source is invalid")
+    normalized = {"source": payload["source"], "history": entries}
+    if isinstance(payload.get("queried_at"), str):
+        normalized["queried_at"] = payload["queried_at"]
+    print(json.dumps(normalized, ensure_ascii=False, separators=(",", ":")))
+except (ValueError, UnicodeError, json.JSONDecodeError, KeyError):
+    raise SystemExit(1)
+PY
+    ) || history_json=""
+  fi
+  STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "$updates" "$reboot" "$STATUS_MODEL_STATUS" "" "" \
+    "${STATUS_MODEL_NODE:-}" "${STATUS_MODEL_GUEST_NAME:-}" "null" "null" "$history_json"
   if [[ "$updates" -gt 0 || "$reboot" == true ]]; then
     echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
     PRINT_UPDATE_SPLIT Unknown Unknown

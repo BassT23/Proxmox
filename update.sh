@@ -2247,7 +2247,7 @@ UPDATE_VM_QEMU () {
 
 UPDATE_VM_QEMU_WINDOWS () {
   local encoded result marker update_status processed reboot message preflight_status preflight_reason
-  local job_id start_state start_job status_phase status_result status_message deadline
+  local job_id start_state start_job status_phase status_result status_message status_result_code deadline
   local status_read_retries=0
 
   if ! declare -f WINDOWS_POWERSHELL_ENCODE >/dev/null 2>&1; then
@@ -2354,21 +2354,26 @@ UPDATE_VM_QEMU_WINDOWS () {
     fi
     status_read_retries=0
     result=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n '/^UU_WINDOWS|status|/p' | tail -n 1)
-    IFS='|' read -r marker update_status start_job status_phase processed reboot status_result status_message <<< "$result"
+    IFS='|' read -r marker update_status start_job status_phase processed reboot status_result status_message status_result_code <<< "$result"
     if [[ "$marker" != UU_WINDOWS || "$update_status" != status || "$start_job" != "$job_id" ||
       ! "$processed" =~ ^[0-9]+$ || ("$reboot" != true && "$reboot" != false) ]]; then
       ERROR_CODE=1; ID=$VM; ERROR_MSG="Invalid Windows Update status response: $result"
       declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
       ERROR; return
     fi
+    if [[ -n "$status_result_code" && "$status_result_code" != null && ! "$status_result_code" =~ ^-?[0-9]+$ ]]; then
+      ERROR_CODE=1; ID=$VM; ERROR_MSG="Invalid Windows Update result code: $result"
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+      ERROR; return
+    fi
     if [[ "$status_phase" == completed ]]; then
       if [[ "$status_result" != ok ]]; then
         ERROR_CODE=1; ID=$VM; ERROR_MSG="Windows Update failed: ${status_message:-unknown}"
-        declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
+        declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" "$status_result_code" "$reboot" "$processed" || true
         ERROR; return
       fi
       echo "Windows updates processed: $processed"
-      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" success 0 || true
+      declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" success 0 "$status_result_code" "$reboot" "$processed" || true
       [[ "$reboot" == true ]] && echo -e "${OR:-}Reboot required; no automatic reboot was performed.${CL:-}"
       return
     fi

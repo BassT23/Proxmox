@@ -77,6 +77,11 @@ assert 'Installation failed' in page
 assert 'Agent result code' in page
 assert 'Post-reboot check successful' in page
 assert 'History unavailable' in page
+assert 'windowsHistoryTable=' in page
+assert 'Update title' in page
+assert 'HRESULT' in page
+assert 'windowsWuaResult=' in page
+assert 'windowsHresult=' in page
 assert 'Windows Settings may temporarily display outdated update information.' in page
 assert '[str(runner), "list", "--cached"]' in (root / 'web-ui' / 'server.py').read_text(encoding='utf-8')
 assert 'class="overview-actions-card"' in overview

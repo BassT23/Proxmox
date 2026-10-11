@@ -84,9 +84,68 @@ function Test-UURebootRequired {
 }
 try {
   $session = New-Object -ComObject Microsoft.Update.Session
-  $result = $session.CreateUpdateSearcher().Search("IsInstalled=0 and Type='Software' and IsHidden=0")
+  $searcher = $session.CreateUpdateSearcher()
+  $result = $searcher.Search("IsInstalled=0 and Type='Software' and IsHidden=0")
+  try {
+    $total = [int]$searcher.GetTotalHistoryCount()
+    $limit = [Math]::Min(20, [Math]::Max(0, $total))
+    $entries = @()
+    if ($limit -gt 0) { $entries = @($searcher.QueryHistory($total - $limit, $limit)) }
+    $history = @(
+      foreach ($entry in $entries) {
+        [ordered]@{
+          date = if ($entry.Date) { $entry.Date.ToUniversalTime().ToString('o') } else { $null }
+          title = [string]$entry.Title
+          kb = @($entry.KBArticleIDs | ForEach-Object { [string]$_ })
+          operation = [string]$entry.Operation
+          result_code = [int]$entry.ResultCode
+          hresult = if ($null -eq $entry.HResult) { $null } else { [int]$entry.HResult }
+          source = 'Windows Update Agent'
+        }
+      }
+    )
+    $historyPayload = [ordered]@{ source = 'Windows Update Agent'; queried_at = (Get-Date).ToUniversalTime().ToString('o'); entries = @($history) }
+    $historyJson = $historyPayload | ConvertTo-Json -Compress -Depth 6
+    $historyB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($historyJson))
+    Write-Output ("UU_WINDOWS|history|{0}" -f $historyB64)
+  } catch {
+    Write-Output ("UU_WINDOWS|history-error|{0}" -f ($_.Exception.Message -replace '[\r\n|]',' '))
+  }
   Write-Output ("UU_WINDOWS|ok|{0}|{1}" -f $result.Updates.Count, (Test-UURebootRequired).ToString().ToLower()); exit 0
 } catch { Write-Output ("UU_WINDOWS|error|0|false|{0}" -f ($_.Exception.Message -replace '[\r\n|]',' ')); exit 20 }
+POWERSHELL
+      ;;
+    history)
+      local history_limit="${2:-20}"
+      [[ "$history_limit" =~ ^[0-9]+$ ]] || return 2
+      (( history_limit > 0 && history_limit <= 50 )) || return 2
+      cat <<POWERSHELL
+\$ErrorActionPreference = 'Stop'
+try {
+  \$session = New-Object -ComObject Microsoft.Update.Session
+  \$searcher = \$session.CreateUpdateSearcher()
+  \$total = [int]\$searcher.GetTotalHistoryCount()
+  \$limit = [Math]::Min($history_limit, [Math]::Max(0, \$total))
+  \$entries = @()
+  if (\$limit -gt 0) { \$entries = @(\$searcher.QueryHistory(\$total - \$limit, \$limit)) }
+  \$history = @(
+    foreach (\$entry in \$entries) {
+      [ordered]@{
+        date = if (\$entry.Date) { \$entry.Date.ToUniversalTime().ToString('o') } else { \$null }
+        title = [string]\$entry.Title
+        kb = @(\$entry.KBArticleIDs | ForEach-Object { [string]\$_ })
+        operation = [string]\$entry.Operation
+        result_code = [int]\$entry.ResultCode
+        hresult = if (\$null -eq \$entry.HResult) { \$null } else { [int]\$entry.HResult }
+        source = 'Windows Update Agent'
+      }
+    }
+  )
+  \$payload = [ordered]@{ source = 'Windows Update Agent'; queried_at = (Get-Date).ToUniversalTime().ToString('o'); entries = @(\$history) }
+  \$json = \$payload | ConvertTo-Json -Compress -Depth 6
+  \$b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(\$json))
+  Write-Output ("UU_WINDOWS|history|{0}" -f \$b64); exit 0
+} catch { Write-Output ("UU_WINDOWS|history-error|{0}" -f (\$_.Exception.Message -replace '[\r\n|]',' ')); exit 20 }
 POWERSHELL
       ;;
     preflight)
@@ -170,7 +229,8 @@ try {
     if (-not \$launcherAlive) { Write-Output ("UU_WINDOWS|status|{0}|unknown|0|false|unknown|worker-start-not-confirmed" -f \$jobId); exit 0 }
   }
   \$message = ([string]\$state.message -replace '[\r\n|]',' ')
-  Write-Output ("UU_WINDOWS|status|{0}|{1}|{2}|{3}|{4}|{5}" -f \$jobId, \$state.phase, \$state.processed, ([string]\$state.reboot_required).ToLower(), \$state.result, \$message); exit 0
+  \$resultCode = if (\$null -eq \$state.result_code) { 'null' } else { [string]\$state.result_code }
+  Write-Output ("UU_WINDOWS|status|{0}|{1}|{2}|{3}|{4}|{5}|{6}" -f \$jobId, \$state.phase, \$state.processed, ([string]\$state.reboot_required).ToLower(), \$state.result, \$message, \$resultCode); exit 0
 } catch { Write-Output ("UU_WINDOWS|status|{0}|unknown|0|false|unknown|state-invalid" -f \$jobId); exit 0 }
 POWERSHELL
       ;;
