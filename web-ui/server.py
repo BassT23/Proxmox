@@ -867,7 +867,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const text=(v,f='Unknown')=>v===null||v===undefined||v===''?f:String(v); const esc=v=>text(v,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const date=v=>{if(!v)return'Unknown';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleString()}; const statusLabel=v=>labels[v]||['Unknown','neutral']; const set=(id,v)=>document.getElementById(id).textContent=v;
     const LOG_BOTTOM_TOLERANCE=10;
-    let currentStatus={targets:[]}, jobs=[], pollTimer=null, openJobLogId=null, logAutoFollow=true, logScrollTop=0, suppressLogScroll=false, finalLogLoaded=new Set(), logLoading=new Set(), csrfToken=null, pendingTfa=null, authGeneration=0, versionRetryTimer=null, versionStartupTimer=null, versionRetryUsed=false, updaterVersion=null, loginVersionTimer=null, logoutInProgress=false, initialSystemDataLoad={generation:0,inventory:false,status:false};
+    let currentStatus={targets:[]}, jobs=[], pollTimer=null, openJobLogId=null, logAutoFollow=true, logScrollTop=0, suppressLogScroll=false, finalLogLoaded=new Set(), logLoading=new Set(), csrfToken=null, pendingTfa=null, authGeneration=0, versionRetryTimer=null, versionStartupTimer=null, versionRetryUsed=false, updaterVersion=null, loginVersionTimer=null, logoutInProgress=false, jobsLoadError=false, initialSystemDataLoad={generation:0,inventory:false,status:false};
     let authRealmsReady=false, authRealmsLoadGeneration=0;
     function stopAuthenticatedBackgroundWork(){clearTimeout(pollTimer);pollTimer=null;clearTimeout(versionStartupTimer);versionStartupTimer=null;clearTimeout(versionRetryTimer);versionRetryTimer=null;clearTimeout(loginVersionTimer);loginVersionTimer=null}
     function startAuthenticatedBackgroundWork(generation=authGeneration){if(!window.__uu_authenticated||generation!==authGeneration)return;clearTimeout(pollTimer);pollTimer=setTimeout(()=>loadJobs(generation),0);scheduleUpdaterVersionCheck()}
@@ -914,7 +914,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function renderJobs(){const n=document.getElementById('jobs');if(!jobs.length){n.hidden=true;openJobLogId=null;return}if(openJobLogId&&!jobs.some(j=>j.unit===openJobLogId))openJobLogId=null;n.hidden=false;suppressLogScroll=true;n.innerHTML='<div class="section-title"><h2>Jobs</h2><span class="hint">Server-side state · safe across browser/device changes</span></div>'+jobs.map(j=>{const open=j.unit===openJobLogId;return `<div class="job"><code>${esc(j.unit)}</code><span>${esc(friendlyJobTarget(j.target))}</span><span class="pill ${j.state==='completed'?'good':j.state==='failed'||j.state==='interrupted'?'bad':'warn'}">${esc(j.state==='completed_with_warnings'?'Please check':j.state)}</span><button data-job="${esc(j.unit)}">${open?'Hide log':'Show log'}</button><div class="log" id="log-${esc(j.unit)}"${open?'':' hidden'}></div></div>`}).join('');suppressLogScroll=false;n.querySelectorAll('button[data-job]').forEach(b=>b.addEventListener('click',async()=>{const unit=b.dataset.job;const node=document.getElementById(`log-${unit}`);if(openJobLogId===unit){openJobLogId=null;node.hidden=true;b.textContent='Show log';return}openJobLogId=unit;logAutoFollow=true;logScrollTop=0;node.hidden=false;b.textContent='Hide log';await loadJobLog(unit,node);attachLogScroll(node)}));if(openJobLogId){const node=document.getElementById(`log-${openJobLogId}`);if(node){node.scrollTop=logAutoFollow?node.scrollHeight:logScrollTop;loadJobLog(openJobLogId,node).then(()=>{if(openJobLogId===node.id.slice(4))attachLogScroll(node)})}}}
     async function loadStatus(generation=authGeneration){try{const d=await api('/api/status',{cache:'no-store'});if(generation!==authGeneration||!window.__uu_authenticated)return;try{render(d)}catch(e){console.error('Status render failed',e);if(!csrfToken)return;notice('The status view could not be rendered.',true);set('generated','Status render error');document.getElementById('targets').innerHTML='<div class="empty error">The status view could not be rendered.</div>'}}catch(e){if(generation!==authGeneration||!window.__uu_authenticated)return;if(!csrfToken)return;notice(e.message,true);set('generated','Status unavailable');document.getElementById('targets').innerHTML='<div class="empty">The status file is missing or invalid.</div>'}finally{completeInitialSystemDataPart('inventory',generation);completeInitialSystemDataPart('status',generation)}}
     function isStatusRefreshJob(job){return job?.type==='check'||job?.type==='update'}
-    async function loadJobs(generation=authGeneration){try{const d=await api('/api/jobs',{cache:'no-store'});if(generation!==authGeneration||!window.__uu_authenticated)return;const previous=new Map(jobs.map(job=>[job.unit,job.state]));jobs=sortJobs(Array.isArray(d.jobs)?d.jobs:[]);const statusRefreshJobFinished=jobs.some(job=>isStatusRefreshJob(job)&&['completed','completed_with_warnings','failed','interrupted','cancelled'].includes(job.state)&&['running','pending','starting'].includes(previous.get(job.unit)));renderJobs();reorderJobDom();if(statusRefreshJobFinished)await loadStatus(generation);if(generation!==authGeneration||!window.__uu_authenticated)return;clearTimeout(pollTimer);pollTimer=setTimeout(()=>loadJobs(generation),jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){if(generation!==authGeneration||!window.__uu_authenticated)return;clearTimeout(pollTimer);pollTimer=setTimeout(()=>loadJobs(generation),10000)}}
+    async function loadJobs(generation=authGeneration){try{const d=await api('/api/jobs',{cache:'no-store'});if(generation!==authGeneration||!window.__uu_authenticated)return;const previous=new Map(jobs.map(job=>[job.unit,job.state]));jobs=sortJobs(Array.isArray(d.jobs)?d.jobs:[]);const statusRefreshJobFinished=jobs.some(job=>isStatusRefreshJob(job)&&['completed','completed_with_warnings','failed','interrupted','cancelled'].includes(job.state)&&['running','pending','starting'].includes(previous.get(job.unit)));renderJobs();reorderJobDom();if(jobsLoadError){jobsLoadError=false;notice('Job list refreshed.')}if(statusRefreshJobFinished)await loadStatus(generation);if(generation!==authGeneration||!window.__uu_authenticated)return;clearTimeout(pollTimer);pollTimer=setTimeout(()=>loadJobs(generation),jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){if(generation!==authGeneration||!window.__uu_authenticated)return;if(!jobsLoadError){jobsLoadError=true;notice('Job list could not be refreshed. Existing job data is retained; retrying shortly.',true)}clearTimeout(pollTimer);pollTimer=setTimeout(()=>loadJobs(generation),10000)}}
     updaterVersion=null;
     function versionDisplay(data,value,commitValue,betaValue){if(!value)return 'Unavailable';let display=value;if(data?.branch==='beta'&&Number.isInteger(betaValue))display+=` Beta ${betaValue}`;else if(data?.branch==='develop')display+=' develop';if((data?.branch==='beta'||data?.branch==='develop')&&/^[0-9a-f]{40}$/.test(commitValue||''))display+=` · ${commitValue.slice(0,7)}`;return display}
     const shortCommit=value=>value&&/^[0-9a-f]{40}$/.test(value)?value.slice(0,7):(value||'Unknown');
@@ -3810,7 +3810,12 @@ class StatusHandler(BaseHTTPRequestHandler):
         runner = self.server.job_runner
         if not runner.is_file() or not runner.stat().st_mode & 0o111:
             raise RuntimeError("job runner is not available")
-        result = self.run_command([str(runner), "list"], timeout=15)
+        # The HTTP job list must never wait for one SSH round-trip per remote
+        # reference.  The runner's normal ``list`` command intentionally
+        # performs reconciliation and remains available to the CLI; the
+        # cached mode only reads local state and the last persisted remote
+        # snapshot.
+        result = self.run_command([str(runner), "list", "--cached"], timeout=5)
         if result.returncode:
             raise RuntimeError("job state could not be read")
         rows = [parse_state_line(line) for line in result.stdout.splitlines()]
@@ -3828,7 +3833,58 @@ class StatusHandler(BaseHTTPRequestHandler):
         for row in selected:
             if row.get("interactive"):
                 row["attached"] = self.server.interactive_broker.attached(row["unit"])
+        schedule_reconciliation = getattr(self, "schedule_remote_reconciliation", None)
+        if schedule_reconciliation is not None:
+            schedule_reconciliation()
         return selected
+
+    def schedule_remote_reconciliation(self):
+        """Reconcile pending remote references outside the HTTP request.
+
+        The worker is deliberately single-flight and bounded.  It only reads
+        remote job state and imports terminal status; it never starts a new
+        update job.  A controller restart simply causes the next request to
+        schedule another reconciliation.
+        """
+        lock = getattr(self.server, "remote_reconcile_lock", None)
+        if lock is None or not self.server.jobs_dir.is_dir():
+            return
+        remote_dir = self.server.jobs_dir / "remote"
+        try:
+            refs = list(remote_dir.glob("*.ref"))
+        except OSError:
+            return
+        pending = False
+        for reference in refs:
+            try:
+                values = reference.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeError):
+                continue
+            if any(line == "status_refresh=pending" for line in values):
+                pending = True
+                break
+        if not pending or not lock.acquire(blocking=False):
+            return
+
+        def reconcile():
+            try:
+                environment = {**os.environ, "UU_JOB_STATE_DIR": str(self.server.jobs_dir)}
+                subprocess.run(
+                    [str(self.server.job_runner), "reconcile-remote-all"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=120,
+                    check=False,
+                    env=environment,
+                    start_new_session=True,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            finally:
+                lock.release()
+
+        threading.Thread(target=reconcile, name="remote-job-reconcile", daemon=True).start()
 
     def local_version(self):
         """Return harmless installed build metadata without network access."""
@@ -5744,6 +5800,7 @@ def main():
     server.tag_filter_script = args.config_file.parent / "tag-filter.sh"
     server.asset_dir = args.asset_dir
     server.job_runner, server.jobs_dir = args.job_runner, args.jobs_dir
+    server.remote_reconcile_lock = threading.Lock()
     server.interactive_broker = InteractiveJobBroker(
         Path(os.environ.get("UU_INTERACTIVE_RUNTIME_DIR", DEFAULT_INTERACTIVE_RUNTIME_DIR))
     )

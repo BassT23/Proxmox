@@ -67,6 +67,9 @@ make_remote_job ultimate-updater-update-986-reconcile completed 0 success
 UU_JOB_STATE_DIR="$WORK_DIR/jobs" UU_REMOTE_JOB_STATE_DIR="$WORK_DIR/jobs/remote" UU_LOCAL_FILES="$WORK_DIR" UU_CHECK_CLI="$WORK_DIR/check.sh" UU_STATUS_MODEL_FILE="$WORK_DIR/status.json" UU_STATUS_MODEL_SCRIPT="$WORK_DIR/status-model.sh" \
   "$ROOT_DIR/job-runner.sh" list > "$WORK_DIR/list-success"
 grep -Fq $'ultimate-updater-update-986-reconcile\t986\tcompleted' "$WORK_DIR/list-success"
+SSH_DOWN=true UU_JOB_STATE_DIR="$WORK_DIR/jobs" UU_REMOTE_JOB_STATE_DIR="$WORK_DIR/jobs/remote" UU_LOCAL_FILES="$WORK_DIR" \
+  "$ROOT_DIR/job-runner.sh" list --cached > "$WORK_DIR/list-cached"
+grep -Fq $'ultimate-updater-update-986-reconcile\t986\tcompleted' "$WORK_DIR/list-cached"
 grep -Fxq 'status_refresh=done' "$WORK_DIR/jobs/remote/ultimate-updater-update-986-reconcile.ref"
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"success"' "$WORK_DIR/status.json"
 test ! -e "$REMOTE_DIR/ultimate-updater-update-986-reconcile"

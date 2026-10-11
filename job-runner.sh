@@ -50,7 +50,7 @@ remote_node_ssh() {
 }
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | recover UNIT | recover-local UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list | show UNIT | reconcile-remote UNIT\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | recover UNIT | recover-local UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list [--cached] | show UNIT | reconcile-remote UNIT | reconcile-remote-all\n' "$0"
 }
 
 valid_target() {
@@ -164,6 +164,10 @@ cleanup_interactive_runtime() {
 
 remote_ref_file() {
   printf '%s/%s.ref' "$REMOTE_REF_DIR" "$1"
+}
+
+remote_cache_file() {
+  printf '%s/%s.cache' "$REMOTE_REF_DIR" "$1"
 }
 
 state_value() {
@@ -453,12 +457,33 @@ remote_state_line() {
           (values["state"] == "running" && values["interactive"] == "true" ? "true" : "false")
       }' <<< "$output") || remote_line=""
     if [[ -n "$remote_line" ]]; then
+      cache_remote_state_line "$unit" "$remote_line" || true
       printf '%s\n' "$remote_line"
       return 0
     fi
   fi
   printf '%s\t%s\tremote_unavailable\t%s\t\t\t%s\n' \
     "$unit" "$target" "${registered_at:-$(now)}" "$owner_node"
+}
+
+cache_remote_state_line() {
+  local unit="$1" remote_line="$2" file temp
+  valid_unit "$unit" || return 2
+  [[ -n "$remote_line" && "$remote_line" != *$'\n'* ]] || return 1
+  mkdir -p "$REMOTE_REF_DIR" || return 1
+  file=$(remote_cache_file "$unit")
+  temp="$file.tmp.$$"
+  printf '%s\n' "$remote_line" > "$temp" || return 1
+  chmod 0644 "$temp" || return 1
+  mv -f -- "$temp" "$file"
+}
+
+remote_cached_state_line() {
+  local unit="$1" file="$2" line
+  [[ -f "$file" && -r "$file" ]] || return 1
+  line=$(head -n 1 -- "$file") || return 1
+  [[ "$line" == "$unit"$'\t'* ]] || return 1
+  printf '%s\n' "$line"
 }
 
 sync_remote_last_update() {
@@ -1392,6 +1417,58 @@ list_jobs() {
   done
 }
 
+list_jobs_cached() {
+  [[ -d "$JOB_STATE_DIR" ]] || return 0
+  local file unit target state started finished exit_code interactive socket_available socket_path
+  local owner_node owner_host port remote_state cached_file
+  shopt -s nullglob
+  for file in "$JOB_STATE_DIR"/*.state; do
+    unit=$(state_value "$file" unit)
+    target=$(state_value "$file" target)
+    state=$(state_value "$file" state)
+    started=$(state_value "$file" started_at)
+    finished=$(state_value "$file" finished_at)
+    exit_code=$(state_value "$file" exit_code)
+    interactive=$(state_value "$file" interactive 2>/dev/null || printf 'false')
+    socket_available=false
+    if [[ "$interactive" == true ]]; then
+      socket_path=$(state_value "$file" socket_path 2>/dev/null || interactive_socket "$unit")
+      [[ -S "$socket_path" ]] && socket_available=true
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t%s\t%s\t%s\n' \
+      "$unit" "$target" "$state" "$started" "$finished" "$exit_code" \
+      "$(state_value "$file" type)" "$(state_value "$file" source)" "$interactive" "$socket_available"
+  done
+  for file in "$REMOTE_REF_DIR"/*.ref; do
+    unit=$(state_value "$file" unit)
+    target=$(state_value "$file" target)
+    owner_node=$(state_value "$file" owner_node)
+    owner_host=$(state_value "$file" owner_host)
+    port=$(state_value "$file" port)
+    [[ -n "$unit" && -n "$target" && -n "$owner_node" && -n "$owner_host" && -n "$port" ]] || continue
+    cached_file=$(remote_cache_file "$unit")
+    if remote_state=$(remote_cached_state_line "$unit" "$cached_file"); then
+      printf '%s\n' "$remote_state"
+    else
+      printf '%s\t%s\tremote_unavailable\t%s\t\t\t%s\n' \
+        "$unit" "$target" "$(state_value "$file" registered_at)" "$owner_node"
+    fi
+  done
+}
+
+reconcile_remote_all() {
+  local lock_file="$JOB_STATE_DIR/remote-reconcile.lock" file unit
+  mkdir -p "$JOB_STATE_DIR" || return 1
+  exec 9>"$lock_file" || return 1
+  flock -n 9 || return 0
+  shopt -s nullglob
+  for file in "$REMOTE_REF_DIR"/*.ref; do
+    unit=$(state_value "$file" unit)
+    [[ -n "$unit" ]] || continue
+    reconcile_remote_job "$unit" >/dev/null 2>&1 || true
+  done
+}
+
 reconcile_remote_job() {
   local unit="$1" ref_line target owner_node owner_host port remote_state
   ref_line=$(remote_ref_line "$unit") || return 1
@@ -1530,8 +1607,14 @@ case "${1:-}" in
     request_cancel "$2"
     ;;
   list)
-    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
-    list_jobs
+    if [[ $# -eq 1 ]]; then
+      list_jobs
+    elif [[ $# -eq 2 && "$2" == --cached ]]; then
+      list_jobs_cached
+    else
+      usage >&2
+      exit 2
+    fi
     ;;
   show)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
@@ -1540,6 +1623,10 @@ case "${1:-}" in
   reconcile-remote)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     reconcile_remote_job "$2"
+    ;;
+  reconcile-remote-all)
+    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+    reconcile_remote_all
     ;;
   record-remote)
     [[ $# -eq 6 || $# -eq 7 ]] || { usage >&2; exit 2; }

@@ -60,6 +60,9 @@ assert "jobStateLabel(j.state)" in page
 assert "Status unresolved" in page
 assert "Remote state unavailable" in page
 assert 'Starting another update is blocked until the existing job state has been resolved.' in page
+assert 'Job list could not be refreshed. Existing job data is retained; retrying shortly.' in page
+assert "jobsLoadError=false" in page
+assert '[str(runner), "list", "--cached"]' in (root / 'web-ui' / 'server.py').read_text(encoding='utf-8')
 assert 'class="overview-actions-card"' in overview
 assert 'id="check-all"' in overview
 assert 'id="update-all"' in overview
