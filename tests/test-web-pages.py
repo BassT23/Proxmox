@@ -15,9 +15,11 @@ assert 'data-page="settings"' in page
 assert 'data-page="scheduler"' in page
 assert 'href="/settings"' in page
 assert 'href="/scheduler"' in page
-assert page.count('class="nav-icon"') == 5
+assert page.count('class="nav-icon"') == 6
 assert 'class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"' in page
 assert '.dashboard-meta .page-nav a .nav-icon' in page
+assert 'href="#jobs" data-anchor="jobs"' in page
+assert '<span>Jobs</span>' in page
 assert 'display:flex!important;align-items:center;gap:8px;min-width:0' in page
 assert 'id="logout-menu"' in page
 assert 'href="https://ko-fi.com/basst"' in page
@@ -53,6 +55,11 @@ assert 'id="external-panel"' not in overview
 assert 'id="internal-ssh-view"' not in overview
 assert 'id="targets"' in overview
 assert 'id="jobs"' in overview
+assert 'No active or recent jobs.' in page
+assert "jobStateLabel(j.state)" in page
+assert "Status unresolved" in page
+assert "Remote state unavailable" in page
+assert 'Starting another update is blocked until the existing job state has been resolved.' in page
 assert 'class="overview-actions-card"' in overview
 assert 'id="check-all"' in overview
 assert 'id="update-all"' in overview

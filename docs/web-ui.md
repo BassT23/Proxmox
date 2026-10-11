@@ -50,7 +50,8 @@ selection.
 ### Navigation
 
 Use the compact menu button in the header to open the current navigation. It
-contains the three available areas: Dashboard, Settings, and Scheduler.
+contains Dashboard, Jobs, Settings, and Scheduler. Jobs is always available,
+including when there are no active or recent jobs.
 
 ![Web UI navigation menu](images/web-ui/navigation.png)
 
