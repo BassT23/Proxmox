@@ -483,6 +483,23 @@ GUEST_INTERNET_PREFLIGHT_QGA() {
   [[ "$QEMU_EXEC_TRANSPORT_RC" -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]
 }
 
+# A host-only check may use the configured host connectivity probe.  Guest
+# checks must not be gated by this host-side HTTP probe: each guest transport
+# performs its own bounded, target-specific connectivity check where needed.
+CHECK_GLOBAL_INTERNET_REQUIRED() {
+  case "${1:-}" in
+    chost|node-host) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+CHECK_GLOBAL_INTERNET() {
+  local timeout_seconds="${UU_GLOBAL_INTERNET_TIMEOUT:-10}"
+  [[ "$timeout_seconds" =~ ^[0-9]+$ && "$timeout_seconds" -gt 0 ]] || timeout_seconds=10
+  timeout --kill-after=2s "$timeout_seconds" \
+    wget -q --spider "${CHECK_URL:-}" >/dev/null 2>&1
+}
+
 # Wait for bootup / reboot
 # Container
 WAIT_FOR_BOOTUP_LXC () {
@@ -2331,15 +2348,17 @@ STATUS_MODEL_DIAGNOSTIC "STATUS_MODEL_INIT node=${STATUS_MODEL_NODE:-${HOSTNAME:
 if [[ -n "${UU_JOB_SOURCE:-}" ]]; then
   STATUS_MODEL_DIAGNOSTIC "REMOTE_JOB_SOURCE=${UU_JOB_SOURCE} REMOTE_INITIAL_INVENTORY=$INITIAL_INVENTORY"
 fi
-if wget -q --spider "$CHECK_URL" >/dev/null 2>&1; then
-  ARGUMENTS "$@"
-  # Print any tag selection summary captured during config parse
-  if [[ "$RDU" != true && "$RICM" != true && "$TAG_OUTPUT" != false && "${UU_SINGLE_TARGET_CHECK:-false}" != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
-else
-  echo -e "${OR} You are offline${CL}"
-  mark_check_hard_failure
-  exit 2
+if CHECK_GLOBAL_INTERNET_REQUIRED "${1:-}"; then
+  if ! CHECK_GLOBAL_INTERNET; then
+    echo -e "${OR} Host internet precheck failed or timed out${CL}"
+    mark_check_hard_failure
+    exit 2
+  fi
+  STATUS_MODEL_DIAGNOSTIC "HOST_INTERNET_PREFLIGHT=pass"
 fi
+ARGUMENTS "$@"
+# Print any tag selection summary captured during config parse
+if [[ "$RDU" != true && "$RICM" != true && "$TAG_OUTPUT" != false && "${UU_SINGLE_TARGET_CHECK:-false}" != true ]]; then if declare -f print_tag_log >/dev/null 2>&1; then print_tag_log; fi; fi
 
 RUN_AUTOMATIC_CHECK_DISPATCH () {
   if [[ "$MODE" =~ Cluster ]]; then HOST_CHECK_START; else
