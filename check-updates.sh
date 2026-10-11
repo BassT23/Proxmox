@@ -33,14 +33,21 @@ else
   # shellcheck disable=SC2317,SC2329
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
   READ_APT_UPDATE_COUNTS() {
-    local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+    local script="${APT_COUNT_SHELL_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.sh}"
+    local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
     local result
-    result=$(python3 "$script") || {
-      SECURITY_APT_UPDATES=null
-      NORMAL_APT_UPDATES=null
-      APT_COUNTS_TOTAL=null
-      return 1
-    }
+    if [[ ! -f "$script" ]]; then
+      result=$(python3 "$python_script") || {
+        SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
+      }
+    else
+      result=$(APT_COUNT_PYTHON_SCRIPT="$python_script" sh "$script") || {
+        SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
+      }
+    fi
+    if [[ -z "$result" ]]; then
+      SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
+    fi
     PARSE_APT_UPDATE_COUNTS "$result"
   }
   PARSE_APT_UPDATE_COUNTS() {
@@ -54,9 +61,18 @@ else
     [[ $((normal + security)) -eq $total ]]
   }
   APT_COUNT_REMOTE_COMMAND() {
-    local script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}" encoded
-    encoded=$(base64 -w0 "$script") || return 1
-    printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
+    local shell_script="${APT_COUNT_SHELL_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.sh}"
+    local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
+    local shell_encoded python_encoded
+    if [[ ! -f "$shell_script" ]]; then
+      python_encoded=$(base64 -w0 "$python_script") || return 1
+      printf 'python3 -c %q' "import base64;exec(base64.b64decode('$python_encoded'))"
+      return 0
+    fi
+    shell_encoded=$(base64 -w0 "$shell_script") || return 1
+    python_encoded=$(base64 -w0 "$python_script") || return 1
+    printf 'printf %%s %q | base64 -d | APT_COUNT_PYTHON_B64=%q sh -s' \
+      "$shell_encoded" "$python_encoded"
   }
   PARSE_RPM_UPDATE_COUNTS() {
     local result="$1" marker status total normal security known
@@ -297,6 +313,7 @@ else
     QEMU_EXEC_TRANSPORT_RC=1
     QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC
   }
+  QEMU_GUEST_EXEC_READONLY() { QEMU_GUEST_EXEC "$@"; }
 fi
 
 ARGUMENTS () {
@@ -462,7 +479,7 @@ GUEST_INTERNET_PREFLIGHT_SSH() {
 GUEST_INTERNET_PREFLIGHT_QGA() {
   local command
   command=$(GUEST_INTERNET_PREFLIGHT_COMMAND) || return 1
-  QEMU_GUEST_EXEC "$1" --timeout "${UU_GUEST_PREFLIGHT_TIMEOUT:-5}" -- bash -c "$command"
+  QEMU_GUEST_EXEC_READONLY "$1" --timeout "${UU_GUEST_PREFLIGHT_TIMEOUT:-5}" -- bash -c "$command"
   [[ "$QEMU_EXEC_TRANSPORT_RC" -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]
 }
 
@@ -669,7 +686,7 @@ HOST_CHECK_START () {
 # Host Check
 CHECK_HOST () {
   local HOST=$1 remote_check_dir remote_status remote_status_file remote_done_file
-  local remote_apt_count remote_rpm_count
+  local remote_apt_count remote_apt_count_shell remote_rpm_count
   local remote_done_value remote_status_attempt HOST_NODE HOST_ID remote_done_error_file remote_status_error_file remote_diagnostics_error_file
   local remote_diagnostics_file remote_diagnostics_local_file remote_diagnostics_attempt
   local remote_done_found=false remote_done_transport_rc=0 remote_status_transport_rc=0
@@ -697,6 +714,7 @@ CHECK_HOST () {
   # dispatch and let the remote wrapper signal completion explicitly.
   remote_check_dir="/tmp/ultimate-updater-check-${$}-${RANDOM}-${RANDOM}"
   remote_apt_count="$remote_check_dir/apt-count.py"
+  remote_apt_count_shell="$remote_check_dir/apt-count.sh"
   remote_rpm_count="$remote_check_dir/rpm-count.py"
   remote_done_file="$remote_check_dir/completed"
   remote_runtime_env=""
@@ -744,12 +762,14 @@ CHECK_HOST () {
     if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
       "$LOCAL_FILES/apt-count.py" "$HOST:$remote_apt_count" >/dev/null 2>&1 ||
       ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
+      "$LOCAL_FILES/apt-count.sh" "$HOST:$remote_apt_count_shell" >/dev/null 2>&1 ||
+      ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
       "$LOCAL_FILES/rpm-count.py" "$HOST:$remote_rpm_count" >/dev/null 2>&1; then
       CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
       echo -e "${RD}Could not prepare package count helpers on remote host $HOST${CL}"
       return 1
     fi
-    remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh' APT_COUNT_SCRIPT='$remote_apt_count' RPM_COUNT_SCRIPT='$remote_rpm_count'"
+    remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh' APT_COUNT_SCRIPT='$remote_apt_count' APT_COUNT_SHELL_SCRIPT='$remote_apt_count_shell' RPM_COUNT_SCRIPT='$remote_rpm_count'"
   fi
   if [[ -f "$STATUS_MODEL_SCRIPT" ]]; then
     if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$STATUS_MODEL_SCRIPT" "$HOST:$remote_check_dir/status-model.sh" >/dev/null 2>&1; then
@@ -1616,12 +1636,12 @@ CHECK_VM () {
       fi
       local package_count_command package_count_result
       if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pkg); then
-        STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pkg "null" "null" error PACKAGE_COUNT_UNAVAILABLE \
           "pkg count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
       if ! package_count_result=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "$package_count_command"); then
-        STATUS_MODEL_RECORD "$VM" vm ssh false "$OS" pkg "null" "null" error PACKAGE_COUNT_FAILED \
+        STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pkg "null" "null" error PACKAGE_COUNT_FAILED \
           "Could not determine pkg update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
@@ -1850,7 +1870,7 @@ print(data.get("id") or "")
         "pkg count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
       return 1
     fi
-    QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
+    QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- sh -c "$package_count_command"
     if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
       STATUS_MODEL_RECORD "$VM" vm qga false "$OS_NAME" pkg "null" "null" \
         error QGA_TRANSPORT "QEMU Guest Agent transport failed during pkg check: ${QEMU_EXEC_OUTPUT}" \
@@ -1895,7 +1915,7 @@ print(data.get("id") or "")
   # Use an explicit successful command for the QGA readiness probe.  The
   # shell builtin/executable `test` without arguments intentionally exits 1,
   # which must not be mistaken for a guest-agent transport failure.
-  QEMU_GUEST_EXEC "$VM" --timeout 30 -- /bin/true
+  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 30 -- /bin/true
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     STATUS_MODEL_RECORD "$VM" vm qga false "" "" "null" "null" error QGA_TRANSPORT "${QEMU_EXEC_OUTPUT}"
     return 1
@@ -1922,7 +1942,7 @@ print(data.get("id") or "")
           "APT count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$apt_count_command"
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- bash -c "$apt_count_command"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "null" "null" error APT_COUNT_UNAVAILABLE \
           "Could not determine APT update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -1934,7 +1954,7 @@ print(data.get("id") or "")
         return 1
       fi
       if [[ "$SECURITY_APT_UPDATES" -gt 0 ]]; then SECURITY_UPDATES_AVALABLE=true; fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c '[ -f /var/run/reboot-required.pkgs ]'
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- bash -c '[ -f /var/run/reboot-required.pkgs ]'
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
         echo -e "${RD}QEMU reboot check failed for VM $VM: ${QEMU_EXEC_OUTPUT}${CL}"
         return 1
@@ -1962,7 +1982,7 @@ print(data.get("id") or "")
           "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$rpm_count_command"
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- bash -c "$rpm_count_command"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "null" "null" error RPM_COUNT_UNAVAILABLE \
           "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -1989,7 +2009,7 @@ print(data.get("id") or "")
           "Pacman count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- sh -c "$package_count_command"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "null" "null" error PACKAGE_COUNT_FAILED \
           "Could not determine Pacman update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -2016,7 +2036,7 @@ print(data.get("id") or "")
           "APK count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- sh -c "$package_count_command"
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- sh -c "$package_count_command"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "null" "null" error PACKAGE_COUNT_FAILED \
           "Could not determine APK update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -2043,7 +2063,7 @@ print(data.get("id") or "")
           "RPM count helper is unavailable for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         return 1
       fi
-      QEMU_GUEST_EXEC "$VM" --timeout 120 -- bash -c "$rpm_count_command"
+      QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- bash -c "$rpm_count_command"
       if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
         STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "null" "null" error RPM_COUNT_UNAVAILABLE \
           "Could not determine RPM update counts for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
@@ -2103,7 +2123,7 @@ CHECK_VM_QEMU_HAOS () {
   local os_version os_update core_version core_update
   local updates=0 status=ok display_os
 
-  QEMU_GUEST_EXEC "$VM" --timeout 60 -- /usr/bin/ha os info --raw-json
+  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 60 -- /usr/bin/ha os info --raw-json
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     STATUS_MODEL_RECORD "$VM" vm qga false "Home Assistant OS" ha \
       "null" false error QGA_TRANSPORT \
@@ -2130,7 +2150,7 @@ CHECK_VM_QEMU_HAOS () {
 
   IFS=$'\t' read -r os_version os_update <<< "$os_parsed"
 
-  QEMU_GUEST_EXEC "$VM" --timeout 60 -- /usr/bin/ha core info --raw-json
+  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 60 -- /usr/bin/ha core info --raw-json
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     STATUS_MODEL_RECORD "$VM" vm qga false "Home Assistant OS ${os_version}" ha \
       "null" false error QGA_TRANSPORT \
@@ -2187,7 +2207,7 @@ CHECK_VM_QEMU_WINDOWS () {
     STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_HELPER_MISSING "Windows update helper is not installed"
     return 1
   fi
-  QEMU_GUEST_EXEC "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE check)"
+  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE check)"
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     reachable=false
     error_code=QGA_TRANSPORT

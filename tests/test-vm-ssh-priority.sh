@@ -185,6 +185,7 @@ QEMU_GUEST_EXEC() {
 }
 STATUS_MODEL_RECORD() { printf 'record:%s\n' "$*" >> "$LOG"; }
 source "$PWD/check-qemu.sh"
+QEMU_GUEST_EXEC_READONLY() { QEMU_GUEST_EXEC "$@"; }
 CHECK_VM_QEMU
 grep -Fq 'qga-exec:100 --timeout 120 -- sh -c :' "$LOG"
 grep -Fq 'record:100 vm qga true pfSense pkg 1 false updates_available' "$LOG"

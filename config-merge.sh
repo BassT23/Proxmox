@@ -20,10 +20,11 @@ CONFIG_MERGE_ASSIGNMENT_KEYS () {
 CONFIG_MERGE_VALIDATE () {
   awk '
     BEGIN {
+      dq = sprintf("%c", 34)
       sq = sprintf("%c", 39)
-      double_value = "^\\\"([^\\\"\\\\]|\\\\.)*\\\"[[:space:]]*(#.*)?$"
+      double_value = "^" dq "([^" dq "\\\\]|\\\\.)*" dq "[[:space:]]*(#.*)?$"
       single_value = "^" sq "([^" sq "\\\\]|\\\\.)*" sq "[[:space:]]*(#.*)?$"
-      bare_value = "^[^[:space:]#\\\"" sq "]+[[:space:]]*(#.*)?$"
+      bare_value = "^[^[:space:]#" dq sq "]+[[:space:]]*(#.*)?$"
     }
     match($0, /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/) {
       line = substr($0, RSTART)
@@ -200,7 +201,7 @@ MERGE_UPDATE_CONFIG () {
          /^[[:space:]]*USED_BRANCH[[:space:]]*=/ {
            line = $0
            sub(/^[^=]*=[[:space:]]*/, "", line)
-           if (line ~ "^\\\"" branch "\\\"") found = 1
+           if (line ~ ("^" sprintf("%c", 34) branch sprintf("%c", 34))) found = 1
          }
          END { exit !found }
        ' "$user_config" 2>/dev/null; then

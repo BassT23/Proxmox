@@ -468,7 +468,7 @@ PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark"><link rel="icon" href="/assets/favicon.png" type="image/png"><link rel="stylesheet" href="/assets/vendor/xterm/xterm.css"><script src="/assets/vendor/xterm/xterm.js"></script><script src="/assets/vendor/xterm/addon-fit.js"></script><title>Ultimate Updater</title>
+  <meta name="color-scheme" content="dark"><link rel="icon" href="/assets/favicon.png" type="image/png"><script>(function(){try{var value=localStorage.getItem('ultimate-updater-theme');document.documentElement.dataset.theme=value==='classic'?'classic':'modern'}catch(_error){document.documentElement.dataset.theme='modern'}})();</script><link rel="stylesheet" href="/assets/vendor/xterm/xterm.css"><script src="/assets/vendor/xterm/xterm.js"></script><script src="/assets/vendor/xterm/addon-fit.js"></script><title>Ultimate Updater</title>
   <style>
     :root { color-scheme:dark; --bg:#0b1020; --panel:#151d34e8; --strong:#19233f; --text:#edf3ff; --muted:#91a0bd; --line:#94a3b82e; --accent:#73a7ff; --good:#55d39a; --warn:#f7c66b; --security:#f0a83a; --bad:#ff7e8b; font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
     * { box-sizing:border-box } .visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0 } body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(circle at top right,#1e3567 0,var(--bg) 42rem) }
@@ -844,14 +844,14 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
   </style>
 </head>
 <body>
-  <section id="auth-loading" class="modal-backdrop open" aria-live="polite"><div class="modal auth-loading"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><p>Loading…</p></div></section>
-  <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Sign in with your Proxmox administrator account.</p><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><label>Domain<select name="realm" id="login-realm" autocomplete="off" required><option value="">Loading authentication domains…</option></select></label><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
+  <section id="auth-loading" class="modal-backdrop open" aria-live="polite"><div class="modal auth-loading"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><p id="auth-loading-message">Loading…</p><button id="auth-loading-retry" type="button" hidden>Retry</button></div></section>
+  <section id="login-screen" class="modal-backdrop" aria-label="Sign in"><form id="login-form" class="modal"><img class="login-branding" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h2>Ultimate Updater</h2><p class="hint">Sign in to access system status and actions.</p><p id="login-version" class="login-version" aria-live="polite">Ultimate Updater · checking local version…</p><p class="login-account-hint">Sign in with your Proxmox administrator account.</p><label data-login-factor="first">Username<input name="username" autocomplete="username" required></label><label data-login-factor="first">Password<input name="password" type="password" autocomplete="current-password" required></label><label data-login-factor="first">Domain<select name="realm" id="login-realm" autocomplete="off" required><option value="">Loading authentication domains…</option></select></label><div id="login-tfa" hidden><p id="login-tfa-message" class="hint">Two-factor authentication is required.</p><label>Method<select id="login-tfa-type" autocomplete="off"></select></label><label id="login-tfa-response-label">Response<input id="login-tfa-response" autocomplete="one-time-code" inputmode="text"></label><button id="login-tfa-webauthn" type="button" hidden>Use WebAuthn</button><div class="form-actions"><button id="login-tfa-cancel" type="button">Cancel</button></div></div><div class="form-actions"><button class="primary" type="submit">Sign in</button></div><div id="login-progress" class="login-progress" role="status" aria-live="polite"><span class="login-spinner" aria-hidden="true"></span><span>Signing in…</span></div><div id="login-message" class="management-message" role="alert"></div></form></section>
   <main class="app-main" id="dashboard" hidden>
     <header class="dashboard-header"><div class="dashboard-header-top"><div class="dashboard-brand"><div class="brand-lockup"><div class="brand-copy"><img class="brand-header-art" src="/assets/ultimate-updater-header.png" alt="Ultimate Updater"><h1 class="visually-hidden">Ultimate Updater</h1></div></div><p id="page-subtitle" class="subtitle">A clear overview of updates across your systems.</p></div><div class="dashboard-meta"><span id="generated">Loading status…</span><button id="job-running-indicator" class="job-running-indicator" type="button" hidden aria-controls="jobs"><span class="job-running-dot" aria-hidden="true"></span><span id="job-running-label">Job running</span></button><button id="updater-version-indicator" class="updater-update-indicator" type="button" hidden>Updater update available</button><button id="logout" type="button">Log out</button></div></div><nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav><section class="summary dashboard-kpis" hidden><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>
     <div id="notice" hidden></div>
     <section id="overview-page" class="page-section">
     <section class="global-actions" aria-labelledby="global-actions-title"><div class="global-actions-copy"><strong id="global-actions-title">Run the configured updater</strong><span>Configured include/exclude and safety rules are respected.</span></div><div class="global-actions-buttons"><button id="check-all" class="global-action check-all" type="button">Check all systems</button><button id="update-all" class="global-action update-all" type="button">Update all systems</button></div></section>
-    <section id="systems" class="systems-panel"><div class="section-title"><div class="heading-with-help"><div><h2>Systems</h2><span class="hint">Organized by Proxmox node and external target</span></div><span class="help-control"><button class="help-trigger" type="button" aria-label="About Systems" aria-expanded="false" aria-controls="systems-help-popover">?</button><span id="systems-help-popover" class="help-popover" role="tooltip"><p>Systems shows the complete active inventory grouped by Proxmox node and external target. Status and update information comes from the latest available check data.</p><p>Guests without current update information remain part of the inventory; status data is only an enrichment of the inventory.</p></span></span></div><span class="view-note">Checks and updates use the existing CLI</span></div><p class="node-scope-help">Check/Update node: Only this node. LXCs and VMs are not checked or updated.</p><div id="targets" class="targets"></div><section id="details" class="details" hidden></section></section>
+    <section id="systems" class="systems-panel"><div class="section-title"><div class="heading-with-help"><div><h2>Systems</h2><span class="hint">Organized by Proxmox node and external target</span></div><span class="help-control"><button class="help-trigger" type="button" aria-label="About Systems" aria-expanded="false" aria-controls="systems-help-popover">?</button><span id="systems-help-popover" class="help-popover" role="tooltip"><p>Systems shows the complete active inventory grouped by Proxmox node and external target. Status and update information comes from the latest available check data.</p><p>Guests without current update information remain part of the inventory; status data is only an enrichment of the inventory.</p></span></span></div><span class="view-note">Checks and updates use the existing CLI</span></div><p class="node-scope-help">Check/Update node: Only this node. LXCs and VMs are not checked or updated.</p><div id="system-data-loading" class="system-data-loading" role="status" aria-live="polite" hidden><span class="system-data-loading-spinner" aria-hidden="true"></span><span>Loading system inventory and status…</span></div><div id="targets" class="targets"></div><section id="details" class="details" hidden></section></section>
     <section id="jobs" class="jobs" hidden></section>
     <section id="interactive-terminal-panel" class="interactive-terminal-panel" hidden aria-live="polite"><div class="interactive-terminal-dialog" role="dialog" aria-modal="true" aria-labelledby="interactive-terminal-heading"><div class="section-title"><div><h2 id="interactive-terminal-heading">Live terminal</h2><span id="interactive-terminal-title" class="hint"></span></div><div class="interactive-terminal-header-actions"><span id="interactive-terminal-status" class="pill warn">Disconnected</span><button id="interactive-terminal-stop" class="danger" type="button" hidden>Stop job</button><button id="interactive-terminal-detach" type="button" aria-label="Close window">Close window</button></div></div><div id="interactive-terminal" class="interactive-terminal" aria-label="Interactive job terminal"></div><div id="interactive-terminal-keybar" class="interactive-terminal-keybar" aria-label="Terminal keys" hidden><button type="button" data-interactive-key="Escape" disabled>Esc</button><button type="button" data-interactive-key="Tab" disabled>Tab</button><button type="button" data-interactive-key="ArrowLeft" aria-label="Left" disabled>←</button><button type="button" data-interactive-key="ArrowUp" aria-label="Up" disabled>↑</button><button type="button" data-interactive-key="ArrowDown" aria-label="Down" disabled>↓</button><button type="button" data-interactive-key="ArrowRight" aria-label="Right" disabled>→</button><button type="button" data-interactive-key="Enter" disabled>Enter</button></div><p id="interactive-terminal-help" class="interactive-terminal-help">Ctrl-C detaches from the terminal; the job keeps running.</p><div id="interactive-terminal-message" class="management-message" hidden></div><div class="interactive-terminal-actions"><div class="interactive-terminal-font-controls" aria-label="Terminal font size"><button id="interactive-terminal-font-decrease" type="button" aria-label="Decrease terminal font size">A−</button><span id="interactive-terminal-font-size">11px</span><button id="interactive-terminal-font-increase" type="button" aria-label="Increase terminal font size">A+</button></div><a id="interactive-terminal-download" class="job-download" href="#" download>Download full log</a></div></div></section>
     </section>
@@ -867,20 +867,37 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     const text=(v,f='Unknown')=>v===null||v===undefined||v===''?f:String(v); const esc=v=>text(v,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const date=v=>{if(!v)return'Unknown';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleString()}; const statusLabel=v=>labels[v]||['Unknown','neutral']; const set=(id,v)=>document.getElementById(id).textContent=v;
     const LOG_BOTTOM_TOLERANCE=10;
-    let currentStatus={targets:[]}, jobs=[], pollTimer, openJobLogId=null, logAutoFollow=true, logScrollTop=0, suppressLogScroll=false, finalLogLoaded=new Set(), logLoading=new Set(), csrfToken=null;
-    let authRealmsReady=false;
+    let currentStatus={targets:[]}, jobs=[], pollTimer=null, openJobLogId=null, logAutoFollow=true, logScrollTop=0, suppressLogScroll=false, finalLogLoaded=new Set(), logLoading=new Set(), csrfToken=null, pendingTfa=null, authGeneration=0, versionRetryTimer=null, versionStartupTimer=null, versionRetryUsed=false, updaterVersion=null, loginVersionTimer=null, logoutInProgress=false, initialSystemDataLoad={generation:0,inventory:false,status:false};
+    let authRealmsReady=false, authRealmsLoadGeneration=0;
+    function stopAuthenticatedBackgroundWork(){clearTimeout(pollTimer);pollTimer=null;clearTimeout(versionStartupTimer);versionStartupTimer=null;clearTimeout(versionRetryTimer);versionRetryTimer=null;clearTimeout(loginVersionTimer);loginVersionTimer=null}
+    function startAuthenticatedBackgroundWork(generation=authGeneration){if(!window.__uu_authenticated||generation!==authGeneration)return;clearTimeout(pollTimer);pollTimer=setTimeout(()=>loadJobs(generation),0);scheduleUpdaterVersionCheck()}
+    function setLogoutLoading(loading){document.querySelectorAll('#logout,#logout-menu').forEach(button=>{button.disabled=loading;button.setAttribute('aria-busy',String(loading))})}
+    function beginAuthenticatedSession(){authGeneration+=1;window.__uu_authenticated=true;return authGeneration}
     function setLoginLoading(loading){const form=document.getElementById('login-form'),button=form.querySelector('button[type="submit"]');form.classList.toggle('is-loading',loading);form.dataset.submitting=loading?'true':'false';button.disabled=loading||!authRealmsReady;button.textContent=loading?'Signing in…':'Sign in';form.querySelectorAll('input,select').forEach(input=>{input.disabled=loading||(!loading&&input.id==='login-realm'&&!authRealmsReady)})}
-    async function loadAuthRealms(){const select=document.getElementById('login-realm');if(!select)return;authRealmsReady=false;setLoginLoading(false);try{const response=await fetch('/api/auth/realms',{cache:'no-store'}),data=await response.json();if(!response.ok||!Array.isArray(data.realms)||!data.realms.length)throw new Error('Proxmox authentication realms are unavailable.');select.replaceChildren(...data.realms.map(item=>{const option=document.createElement('option');option.value=item.realm;option.textContent=item.comment?`${item.comment} (${item.realm})`:item.realm;return option}));select.value=data.default_realm||data.realms[0].realm;authRealmsReady=true;setLoginLoading(false)}catch(error){select.replaceChildren(new Option('Authentication domains unavailable',''));select.value='';setLoginLoading(false);const status=document.getElementById('login-message');status.className='management-message error';status.textContent='Proxmox authentication realms are unavailable.'}}
-    function showLogin(message=''){window.__uu_authenticated=false;setLoginLoading(false);document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null;loadAuthRealms()}
-    function showDashboard(){window.__uu_authenticated=true;document.getElementById('auth-loading').classList.remove('open');document.getElementById('login-screen').classList.remove('open');document.getElementById('dashboard').hidden=false;window.dispatchEvent(new Event('uu-auth-ready'))}
+    async function loadAuthRealms(){const select=document.getElementById('login-realm');if(!select)return;const request=++authRealmsLoadGeneration;authRealmsReady=false;setLoginLoading(false);try{const response=await fetch('/api/auth/realms',{cache:'no-store'}),data=await response.json();if(request!==authRealmsLoadGeneration)return;if(!response.ok||!Array.isArray(data.realms)||!data.realms.length)throw new Error('Proxmox authentication realms are unavailable.');select.replaceChildren(...data.realms.map(item=>{const option=document.createElement('option');option.value=item.realm;option.textContent=item.comment?`${item.comment} (${item.realm})`:item.realm;return option}));select.value=data.default_realm||data.realms[0].realm;authRealmsReady=true;setLoginLoading(false)}catch(error){if(request!==authRealmsLoadGeneration)return;select.replaceChildren(new Option('Authentication domains unavailable',''));select.value='';setLoginLoading(false);const status=document.getElementById('login-message');status.className='management-message error';status.textContent='Proxmox authentication realms are unavailable.'}}
+    function resetTfaFormState(){pendingTfa=null;const box=document.getElementById('login-tfa'),select=document.getElementById('login-tfa-type'),response=document.getElementById('login-tfa-response'),responseLabel=document.getElementById('login-tfa-response-label'),webauthnButton=document.getElementById('login-tfa-webauthn');box.hidden=true;select.replaceChildren();select.onchange=null;response.value='';response.required=false;responseLabel.hidden=false;webauthnButton.hidden=true}
+    function updateInitialSystemDataLoading(){const indicator=document.getElementById('system-data-loading');if(!indicator)return;const state=initialSystemDataLoad;indicator.hidden=state.generation!==authGeneration||!(state.inventory||state.status)}
+    function beginInitialSystemDataLoad(generation=authGeneration){initialSystemDataLoad={generation,inventory:true,status:true};updateInitialSystemDataLoading()}
+    function completeInitialSystemDataPart(part,generation=authGeneration){if(generation!==authGeneration||initialSystemDataLoad.generation!==generation)return;if(part==='inventory'||part==='status')initialSystemDataLoad[part]=false;updateInitialSystemDataLoading()}
+    function resetInitialSystemDataLoading(){initialSystemDataLoad={generation:authGeneration,inventory:false,status:false};updateInitialSystemDataLoading()}
+    function showLogin(message=''){stopAuthenticatedBackgroundWork();authGeneration+=1;window.__uu_authenticated=false;resetInitialSystemDataLoading();resetTfaFormState();authRealmsReady=false;setLoginLoading(false);document.querySelectorAll('[data-login-factor="first"]').forEach(item=>item.hidden=false);document.getElementById('auth-loading').classList.remove('open');document.getElementById('dashboard').hidden=true;document.getElementById('login-screen').classList.add('open');const status=document.getElementById('login-message');status.className='management-message';status.textContent=message;csrfToken=null;loadAuthRealms()}
+    function showTfaChallenge(challenge){resetTfaFormState();pendingTfa=challenge;document.querySelectorAll('[data-login-factor="first"]').forEach(item=>item.hidden=true);const box=document.getElementById('login-tfa'),select=document.getElementById('login-tfa-type'),response=document.getElementById('login-tfa-response'),responseLabel=document.getElementById('login-tfa-response-label'),webauthnButton=document.getElementById('login-tfa-webauthn');const labels={totp:'Authenticator code',recovery:'Recovery key',yubico:'YubiKey OTP',webauthn:'WebAuthn'};select.replaceChildren(...(challenge.methods||[]).map(type=>new Option(labels[type]||type,type)));if(!select.options.length){throw new Error('This Proxmox two-factor method is not supported by this Web UI.')}box.hidden=false;response.value='';document.getElementById('login-message').textContent='';document.getElementById('login-tfa-message').textContent='Two-factor authentication is required. Enter the requested response.';const updateFactor=()=>{const webauthn=select.value==='webauthn';responseLabel.hidden=webauthn;response.required=!webauthn;webauthnButton.hidden=!webauthn;if(webauthn)beginWebauthn();else response.focus()};select.onchange=updateFactor;updateFactor()}
+    function base64urlBytes(value){let encoded=value.replace(/-/g,'+').replace(/_/g,'/');while(encoded.length%4)encoded+='=';const binary=atob(encoded);return Uint8Array.from(binary,char=>char.charCodeAt(0))}
+    function base64urlBytesString(value){return btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+    async function submitTfaResponse(type,response){const form=document.getElementById('login-form'),message=document.getElementById('login-message');setLoginLoading(true);try{const r=await fetch('/api/login/tfa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({challenge_id:pendingTfa.challenge_id,type,response})}),d=await r.json();if(!r.ok){const error=new Error(d.error?.message||'Two-factor authentication failed.');error.code=d.error?.code;throw error}csrfToken=d.csrf;pendingTfa=null;form.reset();message.className='management-message success';message.textContent='Login successful';showDashboard();startDashboardLoad()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent=error.message||'Two-factor authentication failed.'}}
+    async function beginWebauthn(){if(!pendingTfa)return;if(!window.isSecureContext||!navigator.credentials?.get){document.getElementById('login-tfa-message').textContent='WebAuthn requires a trusted HTTPS browser context.';return}const challenge=pendingTfa.public_challenge?.webauthn;if(!challenge?.publicKey){document.getElementById('login-tfa-message').textContent='WebAuthn is unavailable for this login challenge.';return}const originalChallenge=challenge.publicKey.challenge;const publicKey=JSON.parse(JSON.stringify(challenge.publicKey));publicKey.challenge=base64urlBytes(publicKey.challenge);publicKey.allowCredentials=(publicKey.allowCredentials||[]).map(item=>({...item,id:base64urlBytes(item.id)}));try{const credential=await navigator.credentials.get({publicKey});const response={id:credential.id,type:credential.type,challenge:originalChallenge,rawId:base64urlBytesString(credential.rawId),response:{authenticatorData:base64urlBytesString(credential.response.authenticatorData),clientDataJSON:base64urlBytesString(credential.response.clientDataJSON),signature:base64urlBytesString(credential.response.signature)}};await submitTfaResponse('webauthn',JSON.stringify(response))}catch(error){setLoginLoading(false);document.getElementById('login-tfa-message').textContent=error.name==='NotAllowedError'?'WebAuthn was cancelled or is unavailable for this origin.':'WebAuthn could not complete on this browser.'}}
+    async function cancelTfa(){const challenge=pendingTfa;resetTfaFormState();setLoginLoading(false);document.querySelectorAll('[data-login-factor="first"]').forEach(item=>item.hidden=false);if(challenge?.challenge_id){await fetch('/api/login/tfa/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({challenge_id:challenge.challenge_id})}).catch(()=>{})}document.getElementById('login-message').textContent='Login cancelled.'}
+    function showDashboard(){beginAuthenticatedSession();document.getElementById('auth-loading').classList.remove('open');document.getElementById('login-screen').classList.remove('open');document.getElementById('dashboard').hidden=false;window.dispatchEvent(new Event('uu-auth-ready'))}
+    function startDashboardLoad(generation=authGeneration){beginInitialSystemDataLoad(generation);loadStatus(generation);loadJobs(generation);loadTargets(generation);loadTargetSelection(generation);scheduleUpdaterVersionCheck()}
     function applyPageRoute(push=false,requestedPage=null){let page=requestedPage|| (location.pathname==='/settings'?'settings':location.pathname==='/scheduler'?'scheduler':'overview');if(push)history.pushState({},'',page==='overview'?'/':`/${page}`);const subtitles={overview:'A clear overview of updates across your systems.',settings:'Manage configuration without leaving your authenticated session.',scheduler:''};document.querySelectorAll('.page-nav a').forEach(link=>{const active=link.dataset.page===page;link.classList.toggle('active',active);link.setAttribute('aria-current',active?'page':'false')});document.getElementById('page-subtitle').textContent=subtitles[page];document.querySelector('.dashboard-kpis').hidden=page!=='overview';document.getElementById('overview-page').hidden=page!=='overview';document.getElementById('settings-page').hidden=page!=='settings';document.getElementById('scheduler-page').hidden=page!=='scheduler';if(page==='settings')loadConfig()}
+    document.getElementById('theme-select')?.addEventListener('change',event=>applyTheme(event.target.value,true));
     const nav=document.querySelector('.page-nav'),navToggle=document.querySelector('.nav-toggle');
     const navScrim=document.createElement('button');navScrim.type='button';navScrim.className='nav-scrim';navScrim.setAttribute('aria-label','Close navigation');navScrim.hidden=true;document.body.append(navScrim);
     const setNavOpen=open=>{nav.classList.toggle('expanded',open);navScrim.hidden=!open;document.body.classList.toggle('nav-open',open);if(navToggle){navToggle.setAttribute('aria-expanded',String(open));navToggle.setAttribute('aria-label',open?'Close navigation':'Open navigation')}};
     navToggle?.addEventListener('click',event=>{event.stopPropagation();setNavOpen(!nav.classList.contains('expanded'))});navScrim.addEventListener('click',()=>setNavOpen(false));document.addEventListener('keydown',event=>{if(event.key==='Escape')setNavOpen(false)});
     document.addEventListener('click',event=>{const link=event.target.closest('.page-nav a');if(!link)return;if(link.dataset.page){event.preventDefault();applyPageRoute(true,link.dataset.page);setNavOpen(false);return}if(link.dataset.anchor){event.preventDefault();applyPageRoute(false,'overview');document.getElementById(link.dataset.anchor)?.scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.page-nav a').forEach(item=>item.classList.toggle('active',item===link));setNavOpen(false)}});window.addEventListener('popstate',()=>applyPageRoute());
-    async function ensureSession(){const r=await fetch('/api/session',{cache:'no-store'});const d=await r.json();if(!r.ok){showLogin(d.error?.message||'Please sign in.');throw new Error(d.error?.message||'Authentication required.')}csrfToken=d.csrf;return d}
-    async function api(path,options={}){if(!csrfToken)await ensureSession();const headers={'Content-Type':'application/json',...(options.headers||{})};if(csrfToken)headers['X-CSRF-Token']=csrfToken;const r=await fetch(path,{...options,headers});const d=await r.json();if(r.status===401){showLogin(d.error?.message||'Session expired.')}if(!r.ok){const error=new Error(d.error?.message||'Request failed');error.code=d.error?.code;error.diagnostics=d.diagnostics;throw error}return d}
+    async function ensureSession(){const r=await fetch('/api/session',{cache:'no-store'});const d=await r.json();if(!r.ok){const error=new Error(d.error?.message||'Authentication required.');error.code=d.error?.code;error.status=r.status;if(r.status===401)showLogin(error.message);throw error}csrfToken=d.csrf;return d}
+    async function api(path,options={}){const requestGeneration=authGeneration;if(!csrfToken)await ensureSession();const headers={'Content-Type':'application/json',...(options.headers||{})};if(csrfToken)headers['X-CSRF-Token']=csrfToken;const r=await fetch(path,{...options,headers});const d=await r.json();if(r.status===401&&!logoutInProgress&&requestGeneration===authGeneration&&window.__uu_authenticated){showLogin(d.error?.message||'Session expired.')}if(!r.ok){const error=new Error(d.error?.message||'Request failed');error.code=d.error?.code;error.diagnostics=d.diagnostics;throw error}return d}
     function notice(message,error=false){const n=document.getElementById('notice');n.hidden=false;n.textContent=message;n.className=error?'notice error':'notice'}
     function running(target){return jobs.some(j=>j.target===target&&['running','pending','starting'].includes(j.state))}
     const detailError=t=>{const error=t?.error;if(error===null||error===undefined||error===''||(typeof error==='object'&&!error.code&&!error.message))return['None','good'];const code=typeof error==='object'?text(error.code,''):'';const message=typeof error==='object'?text(error.message,''):String(error);const value=code&&message?`${code}: ${message}`:code||message||'Unknown';return [code,message,value].some(item=>item.trim().toLowerCase()==='unknown')?['Unknown','neutral']:[value,'bad']};
@@ -895,10 +912,10 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function createLogLatest(node,unit){const actions=createLogActions(node,unit);let latest=actions.querySelector('.log-latest');if(latest)return latest;latest=document.createElement('button');latest.type='button';latest.className='log-latest';latest.textContent='Jump to latest';latest.hidden=true;latest.addEventListener('click',()=>{logAutoFollow=true;node.scrollTop=node.scrollHeight;logScrollTop=node.scrollTop;latest.hidden=true});actions.append(latest);return latest}
     async function loadJobLog(unit,node){const job=jobs.find(j=>j.unit===unit),final=job&&job.state!=='running';if(final&&finalLogLoaded.has(unit)||logLoading.has(unit))return;if(!final)finalLogLoaded.delete(unit);logLoading.add(unit);try{const d=await api(`/api/jobs/${encodeURIComponent(unit)}/log`);node.hidden=false;node.textContent=d.log||'(no journal output)';if(logAutoFollow){node.scrollTop=node.scrollHeight}else{node.scrollTop=logScrollTop}logScrollTop=node.scrollTop;const latest=node.parentElement?.querySelector('.log-latest');if(latest)latest.hidden=logAutoFollow;if(final)finalLogLoaded.add(unit)}catch(e){notice(e.message,true)}finally{logLoading.delete(unit)}}
     function renderJobs(){const n=document.getElementById('jobs');if(!jobs.length){n.hidden=true;openJobLogId=null;return}if(openJobLogId&&!jobs.some(j=>j.unit===openJobLogId))openJobLogId=null;n.hidden=false;suppressLogScroll=true;n.innerHTML='<div class="section-title"><h2>Jobs</h2><span class="hint">Server-side state · safe across browser/device changes</span></div>'+jobs.map(j=>{const open=j.unit===openJobLogId;return `<div class="job"><code>${esc(j.unit)}</code><span>${esc(friendlyJobTarget(j.target))}</span><span class="pill ${j.state==='completed'?'good':j.state==='failed'||j.state==='interrupted'?'bad':'warn'}">${esc(j.state==='completed_with_warnings'?'Please check':j.state)}</span><button data-job="${esc(j.unit)}">${open?'Hide log':'Show log'}</button><div class="log" id="log-${esc(j.unit)}"${open?'':' hidden'}></div></div>`}).join('');suppressLogScroll=false;n.querySelectorAll('button[data-job]').forEach(b=>b.addEventListener('click',async()=>{const unit=b.dataset.job;const node=document.getElementById(`log-${unit}`);if(openJobLogId===unit){openJobLogId=null;node.hidden=true;b.textContent='Show log';return}openJobLogId=unit;logAutoFollow=true;logScrollTop=0;node.hidden=false;b.textContent='Hide log';await loadJobLog(unit,node);attachLogScroll(node)}));if(openJobLogId){const node=document.getElementById(`log-${openJobLogId}`);if(node){node.scrollTop=logAutoFollow?node.scrollHeight:logScrollTop;loadJobLog(openJobLogId,node).then(()=>{if(openJobLogId===node.id.slice(4))attachLogScroll(node)})}}}
-    async function loadStatus(){try{const d=await api('/api/status',{cache:'no-store'});try{render(d)}catch(e){console.error('Status render failed',e);if(!csrfToken)return;notice('The status view could not be rendered.',true);set('generated','Status render error');document.getElementById('targets').innerHTML='<div class="empty error">The status view could not be rendered.</div>'}}catch(e){if(!csrfToken)return;notice(e.message,true);set('generated','Status unavailable');document.getElementById('targets').innerHTML='<div class="empty">The status file is missing or invalid.</div>'}}
+    async function loadStatus(generation=authGeneration){try{const d=await api('/api/status',{cache:'no-store'});if(generation!==authGeneration||!window.__uu_authenticated)return;try{render(d)}catch(e){console.error('Status render failed',e);if(!csrfToken)return;notice('The status view could not be rendered.',true);set('generated','Status render error');document.getElementById('targets').innerHTML='<div class="empty error">The status view could not be rendered.</div>'}}catch(e){if(generation!==authGeneration||!window.__uu_authenticated)return;if(!csrfToken)return;notice(e.message,true);set('generated','Status unavailable');document.getElementById('targets').innerHTML='<div class="empty">The status file is missing or invalid.</div>'}finally{completeInitialSystemDataPart('inventory',generation);completeInitialSystemDataPart('status',generation)}}
     function isStatusRefreshJob(job){return job?.type==='check'||job?.type==='update'}
-    async function loadJobs(){try{const d=await api('/api/jobs',{cache:'no-store'}),previous=new Map(jobs.map(job=>[job.unit,job.state]));jobs=sortJobs(Array.isArray(d.jobs)?d.jobs:[]);const statusRefreshJobFinished=jobs.some(job=>isStatusRefreshJob(job)&&['completed','completed_with_warnings','failed','interrupted','cancelled'].includes(job.state)&&['running','pending','starting'].includes(previous.get(job.unit)));renderJobs();reorderJobDom();if(statusRefreshJobFinished)await loadStatus();clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){clearTimeout(pollTimer);pollTimer=setTimeout(loadJobs,10000)}}
-    let updaterVersion=null,versionRetryTimer=null,versionStartupTimer=null,versionRetryUsed=false;
+    async function loadJobs(generation=authGeneration){try{const d=await api('/api/jobs',{cache:'no-store'});if(generation!==authGeneration||!window.__uu_authenticated)return;const previous=new Map(jobs.map(job=>[job.unit,job.state]));jobs=sortJobs(Array.isArray(d.jobs)?d.jobs:[]);const statusRefreshJobFinished=jobs.some(job=>isStatusRefreshJob(job)&&['completed','completed_with_warnings','failed','interrupted','cancelled'].includes(job.state)&&['running','pending','starting'].includes(previous.get(job.unit)));renderJobs();reorderJobDom();if(statusRefreshJobFinished)await loadStatus(generation);if(generation!==authGeneration||!window.__uu_authenticated)return;clearTimeout(pollTimer);pollTimer=setTimeout(()=>loadJobs(generation),jobs.some(j=>j.state==='running')?2000:10000);render(currentStatus)}catch(e){if(generation!==authGeneration||!window.__uu_authenticated)return;clearTimeout(pollTimer);pollTimer=setTimeout(()=>loadJobs(generation),10000)}}
+    updaterVersion=null;
     function versionDisplay(data,value,commitValue,betaValue){if(!value)return 'Unavailable';let display=value;if(data?.branch==='beta'&&Number.isInteger(betaValue))display+=` Beta ${betaValue}`;else if(data?.branch==='develop')display+=' develop';if((data?.branch==='beta'||data?.branch==='develop')&&/^[0-9a-f]{40}$/.test(commitValue||''))display+=` · ${commitValue.slice(0,7)}`;return display}
     const shortCommit=value=>value&&/^[0-9a-f]{40}$/.test(value)?value.slice(0,7):(value||'Unknown');
     const versionFooterDisplay=data=>data?.state==='ok'?versionDisplay(data,data.installed,data.commit,data.beta):'version unavailable';
@@ -908,8 +925,9 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function scheduleUpdaterVersionCheck(){clearTimeout(versionStartupTimer);clearTimeout(versionRetryTimer);versionRetryUsed=false;versionStartupTimer=setTimeout(async()=>{const data=await loadUpdaterVersion();if(data.state==='unavailable'&&!versionRetryUsed){versionRetryUsed=true;versionRetryTimer=setTimeout(()=>loadUpdaterVersion(),7000)}},2500)}
     function openUpdaterVersion(){document.getElementById('updater-version-modal').classList.add('open')}
     document.getElementById('updater-version-indicator').onclick=openUpdaterVersion;document.getElementById('updater-version-footer').onclick=openUpdaterVersion;document.getElementById('updater-version-close').onclick=()=>document.getElementById('updater-version-modal').classList.remove('open');document.getElementById('updater-version-check').onclick=()=>loadUpdaterVersion(true);document.getElementById('updater-version-update').onclick=async()=>{if(!updaterVersion?.branch||updaterVersion.update_available!==true)return;const button=document.getElementById('updater-version-update');button.disabled=true;try{const data=await api('/api/updater-update',{method:'POST',body:JSON.stringify({branch:updaterVersion.branch})});document.getElementById('updater-version-message').textContent=data.message||'Updater self-update job started.';await loadJobs()}catch(error){document.getElementById('updater-version-message').textContent=error.message;document.getElementById('updater-version-message').className='management-message error';button.disabled=false}};
-    document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true'||!authRealmsReady)return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value,realm:form.elements.realm.value})});const d=await r.json();if(!r.ok){const error=new Error(d.error?.message||'Login failed');error.code=d.error?.code;throw error}csrfToken=d.csrf;form.reset();message.className='management-message success';message.textContent='Login successful';await Promise.all([loadStatus(),loadJobs(),loadTargets(),loadTargetSelection()]);showDashboard();scheduleUpdaterVersionCheck()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent=error.message||'Login failed'}};
-    const logout=async()=>{try{await api('/api/logout',{method:'POST',body:'{}'})}catch(_error){}showLogin('You have been signed out.')};document.getElementById('logout').onclick=logout;document.getElementById('logout-menu')?.addEventListener('click',logout);
+    document.getElementById('login-tfa-cancel').onclick=cancelTfa;document.getElementById('login-tfa-webauthn').onclick=beginWebauthn;
+    document.getElementById('login-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(form.dataset.submitting==='true'||(!pendingTfa&&!authRealmsReady))return;const message=document.getElementById('login-message');message.className='management-message';message.textContent='';setLoginLoading(true);try{let request,endpoint;if(pendingTfa){request={challenge_id:pendingTfa.challenge_id,type:document.getElementById('login-tfa-type').value,response:document.getElementById('login-tfa-response').value};endpoint='/api/login/tfa'}else{request={username:form.elements.username.value,password:form.elements.password.value,realm:form.elements.realm.value};endpoint='/api/login'}const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});const d=await r.json();if(d.code==='TFA_REQUIRED'&&d.challenge_id){setLoginLoading(false);showTfaChallenge(d);return}if(!r.ok){const error=new Error(d.error?.message||d.message||'Login failed');error.code=d.error?.code||d.code;throw error}csrfToken=d.csrf;pendingTfa=null;form.reset();message.className='management-message success';message.textContent='Login successful';showDashboard();startDashboardLoad()}catch(error){setLoginLoading(false);message.className='management-message error';message.textContent=error.message||'Login failed'}};
+    const logout=async()=>{if(logoutInProgress)return;logoutInProgress=true;const token=csrfToken,generation=authGeneration;stopAuthenticatedBackgroundWork();setLogoutLoading(true);try{const headers={'Content-Type':'application/json'};if(token)headers['X-CSRF-Token']=token;const response=await fetch('/api/logout',{method:'POST',headers,body:'{}'});const data=await response.json().catch(()=>null);if(!response.ok||!data||data.authenticated!==false)throw new Error(data?.error?.message||'Logout failed. Your session may still be active.');showLogin('You have been signed out.')}catch(error){if(window.__uu_authenticated&&generation===authGeneration)startAuthenticatedBackgroundWork(generation);notice(error.message||'Logout failed. Your session may still be active.',true)}finally{logoutInProgress=false;setLogoutLoading(false)}};document.getElementById('logout').onclick=logout;document.getElementById('logout-menu')?.addEventListener('click',logout);
   </script>
   <div id="target-modal" class="modal-backdrop" role="dialog" aria-modal="true"><form id="target-modal-form" class="modal"><div style="display:flex;align-items:center;gap:10px"><h3 id="target-modal-title">External system</h3><button type="button" class="modal-close" id="target-modal-cancel">Close</button></div><div class="management-form open"><label>Name<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"></label><label>Host / IP<input name="host" required pattern="[A-Za-z0-9_.:-]+"></label><label>SSH user<input name="user" required pattern="[A-Za-z_][A-Za-z0-9_.-]*"></label><label>SSH port<input name="port" type="number" min="1" max="65535" value="22" required></label><label>Identity file (optional)<input name="identity_file" placeholder="/root/.ssh/key"></label><div class="form-actions"><button type="submit" class="primary">Save</button><button type="button" id="target-modal-test">Test connection</button></div><div id="target-modal-message" class="management-message form-wide" role="status"></div></div></form></div>
   <script>
@@ -1050,7 +1068,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     document.addEventListener('click',event=>{const trigger=event.target.closest('.help-trigger');if(trigger){const control=trigger.closest('.help-control'),open=control.classList.contains('open');closeHelpControls(control);control.classList.toggle('open',!open);trigger.setAttribute('aria-expanded',String(!open));return}if(!event.target.closest('.help-control'))closeHelpControls()});
     document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;const open=document.querySelector('.help-control.open');closeHelpControls();if(open)open.querySelector('.help-trigger')?.focus()});
     let managedTargets=[], editingTarget=null, internalSshTargets=[], internalSshAvailable=[];
-    function setConfigOpen(open){const form=document.getElementById('config-form'),panel=document.getElementById('config-panel'),button=document.getElementById('config-open');form.classList.toggle('open',open);document.querySelector('#settings-page .management-grid').classList.toggle('config-open',open);button.textContent=open?'Close editor':'Open editor';button.setAttribute('aria-expanded',String(open));if(open)loadConfig()}
+    function setConfigOpen(open){const form=document.getElementById('config-form'),button=document.getElementById('config-open');if(!form)return;form.classList.toggle('open',open);document.querySelector('#settings-page .management-grid')?.classList.toggle('config-open',open);if(button){button.textContent=open?'Close editor':'Open editor';button.setAttribute('aria-expanded',String(open))}if(open)loadConfig()}
     function managementMessage(id,message,error=false){const n=document.getElementById(id);n.textContent=message||'';n.className=`management-message${error?' error':''}`}
     function configField(key,values,compact=false){const label=document.createElement('label');label.className=`config-field${configBooleanKeys.includes(key)?' boolean-field':''}${configNumberKeys.includes(key)?' numeric-field':''}${compact?' matrix-control':''}`;if(compact)label.title=configLabels[key]||key;const caption=document.createElement('span');caption.className='field-label';caption.textContent=configLabels[key]||key;if(!compact&&fieldHelpContent[key])caption.appendChild(createHelpControl(configLabels[key]||key,fieldHelpContent[key]));const input=key==='BACKUP_MODE'?document.createElement('select'):document.createElement('input');input.name=key;input.dataset.key=key;if(configBooleanKeys.includes(key)){input.type='checkbox';input.checked=values[key]===true;label.append(input,caption)}else if(key==='BACKUP_MODE'){const current=values[key]||'';['stop','suspend','snapshot'].forEach(option=>{const item=document.createElement('option');item.value=option;item.textContent=option;input.appendChild(item)});if(current&&!['stop','suspend','snapshot'].includes(current)){const item=document.createElement('option');item.value=current;item.textContent=`Legacy value: ${current}`;input.appendChild(item)}input.value=current||'stop';label.append(caption,input)}else{input.type=configNumberKeys.includes(key)?'number':'text';input.value=values[key]??'';if(input.type==='number'){input.min=key==='SSH_PORT'?'1':'0';if(key==='SSH_PORT')input.max='65535'}label.append(caption,input);if(configNumberKeys.includes(key)){const unit=document.createElement('span');unit.className='field-unit';unit.textContent=key==='KEEP_SNAPSHOTS'?'snapshots':key==='SSH_PORT'?'TCP port':'seconds';label.append(unit)}else if(key==='BACKUP_STORAGE'){const unit=document.createElement('span');unit.className='field-unit';unit.textContent='Proxmox storage ID, e.g. pbs';label.append(unit)}}return label}
     function configMatrix(groupData,values){const wrap=document.createElement('div');wrap.className='check-update-layout';const matrix=document.createElement('div');matrix.className='check-update-matrix';matrix.setAttribute('role','table');const header=document.createElement('div');header.className='matrix-row';const blank=document.createElement('span');blank.className='matrix-label';const checkHead=document.createElement('span');checkHead.className='matrix-cell matrix-head';checkHead.textContent='Check';const updateHead=document.createElement('span');updateHead.className='matrix-cell matrix-head';updateHead.textContent='Update';header.append(blank,checkHead,updateHead);matrix.appendChild(header);groupData.matrix.forEach(row=>{const item=document.createElement('div');item.className='matrix-row';const label=document.createElement('span');label.className='matrix-label';label.textContent=row.label;const check=document.createElement('span');check.className='matrix-cell';check.appendChild(configField(row.check,values,true));const update=document.createElement('span');update.className='matrix-cell';if(row.update)update.appendChild(configField(row.update,values,true));else{const dash=document.createElement('span');dash.className='matrix-empty';dash.textContent='—';update.appendChild(dash)}item.append(label,check,update);matrix.appendChild(item)});wrap.appendChild(matrix);if(groupData.extras){const extras=document.createElement('div');extras.className='matrix-extras';groupData.extras.forEach(key=>{const field=configField(key,values);if(configNumberKeys.includes(key)){const row=document.createElement('div');row.className='matrix-extra-row';const caption=field.querySelector('.field-label');caption.className='delay-label';const control=document.createElement('span');control.className='delay-control';control.append(field.querySelector('input'),field.querySelector('.field-unit'));row.append(caption,control);extras.appendChild(row)}else extras.appendChild(field)});wrap.appendChild(extras)}return wrap}
@@ -1081,7 +1099,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     async function removeInternalSsh(key){const [kind,id]=key.split(':');if(!confirm('Remove this override and restore automatic/default resolution?'))return;try{await api(`/api/internal-ssh/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,{method:'DELETE'});await loadInternalSsh();managementMessage('internal-ssh-message','Override removed; default resolution restored.')}catch(error){managementMessage('internal-ssh-message',error.message,true)}}
     document.getElementById('internal-ssh-form').onsubmit=async event=>{event.preventDefault();const f=event.currentTarget,values={host:f.elements.host.value,user:f.elements.user.value,port:Number(f.elements.port.value),enabled:f.elements.enabled.checked};if(f.elements.identity_file.value)values.identity_file=f.elements.identity_file.value;try{await api(`/api/internal-ssh/${encodeURIComponent(f.elements.kind.value)}/${encodeURIComponent(f.elements.id.value)}`,{method:'POST',body:JSON.stringify({values})});closeInternalSsh();await loadInternalSsh();managementMessage('internal-ssh-message','Internal SSH override saved.')}catch(error){managementMessage('internal-ssh-form-message',error.message,true)}};
     document.getElementById('internal-ssh-close').onclick=closeInternalSsh;document.getElementById('internal-ssh-remove').onclick=()=>removeInternalSsh(`${document.querySelector('#internal-ssh-form [name=kind]').value}:${document.querySelector('#internal-ssh-form [name=id]').value}`);document.querySelectorAll('[data-ssh-add]').forEach(b=>b.onclick=()=>openInternalSshAdd(b.dataset.sshAdd));
-    async function loadTargets(){try{managedTargets=(await api('/api/targets')).targets||[];renderManagedTargets()}catch(error){managementMessage('target-message',error.message,true)}}
+    async function loadTargets(generation=authGeneration){try{const data=await api('/api/targets');if(generation!==authGeneration||!window.__uu_authenticated)return;managedTargets=data.targets||[];renderManagedTargets()}catch(error){if(generation===authGeneration&&window.__uu_authenticated)managementMessage('target-message',error.message,true)}}
     function updateExternalTestAvailability(){const form=document.getElementById('target-modal-form'),button=document.getElementById('target-modal-test');if(form&&button&&!button.dataset.testing)button.disabled=!form.checkValidity()}
     function openTargetModal(target=null){editingTarget=target;const form=document.getElementById('target-modal-form');form.reset();form.elements.id.value=target?.id||'';form.elements.host.value=target?.host||'';form.elements.user.value=target?.user||'root';form.elements.port.value=target?.port||22;form.elements.identity_file.value=target?.identity_file||'';form.elements.id.readOnly=Boolean(target);document.getElementById('target-modal-title').textContent=target?'Edit external system':'Add external system';managementMessage('target-modal-message','');document.getElementById('target-modal').classList.add('open');updateExternalTestAvailability()}
     function closeTargetModal(){document.getElementById('target-modal').classList.remove('open');editingTarget=null}
@@ -1102,13 +1120,14 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     async function flushTargetSelectionSave(){if(targetSelectionSaveInFlight||!targetSelectionSaveQueued)return;targetSelectionSaveQueued=false;const revision=targetSelectionRevision,payload=copyTargetSelection(targetSelection);targetSelectionSaveInFlight=true;try{if(targetSelectionEnablePromise)await targetSelectionEnablePromise;const data=await api('/api/target-selection',{method:'POST',body:JSON.stringify({selection:payload})});if(revision===targetSelectionRevision){targetSelectionConfirmed=copyTargetSelection(data.selection||payload);targetSelectionConfirmed.enabled=true;targetSelection=copyTargetSelection(targetSelection);targetSelection.enabled=true;paintTargetSelection()}}catch(error){if(revision===targetSelectionRevision){rollbackTargetSelection();notice('Could not save target selection.',true)}}finally{targetSelectionSaveInFlight=false;if(targetSelectionSaveQueued)flushTargetSelectionSave()}}
     function queueTargetSelectionSave(){targetSelectionRevision+=1;targetSelectionSaveQueued=true;clearTimeout(targetSelectionSaveTimer);targetSelectionSaveTimer=setTimeout(flushTargetSelectionSave,180)}
     function enableTargetSelection(){if(targetSelection.enabled)return Promise.resolve();targetSelection.enabled=true;paintTargetSelection();targetSelectionEnablePromise=api('/api/config',{method:'POST',body:JSON.stringify({values:{USE_INTERNAL_TARGET_SELECTION:true}})}).then(()=>{targetSelectionConfirmed.enabled=true}).catch(error=>{targetSelection.enabled=false;rollbackTargetSelection();targetSelectionEnablePromise=null;throw error});return targetSelectionEnablePromise}
-    async function loadTargetSelection(){clearTimeout(targetSelectionSaveTimer);targetSelectionSaveQueued=false;targetSelectionRevision+=1;targetSelectionEnablePromise=null;const request=++targetSelectionLoadRevision;targetSelectionLoadState='loading';targetSelectionLoadError='';paintTargetSelection();try{const data=await api('/api/target-selection');if(request!==targetSelectionLoadRevision)return;if(!data||!data.selection||typeof data.selection!=='object')throw new Error('Target selection data is unavailable.');targetSelection={...data.selection,enabled:data.enabled===true};targetSelectionConfirmed=copyTargetSelection(targetSelection);targetSelectionLoadState='ready';targetSelectionLoadError='';paintTargetSelection()}catch(error){if(request!==targetSelectionLoadRevision)return;targetSelectionLoadState='error';targetSelectionLoadError=error.message||'Target selection is unavailable.';paintTargetSelection();managementMessage('config-message',targetSelectionLoadError,true)}}
+    async function loadTargetSelection(generation=authGeneration){clearTimeout(targetSelectionSaveTimer);targetSelectionSaveQueued=false;targetSelectionRevision+=1;targetSelectionEnablePromise=null;const request=++targetSelectionLoadRevision;targetSelectionLoadState='loading';targetSelectionLoadError='';paintTargetSelection();try{const data=await api('/api/target-selection');if(request!==targetSelectionLoadRevision||generation!==authGeneration||!window.__uu_authenticated)return;if(!data||!data.selection||typeof data.selection!=='object')throw new Error('Target selection data is unavailable.');targetSelection={...data.selection,enabled:data.enabled===true};targetSelectionConfirmed=copyTargetSelection(targetSelection);targetSelectionLoadState='ready';targetSelectionLoadError='';paintTargetSelection()}catch(error){if(request!==targetSelectionLoadRevision||generation!==authGeneration||!window.__uu_authenticated)return;targetSelectionLoadState='error';targetSelectionLoadError=error.message||'Target selection is unavailable.';paintTargetSelection();managementMessage('config-message',targetSelectionLoadError,true)}}
     function retryTargetSelection(){if(targetSelectionLoadState==='loading')return;loadTargetSelection()}
     function selectionHeader(){return '<div class="target-selection-header"><span>Target</span><span>Check</span><span>Update</span><span>Actions</span></div>'}
     function selectionControls(t){const id=selectionKey(t),controls=document.createElement('div');controls.className='target-selection-controls';for(const scope of ['check','update']){const state=targetSelection[scope]?.[id]||'',column=document.createElement('span');column.className='target-selection-column';const label=document.createElement('span');label.className='target-selection-label';label.textContent=scope==='check'?'Check':'Update';const button=document.createElement('button');button.type='button';button.className=`target-selection-state ${state}${targetSelectionLoadState!=='ready'?' unavailable':''}`;button.textContent=state==='only'?'✓':state==='exclude'?'✕':'';button.disabled=targetSelectionLoadState!=='ready';button.title=targetSelectionLoadState==='loading'?'Target selection is loading.':targetSelectionLoadState==='error'?'Target selection is unavailable.':selectionLabel(state);button.setAttribute('aria-label',targetSelectionLoadState==='ready'?`${scope} selection: ${selectionLabel(state)}`:`${scope} selection unavailable`);button.dataset.selectionScope=scope;button.dataset.selectionId=id;button.onclick=event=>{event.stopPropagation();saveTargetSelection(scope,id,targetSelection[scope]?.[id]||'')};column.append(label,button);controls.appendChild(column)}return controls}
     function saveTargetSelection(scope,id,current){const next=current==='only'?'exclude':current==='exclude'?'':'only';if(!targetSelection.enabled&&next){if(!confirm('Enable Ultimate Updater target selection?\n\nThis will ignore existing Proxmox Only/Exclude tags. Existing tags will not be changed or removed.'))return;enableTargetSelection().catch(()=>notice('Could not enable target selection.',true))}const before=targetSelection[scope]?.[id]||'';if(next)targetSelection[scope][id]=next;else delete targetSelection[scope][id];paintTargetSelection();if(before!==next)queueTargetSelectionSave()}
     const targetRowWithSelection=targetRow;targetRow=function(t){const row=targetRowWithSelection(t),id=selectionKey(t);if(!id)return row;row.querySelector('.row-actions')?.prepend(selectionControls(t));return row};
-    async function bootstrap(){try{await ensureSession();showDashboard();applyPageRoute();await loadTargetSelection();await Promise.all([loadStatus(),loadJobs(),loadTargets()]);scheduleUpdaterVersionCheck()}catch(error){if(csrfToken)notice(error.message,true)}}
+    let bootstrapInProgress=false;
+    async function bootstrap(){if(bootstrapInProgress)return;bootstrapInProgress=true;const loading=document.getElementById('auth-loading'),message=document.getElementById('auth-loading-message'),retry=document.getElementById('auth-loading-retry');loading.classList.add('open');message.textContent='Loading…';retry.hidden=true;retry.disabled=true;try{await ensureSession();showDashboard();applyPageRoute();startDashboardLoad()}catch(error){if(error.status===401)return;loading.classList.add('open');message.textContent=error.message||'Proxmox authorization is temporarily unavailable.';retry.hidden=false;retry.disabled=false}finally{bootstrapInProgress=false}}
     const aggregateField=field=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[],values=targets.map(t=>t?.[field]).filter(Number.isInteger);return values.length?values.reduce((sum,value)=>sum+value,0):null};
     const aggregateTotalOnly=()=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[],values=targets.map(knownTotalOnlyUpdates).filter(Number.isInteger);return values.length?values.reduce((sum,value)=>sum+value,0):null};
     const aggregateFieldComplete=field=>{const targets=Array.isArray(currentStatus?.targets)?currentStatus.targets:[];return targets.length&&targets.every(t=>Number.isInteger(t?.[field])||!securitySplitSupported(t))?aggregateField(field):null};
@@ -1122,13 +1141,29 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
 # replacement also covers the legacy render path kept for compatibility with
 # older browser state; the active renderer adds CHECK/UPDATE labels per row.
 PAGE = PAGE.replace("Update jobs", "Jobs")
+PAGE = PAGE.replace(
+    '<script>\n    const labels=',
+    '''<script>
+    const THEME_STORAGE_KEY='ultimate-updater-theme';
+    const SUPPORTED_THEMES=Object.freeze(['modern','classic']);
+    const normalizeTheme=value=>SUPPORTED_THEMES.includes(value)?value:'modern';
+    function applyTheme(value,persist=false){const theme=normalizeTheme(value);document.documentElement.dataset.theme=theme;if(persist){try{localStorage.setItem(THEME_STORAGE_KEY,theme)}catch(_error){}}const select=document.getElementById('theme-select');if(select)select.value=theme;return theme}
+    function initializeTheme(){let stored=document.documentElement.dataset.theme||'modern';try{stored=localStorage.getItem(THEME_STORAGE_KEY)||stored}catch(_error){}return applyTheme(stored)}
+    initializeTheme();
+    const labels=''',
+    1,
+)
+PAGE = PAGE.replace(
+    '<section class="management-grid settings-grid"><section class="settings-config-area" id="config-panel">',
+    '<section class="management-grid settings-grid"><section class="management-panel theme-panel" id="theme-panel"><div class="section-title"><div><h2>Appearance</h2><span class="hint">Choose the Web UI visual style for this browser.</span></div></div><label class="theme-picker" for="theme-select">Theme<select id="theme-select"><option value="modern">Modern</option><option value="classic">Classic</option></select></label></section><section class="settings-config-area" id="config-panel">',
+    1,
+)
 PAGE = PAGE.replace("Schema ${text(data.schema_version)} · generated ${date(data.generated_at)}",
                     "Generated ${date(data.generated_at)}")
 PAGE = PAGE.replace('return `<span class="pill ${tone}${securityClass}">${label}</span>`};', 'const iconKind=label===\'Security updates available\'?\'shield\':label===\'Updates available\'?\'download\':label===\'Healthy\'?\'check\':label===\'Offline\'?\'offline\':label===\'Unknown\'?\'unknown\':\'attention\';return `<span class="pill ${tone}${securityClass}">${statusIcon(iconKind)}${label}</span>`};')
 PAGE = PAGE.replace('    .status-icon { display:inline-block; flex:0 0 auto; width:14px; height:14px; color:currentColor; }', '    .main-body > .page-section { margin-top:18px; } .status-icon { display:inline-block; flex:0 0 auto; width:14px; height:14px; min-width:14px; min-height:14px; color:currentColor; stroke:currentColor; stroke-width:1.8; opacity:1; visibility:visible; }')
 PAGE = PAGE.replace('</style>', '<style>.dashboard-kpis .metric { display:flex; flex-direction:column; gap:7px; } .dashboard-kpis .metric-top { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; } .overview-summary-icon { display:inline-flex; flex:0 0 28px; width:28px; height:28px; align-items:center; justify-content:center; color:inherit; } .overview-summary-icon .status-icon { width:28px; height:28px; min-width:28px; min-height:28px; stroke-width:1.8; }</style>', 1)
 PAGE = PAGE.replace("</body></html>", """<script>
-    let loginVersionTimer=null;
     function loginVersionText(data){
       const version=versionDisplay(data,data?.installed,data?.commit,data?.beta);
       const state=data?.update_state==='checking'?'Checking for updates…':data?.update_state==='available'?'Update available':data?.update_state==='up_to_date'?'Up to date':data?.update_state==='unavailable'?'Update status unavailable':'';
@@ -1180,6 +1215,7 @@ PAGE = PAGE.replace('    bootstrap();', '''    const statusIcon=kind=>{const pat
     const renderWithStatusIcons=render;render=function(data){renderWithStatusIcons(data);decorateStatusIcons(document)};
     new MutationObserver(()=>{decorateStatusIcons(document.getElementById('details'));decorateStatusIcons(document.getElementById('jobs'))}).observe(document.getElementById('details'),{childList:true,subtree:true});
     new MutationObserver(()=>decorateStatusIcons(document.getElementById('jobs'))).observe(document.getElementById('jobs'),{childList:true,subtree:true});
+    document.getElementById('auth-loading-retry').onclick=bootstrap;
     bootstrap();''')
 PAGE = PAGE.replace('    const statusIcon=kind=>', '    const decorateOverviewIcons=()=>document.querySelectorAll("[data-overview-icon]").forEach(element=>{if(!element.querySelector(".status-icon"))element.innerHTML=statusIcon(element.dataset.overviewIcon)});\n    const statusIcon=kind=>')
 PAGE = PAGE.replace("activity:'<path d=\"M4 12h3l2-5 4 10 2-5h5\"/>'};", "package:'<path d=\"m4 8 8-4 8 4-8 4-8-4Zm0 0v8l8 4 8-4V8m-8 4v8\"/>',activity:'<path d=\"M4 12h3l2-5 4 10 2-5h5\"/>'};")
@@ -1202,7 +1238,7 @@ PAGE = PAGE.replace('<section class="settings-config-area" id="config-panel"><di
 PAGE = PAGE.replace('<button id="internal-ssh-back" type="button">Back to settings</button>', '<button id="internal-ssh-back" type="button">Close</button>')
 PAGE = PAGE.replace('<div class="settings-config-intro section-title"><div><h2>Configuration</h2><span class="hint">Known settings only · update.conf remains the source of truth</span></div></div>', '')
 PAGE = PAGE.replace('<h2 class="settings-management-title">Connection management</h2>', '')
-PAGE = PAGE.replace('</head>', '<style>.pill.security-warn{display:inline-flex;width:max-content;max-width:100%;white-space:nowrap}.pill .status-icon,.reboot-required-badge .status-icon{flex:0 0 auto}.main-body>#settings-page:not([hidden]){margin-top:0;padding-top:24px}.target-selection-controls{display:flex;gap:4px;align-items:flex-end;margin-right:8px}.target-selection-column{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:26px}.target-selection-label{display:block;color:var(--muted);font-size:.58rem;line-height:1}.target-selection-state{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;min-width:26px;height:26px;min-height:26px;padding:0;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--muted);font-size:.78rem;font-weight:700;line-height:1}.target-selection-state.only{color:#75e6a1;border-color:#75e6a1}.target-selection-state.exclude{color:#ff8b8b;border-color:#ff8b8b}.target-selection-state.unavailable{cursor:not-allowed;opacity:.55}.target-selection-state:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.target-selection-header{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:8px;margin:0 12px;padding:7px 12px 3px;color:var(--muted);font-size:.68rem;text-align:center}.target-selection-header span:first-child{text-align:left}.target-selection-header span:last-child{text-align:right}.target-selection-legend{color:var(--muted)}#target-selection-indicator[data-state=loading],#target-selection-indicator[data-state=error]{color:var(--muted)}#target-selection-retry{margin-left:6px;padding:1px 6px;font-size:.7rem}@media(max-width:620px){.target-selection-header{display:none}.target-selection-controls{gap:4px;margin-right:4px}.target-selection-state{width:30px;min-width:30px;height:30px;min-height:30px;font-size:.82rem}}</style></head>', 1)
+PAGE = PAGE.replace('</head>', '<style>.pill.security-warn{display:inline-flex;width:max-content;max-width:100%;white-space:nowrap}.pill .status-icon,.reboot-required-badge .status-icon{flex:0 0 auto}.main-body>#settings-page:not([hidden]){margin-top:0;padding-top:24px}.target-selection-controls{display:flex;gap:4px;align-items:flex-end;margin-right:8px}.target-selection-column{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:26px}.target-selection-label{display:block;color:var(--muted);font-size:.58rem;line-height:1}.target-selection-state{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;min-width:26px;height:26px;min-height:26px;padding:0;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--muted);font-size:.78rem;font-weight:700;line-height:1}.target-selection-state.only{color:#75e6a1;border-color:#75e6a1}.target-selection-state.exclude{color:#ff8b8b;border-color:#ff8b8b}.target-selection-state.unavailable{cursor:not-allowed;opacity:.55}.target-selection-state:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.target-selection-header{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:8px;margin:0 12px;padding:7px 12px 3px;color:var(--muted);font-size:.68rem;text-align:center}.target-selection-header span:first-child{text-align:left}.target-selection-header span:last-child{text-align:right}.target-selection-legend{color:var(--muted)}#target-selection-indicator[data-state=loading],#target-selection-indicator[data-state=error]{color:var(--muted)}#target-selection-retry{margin-left:6px;padding:1px 6px;font-size:.7rem}.system-data-loading{display:flex;align-items:center;gap:8px;margin:0 0 14px;padding:9px 12px;border:1px solid #55d39a77;border-radius:10px;color:var(--good);background:#55d39a12;font-size:.78rem}.system-data-loading[hidden]{display:none}.system-data-loading-spinner{width:12px;height:12px;flex:0 0 auto;border:2px solid #55d39a44;border-top-color:var(--good);border-radius:50%;animation:system-data-loading-spin .8s linear infinite}.system-data-loading-spinner[aria-hidden=true]{pointer-events:none}@keyframes system-data-loading-spin{to{transform:rotate(360deg)}}html[data-theme="classic"] .system-data-loading{border-radius:0;border-color:#55d39a88;background:#55d39a16}@media(max-width:620px){.target-selection-header{display:none}.target-selection-controls{gap:4px;margin-right:4px}.target-selection-state{width:30px;min-width:30px;height:30px;min-height:30px;font-size:.82rem}}</style></head>', 1)
 PAGE = PAGE.replace('<span class="view-note">Checks and updates use the existing CLI</span>', '<span class="view-note">Checks and updates use the existing CLI · <span id="target-selection-indicator" data-state="loading">Target selection: Loading…</span><button id="target-selection-retry" type="button" hidden onclick="retryTargetSelection()">Retry</button> · <span class="target-selection-legend">✓ Only · ✕ Exclude · empty = no explicit rule</span></span>')
 day_toggle_markup = "".join(f'<label><input type="checkbox" name="days" value="{day}"><span>{day}</span></label>' for day in SCHEDULER_DAYS)
 month_day_toggle_markup = "".join(f'<label><input type="checkbox" name="month_days" value="{day}"><span>{day}</span></label>' for day in range(1, 32))
@@ -1271,6 +1307,57 @@ PAGE = PAGE.replace('</body>', '''<script>
     setInterval(syncInteractiveStopButton,500);
 </script></body>''', 1)
 PAGE = re.sub(r'<nav class="page-nav" aria-label="Primary">.*?</nav>', '', PAGE, count=1, flags=re.S)
+PAGE = PAGE.replace('</head>', '''<style>
+    :root { --surface-subtle:#0e162b99; --surface-input:#0b1224; --surface-terminal:#050914; --surface-overlay:#030712aa; --theme-shadow:0 18px 50px #00000029; --theme-card-radius:16px; --theme-control-radius:9px; --theme-nav:#061323f5; --theme-nav-active:#087ecb; }
+    html[data-theme="classic"] { --bg:#20252b; --panel:#2c333be8; --strong:#39434d; --text:#eef1f3; --muted:#aeb8c1; --line:#aeb8c144; --accent:#9bb8c9; --good:#77c99b; --warn:#e6c17a; --security:#e3a866; --bad:#ed8d98; --surface-subtle:#343b42; --surface-input:#20262c; --surface-terminal:#171b1f; --surface-overlay:#111417dd; --theme-shadow:0 8px 24px #00000040; --theme-card-radius:5px; --theme-control-radius:4px; --theme-nav:#292f35; --theme-nav-active:#536e7d; color-scheme:dark; }
+    html[data-theme="classic"] body { background:linear-gradient(180deg,#2a3036 0,var(--bg) 28rem); }
+    html[data-theme="classic"] .metric,html[data-theme="classic"] .notice,html[data-theme="classic"] .details,html[data-theme="classic"] .target-card,html[data-theme="classic"] .jobs,html[data-theme="classic"] .systems-panel,html[data-theme="classic"] .management-panel,html[data-theme="classic"] .modal { box-shadow:var(--theme-shadow); border-radius:var(--theme-card-radius); }
+    html[data-theme="classic"] .dashboard-kpis,html[data-theme="classic"] .guest-panel,html[data-theme="classic"] .node-group,html[data-theme="classic"] .external-group,html[data-theme="classic"] .scheduler-card { background:var(--surface-subtle); }
+    html[data-theme="classic"] .dashboard-kpis .metric,html[data-theme="classic"] .target-row:hover,html[data-theme="classic"] .group-header:hover { background:#ffffff08; }
+    html[data-theme="classic"] .management-form input,html[data-theme="classic"] .management-form select,html[data-theme="classic"] .config-field input,html[data-theme="classic"] .config-field select,html[data-theme="classic"] .modal label input,html[data-theme="classic"] .modal label select,html[data-theme="classic"] .scheduler-modal input,html[data-theme="classic"] .scheduler-modal select { background:var(--surface-input); border-radius:var(--theme-control-radius); }
+    html[data-theme="classic"] button,html[data-theme="classic"] .job-download { background:#ffffff08; border-radius:var(--theme-control-radius); }
+    html[data-theme="classic"] button.primary { background:#9bb8c926; border-color:#9bb8c966; }
+    html[data-theme="classic"] .pill,html[data-theme="classic"] .reboot-required-badge { border-radius:4px; }
+    html[data-theme="classic"] .interactive-terminal-dialog { background:#252b30; border-color:var(--line); border-radius:var(--theme-card-radius); box-shadow:var(--theme-shadow); }
+    html[data-theme="classic"] .interactive-terminal { background:var(--surface-terminal); border-color:var(--line); border-radius:var(--theme-control-radius); }
+    html[data-theme="classic"] .log { background:#171b1f; border-radius:var(--theme-control-radius); }
+    html[data-theme="classic"] .modal-backdrop,html[data-theme="classic"] .interactive-terminal-panel { background:var(--surface-overlay); }
+    html[data-theme="classic"] .dashboard-meta .page-nav { background:var(--theme-nav); border-color:var(--line); box-shadow:var(--theme-shadow); }
+    html[data-theme="classic"] .dashboard-meta .page-nav a.active { background:var(--theme-nav-active); border-color:#c4d5df66; box-shadow:none; }
+    html[data-theme="classic"] .dashboard-meta .nav-toggle { background:var(--theme-nav); border-color:var(--line); }
+    html[data-theme="classic"] .brand-header-art,html[data-theme="classic"] .login-branding { filter:none; }
+    html[data-theme="classic"] .systems-panel,html[data-theme="classic"] .management-panel,html[data-theme="classic"] .scheduler-placeholder,html[data-theme="classic"] .node-group,html[data-theme="classic"] .external-group,html[data-theme="classic"] .guest-panel { border-color:#69737b; border-radius:4px; background:#2b3238; box-shadow:none; }
+    html[data-theme="classic"] .dashboard-kpis { border-color:#69737b; border-radius:4px; background:#2b3238; box-shadow:none; }
+    html[data-theme="classic"] .dashboard-kpis .metric,html[data-theme="classic"] .metric,html[data-theme="classic"] .target-card,html[data-theme="classic"] .jobs,html[data-theme="classic"] .details { border-color:#69737b; border-radius:4px; background:#30373d; box-shadow:none; }
+    html[data-theme="classic"] .dashboard-kpis .metric { border-color:#566169; background:#343b41; }
+    html[data-theme="classic"] .target-card:hover,html[data-theme="classic"] .target-card:focus-within { transform:none; border-color:#a9bbc5; background:#384148; }
+    html[data-theme="classic"] .node-group,html[data-theme="classic"] .external-group { overflow:hidden; }
+    html[data-theme="classic"] .node-group .group-header,html[data-theme="classic"] .external-group .group-header { background:#30373d; }
+    html[data-theme="classic"] .node-group .group-header:hover,html[data-theme="classic"] .external-group .group-header:hover { background:#394249; }
+    html[data-theme="classic"] .target-row,html[data-theme="classic"] .managed-target,html[data-theme="classic"] .job { border-color:#69737b; }
+    html[data-theme="classic"] .target-row:hover { background:#3a4248; }
+    html[data-theme="classic"] .group-toggle,html[data-theme="classic"] .node-group .group-toggle,html[data-theme="classic"] .external-group .group-toggle { border-color:#69737b; background:transparent; box-shadow:none; }
+    html[data-theme="classic"] .group-toggle:hover,html[data-theme="classic"] .node-group .group-toggle:hover,html[data-theme="classic"] .external-group .group-toggle:hover { background:#465159; color:var(--text); transform:none; box-shadow:none; }
+    html[data-theme="classic"] button:hover:not(:disabled),html[data-theme="classic"] button:focus-visible,html[data-theme="classic"] .job-download:hover,html[data-theme="classic"] .job-download:focus-visible { border-color:#a9bbc5; outline-color:#a9bbc588; box-shadow:none; }
+    html[data-theme="classic"] button.primary { background:#5b7482; border-color:#9db5c1; color:#f4f7f8; }
+    html[data-theme="classic"] .details,html[data-theme="classic"] .modal,html[data-theme="classic"] .version-dialog { background:#30373d; }
+    html[data-theme="classic"] .modal-backdrop,html[data-theme="classic"] .interactive-terminal-panel { backdrop-filter:none; }
+    html[data-theme="classic"] .detail-sections section,html[data-theme="classic"] .section-title,html[data-theme="classic"] .config-actions { border-color:#69737b; }
+    html[data-theme="classic"] .dashboard-meta .page-nav { background:#293036; border-color:#69737b; box-shadow:none; }
+    html[data-theme="classic"] .dashboard-meta .page-nav a,html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout { border-radius:4px; color:#c2ccd1; }
+    html[data-theme="classic"] .dashboard-meta .page-nav a:hover,html[data-theme="classic"] .dashboard-meta .page-nav a:focus-visible,html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout:hover,html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout:focus-visible { color:#fff; border-color:#8899a3; }
+    html[data-theme="classic"] .dashboard-meta .page-nav a.active { background:#566d7a; border-color:#a9bbc5; box-shadow:none; }
+    html[data-theme="classic"] .scheduler-summary>div,html[data-theme="classic"] .scheduler-card,html[data-theme="classic"] .schedule-targets { border-color:#69737b; background:#30373d; box-shadow:none; border-radius:4px; }
+    html[data-theme="classic"] .schedule-target-table th { background:#394249; }
+    html[data-theme="classic"] .schedule-target-table th,html[data-theme="classic"] .schedule-target-table td { border-color:#69737b; }
+    html[data-theme="classic"] .schedule-table-wrap { border-color:#69737b; border-radius:4px; }
+    html[data-theme="classic"] .theme-panel { background:#30373d; }
+    html[data-theme="classic"] .theme-panel { grid-column:1 / -1; }
+    .theme-picker { display:grid; grid-template-columns:minmax(100px,.35fr) minmax(160px,.65fr); align-items:center; gap:10px; color:var(--muted); font-size:.78rem; }
+    .theme-picker select { width:100%; min-height:40px; border:1px solid var(--line); border-radius:var(--theme-control-radius); padding:8px 10px; color:var(--text); background:var(--surface-input); font:inherit; }
+    .theme-picker select:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    @media(max-width:760px) { .theme-picker { grid-template-columns:1fr; gap:5px; } }
+  </style></head>''', 1)
 header_nav = '<button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3.5 11 8.5-7 8.5 7v8.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5Z"/><path d="M9 21v-6h6v6"/></svg><span>Dashboard</span></a><a href="/settings" data-page="settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9.7 3.4.5-1.4h3.6l.5.6 1.4.6 1.4-.6 2.5 2.5-.6 1.4.6 1.4 1.4.5v3.6l-1.4.5-.6 1.4.6 1.4-2.5 2.5-1.4-.6-1.4.6-.5 1.4h-3.6l-.5-1.4-1.4-.6-1.4.6-2.5-2.5.6-1.4-.6-1.4-1.4-.5V9.2l1.4-.5-.6-1.4-.6-1.4 2.5-2.5 1.4.6Z"/><circle cx="12" cy="11" r="3.2"/></svg><span>Settings</span></a><a href="/scheduler" data-page="scheduler"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>Scheduler</span></a><span class="nav-separator" aria-hidden="true"></span><a class="nav-support" href="https://ko-fi.com/basst" target="_blank" rel="noopener noreferrer"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 7h10v7.5A4.5 4.5 0 0 1 10.5 19h-1A4.5 4.5 0 0 1 5 14.5Z"/><path d="M15 9h2a2.5 2.5 0 0 1 0 5h-2M7 4h6"/></svg><span>Support project</span></a><button id="logout-menu" class="nav-logout" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H10M14 8l4 4-4 4M18 12H9"/></svg><span>Log out</span></button></nav>'
 header_nav = header_nav.replace('h3.6l.5.6 1.4.6', 'h3.6l.5 1.4 1.4.6')
 PAGE = PAGE.replace('<button id="logout" type="button">Log out</button></div></div></header>', '<button id="logout" type="button">Log out</button>' + header_nav + '</div></div></header>', 1)
@@ -1284,6 +1371,479 @@ PAGE = PAGE.replace('</head>', '<style>@media(max-width:760px){.dashboard-header
 PAGE = PAGE.replace('</head>', '<style>.interactive-controls{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid #159cf033}.interactive-status{color:var(--muted);font-size:.72rem}.interactive-controls button{padding:7px 9px;font-size:.72rem}.interactive-terminal-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:0 1 auto;flex-wrap:wrap}.interactive-stop-modal{z-index:100}.interactive-terminal-keybar{display:none;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:8px}.interactive-terminal-keybar[hidden]{display:none}.interactive-terminal-keybar button{min-width:42px;min-height:40px;padding:7px 10px;font-size:.75rem;white-space:nowrap;touch-action:manipulation}.interactive-terminal-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:12px}.interactive-terminal-font-controls{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:.7rem}.interactive-terminal-font-controls button{min-width:36px;min-height:32px;padding:5px 8px;font-size:.75rem}.interactive-terminal-help{margin:8px 0 0;color:var(--muted);font-size:.7rem}@media(max-width:720px){html,body{overflow-x:hidden}.interactive-terminal-panel{place-items:stretch;padding:0}.interactive-terminal-dialog{width:100%;height:100vh;height:100dvh;max-height:none;padding:8px;border-radius:0}.interactive-terminal-dialog .section-title{gap:7px;margin-bottom:7px}.interactive-terminal-dialog .section-title h2{display:none}.interactive-terminal-dialog .section-title .hint{font-size:.76rem}.interactive-terminal-header-actions{gap:5px}.interactive-terminal-header-actions .pill{max-width:115px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.interactive-terminal-header-actions button{width:auto;min-width:0;min-height:40px;flex:0 1 auto;padding:8px 12px;white-space:nowrap}.interactive-terminal{padding:3px;border-radius:6px}.interactive-terminal .xterm{font-size:11px;line-height:1.1}.interactive-terminal-keybar{display:flex}.interactive-terminal-actions{margin-top:6px;justify-content:space-between}.interactive-terminal-font-controls{display:flex}.interactive-terminal-actions .job-download{padding:5px 8px;font-size:.68rem}.interactive-terminal-help{margin:5px 0;font-size:.64rem}.interactive-terminal-dialog .management-message{margin:5px 0!important;max-height:44px;overflow:auto;font-size:.68rem}}@media(max-width:380px){.interactive-terminal-dialog{padding:5px}.interactive-terminal-keybar{gap:3px}.interactive-terminal-keybar button{min-width:38px;min-height:40px;padding:6px 7px;font-size:.7rem}.interactive-terminal-header-actions{width:100%;justify-content:flex-end}.interactive-terminal-header-actions button{padding-inline:7px}.interactive-terminal-header-actions .pill{max-width:82px}.interactive-terminal-help{display:none}}@media(orientation:landscape) and (max-width:720px){.interactive-terminal-keybar{margin-top:4px}.interactive-terminal-help{display:none}}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.scheduler-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.scheduler-head p{margin:5px 0 0;color:var(--muted);font-size:.78rem}.scheduler-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}.scheduler-summary>div{padding:13px 14px;border:1px solid #159cf055;border-radius:12px;background:#0b172acc}.scheduler-summary span{display:block;color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em}.scheduler-summary strong{display:block;margin-top:5px;font-size:.9rem}.scheduler-list{display:grid;gap:10px}.scheduler-card{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 16px;border:1px solid var(--line);border-radius:14px;background:#0e162b99}.scheduler-card-main{min-width:0}.scheduler-card-title{display:flex;align-items:center;gap:9px}.scheduler-card-title strong{font-size:.92rem;overflow-wrap:anywhere}.scheduler-card-main>.hint{display:block;margin-top:5px}.scheduler-card-main small{display:block;margin-top:9px;color:var(--muted);line-height:1.55}.schedule-state{padding:3px 7px;border-radius:999px;font-size:.65rem;font-weight:700}.schedule-state.enabled{color:var(--good);background:#55d39a1f}.schedule-state.disabled{color:var(--muted);background:#aab7cf1f}.scheduler-card-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px;flex:0 0 auto}.scheduler-card-actions button{padding:7px 9px;font-size:.72rem}.scheduler-empty{padding:30px;border:1px dashed var(--line);border-radius:14px;text-align:center;color:var(--muted)}.scheduler-modal{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:18px;background:#00000088}.scheduler-modal[hidden]{display:none}.scheduler-modal form{width:min(520px,100%);display:grid;grid-template-columns:1fr 1fr;gap:12px}.scheduler-modal .section-title,.scheduler-modal input[type=hidden],.scheduler-modal .scheduler-warning,.scheduler-modal .scheduler-form-actions{grid-column:1 / -1}.scheduler-modal label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:.72rem}.scheduler-modal input,.scheduler-modal select{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:8px;color:var(--text);background:#081426;font:inherit}.scheduler-modal .schedule-enabled{flex-direction:row;align-items:center;gap:7px}.scheduler-modal .schedule-enabled input{width:auto}.scheduler-warning{margin:0;padding:10px 12px;border:1px solid #f0a83a66;border-radius:9px;color:var(--warn);background:#f0a83a12;font-size:.74rem;line-height:1.45}.scheduler-form-actions{display:flex;justify-content:flex-end;gap:8px}@media(max-width:720px){.scheduler-head{align-items:flex-start;flex-direction:column}.scheduler-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.scheduler-card{align-items:stretch;flex-direction:column}.scheduler-card-actions{justify-content:flex-start}.scheduler-modal form{grid-template-columns:1fr}}</style></head>', 1)
 PAGE = PAGE.replace('</head>', '<style>.scheduler-modal form{width:min(920px,100%);max-height:calc(100vh - 36px);overflow:auto}.schedule-days{grid-column:1 / -1;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px}.schedule-days legend{padding:0 5px;color:var(--muted);font-size:.72rem}.day-toggles{display:flex;flex-wrap:wrap;gap:6px}.day-toggles label{display:block}.day-toggles input{position:absolute;opacity:0;pointer-events:none}.day-toggles input:disabled+span{cursor:not-allowed;opacity:.45}.day-toggles span{display:block;padding:7px 11px;border:1px solid var(--line);border-radius:7px;color:var(--muted);cursor:pointer;font-size:.75rem}.day-toggles input:checked+span{color:#fff;border-color:#159cf0aa;background:#087ecb66}.schedule-day-hint{display:block;margin-top:9px;font-size:.7rem}.schedule-targets{grid-column:1 / -1;min-width:0;padding:14px;border:1px solid #159cf055;border-radius:12px;background:#08172aaa}.schedule-targets[hidden]{display:none}.schedule-targets-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.schedule-targets h3{margin:0;font-size:.88rem}.schedule-target-tools{display:flex;flex-wrap:wrap;gap:7px}.schedule-target-tools button{font-size:.72rem;padding:6px 8px}.schedule-target-search{display:block!important;margin:10px 0}.schedule-target-table{width:100%;border-collapse:collapse;font-size:.73rem}.schedule-target-table th,.schedule-target-table td{padding:8px 7px;border-bottom:1px solid #159cf033;text-align:left;white-space:nowrap}.schedule-target-table th{position:sticky;top:0;z-index:1;color:var(--muted);background:#0a1b31}.schedule-target-table td:first-child,.schedule-target-table th:first-child{width:28px;text-align:center}.schedule-target-table input{width:16px;height:16px}.schedule-table-wrap{max-height:360px;overflow:auto;border:1px solid #159cf044;border-radius:8px}.schedule-selected{margin-top:9px;color:#8fd2ff;font-size:.75rem;font-weight:700}.schedule-missing{margin:8px 0;padding:8px 10px;border:1px solid #ed6b7a88;border-radius:8px;color:#ff9aaa;background:#ed6b7a12;font-size:.73rem}.schedule-missing[hidden]{display:none}.schedule-enabled{grid-column:1 / -1;width:max-content}.scheduler-modal .scheduler-warning{grid-column:1 / -1}@media(max-width:720px){.scheduler-modal form{width:100%;grid-template-columns:1fr}.schedule-targets-head{align-items:flex-start;flex-direction:column}.schedule-table-wrap{overflow-x:auto}.schedule-target-table{min-width:650px}}</style></head>', 1)
+
+# Classic's final surface pass deliberately overrides the later dashboard and
+# navigation skin rules above.  Keep this scoped to the theme so the accepted
+# Modern appearance remains byte-for-byte unaffected.
+PAGE = PAGE.replace('</head>', '''<style>
+html[data-theme="classic"] .dashboard-header-top,
+html[data-theme="classic"] .overview-actions-card,
+html[data-theme="classic"] .global-actions,
+html[data-theme="classic"] .systems-panel,
+html[data-theme="classic"] .jobs,
+html[data-theme="classic"] .details,
+html[data-theme="classic"] .management-panel,
+html[data-theme="classic"] .scheduler-placeholder,
+html[data-theme="classic"] .node-group,
+html[data-theme="classic"] .external-group,
+html[data-theme="classic"] .guest-panel {
+    border-color:#69737b;
+    border-radius:4px;
+    background:#2b3238;
+    box-shadow:none;
+}
+html[data-theme="classic"] .dashboard-header-top { padding:18px 20px 16px; }
+html[data-theme="classic"] .dashboard-kpis,
+html[data-theme="classic"] .overview-actions-card .dashboard-kpis { background:#30373d; }
+html[data-theme="classic"] .overview-actions-card h2,
+html[data-theme="classic"] .systems-panel > .section-title h2,
+html[data-theme="classic"] .jobs h2 { color:var(--text); letter-spacing:normal; }
+html[data-theme="classic"] .global-actions { border-top-color:#69737b; }
+html[data-theme="classic"] .global-action,
+html[data-theme="classic"] .managed-actions button,
+html[data-theme="classic"] .row-actions button,
+html[data-theme="classic"] .scheduler-card-actions button,
+html[data-theme="classic"] .schedule-target-tools button,
+html[data-theme="classic"] .details-close { background:#3a4248; border-color:#69737b; color:var(--text); }
+html[data-theme="classic"] .global-action.update-all { background:#5b7482; border-color:#9db5c1; }
+html[data-theme="classic"] .global-action.check-all { background:#3f6554; border-color:#77c99b99; }
+html[data-theme="classic"] .job-running-indicator,
+html[data-theme="classic"] .updater-update-indicator { box-shadow:none; }
+html[data-theme="classic"] .dashboard-meta .nav-toggle { border-radius:4px; color:#d1d9dd; }
+html[data-theme="classic"] .dashboard-meta .page-nav { border-radius:4px; }
+html[data-theme="classic"] .dashboard-meta .page-nav a.active { background:#566d7a; }
+html[data-theme="classic"] .guest-panel,
+html[data-theme="classic"] .guest-panel-title { border-color:#69737b; background:#30373d; }
+html[data-theme="classic"] .guest-panel-title { color:var(--text); }
+html[data-theme="classic"] .node-group .group-header,
+html[data-theme="classic"] .external-group .group-header { min-height:78px; }
+html[data-theme="classic"] .node-group .group-toggle,
+html[data-theme="classic"] .external-group .group-toggle { width:32px; height:32px; }
+html[data-theme="classic"] .schedule-targets,
+html[data-theme="classic"] .schedule-table-wrap,
+html[data-theme="classic"] .check-update-matrix,
+html[data-theme="classic"] .schedule-days { border-color:#69737b; border-radius:4px; background:#30373d; }
+html[data-theme="classic"] .schedule-target-table th { background:#394249; }
+html[data-theme="classic"] .schedule-target-table th,
+html[data-theme="classic"] .schedule-target-table td { border-color:#69737b; }
+html[data-theme="classic"] .scheduler-card,
+html[data-theme="classic"] .scheduler-summary>div { border-color:#69737b; border-radius:4px; background:#30373d; box-shadow:none; }
+html[data-theme="classic"] .scheduler-empty,
+html[data-theme="classic"] .notice,
+html[data-theme="classic"] .empty { border-color:#69737b; border-radius:4px; box-shadow:none; }
+html[data-theme="classic"] #login-screen .modal,
+html[data-theme="classic"] #auth-loading .modal { border-color:#69737b; border-radius:4px; background:#30373d; box-shadow:none; }
+html[data-theme="classic"] .interactive-terminal-dialog { border-color:#69737b; background:#252b30; box-shadow:none; }
+html[data-theme="classic"] .interactive-terminal { border-color:#69737b; }
+html[data-theme="classic"] .node-group .group-actions .node-details,
+html[data-theme="classic"] .node-group .group-actions .node-action,
+html[data-theme="classic"] .row-actions button,
+html[data-theme="classic"] .target-selection-state {
+    background:#3a4248;
+    border-color:#69737b;
+    color:var(--text);
+    box-shadow:none;
+}
+html[data-theme="classic"] .target-selection-state.only {
+    background:#345746;
+    border-color:#77c99b;
+    color:#b9f2cf;
+}
+html[data-theme="classic"] .target-selection-state.exclude {
+    background:#5a3b40;
+    border-color:#ed8d98;
+    color:#ffc0c7;
+}
+html[data-theme="classic"] .target-selection-state:hover:not(:disabled),
+html[data-theme="classic"] .node-group .group-actions .node-action:hover:not(:disabled),
+html[data-theme="classic"] .node-group .group-actions .node-details:hover:not(:disabled),
+html[data-theme="classic"] .row-actions button:hover:not(:disabled) {
+    background:#465159;
+    border-color:#a9bbc5;
+    color:#fff;
+    box-shadow:none;
+}
+html[data-theme="classic"] .target-selection-state:focus-visible,
+html[data-theme="classic"] .node-group .group-actions button:focus-visible,
+html[data-theme="classic"] .row-actions button:focus-visible {
+    outline:2px solid var(--accent);
+    outline-offset:2px;
+}
+/* Keep the Classic skin angular and graphite even for the later feature
+   styles which are injected below the main stylesheet. */
+html[data-theme="classic"] .eyebrow,
+html[data-theme="classic"] .detail-sections h4,
+html[data-theme="classic"] .schedule-selected,
+html[data-theme="classic"] .dashboard-kpis .metric:nth-child(1) .metric-top,
+html[data-theme="classic"] .dashboard-kpis .metric:nth-child(6) .metric-top {
+    color:#c2ccd1;
+}
+html[data-theme="classic"] .config-field input[type="checkbox"],
+html[data-theme="classic"] .target-selection-state:focus-visible,
+html[data-theme="classic"] .theme-picker select:focus-visible {
+    accent-color:#a9bbc5;
+}
+html[data-theme="classic"] .settings-group h3,
+html[data-theme="classic"] .settings-group p,
+html[data-theme="classic"] .settings-page a,
+html[data-theme="classic"] #settings-page a,
+html[data-theme="classic"] .theme-picker,
+html[data-theme="classic"] .theme-picker label,
+html[data-theme="classic"] .config-field,
+html[data-theme="classic"] .config-field .field-unit {
+    color:#b8c3c9;
+}
+html[data-theme="classic"] #settings-page a:hover,
+html[data-theme="classic"] #settings-page a:focus-visible {
+    color:#f2f5f6;
+}
+html[data-theme="classic"] .dashboard-meta .nav-toggle,
+html[data-theme="classic"] .dashboard-meta .page-nav,
+html[data-theme="classic"] .dashboard-meta .page-nav a,
+html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout,
+html[data-theme="classic"] .dashboard-meta .page-nav .nav-support,
+html[data-theme="classic"] .dashboard-meta .page-nav a.active {
+    border-radius:4px;
+    color:#c2ccd1;
+    background:#30373d;
+    border-color:#69737b;
+    box-shadow:none;
+}
+html[data-theme="classic"] .dashboard-meta .page-nav a:hover,
+html[data-theme="classic"] .dashboard-meta .page-nav a:focus-visible,
+html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout:hover,
+html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout:focus-visible,
+html[data-theme="classic"] .dashboard-meta .nav-toggle:hover,
+html[data-theme="classic"] .dashboard-meta .nav-toggle:focus-visible {
+    color:#fff;
+    background:#465159;
+    border-color:#a9bbc5;
+    outline:2px solid #a9bbc588;
+}
+html[data-theme="classic"] .dashboard-meta .page-nav a.active {
+    color:#fff;
+    background:#566d7a;
+    border-color:#a9bbc5;
+}
+html[data-theme="classic"] .dashboard-meta .nav-separator {
+    border-color:#69737b;
+}
+html[data-theme="classic"] .version-dialog-footer a,
+html[data-theme="classic"] .version-dialog-footer a:hover,
+html[data-theme="classic"] .version-dialog-footer a:focus-visible {
+    color:#c2ccd1;
+}
+html[data-theme="classic"] .node-group .group-toggle,
+html[data-theme="classic"] .external-group .group-toggle,
+html[data-theme="classic"] .group-toggle {
+    border-radius:4px;
+    color:#c2ccd1;
+    background:transparent;
+}
+html[data-theme="classic"] .node-group .group-toggle:hover,
+html[data-theme="classic"] .external-group .group-toggle:hover,
+html[data-theme="classic"] .group-toggle:hover {
+    color:#fff;
+    background:#465159;
+}
+html[data-theme="classic"] .node-group.open .chevron,
+html[data-theme="classic"] .external-group.open .chevron {
+    color:#c2ccd1;
+}
+html[data-theme="classic"] .group-header:hover,
+html[data-theme="classic"] .node-group .group-header:hover,
+html[data-theme="classic"] .external-group .group-header:hover {
+    background:#394249;
+}
+html[data-theme="classic"] .reboot-required-badge,
+html[data-theme="classic"] .pill,
+html[data-theme="classic"] .schedule-state,
+html[data-theme="classic"] .day-toggles span,
+html[data-theme="classic"] .schedule-missing,
+html[data-theme="classic"] .scheduler-warning,
+html[data-theme="classic"] .scheduler-empty,
+html[data-theme="classic"] .schedule-days,
+html[data-theme="classic"] .schedule-targets,
+html[data-theme="classic"] .schedule-table-wrap,
+html[data-theme="classic"] .scheduler-modal,
+html[data-theme="classic"] .scheduler-modal form,
+html[data-theme="classic"] .scheduler-modal input,
+html[data-theme="classic"] .scheduler-modal select,
+html[data-theme="classic"] .node-group,
+html[data-theme="classic"] .external-group,
+html[data-theme="classic"] .guest-panel,
+html[data-theme="classic"] .guest-panel-title,
+html[data-theme="classic"] .management-form input,
+html[data-theme="classic"] .management-form select,
+html[data-theme="classic"] .config-field input,
+html[data-theme="classic"] .config-field select,
+html[data-theme="classic"] .modal label input,
+html[data-theme="classic"] .modal label select,
+html[data-theme="classic"] .theme-picker select,
+html[data-theme="classic"] .job-download,
+html[data-theme="classic"] .log,
+html[data-theme="classic"] .interactive-terminal,
+html[data-theme="classic"] .target-selection-state {
+    border-radius:4px;
+}
+html[data-theme="classic"] .node-group,
+html[data-theme="classic"] .external-group,
+html[data-theme="classic"] .guest-panel,
+html[data-theme="classic"] .guest-panel-title {
+    border-radius:4px;
+}
+html[data-theme="classic"] .day-toggles input:checked + span {
+    color:#fff;
+    border-color:#a9bbc5;
+    background:#566d7a;
+}
+html[data-theme="classic"] .schedule-targets,
+html[data-theme="classic"] .schedule-table-wrap,
+html[data-theme="classic"] .schedule-days,
+html[data-theme="classic"] .scheduler-summary > div,
+html[data-theme="classic"] .scheduler-card,
+html[data-theme="classic"] .scheduler-empty {
+    border-color:#69737b;
+    background:#30373d;
+}
+html[data-theme="classic"] .schedule-target-table th,
+html[data-theme="classic"] .schedule-target-table td {
+    border-color:#69737b;
+}
+html[data-theme="classic"] .schedule-target-table th {
+    background:#394249;
+}
+html[data-theme="classic"] .scheduler-summary > div,
+html[data-theme="classic"] .scheduler-card,
+html[data-theme="classic"] .scheduler-empty,
+html[data-theme="classic"] .scheduler-warning,
+html[data-theme="classic"] .schedule-missing {
+    box-shadow:none;
+}
+html[data-theme="classic"] input:focus-visible,
+html[data-theme="classic"] select:focus-visible,
+html[data-theme="classic"] textarea:focus-visible,
+html[data-theme="classic"] button:focus-visible,
+html[data-theme="classic"] a:focus-visible {
+    outline:2px solid #a9bbc5;
+    outline-offset:2px;
+}
+/* Settings-specific neutralization: these controls retain Modern's blue
+   defaults unless they are explicitly restyled in the Classic cascade. */
+html[data-theme="classic"] {
+    --theme-card-radius:0;
+    --theme-control-radius:0;
+    --theme-nav-active:#465159;
+}
+html[data-theme="classic"] .settings-group,
+html[data-theme="classic"] .filter-scope,
+html[data-theme="classic"] .filter-preview,
+html[data-theme="classic"] .internal-ssh-target-summary,
+html[data-theme="classic"] .help-popover,
+html[data-theme="classic"] .settings-config-area,
+html[data-theme="classic"] .settings-management-title,
+html[data-theme="classic"] .connection-management-grid {
+    border-radius:0;
+    border-color:#69737b;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] .filter-preview-toggle,
+html[data-theme="classic"] .filter-preview-toggle:hover,
+html[data-theme="classic"] .filter-preview.open .filter-preview-toggle,
+html[data-theme="classic"] .filter-scope h4,
+html[data-theme="classic"] .filter-preview-chevron,
+html[data-theme="classic"] .filter-preview.open .filter-preview-chevron,
+html[data-theme="classic"] .help-trigger,
+html[data-theme="classic"] .help-control.open .help-trigger {
+    color:#c2ccd1;
+}
+html[data-theme="classic"] .filter-preview-toggle:hover,
+html[data-theme="classic"] .filter-preview.open .filter-preview-toggle,
+html[data-theme="classic"] .filter-preview-toggle:hover .filter-preview-chevron,
+html[data-theme="classic"] .help-trigger:hover,
+html[data-theme="classic"] .help-control.open .help-trigger {
+    background:#465159;
+    border-color:#a9bbc5;
+    box-shadow:none;
+}
+html[data-theme="classic"] .filter-preview-toggle:focus-visible,
+html[data-theme="classic"] .help-trigger:focus-visible {
+    outline:2px solid #a9bbc5;
+    outline-offset:2px;
+}
+html[data-theme="classic"] .filter-preview-chevron,
+html[data-theme="classic"] .help-trigger {
+    border-radius:0;
+}
+html[data-theme="classic"] .help-popover {
+    background:#30373d;
+}
+html[data-theme="classic"] .management-form input,
+html[data-theme="classic"] .management-form select,
+html[data-theme="classic"] .config-field input[type="text"],
+html[data-theme="classic"] .config-field input[type="number"],
+html[data-theme="classic"] .config-field select,
+html[data-theme="classic"] .internal-ssh-target-picker select,
+html[data-theme="classic"] .theme-picker select,
+html[data-theme="classic"] .modal label input,
+html[data-theme="classic"] .modal label select {
+    border-radius:0;
+    border-color:#69737b;
+    background:#252a2e;
+    color:#eef1f3;
+}
+html[data-theme="classic"] .filter-scope,
+html[data-theme="classic"] .internal-ssh-target-summary {
+    background:#2b3034;
+}
+html[data-theme="classic"] .filter-preview-details {
+    border-color:#69737b;
+}
+html[data-theme="classic"] .filter-preview-list,
+html[data-theme="classic"] .filter-preview-note,
+html[data-theme="classic"] .internal-ssh-target-summary strong {
+    color:#b8c0c5;
+}
+html[data-theme="classic"] .settings-group,
+html[data-theme="classic"] .filter-scope,
+html[data-theme="classic"] .filter-preview,
+html[data-theme="classic"] .internal-ssh-target-summary,
+html[data-theme="classic"] .help-popover,
+html[data-theme="classic"] .settings-config-area,
+html[data-theme="classic"] .settings-management-title,
+html[data-theme="classic"] .connection-management-grid,
+html[data-theme="classic"] .filter-preview-chevron,
+html[data-theme="classic"] .help-trigger,
+html[data-theme="classic"] .management-form input,
+html[data-theme="classic"] .management-form select,
+html[data-theme="classic"] .config-field input,
+html[data-theme="classic"] .config-field select,
+html[data-theme="classic"] .internal-ssh-target-picker select,
+html[data-theme="classic"] .theme-picker select,
+html[data-theme="classic"] .modal label input,
+html[data-theme="classic"] .modal label select,
+html[data-theme="classic"] button,
+html[data-theme="classic"] .job-download,
+html[data-theme="classic"] .node-group,
+html[data-theme="classic"] .external-group,
+html[data-theme="classic"] .guest-panel,
+html[data-theme="classic"] .scheduler-card,
+html[data-theme="classic"] .schedule-targets,
+html[data-theme="classic"] .schedule-table-wrap,
+html[data-theme="classic"] .schedule-days,
+html[data-theme="classic"] .modal,
+html[data-theme="classic"] .interactive-terminal-dialog,
+html[data-theme="classic"] .interactive-terminal,
+html[data-theme="classic"] .log,
+html[data-theme="classic"] .target-selection-state {
+    border-radius:0;
+}
+html[data-theme="classic"] .dashboard-meta .page-nav a.active,
+html[data-theme="classic"] .day-toggles input:checked + span {
+    background:#465159;
+    border-color:#a9bbc5;
+}
+html[data-theme="classic"] #settings-page #config-form .settings-group,
+html[data-theme="classic"] #settings-page .internal-ssh-view .settings-group {
+    border-radius:0;
+    border-color:#69737b;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .filter-scope {
+    border-radius:0;
+    border-color:#69737b;
+    background:#2b3034;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .filter-preview {
+    border-radius:0;
+    border-color:#69737b;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .help-trigger {
+    border-radius:0;
+    border-color:#69737b;
+    color:#c2ccd1;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .help-trigger:hover,
+html[data-theme="classic"] #settings-page .help-control.open .help-trigger {
+    border-color:#a9bbc5;
+    color:#fff;
+    background:#465159;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .help-trigger:focus-visible {
+    outline:2px solid #a9bbc5;
+    outline-offset:2px;
+}
+html[data-theme="classic"] #settings-page .help-popover {
+    border-radius:0;
+    border-color:#69737b;
+    color:#eef1f3;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] #settings-page .filter-preview-toggle,
+html[data-theme="classic"] #settings-page .filter-preview-toggle:hover,
+html[data-theme="classic"] #settings-page .filter-preview.open .filter-preview-toggle,
+html[data-theme="classic"] #settings-page .filter-scope h4,
+html[data-theme="classic"] #settings-page .filter-preview-chevron,
+html[data-theme="classic"] #settings-page .filter-preview.open .filter-preview-chevron {
+    color:#c2ccd1;
+}
+html[data-theme="classic"] #settings-page .filter-preview-toggle:hover,
+html[data-theme="classic"] #settings-page .filter-preview.open .filter-preview-toggle,
+html[data-theme="classic"] #settings-page .filter-preview-toggle:focus-visible,
+html[data-theme="classic"] #settings-page .filter-preview-toggle:hover .filter-preview-chevron {
+    background:#465159;
+    border-color:#a9bbc5;
+    box-shadow:none;
+    outline-color:#a9bbc5;
+}
+html[data-theme="classic"] #settings-page .management-form input,
+html[data-theme="classic"] #settings-page .management-form select,
+html[data-theme="classic"] #settings-page .config-field input,
+html[data-theme="classic"] #settings-page .config-field select,
+html[data-theme="classic"] #settings-page .internal-ssh-target-picker select,
+html[data-theme="classic"] #settings-page .theme-picker select {
+    border-radius:0;
+    border-color:#69737b;
+    color:#eef1f3;
+    background:#252a2e;
+}
+html[data-theme="classic"] #settings-page .config-field input[type="checkbox"] {
+    accent-color:#a9bbc5;
+}
+html[data-theme="classic"] .help-trigger {
+    border-radius:0;
+    border-color:#69737b;
+    color:#c2ccd1;
+    background:#30373d;
+    box-shadow:none;
+}
+html[data-theme="classic"] .help-trigger:hover,
+html[data-theme="classic"] .help-control.open .help-trigger {
+    border-color:#a9bbc5;
+    color:#fff;
+    background:#465159;
+    box-shadow:none;
+}
+html[data-theme="classic"] .help-trigger:focus-visible {
+    outline:2px solid #a9bbc5;
+    outline-offset:2px;
+}
+html[data-theme="classic"] .dashboard-meta .nav-toggle,
+html[data-theme="classic"] .dashboard-meta .page-nav,
+html[data-theme="classic"] .dashboard-meta .page-nav a,
+html[data-theme="classic"] .dashboard-meta .page-nav .nav-logout {
+    border-radius:0;
+}
+</style></head>''', 1)
 
 
 def error_payload(code, message):
@@ -1303,6 +1863,8 @@ def update_start_failure_message(result, generic_message):
         return "The remote job runner could not be prepared."
     if "Could not start update job" in diagnostic:
         return "The remote job runner could not start the job."
+    if "Unknown assignment: LogFilterPatterns=" in diagnostic:
+        return "The installed systemd does not support the job log filter."
     if getattr(result, "returncode", None) == 124:
         return "Job start timed out."
     return f"{generic_message} (exit code {getattr(result, 'returncode', 'unknown')})."
@@ -1951,6 +2513,37 @@ def write_target_selection(path, payload):
     return normalized
 
 
+def ensure_target_selection_file(path):
+    """Create the empty persistent state once, never replacing user data."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = Path(str(path) + ".uu-lock")
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if path.exists() or path.is_symlink():
+            return False
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as temporary:
+            json.dump(target_selection_default(), temporary, indent=2, sort_keys=True)
+            temporary.write("\n")
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            temporary_path = Path(temporary.name)
+        os.chmod(temporary_path, 0o600)
+        if os.geteuid() == 0:
+            os.chown(temporary_path, 0, 0)
+        try:
+            os.link(temporary_path, path)
+        except FileExistsError:
+            return False
+        finally:
+            temporary_path.unlink(missing_ok=True)
+        directory_fd = os.open(path.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        return True
+
+
 def parse_inventory_text(content):
     sections = []
     current = None
@@ -2482,15 +3075,23 @@ def locked_atomic_update(path, updater):
 
 
 class ProxmoxAuthError(Exception):
-    def __init__(self, message="Proxmox authentication failed.", tfa=False):
+    def __init__(self, message="Proxmox authentication failed.", tfa=False, authentication_failure=False):
         super().__init__(message)
         self.tfa = tfa
+        self.authentication_failure = authentication_failure
+
+
+class AuthorizationUnavailableError(Exception):
+    """The Proxmox RBAC revalidation could not be completed."""
 
 
 class ProxmoxAuth:
     API_URL = "http://127.0.0.1:85/api2/json"
-    TIMEOUT = 3
-    AUTHORIZATION_TTL = 30
+    # Proxmox may spend a little longer rejecting an invalid second factor
+    # than it does completing a valid one. Keep a bounded timeout without
+    # misclassifying that authentication result as service unavailability.
+    TIMEOUT = 5
+    AUTHORIZATION_TTL = 5 * 60
 
     def __init__(self):
         self._opener = build_opener(ProxyHandler({}))
@@ -2499,11 +3100,15 @@ class ProxmoxAuth:
         self._administrator_privileges_cache = None
         self._authorization_lock = threading.Lock()
 
-    def _request(self, path, fields=None):
+    def _request(self, path, fields=None, request_host=None, request_origin=None):
         data = urlencode(fields).encode("utf-8") if fields is not None else None
         request = Request(self.API_URL + path, data=data, method="POST" if data else "GET")
         if data:
             request.add_header("Content-Type", "application/x-www-form-urlencoded")
+        if request_host:
+            request.add_header("Host", request_host)
+        if request_origin:
+            request.add_header("Origin", request_origin)
         try:
             with self._opener.open(request, timeout=self.TIMEOUT) as response:
                 payload = json.loads(response.read(1024 * 1024).decode("utf-8"))
@@ -2512,7 +3117,8 @@ class ProxmoxAuth:
                 payload = json.loads(error.read(1024 * 1024).decode("utf-8"))
             except (OSError, UnicodeError, ValueError):
                 raise ProxmoxAuthError() from error
-            raise ProxmoxAuthError("Proxmox authentication failed.", self._has_tfa(payload)) from error
+            raise ProxmoxAuthError("Proxmox authentication failed.", self._has_tfa(payload),
+                                   error.code in {401, 403}) from error
         except (OSError, UnicodeError, ValueError, URLError) as error:
             raise ProxmoxAuthError() from error
         if not isinstance(payload, dict) or "data" not in payload:
@@ -2532,6 +3138,35 @@ class ProxmoxAuth:
     def _is_partial_ticket(ticket):
         return isinstance(ticket, str) and ticket.startswith("PVE:!tfa!")
 
+    @staticmethod
+    def _partial_challenge(ticket):
+        if not ProxmoxAuth._is_partial_ticket(ticket):
+            return None
+        encoded = ticket.split("!tfa!", 1)[1]
+        try:
+            decoded = unquote(encoded)
+            challenge, _end = json.JSONDecoder().raw_decode(decoded)
+        except (TypeError, UnicodeError, ValueError):
+            return None
+        return challenge if isinstance(challenge, dict) else None
+
+    @staticmethod
+    def _challenge_methods(challenge, realm_data=None):
+        challenge = challenge if isinstance(challenge, dict) else {}
+        realm_data = realm_data if isinstance(realm_data, dict) else {}
+        methods = []
+        challenge_type = str(challenge.get("type", "")).lower()
+        realm_tfa = str(realm_data.get("tfa", "")).lower()
+        if challenge.get("yubico") or challenge_type in {"yubico", "yubikey"} or realm_tfa == "yubico":
+            methods.append("yubico")
+        if challenge_type in {"webauthn", "u2f"} or challenge.get("webauthn") or challenge.get("u2f"):
+            methods.append("webauthn")
+        if challenge.get("totp") or challenge_type in {"tfa", "totp", "oath"} or realm_tfa in {"oath", "totp"}:
+            methods.append("totp")
+        if challenge.get("recovery"):
+            methods.append("recovery")
+        return list(dict.fromkeys(methods))
+
     def realms(self):
         now = time.monotonic()
         if self._realm_cache and now - self._realm_cache[0] < 30:
@@ -2549,7 +3184,8 @@ class ProxmoxAuth:
             comment = item.get("comment", "")
             if not isinstance(comment, str):
                 raise ProxmoxAuthError("Malformed Proxmox realm response.")
-            realms.append({"realm": realm, "comment": comment, "type": str(item.get("type", ""))})
+            realms.append({"realm": realm, "comment": comment, "type": str(item.get("type", "")),
+                           "tfa": str(item.get("tfa", ""))})
         if not realms:
             raise ProxmoxAuthError("No Proxmox authentication realms are configured.")
         default_realm = next((item["realm"] for item in realms if item["realm"] == "pam"), realms[0]["realm"])
@@ -2613,19 +3249,33 @@ class ProxmoxAuth:
         return (isinstance(username, str) and 0 < len(username) <= 128
                 and all(0x20 <= ord(character) != 0x7f for character in username))
 
-    def authenticate(self, username, password, realm):
+    def authenticate(self, username, password, realm, request_host=None, request_origin=None):
         if not self._valid_username(username):
             return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
         if not isinstance(realm, str):
             return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
         try:
             available = self.realms()
-            if realm not in {item["realm"] for item in available["realms"]}:
+            realm_data = next((item for item in available["realms"] if item["realm"] == realm), None)
+            if realm_data is None:
                 return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
-            data = self._request("/access/ticket", {"username": username, "password": password, "realm": realm})
+            request_fields = {"username": username, "password": password, "realm": realm}
+            if request_host is None and request_origin is None:
+                data = self._request("/access/ticket", request_fields)
+            else:
+                data = self._request("/access/ticket", request_fields, request_host, request_origin)
             if self._has_tfa({"data": data}):
+                ticket = data.get("ticket") if isinstance(data, dict) else None
+                challenge = self._partial_challenge(ticket)
+                if not challenge:
+                    return {"ok": False, "code": "TFA_REQUIRED",
+                            "message": "Two-factor authentication is required.", "challenge": None}
                 return {"ok": False, "code": "TFA_REQUIRED",
-                        "message": "Two-factor authentication is required but not supported by this login flow."}
+                        "message": "Two-factor authentication is required.",
+                        "challenge": {"username": data.get("username") or f"{username}@{realm}",
+                                       "realm": realm, "partial_ticket": ticket,
+                                       "methods": self._challenge_methods(challenge, realm_data),
+                                       "public_challenge": challenge}}
             if not isinstance(data, dict) or not isinstance(data.get("ticket"), str) or not data["ticket"]:
                 return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
             if self._is_partial_ticket(data["ticket"]):
@@ -2640,17 +3290,80 @@ class ProxmoxAuth:
         except ProxmoxAuthError as error:
             if error.tfa:
                 return {"ok": False, "code": "TFA_REQUIRED",
-                        "message": "Two-factor authentication is required but not supported by this login flow."}
+                        "message": "Two-factor authentication is required.", "challenge": None}
+            if error.authentication_failure:
+                return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+            return {"ok": False, "code": "LOGIN_FAILED", "message": "Proxmox authentication is unavailable."}
+
+    def complete_tfa(self, username, realm, partial_ticket, factor, response,
+                     request_host=None, request_origin=None):
+        if not self._valid_username(username) or not isinstance(realm, str):
+            return {"ok": False, "code": "LOGIN_FAILED", "message": "Invalid credentials."}
+        if factor not in {"totp", "recovery", "yubico", "webauthn"} or not isinstance(response, str) or not response:
+            return {"ok": False, "code": "TFA_UNSUPPORTED", "message": "That two-factor method is unavailable."}
+        if factor == "webauthn":
+            if not isinstance(request_origin, str) or not request_origin.lower().startswith("https://"):
+                return {"ok": False, "code": "TFA_UNSUPPORTED", "message": "WebAuthn requires a secure HTTPS login origin."}
+            try:
+                assertion = json.loads(response)
+            except (TypeError, ValueError):
+                assertion = None
+            if (not isinstance(assertion, dict) or
+                    not all(isinstance(assertion.get(key), str) and assertion[key] for key in
+                            ("id", "type", "challenge", "rawId")) or
+                    not isinstance(assertion.get("response"), dict) or
+                    not all(isinstance(assertion["response"].get(key), str) and assertion["response"][key]
+                            for key in ("authenticatorData", "clientDataJSON", "signature"))):
+                return {"ok": False, "code": "TFA_FAILED", "message": "The WebAuthn response was invalid."}
+        if not self._is_partial_ticket(partial_ticket):
+            return {"ok": False, "code": "TFA_EXPIRED", "message": "The two-factor login challenge is invalid or expired."}
+        try:
+            request_fields = {
+                "username": username,
+                "password": f"{factor}:{response}",
+                "realm": realm,
+                "tfa-challenge": partial_ticket,
+            }
+            if request_host is None and request_origin is None:
+                data = self._request("/access/ticket", request_fields)
+            else:
+                data = self._request("/access/ticket", request_fields, request_host, request_origin)
+            if not isinstance(data, dict) or not isinstance(data.get("ticket"), str) or not data["ticket"]:
+                return {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
+            if self._is_partial_ticket(data["ticket"]) or self._has_tfa({"data": data}):
+                return {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
+            userid = data.get("username") or f"{username}@{realm}"
+            if not self.authorized(userid):
+                return {"ok": False, "code": "LOGIN_UNAUTHORIZED", "message": "This Proxmox account is not authorized for Ultimate Updater."}
+            return {"ok": True, "user": userid}
+        except ProxmoxAuthError as error:
+            if error.tfa:
+                return {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
+            if error.authentication_failure:
+                return {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
             return {"ok": False, "code": "LOGIN_FAILED", "message": "Proxmox authentication is unavailable."}
 
 
 class AuthStore:
     SESSION_SECONDS = 8 * 60 * 60
+    TFA_SECONDS = 5 * 60
+    TFA_MAX_ATTEMPTS = 5
+    TFA_MAX_ACTIVE = 64
+    TFA_MAX_ACTIVE_PER_USER = 2
+    TFA_MAX_ACTIVE_PER_CLIENT = 4
+    TFA_START_WINDOW = 60
+    TFA_MAX_STARTS_PER_USER = 5
+    TFA_MAX_STARTS_PER_CLIENT = 20
+    TFA_MAX_STARTS_GLOBAL = 128
 
     def __init__(self, path):
         self.path = path
         self.sessions = {}
         self.failed_logins = {}
+        self.tfa_challenges = {}
+        self.tfa_starts = {"user": {}, "client": {}}
+        self.tfa_start_events = []
+        self.tfa_lock = threading.Lock()
         configured_backend = os.environ.get("UU_AUTH_BACKEND", "").strip().lower()
         self.backend = configured_backend or "proxmox"
         self.proxmox = ProxmoxAuth()
@@ -2713,7 +3426,7 @@ class AuthStore:
         except (OSError, ValueError, TypeError, KeyError):
             return False
 
-    def login(self, username, password, realm, client):
+    def login(self, username, password, realm, client, request_host=None, request_origin=None):
         now = time.time()
         attempts, window = self.failed_logins.get(client, (0, now))
         if now - window >= 60:
@@ -2721,7 +3434,57 @@ class AuthStore:
         if attempts >= 5:
             return {"ok": False, "code": "LOGIN_RATE_LIMITED", "message": "Too many login attempts."}
         if self.backend == "proxmox":
-            result = self.proxmox.authenticate(username, password, realm)
+            result = self.proxmox.authenticate(username, password, realm, request_host, request_origin)
+            if result.get("code") == "TFA_REQUIRED" and result.get("challenge"):
+                challenge = result["challenge"]
+                methods = [method for method in challenge["methods"]
+                           if method in {"totp", "recovery", "yubico", "webauthn"}]
+                if not isinstance(request_origin, str) or not request_origin.lower().startswith("https://"):
+                    methods = [method for method in methods if method != "webauthn"]
+                if not methods:
+                    return {"ok": False, "code": "TFA_UNSUPPORTED",
+                            "message": "This Proxmox two-factor method is not supported by this Web UI."}
+                now = time.time()
+                user_key = f"{challenge['realm']}:{challenge['username']}"
+                client_key = str(client or "unknown")
+                with self.tfa_lock:
+                    self._purge_tfa(now)
+                    user_active = sum(item["userid"] == challenge["username"]
+                                      for item in self.tfa_challenges.values())
+                    client_active = sum(item["client"] == client_key
+                                        for item in self.tfa_challenges.values())
+                    if (len(self.tfa_challenges) >= self.TFA_MAX_ACTIVE
+                            or user_active >= self.TFA_MAX_ACTIVE_PER_USER
+                            or client_active >= self.TFA_MAX_ACTIVE_PER_CLIENT
+                            or len(self.tfa_start_events) >= self.TFA_MAX_STARTS_GLOBAL
+                            or not self._tfa_start_allowed("user", user_key)
+                            or not self._tfa_start_allowed("client", client_key)):
+                        return {"ok": False, "code": "TFA_RATE_LIMITED",
+                                "message": "Too many pending two-factor login attempts."}
+                    self._record_tfa_start("user", user_key, now)
+                    self._record_tfa_start("client", client_key, now)
+                    self.tfa_start_events.append(now)
+                    challenge_id = secrets.token_urlsafe(32)
+                    binding = secrets.token_urlsafe(24)
+                    self.tfa_challenges[challenge_id] = {
+                        "username": challenge["username"].split("@", 1)[0],
+                        "userid": challenge["username"],
+                        "realm": challenge["realm"],
+                        "client": client_key,
+                        "partial_ticket": challenge["partial_ticket"],
+                        "methods": tuple(methods),
+                        "public_challenge": challenge.get("public_challenge", {}),
+                        "binding": binding,
+                        "created": now,
+                        "expires": now + self.TFA_SECONDS,
+                        "attempts": 0,
+                        "busy": False,
+                    }
+                return {"ok": False, "code": "TFA_REQUIRED", "message": result["message"],
+                        "challenge_id": challenge_id, "methods": methods,
+                        "public_challenge": challenge.get("public_challenge", {}),
+                        "expires_at": int((now + self.TFA_SECONDS) * 1000),
+                        "_tfa_binding": binding}
             if not result.get("ok"):
                 self.failed_logins[client] = (attempts + 1, window)
                 return result
@@ -2745,6 +3508,77 @@ class AuthStore:
                                 "expires": time.time() + self.SESSION_SECONDS}
         return {"ok": True, "token": token, "csrf": csrf, "user": authenticated_user}
 
+    def _purge_tfa(self, now=None):
+        now = time.time() if now is None else now
+        for challenge_id, challenge in list(self.tfa_challenges.items()):
+            if challenge["expires"] <= now:
+                self.tfa_challenges.pop(challenge_id, None)
+        cutoff = now - self.TFA_START_WINDOW
+        for scope in self.tfa_starts.values():
+            for key, timestamps in list(scope.items()):
+                current = [stamp for stamp in timestamps if stamp > cutoff]
+                if current:
+                    scope[key] = current
+                else:
+                    scope.pop(key, None)
+        self.tfa_start_events[:] = [stamp for stamp in self.tfa_start_events if stamp > cutoff]
+
+    def _tfa_start_allowed(self, scope_name, key):
+        timestamps = self.tfa_starts[scope_name].get(key, [])
+        return len(timestamps) < (self.TFA_MAX_STARTS_PER_USER if scope_name == "user"
+                                  else self.TFA_MAX_STARTS_PER_CLIENT)
+
+    def _record_tfa_start(self, scope_name, key, now):
+        self.tfa_starts[scope_name].setdefault(key, []).append(now)
+
+    def cancel_tfa(self, challenge_id, binding):
+        if not isinstance(challenge_id, str):
+            return
+        with self.tfa_lock:
+            challenge = self.tfa_challenges.get(challenge_id)
+            if challenge and hmac.compare_digest(challenge["binding"], str(binding or "")):
+                self.tfa_challenges.pop(challenge_id, None)
+
+    def complete_tfa(self, challenge_id, factor, response, binding,
+                     request_host=None, request_origin=None):
+        now = time.time()
+        with self.tfa_lock:
+            self._purge_tfa(now)
+            challenge = self.tfa_challenges.get(challenge_id)
+            if not challenge or not isinstance(binding, str) or not hmac.compare_digest(challenge["binding"], binding):
+                return {"ok": False, "code": "TFA_EXPIRED", "message": "The two-factor login challenge is invalid or expired."}
+            if challenge["busy"]:
+                return {"ok": False, "code": "TFA_BUSY", "message": "That two-factor login attempt is already in progress."}
+            if factor not in challenge["methods"]:
+                return {"ok": False, "code": "TFA_UNSUPPORTED", "message": "That two-factor method is unavailable."}
+            challenge["busy"] = True
+            challenge["attempts"] += 1
+
+        result = {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
+        accepted = False
+        try:
+            result = self.proxmox.complete_tfa(challenge["username"], challenge["realm"],
+                                               challenge["partial_ticket"], factor, response,
+                                               request_host, request_origin)
+        finally:
+            with self.tfa_lock:
+                current = self.tfa_challenges.get(challenge_id)
+                if current:
+                    current["busy"] = False
+                    accepted = result.get("ok") and current["expires"] > time.time()
+                    if result.get("ok") or current["attempts"] >= self.TFA_MAX_ATTEMPTS:
+                        self.tfa_challenges.pop(challenge_id, None)
+
+        if not result.get("ok"):
+            return result
+        if not accepted:
+            return {"ok": False, "code": "TFA_EXPIRED", "message": "The two-factor login challenge is invalid or expired."}
+        token = secrets.token_urlsafe(32)
+        csrf = secrets.token_urlsafe(32)
+        self.sessions[token] = {"user": result["user"], "csrf": csrf,
+                                "expires": time.time() + self.SESSION_SECONDS}
+        return {"ok": True, "token": token, "csrf": csrf, "user": result["user"]}
+
     def session(self, token):
         item = self.sessions.get(token)
         if not item:
@@ -2757,9 +3591,8 @@ class AuthStore:
                 if not self.proxmox.authorized(item["user"]):
                     self.sessions.pop(token, None)
                     return None
-            except ProxmoxAuthError:
-                self.sessions.pop(token, None)
-                return None
+            except ProxmoxAuthError as error:
+                raise AuthorizationUnavailableError from error
         item["expires"] = time.time() + self.SESSION_SECONDS
         return item
 
@@ -2777,6 +3610,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                       if part.strip().startswith("UU_SESSION=")), "")
         return self.server.auth.session(token) if token else None
 
+    def authorization_unavailable(self):
+        self.send_json(error_payload(
+            "AUTHORIZATION_UNAVAILABLE", "Proxmox authorization is temporarily unavailable."
+        ), HTTPStatus.SERVICE_UNAVAILABLE)
+        return False
+
     def auth_error(self, message="Authentication required.", status=HTTPStatus.UNAUTHORIZED):
         self.send_json(error_payload("AUTH_REQUIRED", message), status)
         return False
@@ -2784,7 +3623,11 @@ class StatusHandler(BaseHTTPRequestHandler):
     def authenticated(self):
         if not self.server.auth.configured:
             return self.auth_error("Web authentication is not configured.", HTTPStatus.SERVICE_UNAVAILABLE)
-        return bool(self.current_session()) or self.auth_error()
+        try:
+            session = self.current_session()
+        except AuthorizationUnavailableError:
+            return self.authorization_unavailable()
+        return bool(session) or self.auth_error()
 
     def same_origin(self):
         origin = self.headers.get("Origin")
@@ -2793,8 +3636,38 @@ class StatusHandler(BaseHTTPRequestHandler):
         host = self.headers.get("Host", "")
         return origin in {f"http://{host}", f"https://{host}"}
 
+    def proxmox_request_context(self):
+        """Return a validated browser host/origin pair for Proxmox WebAuthn."""
+        host = self.headers.get("Host", "")
+        origin = self.headers.get("Origin")
+        if (not host or len(host) > 255 or any(ord(char) < 0x21 for char in host)
+                or any(char in host for char in "/\\@?#")):
+            return None
+        parsed_host = urlsplit(f"//{host}")
+        if (not parsed_host.hostname or parsed_host.username is not None
+                or parsed_host.password is not None or parsed_host.path):
+            return None
+        try:
+            parsed_host.port
+        except ValueError:
+            return None
+        if origin:
+            parsed_origin = urlsplit(origin)
+            if (parsed_origin.scheme not in {"http", "https"} or parsed_origin.netloc != host
+                    or parsed_origin.username is not None or parsed_origin.password is not None
+                    or parsed_origin.path or parsed_origin.query or parsed_origin.fragment):
+                return None
+            try:
+                parsed_origin.port
+            except ValueError:
+                return None
+        return host, origin
+
     def write_allowed(self):
-        session = self.current_session()
+        try:
+            session = self.current_session()
+        except AuthorizationUnavailableError:
+            return self.authorization_unavailable()
         if not session:
             return self.auth_error()
         if not self.same_origin():
@@ -2804,6 +3677,23 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("CSRF_REJECTED", "A valid CSRF token is required."), HTTPStatus.FORBIDDEN)
             return False
         return True
+
+    def logout_allowed(self):
+        """Validate logout without re-running remote Proxmox RBAC checks."""
+        cookie = self.headers.get("Cookie", "")
+        token = next((part.strip().split("=", 1)[1] for part in cookie.split(";")
+                      if part.strip().startswith("UU_SESSION=")), "")
+        session = self.server.auth.sessions.get(token) if token else None
+        if not session or session["expires"] <= time.time():
+            self.auth_error()
+            return None
+        if not self.same_origin():
+            self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+            return None
+        if not hmac.compare_digest(self.headers.get("X-CSRF-Token", ""), session["csrf"]):
+            self.send_json(error_payload("CSRF_REJECTED", "A valid CSRF token is required."), HTTPStatus.FORBIDDEN)
+            return None
+        return token
 
     def send_bytes(self, body, content_type, status=HTTPStatus.OK):
         self.send_response(status)
@@ -2826,14 +3716,23 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_bytes(json.dumps(payload, ensure_ascii=False).encode(), "application/json; charset=utf-8", status)
 
     def send_json_with_cookie(self, payload, cookie, status=HTTPStatus.OK):
+        self.send_json_with_cookies(payload, [cookie], status)
+
+    def send_json_with_cookies(self, payload, cookies, status=HTTPStatus.OK):
         body = json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Set-Cookie", cookie)
+        for cookie in cookies:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
+
+    def request_cookie(self, name):
+        prefix = f"{name}="
+        return next((part.strip()[len(prefix):] for part in self.headers.get("Cookie", "").split(";")
+                     if part.strip().startswith(prefix)), "")
 
     def read_body(self):
         try:
@@ -3739,6 +4638,13 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def handle_config_update(self, payload):
         normalized = validate_config_values(payload.get("values") if isinstance(payload, dict) else None)
+        current_config = config_value_map(self.config_content())
+        if normalized.get("USE_INTERNAL_TARGET_SELECTION") == "true" or current_config.get("USE_INTERNAL_TARGET_SELECTION") is True:
+            try:
+                ensure_target_selection_file(self.server.target_selection_file)
+            except OSError as error:
+                self.send_json(error_payload("TARGET_SELECTION_INIT_FAILED", f"Target selection state could not be initialized: {error}"), HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
         locked_atomic_update(self.server.config_file,
                              lambda content: update_config_text(content, normalized))
         self.send_json({"message": "Configuration saved.", "config": config_value_map(self.config_content())})
@@ -4047,7 +4953,11 @@ class StatusHandler(BaseHTTPRequestHandler):
                                HTTPStatus.SERVICE_UNAVAILABLE)
             return
         if path == "/api/session":
-            session = self.current_session()
+            try:
+                session = self.current_session()
+            except AuthorizationUnavailableError:
+                self.authorization_unavailable()
+                return
             if not self.server.auth.configured:
                 self.send_json(error_payload("AUTH_NOT_CONFIGURED", "Run the local web-auth setup before using the UI."), HTTPStatus.SERVICE_UNAVAILABLE)
             elif not session:
@@ -4226,6 +5136,13 @@ class StatusHandler(BaseHTTPRequestHandler):
             return
         parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
         if parts == ["api", "login"]:
+            if not self.same_origin():
+                self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+                return
+            request_context = self.proxmox_request_context()
+            if request_context is None:
+                self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+                return
             if not self.server.auth.configured:
                 self.send_json(error_payload("AUTH_NOT_CONFIGURED", "Run the local web-auth setup before using the UI."), HTTPStatus.SERVICE_UNAVAILABLE)
                 return
@@ -4236,7 +5153,14 @@ class StatusHandler(BaseHTTPRequestHandler):
                     or len(username) > 128 or len(password) > 1024 or len(realm) > 64):
                 self.send_json(error_payload("LOGIN_FAILED", "Invalid credentials."), HTTPStatus.UNAUTHORIZED)
                 return
-            login = self.server.auth.login(username, password, realm, self.client_address[0])
+            login = self.server.auth.login(username, password, realm, self.client_address[0], *request_context)
+            if login.get("code") == "TFA_REQUIRED" and login.get("challenge_id"):
+                binding = login.pop("_tfa_binding")
+                secure = "; Secure" if getattr(self.server, "tls_enabled", False) or self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+                cookie = f"UU_TFA={binding}; Path=/; Max-Age={AuthStore.TFA_SECONDS}; HttpOnly; SameSite=Strict{secure}"
+                self.send_json_with_cookie({key: value for key, value in login.items()
+                                            if key not in {"ok", "_tfa_binding"}}, cookie)
+                return
             if not login.get("ok"):
                 self.send_json(error_payload(login.get("code", "LOGIN_FAILED"), login.get("message", "Login failed.")),
                                HTTPStatus.UNAUTHORIZED)
@@ -4246,12 +5170,46 @@ class StatusHandler(BaseHTTPRequestHandler):
             cookie = f"UU_SESSION={token}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; HttpOnly; SameSite=Lax{secure}"
             self.send_json_with_cookie({"authenticated": True, "username": username, "csrf": csrf}, cookie)
             return
-        if parts == ["api", "logout"]:
-            if not self.write_allowed():
+        if parts == ["api", "login", "tfa"]:
+            if not self.same_origin():
+                self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
                 return
-            cookie = self.headers.get("Cookie", "")
-            token = next((part.strip().split("=", 1)[1] for part in cookie.split(";")
-                          if part.strip().startswith("UU_SESSION=")), "")
+            request_context = self.proxmox_request_context()
+            if request_context is None:
+                self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+                return
+            challenge_id = payload.get("challenge_id") if isinstance(payload, dict) else None
+            factor = payload.get("type") if isinstance(payload, dict) else None
+            response = payload.get("response") if isinstance(payload, dict) else None
+            if (not isinstance(challenge_id, str) or len(challenge_id) > 256
+                    or not isinstance(factor, str) or len(factor) > 32
+                    or not isinstance(response, str) or not 1 <= len(response) <= 4096):
+                self.send_json(error_payload("TFA_FAILED", "Invalid two-factor response."), HTTPStatus.UNAUTHORIZED)
+                return
+            login = self.server.auth.complete_tfa(challenge_id, factor, response, self.request_cookie("UU_TFA"),
+                                                  *request_context)
+            if not login.get("ok"):
+                status = HTTPStatus.GONE if login.get("code") == "TFA_EXPIRED" else HTTPStatus.UNAUTHORIZED
+                self.send_json(error_payload(login.get("code", "TFA_FAILED"), login.get("message", "Two-factor authentication failed.")), status)
+                return
+            token, csrf = login["token"], login["csrf"]
+            secure = "; Secure" if getattr(self.server, "tls_enabled", False) or self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+            cookie = f"UU_SESSION={token}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; HttpOnly; SameSite=Lax{secure}"
+            clear_tfa = "UU_TFA=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
+            self.send_json_with_cookies({"authenticated": True, "username": login["user"], "csrf": csrf}, [cookie, clear_tfa])
+            return
+        if parts == ["api", "login", "tfa", "cancel"]:
+            if not self.same_origin():
+                self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
+                return
+            challenge_id = payload.get("challenge_id") if isinstance(payload, dict) else None
+            self.server.auth.cancel_tfa(challenge_id, self.request_cookie("UU_TFA"))
+            self.send_json({"cancelled": True})
+            return
+        if parts == ["api", "logout"]:
+            token = self.logout_allowed()
+            if not token:
+                return
             self.server.interactive_broker.detach_owner(token)
             self.server.auth.logout(token)
             self.send_json_with_cookie({"authenticated": False}, "UU_SESSION=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
@@ -4471,7 +5429,10 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("CHECK_ALREADY_RUNNING", "A full check is already running."), HTTPStatus.CONFLICT)
             return
         if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
-            self.send_json(error_payload("CHECK_START_FAILED", "The full check could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            self.send_json(error_payload(
+                "CHECK_START_FAILED",
+                update_start_failure_message(result, "The full check could not be started."),
+            ), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         self.send_json({"state": "running", "job": job_match.group(1), "type": "check", "target": "all-systems",
                         "message": "Full check job started."}, HTTPStatus.ACCEPTED)
