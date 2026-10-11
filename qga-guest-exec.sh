@@ -15,6 +15,7 @@ QEMU_GUEST_EXEC () {
   QEMU_EXEC_PID=""
 
   local vmid="${1:-}" raw start_rc pid parsed timeout=30 deadline
+  local readonly_retry=false start_attempt=1 status_failures=0
   shift || true
   [[ "$vmid" =~ ^[0-9]+$ ]] || {
     QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC
@@ -27,7 +28,11 @@ QEMU_GUEST_EXEC () {
   # timeout of zero retains qm's documented unlimited-wait semantics.
   local -a exec_args=(--synchronous 0)
   while [[ $# -gt 0 ]]; do
-    if [[ "$1" == --timeout && $# -ge 2 ]]; then
+    if [[ "$1" == --read-only-retry ]]; then
+      readonly_retry=true
+      shift
+      continue
+    elif [[ "$1" == --timeout && $# -ge 2 ]]; then
       timeout="$2"
       shift 2
       continue
@@ -41,15 +46,26 @@ QEMU_GUEST_EXEC () {
   done
   [[ "$timeout" =~ ^[0-9]+$ ]] || timeout=30
 
-  raw=$(qm guest exec "$vmid" "${exec_args[@]}" 2>&1)
-  start_rc=$?
-  if [[ $start_rc -ne 0 ]]; then
-    QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC
+  while :; do
+    if raw=$(qm guest exec "$vmid" "${exec_args[@]}" 2>&1); then
+      start_rc=0
+    else
+      start_rc=$?
+    fi
+    if [[ $start_rc -eq 0 ]]; then
+      break
+    fi
+    if [[ "$readonly_retry" == true && "$start_attempt" -lt 3 ]]; then
+      sleep "$start_attempt"
+      start_attempt=$((start_attempt + 1))
+      continue
+    fi
+    QEMU_EXEC_ERROR_CLASS=$([[ "$readonly_retry" == true ]] && printf 'QGA_TRANSIENT' || printf 'QGA_GUEST_EXEC')
     QEMU_EXEC_STDERR="$raw"
     QEMU_EXEC_OUTPUT="$raw"
     QEMU_EXEC_TRANSPORT_RC=$start_rc
     return 0
-  fi
+  done
 
   if ! pid=$(printf '%s' "$raw" | python3 -c '
 import json
@@ -73,7 +89,7 @@ for obj in objects:
         raise SystemExit(0)
 raise SystemExit(1)
 '); then
-    QEMU_EXEC_ERROR_CLASS=QGA_INVALID_PID
+    QEMU_EXEC_ERROR_CLASS=$([[ "$readonly_retry" == true ]] && printf 'QGA_TRANSIENT' || printf 'QGA_INVALID_PID')
     QEMU_EXEC_STDERR="$raw"
     QEMU_EXEC_OUTPUT="QGA guest-exec did not return a valid PID"
     [[ -n "$raw" ]] && QEMU_EXEC_OUTPUT+=" ($raw)"
@@ -94,25 +110,30 @@ raise SystemExit(1)
     deadline=0
   fi
   while :; do
-    raw=$(timeout 10 qm guest exec-status "$vmid" "$pid" 2>&1)
-    start_rc=$?
-    if [[ $start_rc -eq 124 ]]; then
-      if [[ "$deadline" -gt 0 && "$SECONDS" -ge "$deadline" ]]; then
-        QEMU_EXEC_ERROR_CLASS=QGA_TIMEOUT
-        QEMU_EXEC_OUTPUT="QEMU guest-exec status timed out after ${timeout}s"
-        QEMU_EXEC_TRANSPORT_RC=1
-        return 0
-      fi
-      sleep 1
-      continue
+    if raw=$(timeout 10 qm guest exec-status "$vmid" "$pid" 2>&1); then
+      start_rc=0
+    else
+      start_rc=$?
     fi
     if [[ $start_rc -ne 0 ]]; then
-      QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC_STATUS
+      if [[ "$readonly_retry" == true && "$status_failures" -lt 2 ]]; then
+        status_failures=$((status_failures + 1))
+        sleep "$status_failures"
+        continue
+      fi
+      if [[ "$readonly_retry" == true ]]; then
+        QEMU_EXEC_ERROR_CLASS=QGA_TRANSIENT
+      elif [[ $start_rc -eq 124 ]]; then
+        QEMU_EXEC_ERROR_CLASS=QGA_TIMEOUT
+      else
+        QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC_STATUS
+      fi
       QEMU_EXEC_STDERR="$raw"
       QEMU_EXEC_OUTPUT="$raw"
       QEMU_EXEC_TRANSPORT_RC=$start_rc
       return 0
     fi
+    status_failures=0
 
     if parsed=$(printf '%s' "$raw" | python3 -c '
 import base64
@@ -170,13 +191,13 @@ ${QEMU_EXEC_STDERR}"
           fi
           return 0
         fi
-        QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC_STATUS
+        QEMU_EXEC_ERROR_CLASS=$([[ "$readonly_retry" == true ]] && printf 'QGA_TRANSIENT' || printf 'QGA_GUEST_EXEC_STATUS')
         QEMU_EXEC_OUTPUT="Invalid guest-exec-status response"
         QEMU_EXEC_TRANSPORT_RC=1
         return 0
       fi
     else
-      QEMU_EXEC_ERROR_CLASS=QGA_GUEST_EXEC_STATUS
+      QEMU_EXEC_ERROR_CLASS=$([[ "$readonly_retry" == true ]] && printf 'QGA_TRANSIENT' || printf 'QGA_GUEST_EXEC_STATUS')
       QEMU_EXEC_STDERR="$raw"
       QEMU_EXEC_OUTPUT="Invalid guest-exec-status response"
       [[ -n "$raw" ]] && QEMU_EXEC_OUTPUT+=" ($raw)"
@@ -192,6 +213,14 @@ ${QEMU_EXEC_STDERR}"
     fi
     sleep 1
   done
+}
+
+# Retry only read-only/idempotent guest commands.  The retry flag is consumed
+# by QEMU_GUEST_EXEC: a status retry keeps the original guest PID, while a
+# start retry is reserved for callers that explicitly declared the command
+# safe to repeat.  Mutating callers must continue using QEMU_GUEST_EXEC.
+QEMU_GUEST_EXEC_READONLY () {
+  QEMU_GUEST_EXEC "$@" --read-only-retry
 }
 
 # Best-effort cleanup for a timed-out Windows guest-exec process. The caller

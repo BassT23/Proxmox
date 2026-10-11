@@ -80,6 +80,7 @@ QEMU_GUEST_EXEC() {
   QEMU_EXEC_STDOUT=$'PowerShell informational output\nUU_WINDOWS|ok|0|false\n'
   QEMU_EXEC_OUTPUT="$QEMU_EXEC_STDOUT"
 }
+QEMU_GUEST_EXEC_READONLY() { QEMU_GUEST_EXEC "$@"; }
 
 source "$PWD/windows-function.sh"
 
@@ -155,6 +156,7 @@ QEMU_GUEST_EXEC() {
     QEMU_EXEC_EXITCODE=0
   fi
 }
+QEMU_GUEST_EXEC_READONLY() { QEMU_GUEST_EXEC "$@"; }
 
 GUEST_INTERNET_PREFLIGHT_QGA() {
   return 0
@@ -261,6 +263,7 @@ QEMU_GUEST_EXEC() {
     QEMU_EXEC_OUTPUT='simulated status timeout'
   fi
 }
+QEMU_GUEST_EXEC_READONLY() { QEMU_GUEST_EXEC "$@"; }
 source "$PWD/windows-update-function.sh"
 UPDATE_VM_QEMU_WINDOWS || true
 [[ "$ERROR_COUNT" == 1 ]]

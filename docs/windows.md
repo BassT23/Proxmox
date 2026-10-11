@@ -134,6 +134,13 @@ unknown/blocked until a later status read or deliberate operator recovery makes
 the result clear. A QGA timeout is therefore not reported as a successful
 installation.
 
+Read-only QGA operations, including Windows preflight and job-status reads,
+use a small bounded retry for transient transport failures. A status retry
+uses the already confirmed guest-exec PID; it never starts a second guest
+process. Mutating operations such as `install-start` are never automatically
+retried when their start result is unknown. They recover the existing guest
+state or remain blocked/unknown instead.
+
 The state file is not a substitute for a backup. Keep a recovery point before a
 mutating update, and do not remove an `unknown` state merely to force a retry.
 State metadata is updated atomically and carries the launcher/worker identity

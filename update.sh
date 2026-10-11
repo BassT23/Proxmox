@@ -1373,6 +1373,7 @@ else
     QEMU_EXEC_EXITCODE=""
     QEMU_EXEC_TRANSPORT_RC=1
   }
+  QEMU_GUEST_EXEC_READONLY() { QEMU_GUEST_EXEC "$@"; }
 fi
 
 # Run a QEMU command once, display its output, and return the guest exit code.
@@ -1402,7 +1403,7 @@ RUN_QEMU_DURABLE () {
 }
 
 CHECK_QGA_EXEC () {
-  QEMU_GUEST_EXEC "$VM" -- true
+  QEMU_GUEST_EXEC_READONLY "$VM" -- true
   if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
     return 0
   fi
@@ -2182,7 +2183,7 @@ UPDATE_VM_QEMU_WINDOWS () {
     ERROR
     return
   fi
-  QEMU_GUEST_EXEC "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
   if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
     ERROR_CODE=${QEMU_EXEC_EXITCODE:-1}
     ID=$VM
@@ -2247,7 +2248,7 @@ UPDATE_VM_QEMU_WINDOWS () {
       declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
       ERROR; return
     fi
-    QEMU_GUEST_EXEC "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+    QEMU_GUEST_EXEC_READONLY "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
     if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
       ERROR_CODE=1; ID=$VM
       ERROR_MSG="Windows Update status is unknown after QGA communication failure: ${QEMU_EXEC_OUTPUT:-unknown}"
