@@ -1,8 +1,8 @@
 <div align="center">
 
-# Ultimate Updater 5.1.3
+# Ultimate Updater 5.2
 
-Status: Stable release.
+Status: Active development cycle for 5.2. Not a stable release.
 
 <img src="https://github.com/user-attachments/assets/df181f9c-683b-4e9b-9234-80c158c7da98"
        style="max-width: 100%; height: auto; display: block; margin: 0 auto;" />
@@ -43,17 +43,16 @@ Automation is supported, but control stays with you.
 
 ### 5.1.3
 
-5.1.3 is a stability, correctness, and hardening release focused on reliable
-update execution, checks, remote operation, notifications, result handling,
-installer/self-update behavior, and terminal handling.
+Stable release focused on stability, correctness, and hardening across the
+existing 5.1 Web UI generation.
 
 ### 5.2
 
-The next development cycle is planned to focus on broader system support and
-continued UI evolution:
+The current development cycle is planned to focus on broader system support
+and continued UI evolution:
 
-- Web UI evolution, including theme and skin support while preserving Ultimate
-  Updater's independent visual identity.
+- Web UI evolution, now including Modern and Classic theme support while
+  preserving Ultimate Updater's independent visual identity.
 - More mature Windows integration through the existing QGA and PowerShell
   direction, including update detection, execution, reboot-required state,
   capability handling, and production-quality validation.
@@ -61,8 +60,8 @@ continued UI evolution:
   updates, package-manager capabilities, status integration, notifications,
   and stronger APT/RPM handling.
 
-These are planned focus areas, not guarantees of specific 5.2 scope or
-ordering.
+These remain broader planned focus areas, not guarantees of specific 5.2 scope
+or ordering.
 
 ## What it does
 

@@ -11,7 +11,14 @@ for manager in pacman apk pkg; do
 #!/bin/sh
 case "${PACKAGE_FIXTURE:-mixed}" in
   zero) exit 0 ;;
-  mixed) printf 'pkg-one\npkg-two\n'; exit 0 ;;
+  mixed)
+    if [ "$(basename "$0")" = pkg ]; then
+      printf 'pkg-one-1.0             <\npkg-two-2.0             <\n'
+    else
+      printf 'pkg-one\npkg-two\n'
+    fi
+    exit 0
+    ;;
   malformed) printf 'localized package-manager warning\n'; exit 0 ;;
   error) exit 7 ;;
 esac

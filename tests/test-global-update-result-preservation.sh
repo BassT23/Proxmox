@@ -113,6 +113,6 @@ fi
 grep -Fq "local apt_count_file=\"\$LOCAL_FILES/apt-count.py\"" "$ROOT_DIR/ultimate-updater"
 grep -Fq "local rpm_count_file=\"\$LOCAL_FILES/rpm-count.py\"" "$ROOT_DIR/ultimate-updater"
 grep -Fq "local package_count_file=\"\$LOCAL_FILES/package-count.sh\"" "$ROOT_DIR/ultimate-updater"
-grep -Fq "\"\$LOCAL_FILES/target-runtime.sh\" \"\$apt_count_file\" \"\$rpm_count_file\" \"\$package_count_file\"" "$ROOT_DIR/ultimate-updater"
+grep -Fq "\"\$LOCAL_FILES/target-runtime.sh\" \"\$apt_count_file\" \"\$apt_count_shell_file\" \"\$rpm_count_file\" \"\$package_count_file\"" "$ROOT_DIR/ultimate-updater"
 
 echo 'global update result preservation regression: PASS'
