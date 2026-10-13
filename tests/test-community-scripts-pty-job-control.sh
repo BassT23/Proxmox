@@ -72,6 +72,7 @@ def run(mode):
         os.execl('/bin/bash', 'bash', '-c', command)
     os.set_blocking(master, False)
     child_state = "running"
+    shell_waited = False
     stty_stopped = False
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline:
@@ -90,15 +91,40 @@ def run(mode):
                 stty_stopped = stty_stopped or state == "T"
             except FileNotFoundError:
                 pass
-        waited, status = os.waitpid(pid, os.WNOHANG)
-        if waited:
-            child_state = f"exit={os.waitstatus_to_exitcode(status)}"
+        if not shell_waited:
+            try:
+                waited, status = os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                waited, status = 0, 0
+                shell_waited = True
+                shell_state = "exit=0"
+            if waited:
+                shell_waited = True
+                shell_state = f"exit={os.waitstatus_to_exitcode(status)}"
+        # Bash may reap the last pipeline process before the helper has
+        # flushed its completion marker.  The marker is the actual assertion
+        # boundary; treating the parent exit as completion made this
+        # regression test timing-dependent.
+        if shell_waited and log.exists() and "after=yes" in log.read_text(encoding="utf-8"):
+            child_state = shell_state
             break
         time.sleep(0.05)
     if child_state == "running":
-        os.killpg(pid, signal.SIGKILL)
-        _, status = os.waitpid(pid, 0)
-        child_state = f"watchdog={os.waitstatus_to_exitcode(status)}"
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        if shell_waited:
+            child_state = "watchdog=0"
+        else:
+            try:
+                _, status = os.waitpid(pid, 0)
+                child_state = f"watchdog={os.waitstatus_to_exitcode(status)}"
+            except ChildProcessError:
+                # The non-blocking probe may have reaped the shell between
+                # the cleanup checks.  It is still a watchdog outcome; the
+                # old-mode assertions intentionally reject a normal exit.
+                child_state = "watchdog=0"
     os.close(master)
     return log, stty_log, child_state, stty_stopped
 

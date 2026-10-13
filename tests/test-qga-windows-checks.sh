@@ -249,7 +249,7 @@ STATUS_RESULT=''
 START_CALLS=0
 STATUS_CALLS=0
 ERROR() { ERROR_COUNT=$((ERROR_COUNT + 1)); }
-STATUS_MODEL_UPDATE_RESULT() { STATUS_RESULT="$*"; }
+STATUS_MODEL_UPDATE_RESULT() { STATUS_RESULT="$1|$2|$3|${4-}|${5-}|${6-}"; }
 WINDOWS_POWERSHELL_ENCODE() { printf '%s %s' "$1" "${2:-}"; }
 QEMU_GUEST_EXEC() {
   local command=''
@@ -280,7 +280,13 @@ QEMU_GUEST_EXEC_READONLY() { QEMU_GUEST_EXEC "$@"; }
 source "$PWD/windows-update-function.sh"
 UPDATE_VM_QEMU_WINDOWS || true
 [[ "$ERROR_COUNT" == 0 ]]
-[[ "$STATUS_RESULT" == '986 success 0' ]]
+IFS='|' read -r result_target result_status result_exit result_code result_reboot result_processed <<< "$STATUS_RESULT"
+[[ "$result_target" == 986 ]]
+[[ "$result_status" == success ]]
+[[ "$result_exit" == 0 ]]
+[[ -z "$result_code" ]]
+[[ "$result_reboot" == false ]]
+[[ "$result_processed" == 0 ]]
 [[ "$START_CALLS" == 1 ]]
 [[ "$STATUS_CALLS" == 2 ]]
 HARNESS
