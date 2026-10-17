@@ -3771,6 +3771,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         if token_file is None:
             self.send_json(error_payload("API_DISABLED", "The integration API is disabled."), HTTPStatus.SERVICE_UNAVAILABLE)
             return None
+        if not isinstance(token_file, Path) or not token_file.is_absolute():
+            self.send_json(error_payload("API_CONFIG_INVALID", "The machine token configuration is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return None
         try:
             config = load_api_token_config(token_file)
         except TokenConfigError:
@@ -4015,7 +4018,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         result = {}
         for key in allowed & value.keys():
             item = value[key]
-            if isinstance(item, (bool, int)) and not isinstance(item, bool) or isinstance(item, bool):
+            if isinstance(item, (bool, int)):
                 result[key] = item
             elif isinstance(item, str):
                 result[key] = item[:2048]
@@ -4130,6 +4133,10 @@ class StatusHandler(BaseHTTPRequestHandler):
     def _api_v1_job(row):
         return {key: row.get(key) for key in ("unit", "target", "type", "state", "started_at", "finished_at", "exit_code")}
 
+    def _api_v1_find_job(self, unit):
+        row = next((item for item in self.jobs(reconcile=False) if item.get("unit") == unit), None)
+        return row if row else self.direct_job_record(unit)
+
     def _api_v1_version(self):
         local = self.local_version()
         cached = getattr(self.server, "version_last_data", None)
@@ -4153,7 +4160,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             elif path == "/api/v1/status":
                 self.send_json(self._api_v1_status())
             elif path == "/api/v1/jobs":
-                rows = self.jobs(reconcile=False)
+                rows = self.jobs(reconcile=False)[:VISIBLE_JOB_LIMIT]
                 self.send_json({"api_version": 1, "schema_version": 1,
                                 "jobs": [self._api_v1_job(row) for row in rows]})
             elif len(parts) == 4 and parts[:3] == ["api", "v1", "jobs"]:
@@ -4161,7 +4168,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 if not API_JOB_RE.fullmatch(unit):
                     self.send_json(error_payload("INVALID_JOB_ID", "Invalid job ID."), HTTPStatus.BAD_REQUEST)
                     return
-                row = next((item for item in self.jobs(reconcile=False) if item.get("unit") == unit), None)
+                row = self._api_v1_find_job(unit)
                 if not row:
                     self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
                 else:
@@ -4171,7 +4178,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 if not API_JOB_RE.fullmatch(unit):
                     self.send_json(error_payload("INVALID_JOB_ID", "Invalid job ID."), HTTPStatus.BAD_REQUEST)
                     return
-                row = next((item for item in self.jobs(reconcile=False) if item.get("unit") == unit), None)
+                row = self._api_v1_find_job(unit)
                 if not row:
                     self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
                     return
