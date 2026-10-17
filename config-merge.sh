@@ -263,7 +263,71 @@ MERGE_UPDATE_CONFIG () {
   return 0
 }
 
+# The historical distribution shipped REBOOT_IF_NEEDED=true although the
+# runtime did not honor it.  Once the runtime gains an implementation, an
+# upgrade must not turn that latent value into an unexpected reboot opt-in.
+# Keep this migration separate from ordinary config merging so later upgrades
+# never overwrite an administrator's deliberate true value.
+MIGRATE_REBOOT_IF_NEEDED () (
+  local user_config="$1" marker backup temp mode old_value stamp marker_temp
+  [[ -f "$user_config" ]] || return 0
+  [[ -L "$user_config" ]] && {
+    echo "Cannot migrate REBOOT_IF_NEEDED through a symlink: $user_config" >&2
+    return 1
+  }
+  marker="${user_config}.reboot-if-needed-migrated-v1"
+  [[ -L "$marker" ]] && {
+    echo "Cannot migrate REBOOT_IF_NEEDED through a marker symlink: $marker" >&2
+    return 1
+  }
+  [[ -e "$marker" ]] && return 0
+  local lock_file="${user_config}.reboot-if-needed.lock" lock_fd
+  exec {lock_fd}>"$lock_file" || return 1
+  if command -v flock >/dev/null 2>&1; then
+    flock -x "$lock_fd" || return 1
+  fi
+  [[ -e "$marker" ]] && return 0
+  old_value=$(awk -F'"' '/^[[:space:]]*REBOOT_IF_NEEDED=/ {print $2; exit}' "$user_config")
+  mode=$(stat -c '%a' "$user_config" 2>/dev/null || printf '640')
+  stamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || return 1
+  backup="${user_config}.reboot-if-needed.pre-v1"
+  if [[ "$old_value" == true ]]; then
+    [[ -e "$backup" ]] || cp -p "$user_config" "$backup" || return 1
+    temp=$(mktemp "${user_config}.reboot-migration.XXXXXX") || return 1
+    if ! awk '
+      /^[[:space:]]*REBOOT_IF_NEEDED[[:space:]]*=/ {
+        print "REBOOT_IF_NEEDED=\"false\"    # migrated from the legacy inactive default"
+        replaced=1
+        next
+      }
+      { print }
+      END { if (!replaced) print "REBOOT_IF_NEEDED=\"false\"" }
+    ' "$user_config" > "$temp"; then
+      rm -f "$temp"
+      return 1
+    fi
+    CONFIG_MERGE_VALIDATE "$temp" || { rm -f "$temp"; return 1; }
+    CONFIG_MERGE_DUPLICATES "$temp" || { rm -f "$temp"; return 1; }
+    chmod "$mode" "$temp" || { rm -f "$temp"; return 1; }
+    mv -f "$temp" "$user_config" || { rm -f "$temp"; return 1; }
+  fi
+  marker_temp=$(mktemp "${marker}.XXXXXX") || return 1
+  {
+    printf 'migration=REBOOT_IF_NEEDED-v1\n'
+    printf 'migrated_at=%s\n' "$stamp"
+    printf 'previous_value=%s\n' "${old_value:-unset}"
+    printf 'new_value=false\n'
+  } > "$marker_temp" || { rm -f "$marker_temp"; return 1; }
+  chmod 600 "$marker_temp" || { rm -f "$marker_temp"; return 1; }
+  mv -f "$marker_temp" "$marker" || { rm -f "$marker_temp"; return 1; }
+  return 0
+)
+
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  if [[ "${1:-}" == migrate-reboot-if-needed && $# -eq 2 ]]; then
+    MIGRATE_REBOOT_IF_NEEDED "$2"
+    exit $?
+  fi
   if [[ $# -lt 2 || $# -gt 3 ]]; then
     printf 'Usage: %s USER_CONFIG DEFAULT_CONFIG [BRANCH]\n' "$0" >&2
     exit 2

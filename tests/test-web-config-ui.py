@@ -18,6 +18,12 @@ for title in (
 ):
     assert f"title:'{title}'" in page, title
 
+assert "Reboot if needed defaults to disabled." in page
+assert "Enable automatic reboots?" in page
+assert "confirm_reboot_if_needed=true" in page
+assert "REBOOT_CONFIRMATION_REQUIRED" in source
+assert "Automatic reboots remain disabled." in page
+
 assert "with zero matches all eligible targets are used" in page
 assert "Exclude always removes matching targets after the effective selection." in page
 assert "Check/Update node: Only this node. LXCs and VMs are not checked or updated." in page

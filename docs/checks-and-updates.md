@@ -22,8 +22,17 @@ the job log after the Check finishes.
 
 An update is a mutating operation. It runs the selected package-manager or
 guest update path, applies configured snapshot/backup protection, and reports
-whether a reboot is needed. `REBOOT_IF_NEEDED` applies only here. Review the
-target and job log before starting an update.
+whether a reboot is needed. `REBOOT_IF_NEEDED` applies only here and defaults
+to `false`; if explicitly enabled, the updater may reboot only a supported
+running LXC/VM after a fresh successful result requires it. Originally stopped
+guests retain their stopped state. API updates are always non-interactive and
+never use this automatic reboot path; host and unsupported-target reboots are
+reported as manual work. Review the target and job log before starting an
+update.
+
+API updates also fail closed before mutation if the selected target would run
+custom, script-only, community, helper, or other optional script paths. This
+does not change the Web UI, CLI, or scheduler update policy.
 
 Checks and updates are executed as server-side jobs where the CLI/Web UI
 dispatches a job. The job remains observable after the browser or SSH session

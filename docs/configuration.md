@@ -34,8 +34,20 @@ internal rules and restores the legacy tag behavior.
 
 ## Updates and lifecycle
 
-`REBOOT_IF_NEEDED` controls reboot handling for updates, not checks. Guest
-start/resume behavior is controlled separately for LXC and VM targets.
+`REBOOT_IF_NEEDED="false"` is the default and controls reboot handling for
+updates, not checks. It must be deliberately enabled by an administrator in
+the Web UI; enabling it requires an explicit confirmation warning. When
+enabled, only supported non-API guest updates with a fresh, successful
+reboot-required result may request the existing controlled guest reboot path.
+API updates never auto-reboot, and host, external, unsupported, stale, or
+uncertain cases remain manual. Guest start/resume behavior is controlled
+separately for LXC and VM targets.
+
+On upgrade from an older installation whose inactive legacy default was
+`REBOOT_IF_NEEDED="true"`, the installer performs one idempotent migration:
+it saves the prior configuration, changes only this setting to `false`, and
+writes a protected migration marker. A later administrator-selected `true` is
+preserved by subsequent upgrades. New installations receive `false` directly.
 `FREEBSD_UPDATES` enables or disables the writing FreeBSD/pfSense update path;
 it does not disable read-only checks. `IN_HEADLESS_MODE` is the persistent
 unattended policy. When it is `true`, scheduled and manually started update

@@ -788,6 +788,11 @@ UPDATE () {
         rm -rf "$TEMP_FOLDER" || true
         return 2
       fi
+      if ! MIGRATE_REBOOT_IF_NEEDED "$LOCAL_FILES/update.conf"; then
+        echo -e "❌${RD:-} REBOOT_IF_NEEDED migration failed; automatic reboot activation was not enabled.${CL:-}" >&2
+        rm -rf "$TEMP_FOLDER" || true
+        return 2
+      fi
     else
       cp "$CONFIG_DIST_SOURCE" "$LOCAL_FILES/update.conf"
     fi

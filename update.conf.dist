@@ -80,7 +80,7 @@ STOPPED_VM="true"
 RUNNING_VM="true"
 
 
-REBOOT_IF_NEEDED="true"
+REBOOT_IF_NEEDED="false"
 
 # Windows update installation is opt-in. Windows checks remain enabled.
 WINDOWS_UPDATE_ENABLED="false"

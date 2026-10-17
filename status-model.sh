@@ -772,6 +772,68 @@ PY
   return "$result"
 }
 
+STATUS_MODEL_REBOOT_FAILURE() {
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  local target_id="$1" exit_code="${2:-1}" message="${3:-Automatic reboot failed}"
+  local status_lock_file="${status_file}.lock" status_lock_fd
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$status_file" "$target_id" "$exit_code" "$message" <<'PY'
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+status_file, target_id, exit_code, message = sys.argv[1:]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (FileNotFoundError, OSError, ValueError) as exc:
+    print(f"STATUS_MODEL_REBOOT_FAILURE_REJECTED: {exc}", file=sys.stderr)
+    raise SystemExit(94)
+if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
+    raise SystemExit(94)
+record = next((item for item in payload["targets"]
+               if isinstance(item, dict) and str(item.get("id")) == target_id), None)
+if record is None:
+    raise SystemExit(94)
+last_update = record.get("last_update")
+if not isinstance(last_update, dict):
+    last_update = {}
+last_update["status"] = "failed"
+last_update["exit_code"] = int(exit_code)
+last_update["reboot_error"] = message[:512]
+last_update["reboot_required"] = True
+last_update["reboot_attempted_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+record["last_update"] = last_update
+payload["generated_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+directory = os.path.dirname(os.path.abspath(status_file)) or "."
+os.makedirs(directory, exist_ok=True)
+fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(payload, output, indent=2)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, status_file)
+except Exception:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
+}
+
 # Optional, run-scoped diagnostics for the External update-all lifecycle.
 # Disabled by default and deliberately limited to status metadata; this never
 # changes the authoritative status model.

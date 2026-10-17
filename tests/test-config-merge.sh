@@ -102,4 +102,33 @@ if CONFIG_MERGE_VALIDATE "$WORK_DIR/invalid-values.conf" >/dev/null 2>"$WORK_DIR
   exit 1
 fi
 
+# The first functional reboot implementation must neutralize the historical
+# inactive true default exactly once, while preserving unrelated settings.
+cat > "$WORK_DIR/legacy-reboot.conf" <<'EOF'
+KEEP_ME="preserved"
+REBOOT_IF_NEEDED="true"
+BACKUP="false"
+EOF
+assert_clean_command MIGRATE_REBOOT_IF_NEEDED "$WORK_DIR/legacy-reboot.conf"
+grep -Fqx 'REBOOT_IF_NEEDED="false"    # migrated from the legacy inactive default' "$WORK_DIR/legacy-reboot.conf"
+grep -Fqx 'KEEP_ME="preserved"' "$WORK_DIR/legacy-reboot.conf"
+grep -Fqx 'previous_value=true' "$WORK_DIR/legacy-reboot.conf.reboot-if-needed-migrated-v1"
+grep -Fqx 'new_value=false' "$WORK_DIR/legacy-reboot.conf.reboot-if-needed-migrated-v1"
+grep -Fqx 'REBOOT_IF_NEEDED="true"' "$WORK_DIR/legacy-reboot.conf.reboot-if-needed.pre-v1"
+legacy_hash=$(sha256sum "$WORK_DIR/legacy-reboot.conf" | awk '{print $1}')
+assert_clean_command MIGRATE_REBOOT_IF_NEEDED "$WORK_DIR/legacy-reboot.conf"
+[[ "$legacy_hash" == "$(sha256sum "$WORK_DIR/legacy-reboot.conf" | awk '{print $1}')" ]]
+
+# A later administrator choice is not reverted on subsequent migrations.
+sed -i 's/REBOOT_IF_NEEDED="false".*/REBOOT_IF_NEEDED="true"/' "$WORK_DIR/legacy-reboot.conf"
+assert_clean_command MIGRATE_REBOOT_IF_NEEDED "$WORK_DIR/legacy-reboot.conf"
+grep -Fqx 'REBOOT_IF_NEEDED="true"' "$WORK_DIR/legacy-reboot.conf"
+
+# A symlink must fail closed rather than allowing the migration to follow it.
+ln -s "$WORK_DIR/legacy-reboot.conf" "$WORK_DIR/reboot-symlink.conf"
+if MIGRATE_REBOOT_IF_NEEDED "$WORK_DIR/reboot-symlink.conf" >/dev/null 2>"$WORK_DIR/reboot-symlink.stderr"; then
+  echo 'reboot migration unexpectedly followed a symlink' >&2
+  exit 1
+fi
+
 echo 'config merge tests: PASS'
