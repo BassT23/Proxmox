@@ -12,6 +12,8 @@ Added:
   with browser assertion handling and secure origin validation.
 - API-2.6 update context propagation, target-scoped unsafe-script rejection,
   and noninteractive external/remote dispatch safeguards.
+- API-2.7 lifecycle-safe API update preflight for originally stopped guests;
+  unsafe or unverifiable optional paths are rejected before guest start.
 - Opt-in automatic reboot handling with one-time legacy configuration migration
   and explicit Web UI confirmation.
 

@@ -1081,9 +1081,19 @@ if [ "$unsafe" = true ]; then printf unsafe; else printf safe; fi'
   return 2
 }
 
+API_UPDATE_OPTIONAL_FEATURES_ENABLED() {
+  [[ "${EXTRA_GLOBAL:-false}" == true && "${EXTRA_IN_HEADLESS:-false}" == true ]] || return 1
+  [[ "${PIHOLE:-false}" == true ||
+    "${IOBROKER:-false}" == true ||
+    "${PTERODACTYL:-false}" == true ||
+    "${OCTOPRINT:-false}" == true ||
+    "${DOCKER_COMPOSE:-false}" == true ||
+    "${INCLUDE_HELPER_SCRIPTS:-false}" == true ]]
+}
+
 API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH() {
-  local target="$1" kind="${2:-}" os_hint="${3:-}" script_dir="$USER_SCRIPTS/$1"
-  local reason="" probe_rc shell_name
+  local target="$1" kind="${2:-}" os_hint="${3:-}" pre_start="${4:-false}" script_dir="$USER_SCRIPTS/$1"
+  local reason="" failure_code=42 failure_name=API_UNSAFE_SCRIPT_PATH probe_rc shell_name
   [[ "${UU_API_ACTION:-}" == update ]] || return 0
   UU_API_SCRIPT_PREFLIGHT_SAFE=false
 
@@ -1095,29 +1105,56 @@ API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH() {
     fi
   fi
 
+  if [[ -z "$reason" && "$pre_start" == true && "$kind" =~ ^(lxc|vm|container)$ && -z "$os_hint" ]]; then
+    failure_code=43
+    failure_name=API_PREFLIGHT_UNAVAILABLE
+    reason="the guest operating system could not be determined without starting the guest"
+  fi
+
   if [[ -z "$reason" && "$kind" =~ ^(host|node|lxc|vm|container)$ && "${EXTRA_GLOBAL:-false}" == true &&
     "${EXTRA_IN_HEADLESS:-false}" == true ]]; then
     case "${os_hint,,}" in
       ""|*debian*|*proxmox*|*ubuntu*|*devuan*|*fedora*|*centos*|*redhat*|*rhel*|*arch*|*alpine*)
-        shell_name="sh"
-        if API_UPDATE_GUEST_OPTIONAL_PROBE "$target" "$kind" "$shell_name"; then
-          probe_rc=0
+        if [[ "$pre_start" == true ]]; then
+          # A stopped guest cannot be probed through QGA, pct exec, or SSH.
+          # Only continue before its start when the configured optional paths
+          # are known to be disabled.  Otherwise fail closed.
+          if API_UPDATE_OPTIONAL_FEATURES_ENABLED; then
+            failure_code=43
+            failure_name=API_PREFLIGHT_UNAVAILABLE
+            reason="optional update path cannot be inspected while the guest is stopped"
+          else
+            UU_API_SCRIPT_PREFLIGHT_SAFE=true
+          fi
         else
-          probe_rc=$?
+          shell_name="sh"
+          if API_UPDATE_GUEST_OPTIONAL_PROBE "$target" "$kind" "$shell_name"; then
+            probe_rc=0
+          else
+            probe_rc=$?
+          fi
+          case "$probe_rc" in
+            0) reason="configured extra/community/helper updates would execute" ;;
+            1) UU_API_SCRIPT_PREFLIGHT_SAFE=true ;;
+            *)
+              failure_code=43
+              failure_name=API_PREFLIGHT_UNAVAILABLE
+              reason="optional update path could not be inspected safely"
+              ;;
+          esac
         fi
-        case "$probe_rc" in
-          0) reason="configured extra/community/helper updates would execute" ;;
-          1) UU_API_SCRIPT_PREFLIGHT_SAFE=true ;;
-          *) reason="optional update path could not be inspected safely" ;;
-        esac
         ;;
       *windows*|win*) ;;
       *)
-        if [[ "$kind" == host || "$kind" == node ]]; then
+        if [[ "$pre_start" == true || "$kind" == host || "$kind" == node ]]; then
+          failure_code=43
+          failure_name=API_PREFLIGHT_UNAVAILABLE
           reason="optional update path could not be classified safely"
         else
           shell_name="sh"
           [[ "${os_hint,,}" == *alpine* ]] && shell_name=ash
+          failure_code=43
+          failure_name=API_PREFLIGHT_UNAVAILABLE
           reason="optional update path could not be classified safely"
         fi
         ;;
@@ -1125,13 +1162,13 @@ API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH() {
   fi
 
   if [[ -n "$reason" ]]; then
-    ERROR_CODE=42
+    ERROR_CODE=$failure_code
     ID="$target"
     NAME="${NAME:-$target}"
-    ERROR_MSG="API_UNSAFE_SCRIPT_PATH: $reason"
+    ERROR_MSG="$failure_name: $reason"
     echo -e "${RD:-}  ❌ $ERROR_MSG${CL:-}" >&2
     ERROR
-    return 42
+    return "$failure_code"
   fi
   return 0
 }
@@ -1867,6 +1904,14 @@ CONTAINER_UPDATE_START () {
     else
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
+        if [[ "${UU_API_ACTION:-}" == update ]]; then
+          OS=$(pct config "$CONTAINER" 2>/dev/null | awk '/^ostype/ {print $2; exit}')
+          NAME="LXC $CONTAINER"
+          if ! API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH "$CONTAINER" lxc "$OS" true; then
+            UPDATE_FAILURE=true
+            continue
+          fi
+        fi
         # Start the container
         WILL_STOP="true"
         echo -e " ▶${GN:-} Starting LXC ${BL:-}$CONTAINER ${CL:-}"
@@ -2107,6 +2152,15 @@ VM_UPDATE_START () {
         # Check if update is possible
         if QGA_CONFIG_ENABLED "$VM" ||
           { [[ "$vm_internal_ssh_state" -ne 1 ]] && [[ -f $LOCAL_FILES/VMs/$VM || "$vm_internal_ssh_state" -eq 0 || "$vm_internal_ssh_state" -eq 2 ]]; }; then
+          if [[ "${UU_API_ACTION:-}" == update ]]; then
+            local api_os_hint
+            api_os_hint=$(qm config "$VM" 2>/dev/null | awk -F': ' '$1 == "ostype" {print $2; exit}')
+            NAME="VM $VM"
+            if ! API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH "$VM" vm "$api_os_hint" true; then
+              UPDATE_FAILURE=true
+              continue
+            fi
+          fi
           # Start the VM
           WILL_STOP="true"
           echo -e " ▶${GN:-} Starting VM${BL:-} $VM ${CL:-}"

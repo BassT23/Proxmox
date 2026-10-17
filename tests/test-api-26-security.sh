@@ -114,11 +114,13 @@ set -e
 
 PROBE_RESULT=safe
 PROBE_RC=7
+# A failed read-only guest probe is now an unavailable preflight, not proof of
+# an unsafe script path.
 set +e
 API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH 986 lxc debian
 rc=$?
 set -e
-[[ $rc -eq 42 ]]
+[[ $rc -eq 43 ]]
 
 PROBE_RESULT=safe
 PROBE_RC=0

@@ -148,9 +148,15 @@ package-manager mutation when the selected target would execute a script-only,
 custom, community, helper, or other optional script path. The response uses
 `409` with error code `API_UNSAFE_SCRIPT_PATH`. Optional paths that are
 provably absent are skipped rather than being reported as successful script
-execution. The same guard is retained in the runtime for older or indirect
-callers. This restriction applies only to API updates; Web UI, CLI, and
-scheduler behavior is unchanged.
+execution. For an originally stopped Linux guest, an optional path that cannot
+be inspected without starting the guest is rejected with
+`API_PREFLIGHT_UNAVAILABLE`; the guest is not started to perform the check.
+When that condition can only be established by the executing update worker,
+the action may already have returned `202 Accepted`; in that case the job
+terminates with the same error and no guest lifecycle action is performed.
+The same guard is retained in the runtime for older or indirect callers. This
+restriction applies only to API updates; Web UI, CLI, and scheduler behavior
+is unchanged.
 
 The current update engine reports reboot requirements separately; reboot is an
 explicit action with its own `reboot` permission. API updates never trigger an
