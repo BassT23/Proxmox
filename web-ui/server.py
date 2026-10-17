@@ -1154,7 +1154,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
       'Containers / LXC':['Purpose: Choose whether LXC containers are checked or updated and which running/stopped states are included. Defaults: all listed LXC checks/updates are enabled.','Start delay: seconds before a stopped LXC is checked or updated; default 5, and 0 means no extra delay. Backup mount points applies to backup protection, not checking.'],
       'Virtual Machines':['Purpose: Choose whether VMs are checked or updated and which running/stopped/paused states are included. Defaults: all listed VM checks/updates are enabled.','Start delay: seconds before a stopped QEMU VM is handled; default 45, and 0 means no extra delay. Paused VMs are never resumed by Initial Inventory.'],
       'Target filters':['Only names an optional Proxmox tag. It becomes active only when at least one eligible target matches it; with zero matches, all eligible targets are used.','Exclude always removes matching targets after the effective selection. Examples: check-exclude and update-exclude.','Only and Exclude are separate for checking and updating; the live preview uses the same selector as the runtime. Opening or changing the preview does not contact any target.'],
-      'General update behavior':['Reboot if needed defaults to enabled; it permits the existing updater reboot-required handling and never makes the Web UI reboot a host automatically. Windows update installation defaults to disabled; Windows checks remain available and installation requires explicit enablement. Continue after errors defaults to disabled.','Debug logging shows additional technical output such as Proxmox commands, transport details and helper output. For normal operation it should usually remain disabled.','Version check defaults to enabled and only checks for newer Ultimate Updater code; it is not a system package check.','SSH port default: 22. It is the configured port for internal/remote updater SSH connections; VM-specific Internal SSH settings may override it.','Internet check defaults to command ping and address google.com. It runs before an update starts, retries briefly up to three times, and blocks the update if all attempts fail.'],
+      'General update behavior':['Reboot if needed defaults to disabled. Enabling it requires confirmation and permits only supported non-API updates with a fresh reboot-required result to request an automatic guest reboot; host and unsupported-target reboots remain manual. Windows update installation defaults to disabled; Windows checks remain available and installation requires explicit enablement. Continue after errors defaults to disabled.','Debug logging shows additional technical output such as Proxmox commands, transport details and helper output. For normal operation it should usually remain disabled.','Version check defaults to enabled and only checks for newer Ultimate Updater code; it is not a system package check.','SSH port default: 22. It is the configured port for internal/remote updater SSH connections; VM-specific Internal SSH settings may override it.','Internet check defaults to command ping and address google.com. It runs before an update starts, retries briefly up to three times, and blocks the update if all attempts fail.'],
       'Advanced settings':['FreeBSD updates default to disabled and only affect supported FreeBSD/pfSense-style update paths. Linux package-manager behavior is not implied.','Phased updates default to disabled; when enabled, the existing apt update path may include packages held back by phased rollout.','Fstrim defaults to disabled. The mount-point option defaults to enabled and only matters when fstrim is enabled.','Pacman environment is an optional command prefix, for example env http_proxy=http://proxy:8080. Leave empty for no prefix. Helper scripts default to enabled and use the existing updater script locations.'],
       'Extra updates':['Extra updates default to enabled globally; individual services are enabled by default in the distributed configuration. A service is only processed when its own toggle is enabled.','Headless mode defaults to disabled and controls whether extra-update commands run without interactive output. Compose search path defaults to /home and may be set to another absolute path such as /opt.'],
       'Backup & safety':['Snapshots default to enabled, backups default to disabled, and three snapshots are kept by default. Protection is evaluated before a guest update.','Backup mode is limited to stop, suspend, or snapshot. stop gives highest consistency but causes downtime; suspend reduces downtime; snapshot is live and depends on supported storage.','Backup storage expects a Proxmox storage ID, not a filesystem path or PBS datastore name. Example: pbs. Leave it empty to use the first active backup storage reported by pvesm.'],
@@ -1162,6 +1162,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     };
     const fieldHelpContent={
       SNAPSHOT:['Optional protection before a guest update. If snapshots are not supported for the guest or storage, the update continues without one; an unexpected snapshot error keeps the existing safety handling. An unsupported snapshot does not automatically enable a backup.'],
+      REBOOT_IF_NEEDED:['Disabled by default. When enabled, successful non-API updates may reboot a supported running guest if a fresh reboot requirement is confirmed. API updates never auto-reboot; host and unsupported-target reboots remain manual.'],
       BACKUP:['Optional protection that is independent of snapshots and runs only when enabled. A backup may take significantly longer depending on guest size and storage. Snapshot and backup can be enabled together, separately, or both disabled.'],
       BACKUP_MODE:['Controls the vzdump backup mode: stop, suspend, or snapshot. This is the backup mode and is separate from the Ultimate Updater Snapshot option.']
     };
@@ -1180,6 +1181,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function scheduleFilterPreview(form,scope){clearTimeout(filterPreviewTimers[scope]);filterPreviewTimers[scope]=setTimeout(()=>loadFilterPreview(form,scope),250)}
     function buildConfigForm(values){const form=document.getElementById('config-form');form.innerHTML='';form.dataset.initialConfig=JSON.stringify(values);for(const groupData of configGroups){const wide=groupData.title==='Host'||groupData.title==='Target filters'||groupData.filterGroups;const group=document.createElement('section');group.className=`settings-group${wide?' settings-group-wide':''}`;const heading=document.createElement('div');heading.className='settings-heading';const title=document.createElement('h3');title.textContent=groupData.title;heading.appendChild(title);if(helpContent[groupData.title])heading.appendChild(createHelpControl(groupData.title,helpContent[groupData.title]));group.appendChild(heading);const hint=document.createElement('p');hint.textContent=groupData.hint;group.appendChild(hint);if(groupData.filterGroups){const scopes=document.createElement('div');scopes.className='filter-scopes';groupData.filterGroups.forEach(scopeData=>{const scope=document.createElement('section');scope.className='filter-scope';const scopeTitle=document.createElement('h4');scopeTitle.textContent=scopeData.title;scope.appendChild(scopeTitle);const fields=document.createElement('div');fields.className='config-fields';scopeData.keys.forEach(key=>fields.appendChild(configField(key,values)));scope.appendChild(fields);const preview=document.createElement('div');preview.id=`${scopeData.preview}-filter-preview`;preview.className='filter-preview';scope.appendChild(preview);scopes.appendChild(scope)});group.appendChild(scopes)}else if(groupData.matrix){group.appendChild(configMatrix(groupData,values))}else if(groupData.columns){const columns=document.createElement('div');columns.className='settings-columns';groupData.columns.forEach(keys=>{const column=document.createElement('div');column.className='settings-column';keys.forEach(key=>column.appendChild(configField(key,values)));columns.appendChild(column)});group.appendChild(columns)}else{const fields=document.createElement('div');fields.className='config-fields';groupData.keys.forEach(key=>fields.appendChild(configField(key,values)));group.appendChild(fields)}form.appendChild(group)}const actions=document.createElement('div');actions.className='config-actions';actions.innerHTML='<button type="submit" class="primary">Save settings</button><button type="button" id="config-close">Cancel</button>';form.appendChild(actions);form.querySelectorAll('[data-key="ONLY_UPDATE_CHECK"],[data-key="EXCLUDE_UPDATE_CHECK"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'check')));form.querySelectorAll('[data-key="ONLY"],[data-key="EXCLUDE"]').forEach(input=>input.addEventListener('input',()=>scheduleFilterPreview(form,'update')));loadFilterPreview(form,'check');loadFilterPreview(form,'update');form.onsubmit=async e=>{e.preventDefault();const initial=JSON.parse(form.dataset.initialConfig||'{}'),next={};for(const input of form.querySelectorAll('[data-key]')){const value=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value,previous=initial[input.dataset.key]??'';if(value!==previous)next[input.dataset.key]=value}if(!Object.keys(next).length){setConfigOpen(false);return}try{const d=await api('/api/config',{method:'POST',body:JSON.stringify({values:next})});buildConfigForm(d.config);setConfigOpen(false);managementMessage('config-message','Configuration saved.')}catch(error){managementMessage('config-message',error.message,true)}};document.getElementById('config-close').onclick=()=>setConfigOpen(false)}
     const buildConfigFormBase=buildConfigForm;buildConfigForm=function(values){buildConfigFormBase(values);const form=document.getElementById('config-form'),input=form?.querySelector('[data-key="EXIT_ON_ERROR"]');const filterGroup=[...form.querySelectorAll('.settings-group')].find(group=>group.querySelector('h3')?.textContent==='Target filters');if(filterGroup&&!filterGroup.querySelector('[data-key="USE_INTERNAL_TARGET_SELECTION"]')){const fields=document.createElement('div');fields.className='config-fields';fields.appendChild(configField('USE_INTERNAL_TARGET_SELECTION',values));const hint=document.createElement('p');hint.className='hint';hint.textContent='When enabled, Proxmox Only/Exclude tags are ignored; target selection is controlled by Ultimate Updater.';fields.appendChild(hint);filterGroup.insertBefore(fields,filterGroup.querySelector('.filter-scopes'))}if(!input)return;input.checked=values.EXIT_ON_ERROR!==true;const submit=form.onsubmit;form.onsubmit=async event=>{input.checked=!input.checked;await submit.call(form,event);if(input.isConnected)input.checked=!input.checked}};
+    const buildConfigFormWithRebootConfirmation=buildConfigForm;buildConfigForm=function(values){buildConfigFormWithRebootConfirmation(values);const form=document.getElementById('config-form');if(!form)return;const submit=form.onsubmit;form.onsubmit=async event=>{const initial=JSON.parse(form.dataset.initialConfig||'{}'),input=form.querySelector('[data-key="REBOOT_IF_NEEDED"]'),enabling=input?.checked===true&&initial.REBOOT_IF_NEEDED!==true;if(!enabling){await submit.call(form,event);return}if(!confirm('Enable automatic reboots?\n\nSuccessful non-API updates may reboot supported running guests when a fresh reboot requirement is confirmed. Running services, VMs and containers may become temporarily unavailable. Proxmox host reboots can affect multiple systems.\n\nDo you really want to enable automatic reboots?')){input.checked=false;managementMessage('config-message','Automatic reboots remain disabled.');return}const originalApi=api;api=async(path,options={})=>{if(path==='/api/config'&&options.method==='POST'){const body=JSON.parse(options.body||'{}');body.confirm_reboot_if_needed=true;return originalApi(path,{...options,body:JSON.stringify(body)})}return originalApi(path,options)};try{await submit.call(form,event)}finally{api=originalApi}}};
     async function loadConfig(){try{const d=await api('/api/config');buildConfigForm(d.config)}catch(error){managementMessage('config-message',error.message,true)}}
     function renderManagedTargets(){const box=document.getElementById('managed-targets');if(!managedTargets.length){box.innerHTML='<div class="empty">No external systems configured.</div>';return}box.innerHTML=managedTargets.map(t=>`<div class="managed-target"><div><strong>${esc(t.id)}</strong><small>${esc(t.user)}@${esc(t.host)}:${esc(t.port)} · SSH</small></div><div class="managed-actions"><button data-edit="${esc(t.id)}">Edit</button><button data-test="${esc(t.id)}">Test connection</button><button data-remove="${esc(t.id)}">Remove</button></div></div>`).join('');box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openTargetModal(managedTargets.find(t=>t.id===b.dataset.edit)));box.querySelectorAll('[data-test]').forEach(b=>b.onclick=()=>testTarget(b.dataset.test,null,b));box.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>removeTarget(b.dataset.remove))}
     async function openExternalSettings(target){const form=document.getElementById('external-settings-form');form.elements.target.value=target;managementMessage('external-settings-message','Loading external settings…');document.getElementById('external-settings-modal').classList.add('open');try{const data=await api(`/api/external-settings/${encodeURIComponent(target)}`);const values=data.values||{};for(const key of ['ONLY_UPDATE_CHECK','EXCLUDE_UPDATE_CHECK','ONLY','EXCLUDE'])form.elements[key].value=values[key]??'';managementMessage('external-settings-message','These settings are stored on this external system.')}catch(error){managementMessage('external-settings-message',error.message,true)}}
@@ -4294,6 +4296,32 @@ class StatusHandler(BaseHTTPRequestHandler):
                          and item.get("type") in {"vm", "lxc"}), None)
         return None
 
+    def api_update_script_preflight(self, record):
+        """Reject locally provable API script paths before job creation.
+
+        Guest-side capability checks remain in update.sh because a persisted
+        inventory record cannot prove what is installed inside a guest. The
+        HTTP preflight covers the deterministic local script-only/custom
+        cases; the runtime guard fails closed for anything it cannot classify.
+        """
+        if not isinstance(record, dict):
+            return None
+        target = str(record.get("id", ""))
+        scripts = self.server.config_file.parent / "scripts.d" / target
+        config = config_value_map(self.config_content())
+        if (scripts / ".script-only").is_file():
+            return "script-only updates are not enabled for API actions"
+        try:
+            custom_scripts = any(
+                item.is_file() and item.name != ".script-only"
+                for item in scripts.iterdir()
+            ) if scripts.is_dir() else False
+        except OSError:
+            return "custom script path could not be inspected safely"
+        if custom_scripts and config.get("EXTRA_GLOBAL") is True:
+            return "custom update scripts are not enabled for API actions"
+        return None
+
     def _api_start_job(self, command, target, job_type, extra_env=None, timeout=30):
         """Start an existing UU job and return its validated unit via HTTP."""
         try:
@@ -4423,12 +4451,20 @@ class StatusHandler(BaseHTTPRequestHandler):
                 if record.get("type") == "host":
                     self.send_json(error_payload("USE_NODE_ACTION", "Use the node update endpoint for Proxmox hosts."), HTTPStatus.UNPROCESSABLE_ENTITY)
                     return
+                unsafe_path = self.api_update_script_preflight(record)
+                if unsafe_path:
+                    self.send_json(error_payload("API_UNSAFE_SCRIPT_PATH", unsafe_path), HTTPStatus.CONFLICT)
+                    return
                 target = str(record.get("id"))
                 # Deliberately omit --without-verified-backup. API actions
                 # inherit the normal update safety gates.
                 self._api_start_job(
                     [str(self.server.cli), "update", target], target, "update",
-                    {"UU_NONINTERACTIVE": "true"},
+                    {
+                        "UU_API_ACTION": "update",
+                        "UU_NONINTERACTIVE": "true",
+                        "UU_API_REBOOT_ALLOWED": "false",
+                    },
                 )
             elif route == "update-node":
                 node = parts[3]
@@ -4440,7 +4476,11 @@ class StatusHandler(BaseHTTPRequestHandler):
                     return
                 self._api_start_job(
                     [str(self.server.cli), "update-node", self.node_action_target(node)],
-                    node, "update", {"UU_NONINTERACTIVE": "true"},
+                    node, "update", {
+                        "UU_API_ACTION": "update",
+                        "UU_NONINTERACTIVE": "true",
+                        "UU_API_REBOOT_ALLOWED": "false",
+                    },
                 )
             elif route == "reboot":
                 if not API_TARGET_ID_RE.fullmatch(parts[3]):
@@ -5358,6 +5398,14 @@ class StatusHandler(BaseHTTPRequestHandler):
     def handle_config_update(self, payload):
         normalized = validate_config_values(payload.get("values") if isinstance(payload, dict) else None)
         current_config = config_value_map(self.config_content())
+        if (normalized.get("REBOOT_IF_NEEDED") == "true" and
+                current_config.get("REBOOT_IF_NEEDED") is not True and
+                not (isinstance(payload, dict) and payload.get("confirm_reboot_if_needed") is True)):
+            self.send_json(error_payload(
+                "REBOOT_CONFIRMATION_REQUIRED",
+                "Enabling automatic reboots requires explicit confirmation.",
+            ), HTTPStatus.CONFLICT)
+            return
         if normalized.get("USE_INTERNAL_TARGET_SELECTION") == "true" or current_config.get("USE_INTERNAL_TARGET_SELECTION") is True:
             try:
                 ensure_target_selection_file(self.server.target_selection_file)

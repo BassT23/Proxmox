@@ -760,7 +760,7 @@ remote_update_job() {
   local remote_target="$1" target="$2" node="$3" host="${REMOTE_NODE_HOST:-$4}"
   local port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
   local legacy_profile="$LOCAL_FILES/VMs/$target"
-  local user="${REMOTE_NODE_USER:-root}" output job_unit command remote_update_dir source scope_env=''
+  local user="${REMOTE_NODE_USER:-root}" output job_unit command remote_update_dir source scope_env='' context_env=''
   local apt_count_file="$LOCAL_FILES/apt-count.py"
   local apt_count_shell_file="$LOCAL_FILES/apt-count.sh"
   local rpm_count_file="$LOCAL_FILES/rpm-count.py"
@@ -833,8 +833,13 @@ remote_update_job() {
   if interactive_requested; then
     interactive_env='UU_JOB_INTERACTIVE=true '
   fi
-  printf -v command 'exec /usr/bin/env %s%sUU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q UU_TARGET_SELECTION_FILE=%q %q start %q %q' \
-    "$scope_env" "$interactive_env" "$remote_update_dir" "$remote_update_dir" "$remote_update_dir/target-selection.json" "$remote_update_dir/job-runner.sh" \
+  if [[ "${UU_API_ACTION:-}" == update ]]; then
+    context_env='UU_API_ACTION=update UU_NONINTERACTIVE=true UU_API_REBOOT_ALLOWED=false '
+  elif [[ "${UU_NONINTERACTIVE:-false}" == true ]]; then
+    context_env='UU_NONINTERACTIVE=true '
+  fi
+  printf -v command 'exec /usr/bin/env %s%s%sUU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q UU_TARGET_SELECTION_FILE=%q %q start %q %q' \
+    "$scope_env" "$interactive_env" "$context_env" "$remote_update_dir" "$remote_update_dir" "$remote_update_dir/target-selection.json" "$remote_update_dir/job-runner.sh" \
     "$remote_update_dir/update.sh" "$remote_target"
   if ! output=$(timeout 30 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "$command"); then
     timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "rm -rf -- '$remote_update_dir'" >/dev/null 2>&1 || true

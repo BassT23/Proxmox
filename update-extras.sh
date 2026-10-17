@@ -21,6 +21,11 @@ INCLUDE_HELPER_SCRIPTS=$(awk -F'"' '/^INCLUDE_HELPER_SCRIPTS=/ {print $2}' $CONF
 IN_HEADLESS_MODE=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' $CONFIG_FILE)
 COMMUNITY_UPDATE_COMMAND="${UU_COMMUNITY_UPDATE_COMMAND:-update}"
 
+if [[ "${UU_API_ACTION:-}" == update ]]; then
+  echo "API_UNSAFE_SCRIPT_PATH: extra/community/helper updates are not enabled for API actions" >&2
+  exit 42
+fi
+
 if [[ "$IN_HEADLESS_MODE" == true ]]; then
   export DEBIAN_FRONTEND=noninteractive
 fi

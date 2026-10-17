@@ -137,9 +137,29 @@ Updates and reboots require exactly this JSON body:
 ```
 
 The API update paths use the normal update safety checks and never add the
-`--without-verified-backup` override. The current update engine reports
-reboot requirements separately; reboot is an explicit action with its own
-`reboot` permission. API-2 does not expose global update-all or self-update.
+`--without-verified-backup` override. They run with the explicit context
+`UU_API_ACTION=update`, `UU_NONINTERACTIVE=true`, and
+`UU_API_REBOOT_ALLOWED=false` across local, remote, and external dispatch
+boundaries. This context is not an authorization mechanism; the `update`
+permission is checked at the HTTP boundary first.
+
+API updates fail closed before the first backup, snapshot, guest start, or
+package-manager mutation when the selected target would execute a script-only,
+custom, community, helper, or other optional script path. The response uses
+`409` with error code `API_UNSAFE_SCRIPT_PATH`. Optional paths that are
+provably absent are skipped rather than being reported as successful script
+execution. The same guard is retained in the runtime for older or indirect
+callers. This restriction applies only to API updates; Web UI, CLI, and
+scheduler behavior is unchanged.
+
+The current update engine reports reboot requirements separately; reboot is an
+explicit action with its own `reboot` permission. API updates never trigger an
+automatic Ultimate Updater reboot, even when `REBOOT_IF_NEEDED=true`. The
+separate reboot endpoint remains protected by its existing target, reachability,
+reboot-required, and permission checks. Root-owned package maintainer scripts
+may still request or perform behavior outside Ultimate Updater's control; the
+API guarantee is limited to reboots initiated by the updater's controlled
+paths. API-2 does not expose global update-all or self-update.
 
 | Endpoint | Permission | Purpose |
 | --- | --- | --- |
@@ -165,7 +185,8 @@ Action responses use `202 Accepted` and have the following shape:
 ```
 
 `409 Conflict` is returned for an existing job conflict, unmet backup safety
-requirements, or a reboot that is not currently required. `422` is used for
+requirements, an unsafe API script path, or a reboot that is not currently
+required. `422` is used for
 missing confirmation or rejected action parameters, `404` for unknown targets
 or jobs, and `503` when the local API data or action infrastructure is
 temporarily unavailable. HTTPS is required before authentication or any

@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2002,SC2015,SC2086,SC2317
+# shellcheck disable=SC2002,SC2015,SC2016,SC2086,SC2209,SC2317
 
 ##########
 # Update #
@@ -39,6 +39,7 @@ BETA_VERSION="${BETA_VERSION:-}"
 VERSION="$PRODUCT_VERSION"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
 TEMP_STATE_DIR="${UU_TEMP_STATE_DIR:-$LOCAL_FILES/temp}"
+UPDATE_RUN_STARTED_AT="${UU_UPDATE_RUN_STARTED_AT:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 CHECK_SCRIPT="${UU_CHECK_SCRIPT:-$LOCAL_FILES/check-updates.sh}"
 USER_SCRIPTS="${USER_SCRIPTS:-$LOCAL_FILES/scripts.d}"
@@ -725,6 +726,8 @@ READ_CONFIG () {
   CHECK_URL_EXE="${CHECK_URL_EXE:-ping}"
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' "$CONFIG_FILE")
   EXIT_ON_ERROR=$(awk -F'"' '/^EXIT_ON_ERROR=/ {print $2}' "$CONFIG_FILE")
+  REBOOT_IF_NEEDED=$(awk -F'"' '/^REBOOT_IF_NEEDED=/ {print $2; exit}' "$CONFIG_FILE")
+  [[ "$REBOOT_IF_NEEDED" == true ]] || REBOOT_IF_NEEDED=false
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' "$CONFIG_FILE")
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' "$CONFIG_FILE")
@@ -749,6 +752,13 @@ READ_CONFIG () {
   LXC_START_DELAY=$(awk -F'"' '/^LXC_START_DELAY=/ {print $2}' "$CONFIG_FILE")
   LXC_START_DELAY="${LXC_START_DELAY:-5}"
   EXTRA_GLOBAL=$(awk -F'"' '/^EXTRA_GLOBAL=/ {print $2}' "$CONFIG_FILE")
+  PIHOLE=$(awk -F'"' '/^PIHOLE=/ {print $2}' "$CONFIG_FILE")
+  IOBROKER=$(awk -F'"' '/^IOBROKER=/ {print $2}' "$CONFIG_FILE")
+  PTERODACTYL=$(awk -F'"' '/^PTERODACTYL=/ {print $2}' "$CONFIG_FILE")
+  OCTOPRINT=$(awk -F'"' '/^OCTOPRINT=/ {print $2}' "$CONFIG_FILE")
+  DOCKER_COMPOSE=$(awk -F'"' '/^DOCKER_COMPOSE=/ {print $2}' "$CONFIG_FILE")
+  COMPOSE_PATH=$(awk -F'"' '/^COMPOSE_PATH=/ {print $2}' "$CONFIG_FILE")
+  INCLUDE_HELPER_SCRIPTS=$(awk -F'"' '/^INCLUDE_HELPER_SCRIPTS=/ {print $2}' "$CONFIG_FILE")
   IN_HEADLESS_MODE=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2}' "$CONFIG_FILE")
   [[ "$IN_HEADLESS_MODE" == true ]] || IN_HEADLESS_MODE=false
   [[ "${UU_NONINTERACTIVE:-false}" == true || "${RUN_FROM_CRON:-false}" == true ]] && IN_HEADLESS_MODE=true
@@ -994,6 +1004,137 @@ USER_SCRIPTS_VM () {
 SCRIPT_ONLY_ENABLED () {
   [[ -f "$USER_SCRIPTS/$1/.script-only" ]]
 }
+
+# API-2 updates deliberately do not execute optional or user-controlled
+# scripts. These target-scoped probes are read-only and run before backup,
+# snapshot, guest start, or package-manager mutation. Runtime guards remain in
+# EXTRAS and update-extras.sh for older or indirect callers.
+API_UPDATE_GUEST_OPTIONAL_PROBE() {
+  local target="$1" kind="$2" shell_name="${3:-sh}" script output rc
+  local -a assignments
+  script='unsafe=false
+if [ "${PIHOLE:-false}" = true ] && [ -x /usr/local/bin/pihole ]; then unsafe=true; fi
+if [ "${IOBROKER:-false}" = true ] && [ -d /opt/iobroker ]; then unsafe=true; fi
+if [ "${PTERODACTYL:-false}" = true ] && [ -d /var/www/pterodactyl ]; then unsafe=true; fi
+if [ "${OCTOPRINT:-false}" = true ] && [ -d /root/OctoPrint ]; then unsafe=true; fi
+if [ "${DOCKER_COMPOSE:-false}" = true ] && { command -v docker >/dev/null 2>&1 || [ -x /usr/local/bin/docker-compose ]; } &&
+   find "${COMPOSE_PATH:-/}" -type f \( -name "docker-compose.y*ml" -o -name "compose.y*ml" \) -print -quit 2>/dev/null | grep -q .; then unsafe=true; fi
+if [ "${INCLUDE_HELPER_SCRIPTS:-false}" = true ] && command -v "${COMMUNITY_UPDATE_COMMAND:-update}" >/dev/null 2>&1 &&
+   grep -q community-scripts "$(command -v "${COMMUNITY_UPDATE_COMMAND:-update}")" 2>/dev/null; then unsafe=true; fi
+if [ "$unsafe" = true ]; then printf unsafe; else printf safe; fi'
+  assignments=(
+    "PIHOLE=${PIHOLE:-false}" "IOBROKER=${IOBROKER:-false}"
+    "PTERODACTYL=${PTERODACTYL:-false}" "OCTOPRINT=${OCTOPRINT:-false}"
+    "DOCKER_COMPOSE=${DOCKER_COMPOSE:-false}" "COMPOSE_PATH=${COMPOSE_PATH:-/}"
+    "INCLUDE_HELPER_SCRIPTS=${INCLUDE_HELPER_SCRIPTS:-false}"
+    "COMMUNITY_UPDATE_COMMAND=${UU_COMMUNITY_UPDATE_COMMAND:-update}"
+  )
+  printf -v output 'env'
+  local assignment
+  for assignment in "${assignments[@]}"; do
+    printf -v output '%s %q' "$output" "$assignment"
+  done
+  printf -v output '%s %q -c %q' "$output" "$shell_name" "$script"
+  case "$kind" in
+    lxc|container)
+      output=$(RUN_PCT_COMMAND "$target" "$shell_name" -c "${output#* }") 2>/dev/null
+      rc=$?
+      ;;
+    host|node)
+      if [[ "$target" == "$(hostname -i 2>/dev/null | cut -d' ' -f1)" || "$target" == "$(hostname -I 2>/dev/null | awk '{print $1}')" ]]; then
+        output=$(env "${assignments[@]}" "$shell_name" -c "$script") 2>/dev/null
+        rc=$?
+      else
+        output=$(RUN_SSH_COMMAND "$target" "${INTERNAL_SSH_PORT:-${SSH_PORT:-22}}" "${INTERNAL_SSH_USER:-root}" "$shell_name" -c "${output#* }") 2>/dev/null
+        rc=$?
+      fi
+      ;;
+    vm)
+      output=$(RUN_QEMU_COMMAND "$target" -- "$shell_name" -c "${output#* }") 2>/dev/null
+      rc=$?
+      if [[ $rc -ne 0 ]]; then
+        local ip="" user="root" port="22" ssh_configured=false internal_state=3
+        if [[ -f "$LOCAL_FILES/VMs/$target" ]]; then
+          ssh_configured=true
+          ip=$(awk -F'"' '/^IP=/ {print $2}' "$LOCAL_FILES/VMs/$target")
+          user=$(awk -F'"' '/^USER=/ {print $2}' "$LOCAL_FILES/VMs/$target")
+          port=$(awk -F'"' '/^SSH_VM_PORT=/ {print $2}' "$LOCAL_FILES/VMs/$target")
+          user="${user:-root}"; port="${port:-22}"
+        fi
+        if declare -f INTERNAL_SSH_TARGET_STATE >/dev/null 2>&1; then
+          if INTERNAL_SSH_TARGET_STATE vm "$target"; then internal_state=0; else internal_state=$?; fi
+          [[ $internal_state -eq 0 ]] && ssh_configured=true
+        fi
+        if [[ "$ssh_configured" == true ]] && INTERNAL_SSH_RESOLVE_VM "$target" "$ip" "$user" "$port" &&
+           [[ "${INTERNAL_SSH_ENABLED:-true}" == true ]]; then
+          ip="${INTERNAL_SSH_HOST:-$ip}"; user="${INTERNAL_SSH_USER:-$user}"; port="${INTERNAL_SSH_PORT:-$port}"
+          INTERNAL_SSH_USE_IDENTITY
+          output=$(RUN_SSH_COMMAND "$ip" "$port" "$user" "$shell_name" -c "${output#* }") 2>/dev/null
+          rc=$?
+        fi
+      fi
+      ;;
+    *) return 2 ;;
+  esac
+  [[ $rc -eq 0 && "$output" == unsafe ]] && return 0
+  [[ $rc -eq 0 && "$output" == safe ]] && return 1
+  return 2
+}
+
+API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH() {
+  local target="$1" kind="${2:-}" os_hint="${3:-}" script_dir="$USER_SCRIPTS/$1"
+  local reason="" probe_rc shell_name
+  [[ "${UU_API_ACTION:-}" == update ]] || return 0
+  UU_API_SCRIPT_PREFLIGHT_SAFE=false
+
+  if SCRIPT_ONLY_ENABLED "$target"; then
+    reason="script-only updates are not enabled for API actions"
+  elif [[ -d "$script_dir" ]] && find "$script_dir" -maxdepth 1 -type f ! -name '.script-only' -print -quit 2>/dev/null | grep -q .; then
+    if [[ "${EXTRA_GLOBAL:-false}" == true && "${EXTRA_IN_HEADLESS:-false}" == true ]]; then
+      reason="custom update scripts are not enabled for API actions"
+    fi
+  fi
+
+  if [[ -z "$reason" && "$kind" =~ ^(host|node|lxc|vm|container)$ && "${EXTRA_GLOBAL:-false}" == true &&
+    "${EXTRA_IN_HEADLESS:-false}" == true ]]; then
+    case "${os_hint,,}" in
+      ""|*debian*|*proxmox*|*ubuntu*|*devuan*|*fedora*|*centos*|*redhat*|*rhel*|*arch*|*alpine*)
+        shell_name="sh"
+        if API_UPDATE_GUEST_OPTIONAL_PROBE "$target" "$kind" "$shell_name"; then
+          probe_rc=0
+        else
+          probe_rc=$?
+        fi
+        case "$probe_rc" in
+          0) reason="configured extra/community/helper updates would execute" ;;
+          1) UU_API_SCRIPT_PREFLIGHT_SAFE=true ;;
+          *) reason="optional update path could not be inspected safely" ;;
+        esac
+        ;;
+      *windows*|win*) ;;
+      *)
+        if [[ "$kind" == host || "$kind" == node ]]; then
+          reason="optional update path could not be classified safely"
+        else
+          shell_name="sh"
+          [[ "${os_hint,,}" == *alpine* ]] && shell_name=ash
+          reason="optional update path could not be classified safely"
+        fi
+        ;;
+    esac
+  fi
+
+  if [[ -n "$reason" ]]; then
+    ERROR_CODE=42
+    ID="$target"
+    NAME="${NAME:-$target}"
+    ERROR_MSG="API_UNSAFE_SCRIPT_PATH: $reason"
+    echo -e "${RD:-}  ❌ $ERROR_MSG${CL:-}" >&2
+    ERROR
+    return 42
+  fi
+  return 0
+}
 SCRIPT_ONLY_FILES () {
   SCRIPT_FILES=()
   while IFS= read -r -d '' SCRIPT_FILE; do
@@ -1148,6 +1289,18 @@ SCRIPT_ONLY_VM () {
 # Extras
 EXTRAS () {
   local extra_rc
+  if [[ "${UU_API_ACTION:-}" == update && "${UU_API_SCRIPT_PREFLIGHT_SAFE:-false}" == true ]]; then
+    echo -e "\n${OR:-}--- Skip optional API update paths ---${CL:-}\n"
+    return 0
+  fi
+  if [[ "${UU_API_ACTION:-}" == update && "${EXTRA_GLOBAL:-false}" == true &&
+    "${EXTRA_IN_HEADLESS:-false}" == true ]]; then
+    ERROR_CODE=42
+    ID="${CONTAINER:-${VM:-${ID:-unknown}}}"
+    ERROR_MSG="API_UNSAFE_SCRIPT_PATH: extra/community/helper updates are not enabled for API actions"
+    ERROR
+    return 42
+  fi
   if [[ "$EXTRA_GLOBAL" != true ]]; then
     echo -e "\n${OR:-}--- Skip Extra Updates because of the user settings ---${CL:-}\n"
   elif EFFECTIVE_HEADLESS && [[ "$EXTRA_IN_HEADLESS" == false ]]; then
@@ -1297,6 +1450,71 @@ UPDATE_CHECK () {
   else
     echo
   fi
+}
+
+UPDATE_REBOOT_STATUS_FRESH() {
+  local target="$1" status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  python3 - "$status_file" "$target" "$UPDATE_RUN_STARTED_AT" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+
+path, target, started = sys.argv[1:]
+try:
+    with open(path, encoding="utf-8") as source:
+        payload = json.load(source)
+    record = next(item for item in payload.get("targets", [])
+                  if isinstance(item, dict) and str(item.get("id")) == target)
+    last_update = record.get("last_update")
+    if not isinstance(last_update, dict) or last_update.get("status") != "success":
+        raise ValueError
+    if last_update.get("reboot_required") is not True:
+        raise SystemExit(1)
+    stamp = datetime.fromisoformat(str(last_update.get("timestamp", "")).replace("Z", "+00:00"))
+    run_start = datetime.fromisoformat(started.replace("Z", "+00:00"))
+    if stamp.tzinfo is None or run_start.tzinfo is None or stamp < run_start:
+        raise SystemExit(1)
+except (OSError, ValueError, StopIteration, TypeError, KeyError, json.JSONDecodeError):
+    raise SystemExit(2)
+raise SystemExit(0)
+PY
+}
+
+AUTO_REBOOT_GUEST() {
+  local kind="$1" target="$2" was_stopped="${3:-false}" reboot_rc message
+  [[ "${REBOOT_IF_NEEDED:-false}" == true ]] || return 0
+  if ! UPDATE_REBOOT_STATUS_FRESH "$target"; then
+    return 0
+  fi
+  if [[ "${UU_API_ACTION:-}" == update || "${UU_API_REBOOT_ALLOWED:-true}" != true ]]; then
+    echo -e "${OR:-}Reboot required for $target; automatic reboot is disabled for API updates.${CL:-}"
+    return 0
+  fi
+  if [[ "$was_stopped" == true ]]; then
+    echo -e "${OR:-}Reboot required for $target; preserving its originally stopped state.${CL:-}"
+    return 0
+  fi
+  case "$kind" in
+    lxc) echo -e "${OR:-}--- AUTOMATIC LXC REBOOT ---${CL:-}"; RUN_PROXMOX_COMMAND pct reboot "$target"; reboot_rc=$? ;;
+    vm) echo -e "${OR:-}--- AUTOMATIC VM REBOOT ---${CL:-}"; RUN_PROXMOX_COMMAND qm reboot "$target"; reboot_rc=$? ;;
+    *)
+      echo -e "${OR:-}Automatic reboot is not supported safely for target $target; manual reboot may be required.${CL:-}" >&2
+      return 0
+      ;;
+  esac
+  if [[ "$reboot_rc" -ne 0 ]]; then
+    message="Automatic reboot failed for $target (exit code $reboot_rc)"
+    ERROR_CODE="$reboot_rc"
+    ID="$target"
+    NAME="${NAME:-$target}"
+    ERROR_MSG="$message"
+    ERROR
+    declare -f STATUS_MODEL_REBOOT_FAILURE >/dev/null 2>&1 &&
+      STATUS_MODEL_REBOOT_FAILURE "$target" "$reboot_rc" "$message" || true
+    return "$reboot_rc"
+  fi
+  echo -e "${GN:-}Automatic reboot requested for $target.${CL:-}"
+  return 0
 }
 
 # Wait for bootup / reboot
@@ -1464,6 +1682,9 @@ UPDATE_HOST () {
   local remote_finalize_command="" remote_handoff_rc=0
   local apt_count_file rpm_count_file package_count_file product_metadata_file source
   [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_update_env="UU_INTERNAL_SKIP_HOST_TARGET=true "
+  if [[ "${UU_API_ACTION:-}" == update ]]; then
+    API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH "$HOST" host proxmox || return $?
+  fi
   START_HOST=$(hostname -i | cut -d ' ' -f1)
   if [[ "$HOST" != "$START_HOST" ]]; then
     remote_workspace="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
@@ -1473,6 +1694,11 @@ UPDATE_HOST () {
     printf -v remote_handoff_env \
       'UU_REMOTE_NODE_HANDOFF=true UU_REMOTE_WORK_DIR=%q UU_REMOTE_STATE_DIR=%q UU_REMOTE_JOB_UNIT=%q WELCOME_SCREEN=true ' \
       "$remote_workspace" "$remote_state_dir" "$remote_job_unit"
+    if [[ "${UU_API_ACTION:-}" == update ]]; then
+      remote_update_env+='UU_API_ACTION=update UU_NONINTERACTIVE=true UU_API_REBOOT_ALLOWED=false '
+    elif [[ "${UU_NONINTERACTIVE:-false}" == true ]]; then
+      remote_update_env+='UU_NONINTERACTIVE=true '
+    fi
     ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
     ssh -q -p "$SSH_PORT" "$HOST" "mkdir -p $(printf '%q' "$remote_workspace") $(printf '%q' "$remote_state_dir")"
     ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf ]]; then cp -p $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf.uu-backup; else rm -f $LOCAL_FILES/update.conf.uu-backup; fi"
@@ -1669,6 +1895,7 @@ CONTAINER_UPDATE_START () {
         SINGLE_TARGET_EXECUTED=true
         UPDATE_CONTAINER "$CONTAINER"
         CAPTURE_POST_UPDATE_STATUS "$CONTAINER" ccontainer
+        AUTO_REBOOT_GUEST lxc "$CONTAINER" false || UPDATE_FAILURE=true
         CCONTAINER=""
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" != true ]]; then
         echo -e "⏩${BL:-} Skipped LXC $CONTAINER because running containers are disabled${CL:-}\n\n"
@@ -1688,6 +1915,7 @@ UPDATE_CONTAINER () {
   echo 'CONTAINER="'"$CONTAINER"'"' > "$TEMP_STATE_DIR/var"
   OS=$(pct config "$CONTAINER" | awk '/^ostype/' - | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
+  API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH "$CONTAINER" lxc "$OS" || return $?
 #  if [[ "$OS" =~ centos ]]; then
 #    NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
 #  else
@@ -1902,6 +2130,7 @@ VM_UPDATE_START () {
         SINGLE_TARGET_EXECUTED=true
         UPDATE_VM "$VM"
         CAPTURE_POST_UPDATE_STATUS "$VM" cvm
+        AUTO_REBOOT_GUEST vm "$VM" false || UPDATE_FAILURE=true
         CVM=""
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" != true ]]; then
         echo -e "⏩${BL:-} Skipped VM $VM because running VMs are disabled${CL:-}\n\n"
@@ -1925,12 +2154,17 @@ VM_IS_WINDOWS() {
 # VM Update
 # shellcheck disable=SC2015
 UPDATE_VM () {
-  local ssh_profile_configured=false internal_ssh_state=3
+  local ssh_profile_configured=false internal_ssh_state=3 api_os_hint=""
   VM=$1
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   CVM="true"
   echo 'VM="'"$VM"'"' > "$TEMP_STATE_DIR/var"
   echo -e "🔄${GN:-} Updating VM ${BL:-}$VM${CL:-} : ${GN:-}$NAME${CL:-}\n"
+  if [[ "${UU_API_ACTION:-}" == update ]]; then
+    api_os_hint=$(qm guest cmd "$VM" get-osinfo 2>/dev/null || true)
+    [[ -n "$api_os_hint" ]] || api_os_hint=$(qm config "$VM" 2>/dev/null | awk -F': ' '$1 == "ostype" {print $2; exit}')
+    API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH "$VM" vm "$api_os_hint" || { CVM=""; return $?; }
+  fi
   if VM_IS_WINDOWS "$VM" && [[ "$WINDOWS_UPDATE_ENABLED" != true ]]; then
     echo -e "⏩${YL:-} Windows update installation skipped for VM $VM: WINDOWS_UPDATE_ENABLED=false${CL:-}\n"
     if declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then

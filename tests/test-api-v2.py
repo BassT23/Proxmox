@@ -95,7 +95,7 @@ class ApiFixture:
         self.runner.chmod(0o750)
         self.cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         self.cli.chmod(0o750)
-        self.config.write_text('USED_BRANCH="develop"\n', encoding="utf-8")
+        self.config.write_text('USED_BRANCH="develop"\nEXTRA_GLOBAL="true"\n', encoding="utf-8")
         self.cancel_unit = "ultimate-updater-check-986-cancel"
         (root / "jobs" / f"{self.cancel_unit}.state").parent.mkdir()
         (root / "jobs" / f"{self.cancel_unit}.state").write_text(
@@ -199,9 +199,28 @@ with tempfile.TemporaryDirectory() as temporary:
         assert status == 202 and payload["type"] == "update"
         update_call = fixture.httpd.calls[-1]
         assert "--without-verified-backup" not in update_call["args"]
-        assert update_call["env"] == {"UU_NONINTERACTIVE": "true"}
+        assert update_call["env"] == {
+            "UU_API_ACTION": "update",
+            "UU_NONINTERACTIVE": "true",
+            "UU_API_REBOOT_ALLOWED": "false",
+        }
         status, payload = fixture.request("/api/v1/update-node/test-node", t["update"], method="POST", body={"confirm": True})
         assert status == 202 and payload["target"] == "test-node"
+
+        # API script safety is checked before the job runner is invoked.  This
+        # uses the real HTTP handler with an isolated target-local fixture.
+        custom_scripts = fixture.root / "scripts.d" / "986"
+        custom_scripts.mkdir(parents=True)
+        (custom_scripts / "custom.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+        before = len(fixture.httpd.calls)
+        status, payload = fixture.request("/api/v1/update/986", t["update"], method="POST", body={"confirm": True})
+        assert status == 409 and payload["error"]["code"] == "API_UNSAFE_SCRIPT_PATH"
+        assert len(fixture.httpd.calls) == before
+        (custom_scripts / "custom.sh").unlink()
+        (custom_scripts / ".script-only").write_text("\n", encoding="utf-8")
+        status, payload = fixture.request("/api/v1/update/986", t["update"], method="POST", body={"confirm": True})
+        assert status == 409 and payload["error"]["code"] == "API_UNSAFE_SCRIPT_PATH"
+        assert len(fixture.httpd.calls) == before
 
         status, payload = fixture.request("/api/v1/reboot/986", t["update"], method="POST", body={"confirm": True})
         assert status == 403

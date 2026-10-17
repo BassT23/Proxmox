@@ -15,7 +15,11 @@ EXTERNAL_HELPER_PATH="${EXTERNAL_HELPER_PATH:-/usr/local/sbin/ultimate-updater-e
 EXTERNAL_HELPER_VERSION="1"
 EXTERNAL_SAFETY_SCRIPT="${EXTERNAL_SAFETY_SCRIPT:-$LOCAL_FILES/external-backup-safety.sh}"
 UU_EFFECTIVE_HEADLESS=$(awk -F'"' '/^IN_HEADLESS_MODE=/ {print $2; exit}' "$LOCAL_FILES/update.conf" 2>/dev/null || true)
-[[ "$UU_EFFECTIVE_HEADLESS" == true ]] || UU_EFFECTIVE_HEADLESS=false
+if [[ "${UU_NONINTERACTIVE:-false}" == true || "$UU_EFFECTIVE_HEADLESS" == true ]]; then
+  UU_EFFECTIVE_HEADLESS=true
+else
+  UU_EFFECTIVE_HEADLESS=false
+fi
 [[ -f "$INVENTORY_SCRIPT" ]] || INVENTORY_SCRIPT="$SCRIPT_DIR/target-inventory.sh"
 [[ -f "$STATUS_MODEL_SCRIPT" ]] || STATUS_MODEL_SCRIPT="$SCRIPT_DIR/status-model.sh"
 [[ -f "$RUNTIME_SCRIPT" ]] || RUNTIME_SCRIPT="$SCRIPT_DIR/target-runtime.sh"
@@ -249,13 +253,20 @@ check_target() {
 }
 
 remote_update() {
-  local remote_script
+  local remote_script api_action='none' api_reboot_allowed='true'
+  local helper_path_q helper_version_q target_name_q headless_q api_action_q api_reboot_allowed_q
+  if [[ "${UU_API_ACTION:-}" == update ]]; then
+    api_action=update
+    api_reboot_allowed=false
+  fi
   remote_script=$(cat <<'REMOTE_UPDATE'
 set -u
-helper="__EXTERNAL_HELPER_PATH__"
-expected_version="__EXTERNAL_HELPER_VERSION__"
-target_name="__EXTERNAL_TARGET_NAME__"
-effective_headless="__UU_EFFECTIVE_HEADLESS__"
+helper=__EXTERNAL_HELPER_PATH__
+expected_version=__EXTERNAL_HELPER_VERSION__
+target_name=__EXTERNAL_TARGET_NAME__
+effective_headless=__UU_EFFECTIVE_HEADLESS__
+api_action=__UU_API_ACTION__
+api_reboot_allowed=__UU_API_REBOOT_ALLOWED__
 config=/etc/ultimate-updater/external.conf
 if [ ! -r "$config" ] || ! awk -F= '
   /^[[:space:]]*($|#)/ { next }
@@ -302,17 +313,27 @@ version=$($helper version 2>/dev/null) || { printf 'EXTERNAL_HELPER_UNAVAILABLE\
   exit 33
 }
 if [ "$(id -u)" -eq 0 ]; then
-  UU_EFFECTIVE_HEADLESS="$effective_headless" "$helper" update
+  UU_EFFECTIVE_HEADLESS="$effective_headless" UU_API_ACTION="$api_action" \
+    UU_API_REBOOT_ALLOWED="$api_reboot_allowed" "$helper" update
 else
   command -v sudo >/dev/null 2>&1 || { printf 'EXTERNAL_SUDO_UNAVAILABLE\n' >&2; exit 23; }
-  sudo -n env UU_EFFECTIVE_HEADLESS="$effective_headless" "$helper" update
+  sudo -n env UU_EFFECTIVE_HEADLESS="$effective_headless" \
+    UU_API_ACTION="$api_action" UU_API_REBOOT_ALLOWED="$api_reboot_allowed" "$helper" update
 fi
 REMOTE_UPDATE
   )
-  remote_script=${remote_script//__EXTERNAL_HELPER_PATH__/$EXTERNAL_HELPER_PATH}
-  remote_script=${remote_script//__EXTERNAL_HELPER_VERSION__/$EXTERNAL_HELPER_VERSION}
-  remote_script=${remote_script//__EXTERNAL_TARGET_NAME__/$EXTERNAL_TARGET}
-  remote_script=${remote_script//__UU_EFFECTIVE_HEADLESS__/$UU_EFFECTIVE_HEADLESS}
+  printf -v helper_path_q '%q' "$EXTERNAL_HELPER_PATH"
+  printf -v helper_version_q '%q' "$EXTERNAL_HELPER_VERSION"
+  printf -v target_name_q '%q' "$EXTERNAL_TARGET"
+  printf -v headless_q '%q' "$UU_EFFECTIVE_HEADLESS"
+  printf -v api_action_q '%q' "$api_action"
+  printf -v api_reboot_allowed_q '%q' "$api_reboot_allowed"
+  remote_script=${remote_script//__EXTERNAL_HELPER_PATH__/$helper_path_q}
+  remote_script=${remote_script//__EXTERNAL_HELPER_VERSION__/$helper_version_q}
+  remote_script=${remote_script//__EXTERNAL_TARGET_NAME__/$target_name_q}
+  remote_script=${remote_script//__UU_EFFECTIVE_HEADLESS__/$headless_q}
+  remote_script=${remote_script//__UU_API_ACTION__/$api_action_q}
+  remote_script=${remote_script//__UU_API_REBOOT_ALLOWED__/$api_reboot_allowed_q}
   RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" 'bash -s' <<< "$remote_script"
 }
 

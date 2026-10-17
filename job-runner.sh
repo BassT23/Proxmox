@@ -745,6 +745,10 @@ start_job() {
   fi
   systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
   [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
+  [[ "${UU_API_ACTION:-}" == update ]] && systemd_env+=(
+    "--setenv=UU_API_ACTION=update"
+    "--setenv=UU_API_REBOOT_ALLOWED=false"
+  )
   systemd_env+=("--setenv=UU_SINGLE_TARGET=true" \
     "--setenv=UU_SINGLE_TARGET_ID=$target" \
     "--setenv=UU_SINGLE_TARGET_KIND=$(notification_scope_kind "$target")")
@@ -812,6 +816,10 @@ start_global_job() {
   fi
   systemd_env+=("--setenv=UU_DEFER_UPDATE_MAIL=true")
   [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
+  [[ "${UU_API_ACTION:-}" == update ]] && systemd_env+=(
+    "--setenv=UU_API_ACTION=update"
+    "--setenv=UU_API_REBOOT_ALLOWED=false"
+  )
   [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   if [[ "${UU_DEFER_NOTIFICATION:-false}" == true ]]; then
     systemd_env+=("--setenv=UU_DEFER_NOTIFICATION=true")
