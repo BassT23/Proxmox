@@ -5467,7 +5467,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             record = next((item for item in payload.get("targets", [])
                            if isinstance(item, dict) and str(item.get("id")) == target), None)
             if not record or record.get("type") != "vm" or not re.search(
-                    r"windows", str(record.get("os") or record.get("os_detail_display") or "", re.IGNORECASE)):
+                    r"windows", str(record.get("os") or record.get("os_detail_display") or ""), re.IGNORECASE):
                 self.send_json(error_payload("WINDOWS_TARGET_REQUIRED", "Windows Update history is only available for Windows VMs."), HTTPStatus.BAD_REQUEST)
                 return
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
