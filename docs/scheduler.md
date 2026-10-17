@@ -30,6 +30,21 @@ include/exclude filters, safety rules, locks, lifecycle handling, notifications,
 status capture, and reboot policy therefore remain authoritative. `Run now`
 uses the same job entry point.
 
+## Optional scheduled success heartbeat
+
+Set `UU_HEARTBEAT_URL` and a protected `UU_HEARTBEAT_TOKEN_FILE` to send
+an authenticated POST after a complete successful read-only scheduled check.
+The token file must be an absolute, root-owned regular file with mode `0600`.
+Do not put tokens in URL query strings, environment values or logs.
+
+The source only sends when `UU_SCHEDULED_CHECK=true`,
+`UU_JOB_SOURCE=initial-inventory` and the existing job runner marks a check
+execution. This intentionally depends on read-only scheduling issue #367.
+Manual or selected checks, empty or failed target inventory, warning results
+and unsuccessful notification handling cannot send a success pulse.
+The feature is off when no URL is configured, creates no additional timer
+or collector, and leaves the check result intact if HTTP delivery fails.
+
 Times use the local system timezone shown in the WebUI. Schedules can be
 enabled, disabled, edited, or deleted without changing `update.conf`.
 
