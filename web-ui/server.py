@@ -4382,6 +4382,9 @@ class StatusHandler(BaseHTTPRequestHandler):
                 )
             elif route == "check":
                 target = parts[3]
+                if not API_TARGET_ID_RE.fullmatch(target):
+                    self.send_json(error_payload("INVALID_TARGET", "The target identifier is invalid."), HTTPStatus.BAD_REQUEST)
+                    return
                 record = self.api_target_record(target)
                 if not record:
                     self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not part of the managed inventory."), HTTPStatus.NOT_FOUND)
@@ -4397,6 +4400,9 @@ class StatusHandler(BaseHTTPRequestHandler):
                 )
             elif route == "check-node":
                 node = parts[3]
+                if not HOST_RE.fullmatch(node):
+                    self.send_json(error_payload("INVALID_NODE", "The node identifier is invalid."), HTTPStatus.BAD_REQUEST)
+                    return
                 if not self.known_node(node):
                     self.send_json(error_payload("NODE_NOT_FOUND", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
                     return
@@ -4407,6 +4413,9 @@ class StatusHandler(BaseHTTPRequestHandler):
                 )
             elif route == "update":
                 target = parts[3]
+                if not API_TARGET_ID_RE.fullmatch(target):
+                    self.send_json(error_payload("INVALID_TARGET", "The target identifier is invalid."), HTTPStatus.BAD_REQUEST)
+                    return
                 record = self.api_target_record(target)
                 if not record:
                     self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not part of the managed inventory."), HTTPStatus.NOT_FOUND)
@@ -4423,6 +4432,9 @@ class StatusHandler(BaseHTTPRequestHandler):
                 )
             elif route == "update-node":
                 node = parts[3]
+                if not HOST_RE.fullmatch(node):
+                    self.send_json(error_payload("INVALID_NODE", "The node identifier is invalid."), HTTPStatus.BAD_REQUEST)
+                    return
                 if not self.known_node(node):
                     self.send_json(error_payload("NODE_NOT_FOUND", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
                     return
@@ -4431,6 +4443,9 @@ class StatusHandler(BaseHTTPRequestHandler):
                     node, "update", {"UU_NONINTERACTIVE": "true"},
                 )
             elif route == "reboot":
+                if not API_TARGET_ID_RE.fullmatch(parts[3]):
+                    self.send_json(error_payload("INVALID_TARGET", "The target identifier is invalid."), HTTPStatus.BAD_REQUEST)
+                    return
                 record = self.api_target_record(parts[3])
                 if not record:
                     self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not part of the managed inventory."), HTTPStatus.NOT_FOUND)

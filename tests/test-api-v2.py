@@ -188,6 +188,8 @@ with tempfile.TemporaryDirectory() as temporary:
         assert status == 202 and payload["target"] == "test-node"
         status, payload = fixture.request("/api/v1/check/999", t["check"], method="POST")
         assert status == 404 and payload["error"]["code"] == "TARGET_NOT_FOUND"
+        status, payload = fixture.request("/api/v1/check/%40invalid", t["check"], method="POST")
+        assert status == 400 and payload["error"]["code"] == "INVALID_TARGET"
         assert not any(call["args"][1:] == ["start-check", "999", str(fixture.cli), "target"]
                        for call in fixture.httpd.calls)
 
