@@ -1,8 +1,8 @@
 # Ultimate Updater integration API v1
 
-The integration API is a separate, read-only machine interface. It does not
-replace the authenticated Web UI and it never starts a check, update, reboot,
-cancel operation, QGA command, SSH check, or package manager.
+The integration API is a separate machine interface. Its API-1 read endpoints
+are read-only; API-2 adds explicitly permissioned action endpoints below. It
+does not replace the authenticated Web UI or create a second update engine.
 
 ## Enablement and tokens
 
@@ -15,6 +15,8 @@ regular file owned by the Web UI service user, has mode `0600`, and contains
 sudo ultimate-updater-api-token enable
 sudo ultimate-updater-api-token create homepage --permissions read
 sudo ultimate-updater-api-token create hmc --permissions read,logs
+sudo ultimate-updater-api-token create monitor-checker --permissions check
+sudo ultimate-updater-api-token create maintainer --permissions read,check,update
 sudo ultimate-updater-api-token list
 sudo ultimate-updater-api-token revoke <token-id>
 sudo ultimate-updater-api-token disable
@@ -22,8 +24,9 @@ sudo ultimate-updater-api-token disable
 
 Creation prints the secret exactly once. Store it in the integration's secret
 store; it is never written to the configuration, returned by the API, or
-written to logs. Tokens are 256-bit random values. The only supported v1
-permissions are `read` and `logs`; `logs` also requires `read`.
+written to logs. Tokens are 256-bit random values. The supported permissions
+are `read`, `logs`, `check`, `update`, `reboot`, and `cancel`. `logs` also
+requires `read`; action permissions are independent and do not imply `read`.
 
 Use exactly one header:
 
@@ -103,7 +106,7 @@ permission, `404` missing data, `405` a non-GET API action, `503` disabled or
 temporarily unavailable data. Error bodies have the form:
 
 ```json
-{"error":{"code":"API_AUTH_REQUIRED","message":"A bearer token is required."}}
+{"error":{"code":"AUTH_REQUIRED","message":"A bearer token is required."}}
 ```
 
 A status consumer should normally poll every 2–5 minutes. Poll jobs every
@@ -113,3 +116,61 @@ API does not create a background polling task.
 The older `/api/status-summary` endpoint remains available for compatibility
 and uses the same hashed-token and HTTPS boundary; new integrations should use
 `/api/v1/status-summary`.
+
+## API-2 scoped actions
+
+API-2 extends the versioned API with explicitly authorized actions. It does
+not replace the Web UI action handlers or create a second job engine. Every
+action is validated against the persisted managed inventory and is submitted
+to the existing job runner. A successful response means only that the job was
+accepted; follow its `job` identifier through the API-1 job endpoints.
+
+Checks do not require a confirmation body and run with the existing
+`UU_JOB_SOURCE=initial-inventory` and `UU_NONINTERACTIVE=true` context. This
+reuses the lifecycle-safe check path: stopped guests are not started and
+paused VMs are not resumed.
+
+Updates and reboots require exactly this JSON body:
+
+```json
+{"confirm": true}
+```
+
+The API update paths use the normal update safety checks and never add the
+`--without-verified-backup` override. The current update engine reports
+reboot requirements separately; reboot is an explicit action with its own
+`reboot` permission. API-2 does not expose global update-all or self-update.
+
+| Endpoint | Permission | Purpose |
+| --- | --- | --- |
+| `POST /api/v1/check/{id}` | `check` | Check one known managed guest target |
+| `POST /api/v1/check-node/{node}` | `check` | Check one known Proxmox node |
+| `POST /api/v1/check-all` | `check` | Start the existing global check |
+| `POST /api/v1/update/{id}` | `update` | Start one normal, safety-gated update |
+| `POST /api/v1/update-node/{node}` | `update` | Update the node host only |
+| `POST /api/v1/reboot/{id}` | `reboot` | Use the existing reboot safety path |
+| `POST /api/v1/jobs/{id}/cancel` | `cancel` | Request cancellation of one running UU job |
+
+Action responses use `202 Accepted` and have the following shape:
+
+```json
+{
+  "api_version": 1,
+  "schema_version": 1,
+  "job": "ultimate-updater-check-986-20261017-120000-1234",
+  "target": "986",
+  "type": "check",
+  "state": "running"
+}
+```
+
+`409 Conflict` is returned for an existing job conflict, unmet backup safety
+requirements, or a reboot that is not currently required. `422` is used for
+missing confirmation or rejected action parameters, `404` for unknown targets
+or jobs, and `503` when the local API data or action infrastructure is
+temporarily unavailable. HTTPS is required before authentication or any
+action side effect; bearer tokens never authorize Web UI or CSRF-protected
+administrative endpoints.
+
+Recommended polling remains 2–5 minutes for status and 2–10 seconds only
+while an explicitly started job is active. API-2 adds no background polling.
