@@ -121,6 +121,27 @@ if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
   . "$CLUSTER_TARGET_FILE"
 fi
 
+API_CHECK_TARGET_IDENTITY_GUARD() {
+  [[ "${UU_API_ACTION:-}" == check ]] || return 0
+  local target="$1" kind="$2"
+  [[ -n "${UU_API_EXPECTED_TARGET_ID:-}" &&
+    ( "${UU_API_EXPECTED_TARGET_ID}" == "$target" || "${UU_API_EXPECTED_TARGET_ID}" == "guest:$target" ) ]] || return 46
+  case "${UU_API_EXPECTED_TARGET_KIND:-}" in
+    lxc|container) [[ "$kind" == lxc ]] || return 46 ;;
+    vm) [[ "$kind" == vm ]] || return 46 ;;
+    *) return 46 ;;
+  esac
+  declare -f cluster_target_api_identity_matches >/dev/null 2>&1 || return 46
+  cluster_target_api_identity_matches "$target" "$kind" \
+    "${UU_API_EXPECTED_TARGET_NODE:-}" "${UU_API_EXPECTED_TARGET_LOCAL:-remote}"
+}
+
+API_CHECK_NODE_IDENTITY_GUARD() {
+  [[ "${UU_API_ACTION:-}" == check ]] || return 0
+  [[ "${UU_API_EXPECTED_TARGET_KIND:-}" == host &&
+    "${UU_API_EXPECTED_TARGET_NODE:-}" == "$(hostname -s 2>/dev/null || hostname)" ]] || return 46
+}
+
 INTERNAL_SSH_FILE="${INTERNAL_SSH_FILE:-$LOCAL_FILES/internal-ssh.sh}"
 if [[ -f "$INTERNAL_SSH_FILE" ]]; then
   # shellcheck disable=SC1090
@@ -335,7 +356,13 @@ ARGUMENTS () {
         COMMAND=true
         STATUS_MODEL_PARTIAL=true
         OUTPUT_TO_FILE
-        CHECK_HOST_ITSELF || CHECK_FAILURE=1
+        if ! declare -f API_CHECK_NODE_IDENTITY_GUARD >/dev/null 2>&1 ||
+          API_CHECK_NODE_IDENTITY_GUARD; then
+          CHECK_HOST_ITSELF || CHECK_FAILURE=1
+        else
+          printf 'API_TARGET_IDENTITY_MISMATCH: node identity changed before check execution.\n' >&2
+          CHECK_FAILURE=1
+        fi
         ;;
       ccontainer)
         COMMAND=true
@@ -1384,6 +1411,13 @@ CHECK_CONTAINER () {
 CHECK_SINGLE_CONTAINER () {
   local target="$1" status check_rc=0 lifecycle_failure=0 lifecycle_message
   CONTAINER="$target"
+  if declare -f API_CHECK_TARGET_IDENTITY_GUARD >/dev/null 2>&1 &&
+    ! API_CHECK_TARGET_IDENTITY_GUARD "$target" lxc; then
+    STATUS_MODEL_RECORD "$target" lxc pct false "" "" "null" "null" \
+      error API_TARGET_IDENTITY_MISMATCH "The current LXC identity could not be verified before the API check" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" ""
+    return 46
+  fi
   if ! status=$(timeout 10 pct status "$target" 2>/dev/null); then
     CHECK_CONTAINER_FAILURE "Could not read status for LXC $target"
     return 1
@@ -1506,6 +1540,13 @@ CHECK_VM_LIFECYCLE () {
   if [[ ! "$target" =~ ^[0-9]+$ ]]; then
     printf 'Cannot check VM: missing or invalid VMID\n' >&2
     return 2
+  fi
+  if declare -f API_CHECK_TARGET_IDENTITY_GUARD >/dev/null 2>&1 &&
+    ! API_CHECK_TARGET_IDENTITY_GUARD "$target" vm; then
+    STATUS_MODEL_RECORD "$target" vm qga false "" "" "null" "null" \
+      error API_TARGET_IDENTITY_MISMATCH "The current VM identity could not be verified before the API check" \
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" ""
+    return 46
   fi
   SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "${VM_START_DELAY:-45}")
   SSH_START_DELAY_TIME=${SSH_START_DELAY_TIME:-45}

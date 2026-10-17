@@ -74,6 +74,17 @@ load_target() {
       return 4
     }
   fi
+  if [[ "${UU_API_ACTION:-}" == check || "${UU_API_ACTION:-}" == update ]]; then
+    [[ "${UU_API_EXPECTED_TARGET_KIND:-}" == external &&
+      "${UU_API_EXPECTED_TARGET_ID:-}" == "$target" &&
+      "${UU_API_EXPECTED_EXTERNAL_HOST:-}" == "$EXTERNAL_HOST" &&
+      "${UU_API_EXPECTED_EXTERNAL_PORT:-22}" == "$EXTERNAL_PORT" &&
+      "${UU_API_EXPECTED_EXTERNAL_USER:-root}" == "$EXTERNAL_USER" &&
+      "${UU_API_EXPECTED_EXTERNAL_IDENTITY_FILE:-}" == "$EXTERNAL_IDENTITY_FILE" ]] || {
+      printf 'API_TARGET_IDENTITY_MISMATCH: external target configuration changed before execution.\n' >&2
+      return 46
+    }
+  fi
 }
 
 remote_check() {

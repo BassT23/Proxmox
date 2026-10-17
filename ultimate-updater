@@ -546,6 +546,62 @@ resolve_target_kind() {
   return 1
 }
 
+api_external_identity_matches() {
+  local target="$1" inventory_file="$LOCAL_FILES/targets.conf"
+  [[ -f "$INVENTORY_SCRIPT" ]] || return 1
+  # shellcheck disable=SC1090
+  source "$INVENTORY_SCRIPT"
+  TARGET_INVENTORY_VALIDATE "$inventory_file" >/dev/null 2>&1 || return 1
+  [[ "${TARGET_TRANSPORT[$target]:-}" == ssh ]] || return 1
+  [[ "${TARGET_HOST[$target]:-}" == "${UU_API_EXPECTED_EXTERNAL_HOST:-}" ]] || return 1
+  [[ "${TARGET_PORT[$target]:-22}" == "${UU_API_EXPECTED_EXTERNAL_PORT:-22}" ]] || return 1
+  [[ "${TARGET_USER[$target]:-root}" == "${UU_API_EXPECTED_EXTERNAL_USER:-root}" ]] || return 1
+  [[ "${TARGET_IDENTITY_FILE[$target]:-}" == "${UU_API_EXPECTED_EXTERNAL_IDENTITY_FILE:-}" ]]
+}
+
+api_verify_resolved_identity() {
+  local target="$1" kind="$2" expected_id expected_kind
+  [[ "${UU_API_ACTION:-}" == check || "${UU_API_ACTION:-}" == update ]] || return 0
+  expected_id="${UU_API_EXPECTED_TARGET_ID:-}"
+  [[ -n "$expected_id" ]] || {
+    printf 'API_TARGET_IDENTITY_MISMATCH: expected target identity is missing.\n' >&2
+    return 46
+  }
+  [[ "$expected_id" == "$target" || "$expected_id" == "guest:$target" ]] || {
+    printf 'API_TARGET_IDENTITY_MISMATCH: target ID changed before execution.\n' >&2
+    return 46
+  }
+  expected_kind="${UU_API_EXPECTED_TARGET_KIND:-}"
+  case "$kind" in
+    container) [[ "$expected_kind" == lxc || "$expected_kind" == container ]] || return 46 ;;
+    vm) [[ "$expected_kind" == vm ]] || return 46 ;;
+    external)
+      [[ "$expected_kind" == external ]] || return 46
+      api_external_identity_matches "$target" || {
+        printf 'API_TARGET_IDENTITY_MISMATCH: external target configuration changed before execution.\n' >&2
+        return 46
+      }
+      # External targets are executed by the local external helper.  The
+      # Proxmox-owner local/remote flag is not an identity property for them.
+      return 0
+      ;;
+    *) return 46 ;;
+  esac
+  [[ "${UU_API_EXPECTED_TARGET_NODE:-}" == "${RESOLVED_TARGET_NODE:-}" ]] || return 46
+  [[ "${UU_API_EXPECTED_TARGET_LOCAL:-}" == "${RESOLVED_TARGET_LOCAL:-}" ]] || return 46
+  return 0
+}
+
+api_verify_resolved_node_identity() {
+  local node="$1"
+  [[ "${UU_API_ACTION:-}" == check || "${UU_API_ACTION:-}" == update ]] || return 0
+  [[ "${UU_API_EXPECTED_TARGET_KIND:-}" == host ]] || return 46
+  [[ "${UU_API_EXPECTED_TARGET_ID:-}" == "host:$node" ]] || return 46
+  [[ "${UU_API_EXPECTED_TARGET_NODE:-}" == "$node" ]] || return 46
+  [[ "${UU_API_EXPECTED_TARGET_LOCAL:-}" == "${RESOLVED_NODE_LOCAL:-}" ]] || return 46
+  return 0
+}
+
 configured_ssh_port() {
   local config="$LOCAL_FILES/update.conf" port
   port=$(awk -F'"' '/^SSH_PORT=/ {print $2; exit}' "$config" 2>/dev/null || true)
@@ -615,6 +671,8 @@ PY
 remote_node_check_via_cluster_transport() {
   local node="$1" host="${REMOTE_NODE_HOST:-$2}" port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
   local user="${REMOTE_NODE_USER:-root}" local_file remote_check_dir remote_command
+  local remote_api_action="${UU_API_ACTION:-}" remote_expected_kind="${UU_API_EXPECTED_TARGET_KIND:-}"
+  local remote_expected_node="${UU_API_EXPECTED_TARGET_NODE:-}"
   local remote_config remote_tag_filter remote_cluster_target remote_runtime remote_status_model
   local remote_status_file tag_filter_script target_runtime_file target_selection_script
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
@@ -690,10 +748,10 @@ remote_node_check_via_cluster_transport() {
         return 1
       }
   fi
-  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_TARGET_SELECTION_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true bash -s -- node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; exit 0' \
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_TARGET_SELECTION_FILE=%q UU_API_ACTION=%q UU_API_EXPECTED_TARGET_KIND=%q UU_API_EXPECTED_TARGET_NODE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true bash -s -- node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; exit 0' \
     "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
     "$remote_runtime" "$node" "$remote_status_model" "$remote_status_file" "$remote_status_file.records" \
-    "$remote_check_dir/target-selection.json" "$remote_status_model" "$node" "$remote_status_file" \
+    "$remote_check_dir/target-selection.json" "$remote_api_action" "$remote_expected_kind" "$remote_expected_node" "$remote_status_model" "$node" "$remote_status_file" \
     "$remote_status_file.records" "$remote_status_model" "$remote_status_file" "$node" \
     "$remote_check_dir" "$remote_status_file" "$remote_check_dir"
   if ! timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
@@ -735,6 +793,12 @@ remote_node_check() {
 run_node_check() {
   local node="$1" result
   cluster_node_resolve "$node" || { printf 'Unknown Proxmox node: %s\n' "$node" >&2; return 3; }
+  if [[ "${UU_API_ACTION:-}" == check ]] &&
+    { ! declare -f api_verify_resolved_node_identity >/dev/null 2>&1 ||
+      ! api_verify_resolved_node_identity "$RESOLVED_NODE"; }; then
+    printf 'API_TARGET_IDENTITY_MISMATCH: node identity changed before check execution.\n' >&2
+    return 46
+  fi
   if [[ "$RESOLVED_NODE_LOCAL" == true ]]; then
     require_file "$CHECK_SCRIPT" "check script" || return 1
     UU_DEFER_NOTIFICATION=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true "$CHECK_SCRIPT" node-host
@@ -835,6 +899,18 @@ remote_update_job() {
   fi
   if [[ "${UU_API_ACTION:-}" == update ]]; then
     context_env='UU_API_ACTION=update UU_NONINTERACTIVE=true UU_API_REBOOT_ALLOWED=false '
+    if [[ -n "${UU_API_EXPECTED_TARGET_ID:-}" ]]; then
+      local expected_identity_env
+      printf -v expected_identity_env 'UU_API_EXPECTED_TARGET_ID=%q UU_API_EXPECTED_TARGET_KIND=%q UU_API_EXPECTED_TARGET_NODE=%q UU_API_EXPECTED_TARGET_LOCAL=remote' \
+        "$UU_API_EXPECTED_TARGET_ID" "$UU_API_EXPECTED_TARGET_KIND" "$UU_API_EXPECTED_TARGET_NODE"
+      context_env+="$expected_identity_env "
+      if [[ "${UU_API_EXPECTED_TARGET_KIND:-}" == external ]]; then
+        printf -v expected_identity_env 'UU_API_EXPECTED_EXTERNAL_HOST=%q UU_API_EXPECTED_EXTERNAL_PORT=%q UU_API_EXPECTED_EXTERNAL_USER=%q UU_API_EXPECTED_EXTERNAL_IDENTITY_FILE=%q' \
+          "${UU_API_EXPECTED_EXTERNAL_HOST:-}" "${UU_API_EXPECTED_EXTERNAL_PORT:-22}" \
+          "${UU_API_EXPECTED_EXTERNAL_USER:-root}" "${UU_API_EXPECTED_EXTERNAL_IDENTITY_FILE:-}"
+        context_env+="$expected_identity_env "
+      fi
+    fi
   elif [[ "${UU_NONINTERACTIVE:-false}" == true ]]; then
     context_env='UU_NONINTERACTIVE=true '
   fi
@@ -863,6 +939,12 @@ remote_node_update() {
 run_node_update() {
   local node="$1"
   cluster_node_resolve "$node" || { printf 'Unknown Proxmox node: %s\n' "$node" >&2; return 3; }
+  if [[ "${UU_API_ACTION:-}" == update ]] &&
+    { ! declare -f api_verify_resolved_node_identity >/dev/null 2>&1 ||
+      ! api_verify_resolved_node_identity "$RESOLVED_NODE"; }; then
+    printf 'API_TARGET_IDENTITY_MISMATCH: node identity changed before update execution.\n' >&2
+    return 46
+  fi
   require_file "$JOB_RUNNER" "job runner" || return 1
   if [[ "$RESOLVED_NODE_LOCAL" == true ]]; then
     require_file "$UPDATE_SCRIPT" "update script" || return 1
@@ -912,6 +994,8 @@ remote_target_check() {
   local remote_tag_filter remote_cluster_target remote_runtime remote_qga remote_windows_update remote_status_model remote_internal_ssh remote_internal_conf remote_status_file
   local tag_filter_script target_runtime_file target_selection_script qga_helper windows_update_file internal_ssh_file internal_ssh_conf legacy_profile local_file transport_rc
   local remote_job_source="${UU_JOB_SOURCE:-}" remote_noninteractive="${UU_NONINTERACTIVE:-false}" remote_scheduled_check="${UU_SCHEDULED_CHECK:-false}"
+  local remote_api_action="${UU_API_ACTION:-}" remote_expected_id="${UU_API_EXPECTED_TARGET_ID:-}"
+  local remote_expected_kind="${UU_API_EXPECTED_TARGET_KIND:-}" remote_expected_node="${UU_API_EXPECTED_TARGET_NODE:-}"
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]:-}")
   mode=$([[ "$kind" == container ]] && printf ccontainer || printf cvm)
   if ! resolve_remote_node_transport "$node" "$host"; then
@@ -1026,10 +1110,10 @@ remote_target_check() {
       }
   fi
   # shellcheck disable=SC2016
-  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q PACKAGE_COUNT_SCRIPT=%q QGA_EXEC_SCRIPT=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_JOB_SOURCE=%q UU_NONINTERACTIVE=%q UU_SCHEDULED_CHECK=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_SINGLE_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true bash -s -- %q %q >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote guest status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; if [[ "$finish_rc" -ne 0 ]]; then exit "$finish_rc"; fi; exit "$remote_rc"' \
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q PACKAGE_COUNT_SCRIPT=%q QGA_EXEC_SCRIPT=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_JOB_SOURCE=%q UU_NONINTERACTIVE=%q UU_SCHEDULED_CHECK=%q UU_API_ACTION=%q UU_API_EXPECTED_TARGET_ID=%q UU_API_EXPECTED_TARGET_KIND=%q UU_API_EXPECTED_TARGET_NODE=%q UU_API_EXPECTED_TARGET_LOCAL=remote UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_SINGLE_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true bash -s -- %q %q >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote guest status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; if [[ "$finish_rc" -ne 0 ]]; then exit "$finish_rc"; fi; exit "$remote_rc"' \
     "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
     "$remote_runtime" "$remote_package_count" "$remote_qga" "$remote_internal_ssh" "$remote_internal_conf" "$node" "$remote_status_model" "$remote_status_file" \
-    "$remote_status_file.records" "$remote_job_source" "$remote_noninteractive" "$remote_scheduled_check" "$mode" "$target" "$remote_status_file.records" \
+    "$remote_status_file.records" "$remote_job_source" "$remote_noninteractive" "$remote_scheduled_check" "$remote_api_action" "$remote_expected_id" "$remote_expected_kind" "$remote_expected_node" "$mode" "$target" "$remote_status_file.records" \
     "$node" "$remote_status_file" "$remote_status_file.records" "$remote_status_model" \
     "$remote_status_file" "$target" "$remote_check_dir" "$remote_status_file" "$remote_check_dir"
   timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
@@ -1359,6 +1443,10 @@ run_check() {
       *) return "$resolve_result" ;;
     esac
   fi
+  api_verify_resolved_identity "$target" "$kind" || {
+    printf 'API_TARGET_IDENTITY_MISMATCH: target identity changed before check execution.\n' >&2
+    return 46
+  }
   if [[ "$RESOLVED_TARGET_LOCAL" == false ]]; then
     remote_target_check "$target" "$kind" "$RESOLVED_TARGET_NODE" "$RESOLVED_TARGET_HOST"
     check_result=$?
@@ -1390,6 +1478,10 @@ run_update() {
       *) return "$resolve_result" ;;
     esac
   fi
+  api_verify_resolved_identity "$target" "$kind" || {
+    printf 'API_TARGET_IDENTITY_MISMATCH: target identity changed before update execution.\n' >&2
+    return 46
+  }
   if [[ "$kind" == external ]]; then
     external_backup_gate "$target" "$override" || return $?
   fi

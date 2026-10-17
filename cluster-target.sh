@@ -100,7 +100,10 @@ for item in resources if isinstance(resources, list) else []:
 
 if len(matches) == 0:
     raise SystemExit(1)
-if len({match for match in matches}) != 1:
+# Every matching Proxmox resource is an identity claim.  Even identical
+# rows are ambiguous: accepting one would make a later API action depend on
+# arbitrary inventory ordering.
+if len(matches) != 1:
     raise SystemExit(4)
 kind, node, name = matches[0]
 if not node:
@@ -121,6 +124,21 @@ print("\t".join((target, kind, node, name)))
   fi
   export CLUSTER_TARGET_ID CLUSTER_TARGET_KIND CLUSTER_TARGET_NODE \
     CLUSTER_TARGET_NAME CLUSTER_TARGET_HOST CLUSTER_TARGET_LOCAL
+}
+
+cluster_target_api_identity_matches() {
+  local target="$1" expected_kind="$2" expected_node="$3" expected_local="$4"
+  cluster_target_resolve "$target" || return $?
+  case "$expected_kind" in
+    lxc|container) [[ "$CLUSTER_TARGET_KIND" == container ]] || return 46 ;;
+    vm) [[ "$CLUSTER_TARGET_KIND" == vm ]] || return 46 ;;
+    *) return 46 ;;
+  esac
+  [[ "$CLUSTER_TARGET_NODE" == "$expected_node" ]] || return 46
+  # A remote owner sees the same guest as local.  The owner node remains the
+  # stable identity; callers use "remote" when the controller's perspective
+  # must not be compared again on the executing node.
+  [[ "$expected_local" == remote || "$CLUSTER_TARGET_LOCAL" == "$expected_local" ]] || return 46
 }
 
 cluster_target_guest_name() {

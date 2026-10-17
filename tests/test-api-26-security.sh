@@ -22,11 +22,17 @@ awk '/Starting update jobs requires root/ { print "  :"; next } { print }' \
 chmod 750 "$WORK_DIR/job-runner.sh"
 SYSTEMD_ARGS_FILE="$WORK_DIR/api.args" UU_JOB_STATE_DIR="$WORK_DIR/jobs" \
   UU_API_ACTION=update UU_NONINTERACTIVE=true UU_API_REBOOT_ALLOWED=false \
+  UU_API_EXPECTED_TARGET_ID=986 UU_API_EXPECTED_TARGET_KIND=vm \
+  UU_API_EXPECTED_TARGET_NODE=test-node UU_API_EXPECTED_TARGET_LOCAL=true \
   PATH="$WORK_DIR/bin:$PATH" bash "$WORK_DIR/job-runner.sh" start \
   "$WORK_DIR/update.sh" 986 >/dev/null
 grep -Fqx -- '--setenv=UU_API_ACTION=update' "$WORK_DIR/api.args"
 grep -Fqx -- '--setenv=UU_NONINTERACTIVE=true' "$WORK_DIR/api.args"
 grep -Fqx -- '--setenv=UU_API_REBOOT_ALLOWED=false' "$WORK_DIR/api.args"
+grep -Fqx -- '--setenv=UU_API_EXPECTED_TARGET_ID=986' "$WORK_DIR/api.args"
+grep -Fqx -- '--setenv=UU_API_EXPECTED_TARGET_KIND=vm' "$WORK_DIR/api.args"
+grep -Fqx -- '--setenv=UU_API_EXPECTED_TARGET_NODE=test-node' "$WORK_DIR/api.args"
+grep -Fqx -- '--setenv=UU_API_EXPECTED_TARGET_LOCAL=true' "$WORK_DIR/api.args"
 
 # Exercise the real remote command construction with SSH/SCP mocked.  The
 # final command is captured and never sent to a network endpoint.
@@ -49,6 +55,8 @@ exit 0
 EOF
 chmod 750 "$WORK_DIR/bin/ssh" "$WORK_DIR/bin/scp" "$WORK_DIR/remote-job-runner"
 REMOTE_COMMANDS="$WORK_DIR/remote.commands" UU_API_ACTION=update UU_NONINTERACTIVE=true \
+  UU_API_EXPECTED_TARGET_ID=986 UU_API_EXPECTED_TARGET_KIND=vm \
+  UU_API_EXPECTED_TARGET_NODE=test-node UU_API_EXPECTED_TARGET_LOCAL=true \
   PATH="$WORK_DIR/bin:$PATH" bash -c '
     source "$1/ultimate-updater" help >/dev/null 2>&1
     LOCAL_FILES="$2/local" JOB_RUNNER="$2/remote-job-runner" UPDATE_SCRIPT="$2/update.sh"
@@ -58,6 +66,10 @@ REMOTE_COMMANDS="$WORK_DIR/remote.commands" UU_API_ACTION=update UU_NONINTERACTI
 grep -Fq 'UU_API_ACTION=update' "$WORK_DIR/remote.commands"
 grep -Fq 'UU_NONINTERACTIVE=true' "$WORK_DIR/remote.commands"
 grep -Fq 'UU_API_REBOOT_ALLOWED=false' "$WORK_DIR/remote.commands"
+grep -Fq 'UU_API_EXPECTED_TARGET_ID=986' "$WORK_DIR/remote.commands"
+grep -Fq 'UU_API_EXPECTED_TARGET_KIND=vm' "$WORK_DIR/remote.commands"
+grep -Fq 'UU_API_EXPECTED_TARGET_NODE=test-node' "$WORK_DIR/remote.commands"
+grep -Fq 'UU_API_EXPECTED_TARGET_LOCAL=remote' "$WORK_DIR/remote.commands"
 
 # Ordinary noninteractive jobs retain their existing context and do not gain
 # API-only controls.

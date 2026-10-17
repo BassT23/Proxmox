@@ -2925,7 +2925,18 @@ def canonical_inventory(payload, inventory, proxmox_resources=None, backup_state
                 "check_status": "offline" if node_status == "offline" else "unknown"}
         targets.append(merge(base, status))
 
-    active_external_ids = {item["id"] for item in inventory if item.get("transport") == "ssh"}
+    # A numeric external name must not shadow a current Proxmox resource in
+    # the UI projection.  API actions perform the stricter identity check
+    # below, but keeping the projection unique prevents an ambiguous row from
+    # being presented as two manageable targets.
+    proxmox_ids = {
+        str(item.get("vmid", "")) for item in proxmox_resources
+        if isinstance(item, dict) and item.get("type") in {"lxc", "qemu"} and item.get("vmid") is not None
+    }
+    active_external_ids = {
+        item["id"] for item in inventory
+        if item.get("transport") == "ssh" and str(item["id"]) not in proxmox_ids
+    }
     for target_id in active_external_ids:
         status = status_by_id.get(target_id)
         inventory_item = next(item for item in inventory if item["id"] == target_id)
@@ -4296,6 +4307,188 @@ class StatusHandler(BaseHTTPRequestHandler):
                          and item.get("type") in {"vm", "lxc"}), None)
         return None
 
+    def _api_current_inventory(self):
+        """Read the current Proxmox inventory for an API identity decision.
+
+        The persisted status file is deliberately not used as a source of
+        current target identity.  Tests may provide a local provider on the
+        HTTP server; production uses the read-only pvesh snapshot helper.
+        """
+        provider = getattr(self.server, "proxmox_inventory_provider", None)
+        resources = provider() if callable(provider) else proxmox_inventory_snapshot()
+        if not isinstance(resources, list):
+            raise RuntimeError("current Proxmox inventory is unavailable")
+        return resources
+
+    @staticmethod
+    def _api_status_records_for_target(payload, target):
+        canonical = target.removeprefix("guest:")
+        return [
+            item for item in payload.get("targets", [])
+            if isinstance(item, dict)
+            and str(item.get("id", "")).removeprefix("guest:") == canonical
+        ]
+
+    @classmethod
+    def _api_status_record_for_target(cls, payload, target):
+        matches = cls._api_status_records_for_target(payload, target)
+        return matches[0] if len(matches) == 1 else None
+
+    @staticmethod
+    def _api_identity_error(status, code, message):
+        return {"status": status, "code": code, "message": message}
+
+    def _api_identity_failure(self, result):
+        self.send_json(error_payload(result["code"], result["message"]), HTTPStatus(result["status"]))
+
+    def _api_validate_target_identity(self, target):
+        """Return ``(record, identity)`` only for one current managed target.
+
+        Proxmox resources are authoritative for Proxmox guests and nodes.
+        targets.conf is authoritative for external targets.  The status file
+        is required as the managed-scope record, but never selects the target
+        kind or owner on its own.
+        """
+        if target.startswith("host:"):
+            # Preserve the dedicated node-action response for a host passed
+            # to a guest endpoint, while applying current-node identity
+            # validation before that response is returned.
+            return self._api_validate_node_identity(target)
+        canonical = target.removeprefix("guest:")
+        try:
+            payload = self._api_v1_status_file(self.server.status_file)
+            resources = self._api_current_inventory()
+            external = self.inventory_data()
+        except FileNotFoundError:
+            return None, None, self._api_identity_error(404, "TARGET_NOT_FOUND", "That target is not part of the managed inventory.")
+        except (OSError, UnicodeError, ValueError, RuntimeError, json.JSONDecodeError, subprocess.TimeoutExpired):
+            return None, None, self._api_identity_error(503, "API_TARGET_INVENTORY_UNAVAILABLE", "Current target inventory is unavailable.")
+
+        status_records = self._api_status_records_for_target(payload, target)
+        if len(status_records) > 1:
+            return None, None, self._api_identity_error(
+                409, "API_TARGET_IDENTITY_AMBIGUOUS",
+                "The managed status identity is ambiguous.",
+            )
+        record = status_records[0] if status_records else None
+        if record is None:
+            # Even when Proxmox currently reports the guest (for example VM
+            # 986 after a stale status file), API actions remain fail-closed:
+            # a refresh must first establish managed status for the target.
+            return None, None, self._api_identity_error(404, "TARGET_NOT_FOUND", "That target is not part of the managed inventory.")
+
+        proxmox_matches = []
+        if canonical.isdigit():
+            for item in resources:
+                if not isinstance(item, dict) or item.get("type") not in {"lxc", "qemu"}:
+                    continue
+                raw_id = item.get("vmid", item.get("id"))
+                if isinstance(raw_id, str) and "/" in raw_id:
+                    raw_id = raw_id.rsplit("/", 1)[-1]
+                if str(raw_id) == canonical:
+                    proxmox_matches.append(item)
+
+        if len(proxmox_matches) > 1:
+            return None, None, self._api_identity_error(
+                409, "API_TARGET_IDENTITY_AMBIGUOUS",
+                "The target ID is ambiguous in the current Proxmox inventory.",
+            )
+        if len(proxmox_matches) == 1:
+            current = proxmox_matches[0]
+            kind = "lxc" if current.get("type") == "lxc" else "vm"
+            node = str(current.get("node") or "")
+            status_kind = str(record.get("type") or "").lower()
+            status_node = str(record.get("node") or "")
+            if not node or status_kind != kind or not status_node or status_node.casefold() != node.casefold():
+                return None, None, self._api_identity_error(
+                    409, "API_TARGET_IDENTITY_MISMATCH",
+                    "The managed status identity does not match the current Proxmox target.",
+                )
+            local_node = str(getattr(self.server, "api_local_node", socket.gethostname().split(".", 1)[0]))
+            identity = {
+                "id": canonical,
+                "kind": kind,
+                "node": node,
+                "local": node.casefold() == local_node.casefold(),
+            }
+            return record, identity, None
+
+        external_matches = [item for item in external if str(item.get("id")) == canonical]
+        if len(external_matches) > 1:
+            return None, None, self._api_identity_error(
+                409, "API_TARGET_IDENTITY_AMBIGUOUS",
+                "The external target identity is ambiguous.",
+            )
+        if len(external_matches) == 1:
+            current = external_matches[0]
+            status_kind = str(record.get("type") or "").lower()
+            status_node = record.get("node")
+            if status_kind != "external" or status_node not in (None, ""):
+                return None, None, self._api_identity_error(
+                    409, "API_TARGET_IDENTITY_MISMATCH",
+                    "The managed status identity does not match the current external target.",
+                )
+            return record, {
+                "id": canonical,
+                "kind": "external",
+                "node": "",
+                "local": False,
+                "host": str(current.get("host") or ""),
+                "port": str(current.get("port") or "22"),
+                "user": str(current.get("user") or "root"),
+                "identity_file": str(current.get("identity_file") or ""),
+            }, None
+
+        return None, None, self._api_identity_error(404, "TARGET_NOT_FOUND", "That target does not exist in the current managed inventory.")
+
+    def _api_validate_node_identity(self, node):
+        """Return the canonical current node and its managed host record."""
+        requested = node.removeprefix("host:")
+        if requested == "local-host":
+            requested = socket.gethostname().split(".", 1)[0]
+        try:
+            payload = self._api_v1_status_file(self.server.status_file)
+            resources = self._api_current_inventory()
+        except (FileNotFoundError, OSError, UnicodeError, ValueError, RuntimeError, json.JSONDecodeError, subprocess.TimeoutExpired):
+            return None, None, self._api_identity_error(503, "API_TARGET_INVENTORY_UNAVAILABLE", "Current target inventory is unavailable.")
+        nodes = [item for item in resources if isinstance(item, dict) and item.get("type") == "node"
+                 and str(item.get("node") or "").casefold() == requested.casefold()]
+        if len(nodes) > 1:
+            return None, None, self._api_identity_error(409, "API_TARGET_IDENTITY_AMBIGUOUS", "The Proxmox node identity is ambiguous.")
+        if not nodes:
+            return None, None, self._api_identity_error(404, "NODE_NOT_FOUND", "The requested Proxmox node is not known.")
+        canonical = str(nodes[0].get("node") or "")
+        records = [item for item in payload.get("targets", []) if isinstance(item, dict)
+                   and str(item.get("id", "")).removeprefix("host:").casefold() == canonical.casefold()]
+        if len(records) != 1:
+            return None, None, self._api_identity_error(404, "NODE_NOT_FOUND", "The requested Proxmox node is not part of the managed inventory.")
+        record = records[0]
+        if str(record.get("type") or "").lower() != "host" or str(record.get("node") or "").casefold() != canonical.casefold():
+            return None, None, self._api_identity_error(409, "API_TARGET_IDENTITY_MISMATCH", "The managed status identity does not match the current Proxmox node.")
+        local_node = str(getattr(self.server, "api_local_node", socket.gethostname().split(".", 1)[0]))
+        return record, {"id": f"host:{canonical}", "kind": "host", "node": canonical,
+                        "local": canonical.casefold() == local_node.casefold()}, None
+
+    @staticmethod
+    def _api_identity_env(identity, action):
+        env = {
+            "UU_API_ACTION": action,
+            "UU_API_EXPECTED_TARGET_ID": identity["id"],
+            "UU_API_EXPECTED_TARGET_KIND": identity["kind"],
+            "UU_API_EXPECTED_TARGET_NODE": identity["node"],
+            "UU_API_EXPECTED_TARGET_LOCAL": "true" if identity["local"] else "false",
+        }
+        if action == "check":
+            env.update({"UU_JOB_SOURCE": "initial-inventory", "UU_NONINTERACTIVE": "true"})
+        elif action == "update":
+            env.update({"UU_NONINTERACTIVE": "true", "UU_API_REBOOT_ALLOWED": "false"})
+        else:
+            env.update({"UU_NONINTERACTIVE": "true", "UU_API_REBOOT_ALLOWED": "true"})
+        for key in ("host", "port", "user", "identity_file"):
+            if key in identity:
+                env[f"UU_API_EXPECTED_EXTERNAL_{key.upper()}"] = identity[key]
+        return env
+
     def api_update_script_preflight(self, record):
         """Reject locally provable API script paths before job creation.
 
@@ -4406,95 +4599,95 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self._api_start_job(
                     [str(self.server.job_runner), "start-check", "all-systems", str(self.server.cli), "all"],
                     "all-systems", "check",
-                    {"UU_JOB_SOURCE": "initial-inventory", "UU_NONINTERACTIVE": "true"},
+                    {"UU_API_ACTION": "check", "UU_JOB_SOURCE": "initial-inventory", "UU_NONINTERACTIVE": "true"},
                 )
             elif route == "check":
                 target = parts[3]
                 if not API_TARGET_ID_RE.fullmatch(target):
                     self.send_json(error_payload("INVALID_TARGET", "The target identifier is invalid."), HTTPStatus.BAD_REQUEST)
                     return
-                record = self.api_target_record(target)
-                if not record:
-                    self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not part of the managed inventory."), HTTPStatus.NOT_FOUND)
+                record, identity, identity_error = self._api_validate_target_identity(target)
+                if identity_error:
+                    self._api_identity_failure(identity_error)
                     return
-                if record.get("type") == "host":
+                if identity["kind"] == "host":
                     self.send_json(error_payload("USE_NODE_ACTION", "Use the node check endpoint for Proxmox hosts."), HTTPStatus.UNPROCESSABLE_ENTITY)
                     return
-                target = str(record.get("id"))
+                target = identity["id"]
                 self._api_start_job(
                     [str(self.server.job_runner), "start-check", target, str(self.server.cli), "target"],
                     target, "check",
-                    {"UU_JOB_SOURCE": "initial-inventory", "UU_NONINTERACTIVE": "true"},
+                    self._api_identity_env(identity, "check"),
                 )
             elif route == "check-node":
                 node = parts[3]
                 if not HOST_RE.fullmatch(node):
                     self.send_json(error_payload("INVALID_NODE", "The node identifier is invalid."), HTTPStatus.BAD_REQUEST)
                     return
-                if not self.known_node(node):
-                    self.send_json(error_payload("NODE_NOT_FOUND", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
+                record, identity, identity_error = self._api_validate_node_identity(node)
+                if identity_error:
+                    self._api_identity_failure(identity_error)
                     return
                 self._api_start_job(
-                    [str(self.server.job_runner), "start-check", self.node_action_target(node), str(self.server.cli), "node"],
+                    [str(self.server.job_runner), "start-check", self.node_action_target(identity["node"]), str(self.server.cli), "node"],
                     node, "check",
-                    {"UU_JOB_SOURCE": "initial-inventory", "UU_NONINTERACTIVE": "true"},
+                    self._api_identity_env(identity, "check"),
                 )
             elif route == "update":
                 target = parts[3]
                 if not API_TARGET_ID_RE.fullmatch(target):
                     self.send_json(error_payload("INVALID_TARGET", "The target identifier is invalid."), HTTPStatus.BAD_REQUEST)
                     return
-                record = self.api_target_record(target)
-                if not record:
-                    self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not part of the managed inventory."), HTTPStatus.NOT_FOUND)
+                record, identity, identity_error = self._api_validate_target_identity(target)
+                if identity_error:
+                    self._api_identity_failure(identity_error)
                     return
-                if record.get("type") == "host":
+                if identity["kind"] == "host":
                     self.send_json(error_payload("USE_NODE_ACTION", "Use the node update endpoint for Proxmox hosts."), HTTPStatus.UNPROCESSABLE_ENTITY)
                     return
                 unsafe_path = self.api_update_script_preflight(record)
                 if unsafe_path:
                     self.send_json(error_payload("API_UNSAFE_SCRIPT_PATH", unsafe_path), HTTPStatus.CONFLICT)
                     return
-                target = str(record.get("id"))
+                target = identity["id"]
                 # Deliberately omit --without-verified-backup. API actions
                 # inherit the normal update safety gates.
                 self._api_start_job(
                     [str(self.server.cli), "update", target], target, "update",
-                    {
-                        "UU_API_ACTION": "update",
-                        "UU_NONINTERACTIVE": "true",
-                        "UU_API_REBOOT_ALLOWED": "false",
-                    },
+                    self._api_identity_env(identity, "update"),
                 )
             elif route == "update-node":
                 node = parts[3]
                 if not HOST_RE.fullmatch(node):
                     self.send_json(error_payload("INVALID_NODE", "The node identifier is invalid."), HTTPStatus.BAD_REQUEST)
                     return
-                if not self.known_node(node):
-                    self.send_json(error_payload("NODE_NOT_FOUND", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
+                record, identity, identity_error = self._api_validate_node_identity(node)
+                if identity_error:
+                    self._api_identity_failure(identity_error)
                     return
                 self._api_start_job(
-                    [str(self.server.cli), "update-node", self.node_action_target(node)],
+                    [str(self.server.cli), "update-node", self.node_action_target(identity["node"])],
                     node, "update", {
-                        "UU_API_ACTION": "update",
-                        "UU_NONINTERACTIVE": "true",
-                        "UU_API_REBOOT_ALLOWED": "false",
+                        **self._api_identity_env(identity, "update"),
                     },
                 )
             elif route == "reboot":
                 if not API_TARGET_ID_RE.fullmatch(parts[3]):
                     self.send_json(error_payload("INVALID_TARGET", "The target identifier is invalid."), HTTPStatus.BAD_REQUEST)
                     return
-                record = self.api_target_record(parts[3])
-                if not record:
-                    self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not part of the managed inventory."), HTTPStatus.NOT_FOUND)
+                record, identity, identity_error = self._api_validate_target_identity(parts[3])
+                if identity_error:
+                    self._api_identity_failure(identity_error)
                     return
                 self._api_action_response = True
+                self._api_action_target_record = record
+                self._api_action_identity = identity
                 try:
                     self.action_reboot(str(record.get("id")))
                 finally:
                     self._api_action_response = False
+                    self._api_action_target_record = None
+                    self._api_action_identity = None
             else:
                 self.handle_job_cancel(parts[3], api=True)
         except (OSError, RuntimeError, UnicodeError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
@@ -6382,7 +6575,9 @@ class StatusHandler(BaseHTTPRequestHandler):
                      if isinstance(item, dict) and str(item.get("id")) == target_id), None)
 
     def action_reboot(self, target_id):
-        target = self.reboot_target_record(target_id)
+        target_record = getattr(self, "_api_action_target_record", None)
+        api_identity = getattr(self, "_api_action_identity", None)
+        target = target_record if isinstance(target_record, dict) else self.reboot_target_record(target_id)
         if not target:
             self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not available."), HTTPStatus.NOT_FOUND)
             return
@@ -6407,12 +6602,15 @@ class StatusHandler(BaseHTTPRequestHandler):
             if not node_config or not node_config.get("enabled", True):
                 raise ValueError("The target's reboot transport is unavailable.")
             local_target = bool(node_config.get("local"))
+            reboot_env = {}
+            if api_identity:
+                reboot_env = self._api_identity_env(api_identity, "reboot")
             result = self.run_command([
                 str(self.server.job_runner), "start-reboot", action_target, kind,
                 str(node_config.get("host", "")), str(node_config.get("user", "root")),
                 str(node_config.get("port", 22)), str(node_config.get("identity_file", "")),
                 "true" if local_target else "false",
-            ], timeout=15)
+            ], timeout=15, extra_env=reboot_env)
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
             self.send_json(error_payload("REBOOT_START_FAILED", str(error) or "The reboot job could not be started."), HTTPStatus.BAD_GATEWAY)
             return

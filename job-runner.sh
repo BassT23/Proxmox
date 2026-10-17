@@ -18,6 +18,7 @@ CHECK_CLI="${UU_CHECK_CLI:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/ultimate-upd
 STATUS_MODEL_SCRIPT="${UU_STATUS_MODEL_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/status-model.sh}"
 STATUS_MODEL_FILE="${UU_STATUS_MODEL_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/status.json}"
 UPDATE_CONFIG_FILE="${UU_UPDATE_CONFIG_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
+CLUSTER_TARGET_FILE="${UU_CLUSTER_TARGET_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/cluster-target.sh}"
 INTERACTIVE_RUNTIME_DIR="${UU_INTERACTIVE_RUNTIME_DIR:-/run/ultimate-updater/jobs}"
 PTY_BRIDGE="${UU_PTY_BRIDGE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/job-pty-bridge.py}"
 REMOTE_JOB_STATE_DIR="${UU_REMOTE_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
@@ -33,6 +34,10 @@ if [[ -f "$REMOTE_INTERNAL_SSH_FILE" ]]; then
   INTERNAL_SSH_CONFIG_FILE="${UU_INTERNAL_SSH_CONFIG_FILE:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/internal-ssh.conf}"
   # shellcheck disable=SC1090
   source "$REMOTE_INTERNAL_SSH_FILE"
+fi
+if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$CLUSTER_TARGET_FILE"
 fi
 
 remote_node_ssh() {
@@ -731,6 +736,7 @@ cleanup_completed_jobs() {
 start_job() {
   local update_script="$1" target="$2" unit timestamp
   local conflict conflict_target conflict_unit interactive=false socket_path
+  local identity_key identity_var identity_value
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_target "$target" || { printf 'Unsupported target: %s\n' "$target" >&2; return 2; }
@@ -749,6 +755,20 @@ start_job() {
     "--setenv=UU_API_ACTION=update"
     "--setenv=UU_API_REBOOT_ALLOWED=false"
   )
+  if [[ -n "${UU_API_EXPECTED_TARGET_ID:-}" ]]; then
+    for identity_key in ID KIND NODE LOCAL; do
+      identity_var="UU_API_EXPECTED_TARGET_${identity_key}"
+      identity_value="${!identity_var-}"
+      [[ -n "$identity_value" ]] || continue
+      systemd_env+=("--setenv=UU_API_EXPECTED_TARGET_${identity_key}=$identity_value")
+    done
+    for identity_key in HOST PORT USER IDENTITY_FILE; do
+      identity_var="UU_API_EXPECTED_EXTERNAL_${identity_key}"
+      identity_value="${!identity_var-}"
+      [[ -n "$identity_value" ]] || continue
+      systemd_env+=("--setenv=UU_API_EXPECTED_EXTERNAL_${identity_key}=$identity_value")
+    done
+  fi
   systemd_env+=("--setenv=UU_SINGLE_TARGET=true" \
     "--setenv=UU_SINGLE_TARGET_ID=$target" \
     "--setenv=UU_SINGLE_TARGET_KIND=$(notification_scope_kind "$target")")
@@ -1063,6 +1083,7 @@ run_global_job() {
 
 start_check_job() {
   local target="$1" cli="$2" mode="$3" unit timestamp
+  local identity_key identity_var identity_value
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR" "--setenv=UU_JOB_TYPE=check")
   [[ -x "$cli" ]] || { printf 'CLI is not executable: %s\n' "$cli" >&2; return 1; }
   valid_target "$target" || { printf 'Unsupported check target: %s\n' "$target" >&2; return 2; }
@@ -1086,6 +1107,21 @@ start_check_job() {
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
   [[ "${UU_SCHEDULED_CHECK:-false}" == true ]] && systemd_env+=("--setenv=UU_SCHEDULED_CHECK=true")
   [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
+  [[ "${UU_API_ACTION:-}" == check ]] && systemd_env+=("--setenv=UU_API_ACTION=check")
+  if [[ -n "${UU_API_EXPECTED_TARGET_ID:-}" ]]; then
+    for identity_key in ID KIND NODE LOCAL; do
+      identity_var="UU_API_EXPECTED_TARGET_${identity_key}"
+      identity_value="${!identity_var-}"
+      [[ -n "$identity_value" ]] || continue
+      systemd_env+=("--setenv=UU_API_EXPECTED_TARGET_${identity_key}=$identity_value")
+    done
+    for identity_key in HOST PORT USER IDENTITY_FILE; do
+      identity_var="UU_API_EXPECTED_EXTERNAL_${identity_key}"
+      identity_value="${!identity_var-}"
+      [[ -n "$identity_value" ]] || continue
+      systemd_env+=("--setenv=UU_API_EXPECTED_EXTERNAL_${identity_key}=$identity_value")
+    done
+  fi
   [[ "${UU_WINDOWS_HISTORY_ONLY:-false}" == true ]] && systemd_env+=("--setenv=UU_WINDOWS_HISTORY_ONLY=true")
   [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   [[ "${UU_REMOTE_TRACE:-false}" == true ]] && systemd_env+=("--setenv=UU_REMOTE_TRACE=true")
@@ -1170,7 +1206,7 @@ run_selfupdate_job() {
 
 start_reboot_job() {
   local target="$1" kind="$2" host="$3" user="$4" port="$5" identity="$6" local_target="$7"
-  local unit timestamp conflict
+  local unit timestamp conflict identity_key identity_var identity_value
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR" "--setenv=UU_JOB_TYPE=reboot")
   valid_target "$target" || { printf 'Unsupported reboot target: %s\n' "$target" >&2; return 2; }
   [[ "$kind" == host || "$kind" == lxc || "$kind" == vm ]] || { printf 'Unsupported reboot target type.\n' >&2; return 2; }
@@ -1187,6 +1223,15 @@ start_reboot_job() {
   if conflict=$(running_job_conflict "$target"); then
     printf 'A job is already running for target %s.\n' "$target" >&2
     return 3
+  fi
+  [[ "${UU_API_ACTION:-}" == reboot ]] && systemd_env+=("--setenv=UU_API_ACTION=reboot")
+  if [[ -n "${UU_API_EXPECTED_TARGET_ID:-}" ]]; then
+    for identity_key in ID KIND NODE LOCAL; do
+      identity_var="UU_API_EXPECTED_TARGET_${identity_key}"
+      identity_value="${!identity_var-}"
+      [[ -n "$identity_value" ]] || continue
+      systemd_env+=("--setenv=UU_API_EXPECTED_TARGET_${identity_key}=$identity_value")
+    done
   fi
   timestamp=$(date -u '+%Y%m%d-%H%M%S-%N')
   unit="${REBOOT_PREFIX}$(safe_unit_target "$target")-$timestamp-$BASHPID"
@@ -1216,6 +1261,37 @@ run_reboot_job() {
   if ! flock -n 9; then
     UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" 75 "target already locked"
     return 75
+  fi
+  if [[ "${UU_API_ACTION:-}" == reboot ]]; then
+    if [[ "$kind" == host && "${UU_API_EXPECTED_TARGET_KIND:-}" != host ]]; then
+      UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" 46 "API target identity mismatch" || true
+      return 46
+    fi
+    if [[ "$kind" == host ]]; then
+      [[ "${UU_API_EXPECTED_TARGET_ID:-}" == "host:${UU_API_EXPECTED_TARGET_NODE:-}" ]] || {
+        UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" 46 "API target identity mismatch" || true
+        return 46
+      }
+      if [[ "$local_target" == true ]]; then
+        [[ "${UU_API_EXPECTED_TARGET_NODE:-}" == "$(hostname -s 2>/dev/null || hostname)" ]] || {
+          UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" 46 "API target identity mismatch" || true
+          return 46
+        }
+      else
+        [[ "${UU_API_EXPECTED_TARGET_NODE:-}" == "$target" ]] || {
+          UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" 46 "API target identity mismatch" || true
+          return 46
+        }
+      fi
+    fi
+    if [[ "$kind" != host ]]; then
+      if ! declare -f cluster_target_api_identity_matches >/dev/null 2>&1 ||
+        ! cluster_target_api_identity_matches "$target" "${UU_API_EXPECTED_TARGET_KIND:-}" \
+          "${UU_API_EXPECTED_TARGET_NODE:-}" "${UU_API_EXPECTED_TARGET_LOCAL:-remote}"; then
+        UU_JOB_TYPE=reboot write_state "$unit" "$target" failed "$started" "$(now)" 46 "API target identity mismatch" || true
+        return 46
+      fi
+    fi
   fi
   if [[ "$kind" == host ]]; then
     remote_command='systemctl reboot'

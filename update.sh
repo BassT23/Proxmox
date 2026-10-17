@@ -80,6 +80,29 @@ if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
   # shellcheck disable=SC1090,SC1091
   . "$CLUSTER_TARGET_FILE"
 fi
+
+API_UPDATE_TARGET_IDENTITY_GUARD() {
+  [[ "${UU_API_ACTION:-}" == update ]] || return 0
+  local target="$1" kind="$2" expected_id="${UU_API_EXPECTED_TARGET_ID:-}"
+  [[ -n "$expected_id" ]] || {
+    printf 'API_TARGET_IDENTITY_MISMATCH: expected target identity is missing.\n' >&2
+    return 46
+  }
+  if [[ "$kind" == host ]]; then
+    [[ "$expected_id" == "host:$(hostname -s 2>/dev/null || hostname)" ||
+      "$expected_id" == "host:${HOSTNAME%%.*}" ]] || return 46
+    [[ "${UU_API_EXPECTED_TARGET_NODE:-}" == "${HOSTNAME%%.*}" ||
+      "${UU_API_EXPECTED_TARGET_NODE:-}" == "$(hostname -s 2>/dev/null || hostname)" ]] || return 46
+    return 0
+  fi
+  [[ "$expected_id" == "$target" || "$expected_id" == "guest:$target" ]] || return 46
+  if ! declare -f cluster_target_api_identity_matches >/dev/null 2>&1; then
+    printf 'API_TARGET_IDENTITY_MISMATCH: current Proxmox identity cannot be verified.\n' >&2
+    return 46
+  fi
+  cluster_target_api_identity_matches "$target" "$kind" "${UU_API_EXPECTED_TARGET_NODE:-}" "${UU_API_EXPECTED_TARGET_LOCAL:-remote}"
+}
+
 INTERNAL_SSH_FILE="${INTERNAL_SSH_FILE:-$LOCAL_FILES/internal-ssh.sh}"
 if [[ -f "$INTERNAL_SSH_FILE" ]]; then
   # shellcheck disable=SC1090
@@ -312,6 +335,10 @@ ARGUMENTS () {
         if declare -f cluster_target_resolve >/dev/null 2>&1 &&
           { [[ -n "${UU_CLUSTER_RESOURCES_JSON:-}" ]] || command -v pvesh >/dev/null 2>&1; }; then
           if cluster_target_resolve "$ARGUMENT"; then
+            if ! API_UPDATE_TARGET_IDENTITY_GUARD "$ARGUMENT" "$CLUSTER_TARGET_KIND"; then
+              printf 'API_TARGET_IDENTITY_MISMATCH: target identity changed before update execution.\n' >&2
+              return 46
+            fi
             if [[ "$CLUSTER_TARGET_LOCAL" == false ]]; then
               local remote_command
               printf -v remote_command 'exec %q start %q %q' \
@@ -360,6 +387,10 @@ ARGUMENTS () {
       host)
         COMMAND=true
         TAG_LOG=true
+        if ! API_UPDATE_TARGET_IDENTITY_GUARD host host; then
+          printf 'API_TARGET_IDENTITY_MISMATCH: node identity changed before update execution.\n' >&2
+          return 46
+        fi
         if [[ "$RICM" != true ]]; then
           MODE="  Host  "
           HEADER_INFO
@@ -1902,6 +1933,12 @@ CONTAINER_UPDATE_START () {
       echo -e "⏩ ${OR:-}LXC $CONTAINER is a template - skip update${CL:-}\n\n"
       continue
     else
+      if [[ "${UU_API_ACTION:-}" == update ]] &&
+        declare -f API_UPDATE_TARGET_IDENTITY_GUARD >/dev/null 2>&1 &&
+        ! API_UPDATE_TARGET_IDENTITY_GUARD "$CONTAINER" lxc; then
+        UPDATE_FAILURE=true
+        continue
+      fi
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
         if [[ "${UU_API_ACTION:-}" == update ]]; then
@@ -2147,6 +2184,12 @@ VM_UPDATE_START () {
       echo -e "⏩${BL:-} Skipped VM $VM because, QEMU or enabled Internal SSH hasn't initialized${CL:-}\n\n"
       continue
     else
+      if [[ "${UU_API_ACTION:-}" == update ]] &&
+        declare -f API_UPDATE_TARGET_IDENTITY_GUARD >/dev/null 2>&1 &&
+        ! API_UPDATE_TARGET_IDENTITY_GUARD "$VM" vm; then
+        UPDATE_FAILURE=true
+        continue
+      fi
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
         # Check if update is possible
