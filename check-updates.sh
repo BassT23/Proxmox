@@ -2403,12 +2403,26 @@ EXIT () {
         if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
           # check variable !!!
           if [[ "$EMAIL_ONLY_SECURITY" == true && "$SECURITY_UPDATES_AVALABLE" == true ]]; then
-            mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+            if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
+              STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+            else
+              mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+            fi
           else
-            mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+            if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
+              STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+            else
+              mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+            fi
           fi
         elif [[ "$EMAIL_NO_UPDATES" == true ]]; then
-          echo "No updates found during search" | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER"
+          if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
+            printf '%s\n' "No updates found during search" |
+              STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater" "$EMAIL_SENDER" "$EMAIL_USER"
+          else
+            echo "No updates found during search" |
+              mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER"
+          fi
         fi
       fi
     fi

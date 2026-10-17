@@ -2556,7 +2556,12 @@ EXIT () {
         echo
         CLEAN_LOGFILE
         if [[ "${NON_UPDATE_COMMAND:-false}" != true && "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
-          UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null || true
+          if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
+            UPDATE_MAIL_BODY |
+              STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" 2>/dev/null || true
+          else
+            UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null || true
+          fi
         fi
       else
         echo -e "${GN:-}✅ Finished.${CL:-}\n"
@@ -2564,7 +2569,12 @@ EXIT () {
         CLEAN_LOGFILE
         if [[ "$EMAIL_ONLY_ERROR" != true ]]; then
           if [[ "${NON_UPDATE_COMMAND:-false}" != true && "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
-            UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
+            if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
+              UPDATE_MAIL_BODY |
+                STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater" "$EMAIL_SENDER" "$EMAIL_USER" 2>/dev/null || true
+            else
+              UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
+            fi
           fi
         fi
       fi
@@ -2576,7 +2586,12 @@ EXIT () {
       "$LOCAL_FILES/exit/error.sh"
       CLEAN_LOGFILE
       if [[ "${NON_UPDATE_COMMAND:-false}" != true && "${SELF_UPDATE_RUN:-false}" != true && "${UU_DEFER_UPDATE_MAIL:-false}" != true ]]; then
-        UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
+        if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
+          UPDATE_MAIL_BODY |
+            STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" 2>/dev/null
+        else
+          UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
+        fi
       fi
     fi
   fi

@@ -30,4 +30,10 @@ the configured mail transport independently. Use `DEBUG=true` temporarily
 when additional technical diagnostics are needed; do not leave secrets in
 logs or bug reports.
 
+Notification bodies are rendered from the existing plain-text status model and
+converted to escaped HTML immediately before delivery. This preserves line
+breaks and indentation in clients such as Outlook while keeping notification
+selection, scoping, and filtering unchanged. The HTML formatting is based on
+the contribution by [Negalein](https://forum.iobroker.net/topic/62489/proxmox-updater-host-lxc-vm-auch-iobroker-pihole-etc).
+
 Related: [Configuration](configuration.md), [Troubleshooting](troubleshooting.md).

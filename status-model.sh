@@ -1092,6 +1092,45 @@ if external_targets:
 PY
 }
 
+# Convert the existing plain-text notification body into a small, safe HTML
+# document immediately before delivery.  The text renderer remains the source
+# of truth for notification content and selection; this helper only changes
+# the wire representation for mail clients that collapse plain-text newlines.
+# The conversion is based on the HTML mail formatting contributed by Negalein
+# in the Ultimate Updater ioBroker forum thread.
+STATUS_MODEL_SEND_HTML_MAIL() {
+  local subject="${1:-}" sender="${2:-}" recipient="${3:-}"
+
+  # mail(1) receives these values as headers.  Reject line breaks rather than
+  # allowing configuration data to become additional mail headers.
+  if [[ "$subject" == *$'\r'* || "$subject" == *$'\n'* ||
+    "$sender" == *$'\r'* || "$sender" == *$'\n'* ||
+    "$recipient" == *$'\r'* || "$recipient" == *$'\n'* ]]; then
+    return 2
+  fi
+
+  python3 -c '
+import html
+import sys
+
+body = sys.stdin.read()
+lines = body.splitlines()
+if not lines:
+    lines = [""]
+
+print("<!doctype html><html><body style=\"font-family:Arial,sans-serif;font-size:11pt;white-space:pre-wrap;overflow-wrap:anywhere\">")
+for line in lines:
+    content = html.escape(line) if line else "&nbsp;"
+    print(f"<div style=\"margin:0;line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere\">{content}</div>")
+print("</body></html>")
+' | mail \
+    -a 'Content-Type: text/html; charset=UTF-8' \
+    -a 'Content-Transfer-Encoding: 8bit' \
+    -r "$sender" \
+    -s "$subject" \
+    "$recipient"
+}
+
 # Render and optionally send one notification from the unified status model.
 # The first output line is an internal decision marker; callers remove it
 # before writing the human-readable mail body.
@@ -1145,13 +1184,13 @@ STATUS_MODEL_SEND_NOTIFICATION() {
 
   case "$state" in
     updates|issues)
-      printf '%s\n' "$body" | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$email_sender" \
-        -s "Ultimate Updater summary - $HOSTNAME" "$email_user" || true
+      printf '%s\n' "$body" |
+        STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || true
       ;;
     current)
       if [[ "$email_no_updates" == true ]]; then
-        echo "No updates found during search" | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$email_sender" \
-          -s "Ultimate Updater" "$email_user" || true
+        printf '%s\n' "No updates found during search" |
+          STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater" "$email_sender" "$email_user" || true
       fi
       ;;
     empty)
@@ -1195,9 +1234,8 @@ STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
   body=${notification#*$'\n'}
 
   [[ "$email_only_error" == true && "$state" != issues ]] && return 0
-  printf '%s\n' "$body" | mail -a 'Content-Type: text/plain; charset=UTF-8' \
-    -a 'Content-Transfer-Encoding: 8bit' -r "$email_sender" \
-    -s "Ultimate Updater summary - $HOSTNAME" "$email_user" || true
+  printf '%s\n' "$body" |
+    STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || true
 }
 
 # Expand only the documented sender placeholder. Config is never evaluated as
