@@ -4139,10 +4139,70 @@ class StatusHandler(BaseHTTPRequestHandler):
         return result or None
 
     @classmethod
+    def _api_v1_skip_reason(cls, value):
+        """Project only bounded, structured neutral-check metadata."""
+        if not isinstance(value, dict):
+            return None
+        code = value.get("code")
+        if not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", code):
+            return None
+        message = value.get("message")
+        if message is not None and not isinstance(message, str):
+            message = None
+        return {
+            "code": code,
+            "message": message[:2048] if isinstance(message, str) else None,
+        }
+
+    @classmethod
+    def _api_v1_error(cls, value):
+        """Project errors without exposing status-file diagnostics."""
+        if not isinstance(value, dict):
+            return None
+        code = value.get("code")
+        message = value.get("message")
+        if code is None and message is None:
+            return None
+        if not isinstance(code, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{1,63}", code):
+            code = "STATUS_ERROR"
+        messages = {
+            "APT_COUNT_UNAVAILABLE": "APT update counts were unavailable.",
+            "CHECK_COMMAND_FAILED": "The check command failed.",
+            "CHECK_STATE": "The target state is not supported for this check.",
+            "GUEST_COMMAND_FAILED": "The guest check command failed.",
+            "LIFECYCLE_RESTORE_FAILED": "The guest state could not be restored.",
+            "LIFECYCLE_START_FAILED": "The guest could not be started for checking.",
+            "PACKAGE_COUNT_FAILED": "Package counts could not be determined.",
+            "PACKAGE_COUNT_INVALID": "Package count data was invalid.",
+            "PACKAGE_COUNT_UNAVAILABLE": "Package counts were unavailable.",
+            "QGA_NOT_READY": "The QEMU Guest Agent was not ready.",
+            "QGA_TRANSPORT": "The QEMU Guest Agent transport failed.",
+            "REMOTE_CHECK_FAILED": "The remote check failed.",
+            "REMOTE_STATUS_IMPORT_FAILED": "The remote status could not be imported.",
+            "REMOTE_STATUS_MISSING": "The remote status was unavailable.",
+            "RPM_COUNT_UNAVAILABLE": "Package counts were unavailable.",
+            "SSH_CONFIG_INVALID": "The SSH configuration is invalid.",
+            "SSH_UNREACHABLE": "The target could not be reached over SSH.",
+            "UNSUPPORTED_OS": "No supported updater was detected.",
+            "WINDOWS_HISTORY_INVALID": "Windows Update history was invalid.",
+            "WINDOWS_HISTORY_UNAVAILABLE": "Windows Update history was unavailable.",
+            "WINDOWS_HELPER_MISSING": "The Windows update helper is unavailable.",
+            "WINDOWS_UPDATE_CHECK": "The Windows update check failed.",
+            "STATUS_ERROR": "The target check failed.",
+        }
+        return {"code": code, "message": messages.get(code, messages["STATUS_ERROR"])}
+
+    @classmethod
     def _api_v1_target(cls, record):
         if not isinstance(record, dict):
             return None
         updates = record.get("updates") if isinstance(record.get("updates"), dict) else {}
+        neutral_status = record.get("check_status") in ("not_checked", "skipped", "stopped")
+        error = cls._api_v1_error(record.get("error"))
+        skip_reason = (
+            cls._api_v1_skip_reason(record.get("skip_reason"))
+            if neutral_status and error is None else None
+        )
         target = {
             "id": cls._api_v1_public_value(record.get("id"), maximum=256),
             "name": cls._api_v1_public_value(record.get("name")),
@@ -4153,6 +4213,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             "os": cls._api_v1_public_value(record.get("os")),
             "updater": cls._api_v1_public_value(record.get("updater"), maximum=64),
             "check_status": cls._api_v1_public_value(record.get("check_status"), maximum=64),
+            "error": error,
             "last_check": cls._api_v1_public_value(record.get("last_check"), maximum=128),
             "updates": {"available": cls._api_v1_public_value(updates.get("available"), "int")},
             "normal_updates": cls._api_v1_public_value(record.get("normal_updates"), "int"),
@@ -4160,6 +4221,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             "security_split_supported": cls._api_v1_public_value(record.get("security_split_supported"), "bool"),
             "reboot_required": cls._api_v1_public_value(record.get("reboot_required"), "bool"),
             "last_update": cls._api_v1_last_update(record.get("last_update")),
+            "skip_reason": skip_reason,
         }
         windows_update = cls._api_v1_windows_update(record.get("windows_update"))
         if windows_update is not None:

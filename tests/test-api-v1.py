@@ -64,8 +64,11 @@ class ApiFixture:
                                                  "result": "Succeeded", "result_code": 2, "hresult": "0x00000000"}]}},
                 {"id": "100", "name": "Linux fixture", "type": "lxc", "node": "test-node",
                  "transport": "ssh", "reachable": None, "os": "Debian", "updater": "apt",
-                 "check_status": "unknown", "last_check": None, "updates": {"available": None},
-                 "reboot_required": None},
+                 "check_status": "not_checked", "last_check": None, "updates": {"available": None},
+                 "reboot_required": None, "skip_reason": {
+                     "code": "STOPPED_READ_ONLY",
+                     "message": "LXC 100 is stopped; <fixture> remains escaped data",
+                 }},
             ],
         }), encoding="utf-8")
         self.runner.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -147,7 +150,49 @@ with tempfile.TemporaryDirectory() as temporary:
         assert status == 200 and payload["api_version"] == 1
         assert payload["targets"][0]["name"] == "Windows <fixture>"
         assert payload["targets"][0]["windows_update"]["history"][0]["kb"] == "KB1234567"
+        assert payload["targets"][0]["error"] is None
+        assert payload["targets"][0]["skip_reason"] is None
         assert payload["targets"][1]["reachable"] is None
+        assert payload["targets"][1]["error"] is None
+        assert payload["targets"][1]["skip_reason"] == {
+            "code": "STOPPED_READ_ONLY",
+            "message": "LXC 100 is stopped; <fixture> remains escaped data",
+        }
+
+        # Error projection is bounded and uses generic public descriptions;
+        # status-file diagnostics must never be exposed through the API.
+        original_status = fixture.status.read_text(encoding="utf-8")
+        error_payload = json.loads(original_status)
+        error_payload["targets"].append({
+            "id": "error-target", "type": "lxc", "check_status": "error",
+            "error": {"code": "CHECK_COMMAND_FAILED",
+                       "message": "password=secret command output " + ("x" * 5000)},
+        })
+        fixture.status.write_text(json.dumps(error_payload), encoding="utf-8")
+        status, payload = fixture.request("/api/v1/status", fixture.read_token)
+        assert status == 200
+        error_target = next(item for item in payload["targets"] if item["id"] == "error-target")
+        assert error_target["error"] == {
+            "code": "CHECK_COMMAND_FAILED",
+            "message": "The check command failed.",
+        }
+        assert error_target["skip_reason"] is None
+        assert "password=secret" not in json.dumps(payload)
+        assert len(error_target["error"]["message"]) < 256
+
+        error_payload["targets"][-1]["error"] = {
+            "code": "<PRIVATE_KEY>", "message": "Bearer token=do-not-leak",
+        }
+        fixture.status.write_text(json.dumps(error_payload), encoding="utf-8")
+        status, payload = fixture.request("/api/v1/status", fixture.read_token)
+        assert status == 200
+        error_target = next(item for item in payload["targets"] if item["id"] == "error-target")
+        assert error_target["error"] == {
+            "code": "STATUS_ERROR",
+            "message": "The target check failed.",
+        }
+        assert "Bearer token=do-not-leak" not in json.dumps(payload)
+        fixture.status.write_text(original_status, encoding="utf-8")
 
         status, payload = fixture.request("/api/v1/status-summary", fixture.read_token)
         assert status == 200 and payload["summary"]["targets"] == 2

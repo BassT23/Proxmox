@@ -135,6 +135,22 @@ targets = payload.get("targets") if isinstance(payload, dict) else None
 if not isinstance(targets, list):
     raise ValueError("status file has no target list")
 
+def normalize_skip_reason(value):
+    if not isinstance(value, dict):
+        return None
+    # Keep this optional metadata deliberately small and limited to the public
+    # code/message shape.  It must not become a transport for arbitrary
+    # remote status data.
+    if set(value) - {"code", "message"}:
+        return None
+    code = value.get("code")
+    message = value.get("message")
+    if not isinstance(code, str) or not code or len(code) > 128:
+        return None
+    if message is not None and (not isinstance(message, str) or len(message) > 2048):
+        return None
+    return {"code": code, "message": message}
+
 def encode(value, null_value=""):
     if value is None:
         value = null_value
@@ -154,6 +170,7 @@ with open(record_file, "a", encoding="utf-8") as records:
         error = target.get("error")
         if not isinstance(error, dict):
             error = {}
+        skip_reason = normalize_skip_reason(target.get("skip_reason"))
         fields = [
             encode(target.get("id")),
             encode(target.get("type")),
@@ -181,6 +198,8 @@ with open(record_file, "a", encoding="utf-8") as records:
         windows_update = target.get("windows_update")
         if isinstance(windows_update, dict):
             fields.append(encode(json.dumps(windows_update, separators=(",", ":"))))
+        if skip_reason is not None:
+            fields.append(encode(json.dumps(skip_reason, separators=(",", ":"))))
         records.write("\t".join(fields) + "\n")
 PY
 }
@@ -195,6 +214,7 @@ STATUS_MODEL_FINISH() {
   fi
   python3 - "$record_file" "$status_file" "${STATUS_MODEL_PARTIAL:-false}" <<'PY'
 import base64
+import copy
 import json
 import os
 import re
@@ -218,7 +238,9 @@ try:
         if isinstance(item, dict) and item.get("id")
     }
     if partial == "true":
-        targets = dict(existing_targets)
+        # Target records contain nested dictionaries.  A shallow copy would
+        # let the history-only merge mutate the preserved status in place.
+        targets = copy.deepcopy(existing_targets)
 except FileNotFoundError:
     pass
 except (OSError, ValueError) as exc:
@@ -248,7 +270,7 @@ def is_newer_or_equal(candidate, current):
 with open(record_file, encoding="utf-8") as records:
     for line in records:
         fields = line.rstrip("\n").split("\t")
-        if len(fields) not in (12, 13, 14, 15, 16, 17, 18):
+        if len(fields) not in (12, 13, 14, 15, 16, 17, 18, 19):
             raise ValueError("invalid status record")
         (target_id, target_type, transport, reachable, os_name, updater,
          updates, reboot_required, check_status, error_code, error_message,
@@ -257,19 +279,28 @@ with open(record_file, encoding="utf-8") as records:
         normal_updates = security_updates = None
         security_split_supported = None
         windows_update = None
+        imported_skip_reason = None
 
         def parse_json_field(value):
             if not value:
-                return None, None
+                return None, None, None
             try:
                 parsed = json.loads(value)
             except (TypeError, ValueError):
                 # Optional remote metadata must not make the complete target
                 # record unimportable.  Core status fields remain usable.
-                return None, None
+                return None, None, None
             if isinstance(parsed, dict) and isinstance(parsed.get("history"), list):
-                return None, parsed
-            return parsed, None
+                return None, parsed, None
+            if (isinstance(parsed, dict) and
+                    not set(parsed) - {"code", "message"} and
+                    isinstance(parsed.get("code"), str) and parsed.get("code")):
+                code = parsed["code"]
+                message = parsed.get("message")
+                if len(code) <= 128 and (message is None or
+                                         isinstance(message, str) and len(message) <= 2048):
+                    return None, None, {"code": code, "message": message}
+            return parsed, None, None
 
         def nullable_int(value):
             if value in ("", "null"):
@@ -290,7 +321,7 @@ with open(record_file, encoding="utf-8") as records:
         cursor = 1
         split_fields = False
         if cursor < len(optional_fields) and is_json_field(optional_fields[cursor]):
-            imported_last_update, windows_update = parse_json_field(optional_fields[cursor])
+            imported_last_update, windows_update, imported_skip_reason = parse_json_field(optional_fields[cursor])
             cursor += 1
         else:
             if cursor < len(optional_fields):
@@ -298,7 +329,7 @@ with open(record_file, encoding="utf-8") as records:
                 split_fields = True
                 cursor += 1
             if cursor < len(optional_fields) and is_json_field(optional_fields[cursor]):
-                imported_last_update, windows_update = parse_json_field(optional_fields[cursor])
+                imported_last_update, windows_update, imported_skip_reason = parse_json_field(optional_fields[cursor])
                 cursor += 1
             elif cursor < len(optional_fields):
                 security_updates = nullable_int(optional_fields[cursor])
@@ -307,21 +338,35 @@ with open(record_file, encoding="utf-8") as records:
                 security_split_supported = optional_fields[cursor] == "true"
                 cursor += 1
             while cursor < len(optional_fields):
-                candidate_last, candidate_windows = parse_json_field(optional_fields[cursor])
+                candidate_last, candidate_windows, candidate_skip = parse_json_field(optional_fields[cursor])
                 if candidate_windows is not None:
                     windows_update = candidate_windows
+                elif candidate_skip is not None:
+                    imported_skip_reason = candidate_skip
                 elif imported_last_update is None:
                     imported_last_update = candidate_last
                 cursor += 1
         available = None if updates in ("", "null") else int(updates)
         reboot = None if reboot_required in ("", "null") else reboot_required == "true"
         error = None
+        skip_reason = None
+        neutral_skip_codes = {
+            "STOPPED_READ_ONLY", "PAUSED_READ_ONLY", "RUNNING_DISABLED",
+            "CHECK_DISABLED", "CHECK_WITH_HOST_DISABLED", "NETWORK_UNAVAILABLE",
+            "UNSUPPORTED_GUEST_OS",
+        }
         # A stopped/paused target in a read-only inventory was intentionally
-        # not checked.  Its explanatory record must not project as a current
-        # failure or keep a stale CHECK_COMMAND_FAILED-style error visible.
+        # not checked.  Its explanatory record is neutral metadata, not a
+        # current failure.  Keep actual errors as errors even for a neutral
+        # check_status.
         neutral_check = check_status in ("not_checked", "skipped", "stopped")
-        if (error_code or error_message) and not neutral_check:
+        if neutral_check and error_code in neutral_skip_codes:
+            skip_reason = {"code": error_code, "message": error_message or None}
+        elif (error_code or error_message):
             error = {"code": error_code or None, "message": error_message or None}
+        if neutral_check and imported_skip_reason is not None:
+            skip_reason = imported_skip_reason
+            error = None
         record = targets.setdefault(target_id, {})
         existing_record = existing_targets.get(target_id, {})
         record.update({
@@ -339,6 +384,7 @@ with open(record_file, encoding="utf-8") as records:
             "last_check": generated_at,
             "check_status": check_status or "not_checked",
             "error": error,
+            "skip_reason": skip_reason,
             "node": node or None,
             "security_split_supported": security_split_supported
             if security_split_supported is not None else (
@@ -348,9 +394,9 @@ with open(record_file, encoding="utf-8") as records:
         if check_status == "history_only" and isinstance(existing_record, dict):
             # A history refresh is read-only and must not replace the latest
             # check observation, update count, reboot flag, or error state.
-            for key in ("type", "transport", "reachable", "os", "os_version",
+            for key in ("name", "type", "transport", "reachable", "os", "os_version",
                         "updater", "updates", "normal_updates", "security_updates",
-                        "reboot_required", "check_status", "error", "node",
+                        "reboot_required", "last_check", "check_status", "error", "skip_reason", "node",
                         "security_split_supported"):
                 if key in existing_record:
                     record[key] = existing_record[key]
@@ -358,7 +404,7 @@ with open(record_file, encoding="utf-8") as records:
             # Host identity comes from the cluster resolver, never from a
             # stale guest name carried by an older status record.
             record["name"] = node or target_id.removeprefix("host:")
-        elif name:
+        elif name and not (check_status == "history_only" and "name" in existing_record):
             record["name"] = name
         if isinstance(imported_last_update, dict):
             imported_status = imported_last_update.get("status")
@@ -471,6 +517,19 @@ def nullable_bool(value):
 def nullable_int(value):
     return None if value in ("", "null") else int(value)
 
+neutral_skip_codes = {
+    "STOPPED_READ_ONLY", "PAUSED_READ_ONLY", "RUNNING_DISABLED",
+    "CHECK_DISABLED", "CHECK_WITH_HOST_DISABLED", "NETWORK_UNAVAILABLE",
+    "UNSUPPORTED_GUEST_OS",
+}
+neutral_check = check_status in ("not_checked", "skipped", "stopped")
+skip_reason = None
+error = None
+if neutral_check and error_code in neutral_skip_codes:
+    skip_reason = {"code": error_code, "message": error_message or None}
+elif error_code or error_message:
+    error = {"code": error_code or None, "message": error_message or None}
+
 record.update({
     "type": target_type or None,
     "transport": transport or None,
@@ -484,8 +543,8 @@ record.update({
     "reboot_required": nullable_bool(reboot_required),
     "last_check": generated_at,
     "check_status": check_status or "not_checked",
-    "error": ({"code": error_code or None, "message": error_message or None}
-              if error_code or error_message else None),
+    "error": error,
+    "skip_reason": skip_reason,
     "security_split_supported": nullable_bool(security_split_supported),
 })
 record.setdefault("last_update", {"status": "unknown", "timestamp": None})
@@ -1434,8 +1493,14 @@ def short_error(target):
 def check_skip_message(target):
     """Return neutral wording for checks intentionally not executed."""
     status = str(target.get("check_status") or "not_checked")
-    error = target.get("error")
-    code = str(error.get("code") or "") if isinstance(error, dict) else ""
+    skip_reason = target.get("skip_reason")
+    code = str(skip_reason.get("code") or "") if isinstance(skip_reason, dict) else ""
+    if not code:
+        # Legacy status files may have carried a neutral code in error.  Keep
+        # their notification wording compatible without treating real errors
+        # as skips.
+        error = target.get("error")
+        code = str(error.get("code") or "") if isinstance(error, dict) else ""
     if status not in ("not_checked", "skipped", "stopped"):
         return None
     if code in {"RUNNING_DISABLED", "CHECK_WITH_HOST_DISABLED", "CHECK_DISABLED"}:

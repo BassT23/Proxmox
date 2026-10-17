@@ -58,8 +58,42 @@ names, paths, commands, VMIDs, and query-token forms are rejected.
 
 `/api/v1/status` exposes `id`, `name`, `type`, `node`, `transport`,
 `reachable`, `os`, `updater`, `check_status`, `last_check`, update counts,
-`reboot_required`, `last_update`, and bounded Windows Update metadata when it
-is already present in the status model. Missing values remain `null`.
+`reboot_required`, `last_update`, `error`, optional `skip_reason`, and bounded
+Windows Update metadata when it is already present in the status model. Missing
+values remain `null`.
+
+`error` is either `null` or a bounded object containing a validated error code
+and a generic public message. The API never exposes raw command output, stack
+traces, credentials, tokens, or other diagnostic text from the status model.
+A real check failure has an `error` object and `skip_reason: null`.
+
+`skip_reason` is neutral metadata for a check that was intentionally not
+performed; it is not a check failure. A target with a skip has
+`check_status: "not_checked"` (or another legacy neutral status),
+`error: null`, and a bounded object such as:
+
+```json
+"skip_reason": {
+  "code": "STOPPED_READ_ONLY",
+  "message": "LXC 910 is stopped; the check did not start it"
+}
+```
+
+Known neutral codes include `STOPPED_READ_ONLY`, `PAUSED_READ_ONLY`,
+`RUNNING_DISABLED`, `CHECK_DISABLED`, `CHECK_WITH_HOST_DISABLED`,
+`NETWORK_UNAVAILABLE`, and `UNSUPPORTED_GUEST_OS`. Operational failures such
+as `CHECK_COMMAND_FAILED`, `LIFECYCLE_RESTORE_FAILED`, and
+`API_TARGET_IDENTITY_MISMATCH` remain errors and are never converted to a
+skip. A neutral skip has `error: null`; a successful check has both
+`error: null` and `skip_reason: null`. Older status files without either
+optional field remain valid and expose the missing values as `null`.
+
+`last_check` records when the target's check observation was written. It can
+change for an intentional skip, so `check_status: "not_checked"` means that
+package data was not queried and must not be interpreted as fresh package
+information. Consumers should use the per-target `last_check` together with
+`check_status` and `skip_reason`; the document-level freshness state describes
+the status document, not proof that every target was checked.
 
 `/api/v1/status-summary` exposes counts for total, reachable, unreachable,
 failed, unknown, available updates, and reboot requirements. Unknown values are
