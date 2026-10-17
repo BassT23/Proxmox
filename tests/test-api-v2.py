@@ -179,6 +179,8 @@ with tempfile.TemporaryDirectory() as temporary:
         assert status == 202 and payload["type"] == "check" and payload["job"].startswith("ultimate-updater-check-")
         assert fixture.httpd.calls[-1]["env"] == {"UU_JOB_SOURCE": "initial-inventory", "UU_NONINTERACTIVE": "true"}
         assert fixture.httpd.calls[-1]["args"][1:] == ["start-check", "986", str(fixture.cli), "target"]
+        status, payload = fixture.request("/api/v1/check/guest%3A986", t["check"], method="POST")
+        assert status == 202 and payload["target"] == "986"
 
         status, payload = fixture.request("/api/v1/check-all", t["check"], method="POST")
         assert status == 202 and payload["target"] == "all-systems"

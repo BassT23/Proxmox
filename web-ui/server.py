@@ -157,7 +157,7 @@ API_SCHEMA_VERSION = 1
 API_STATUS_MAX_BYTES = 8 * 1024 * 1024
 API_LOG_MAX_BYTES = 64 * 1024
 API_ACTION_PERMISSIONS = frozenset({"check", "update", "reboot", "cancel"})
-API_TARGET_ID_RE = re.compile(r"^(?:host:)?[A-Za-z0-9][A-Za-z0-9_.-]*$")
+API_TARGET_ID_RE = re.compile(r"^(?:(?:host|guest):)?[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def scheduler_unit_name(schedule_id):
@@ -4283,8 +4283,16 @@ class StatusHandler(BaseHTTPRequestHandler):
         if not isinstance(target, str) or len(target) > 160 or not API_TARGET_ID_RE.fullmatch(target):
             return None
         payload = self._api_v1_status_file(self.server.status_file)
-        return next((item for item in payload["targets"]
-                     if isinstance(item, dict) and str(item.get("id")) == target), None)
+        record = next((item for item in payload["targets"]
+                       if isinstance(item, dict) and str(item.get("id")) == target), None)
+        if record is not None:
+            return record
+        if target.startswith("guest:"):
+            guest_id = target.removeprefix("guest:")
+            return next((item for item in payload["targets"]
+                         if isinstance(item, dict) and str(item.get("id")) == guest_id
+                         and item.get("type") in {"vm", "lxc"}), None)
+        return None
 
     def _api_start_job(self, command, target, job_type, extra_env=None, timeout=30):
         """Start an existing UU job and return its validated unit via HTTP."""
@@ -4381,6 +4389,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 if record.get("type") == "host":
                     self.send_json(error_payload("USE_NODE_ACTION", "Use the node check endpoint for Proxmox hosts."), HTTPStatus.UNPROCESSABLE_ENTITY)
                     return
+                target = str(record.get("id"))
                 self._api_start_job(
                     [str(self.server.job_runner), "start-check", target, str(self.server.cli), "target"],
                     target, "check",
@@ -4405,6 +4414,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 if record.get("type") == "host":
                     self.send_json(error_payload("USE_NODE_ACTION", "Use the node update endpoint for Proxmox hosts."), HTTPStatus.UNPROCESSABLE_ENTITY)
                     return
+                target = str(record.get("id"))
                 # Deliberately omit --without-verified-backup. API actions
                 # inherit the normal update safety gates.
                 self._api_start_job(
@@ -4421,7 +4431,11 @@ class StatusHandler(BaseHTTPRequestHandler):
                     node, "update", {"UU_NONINTERACTIVE": "true"},
                 )
             elif route == "reboot":
-                self.action_reboot(parts[3])
+                record = self.api_target_record(parts[3])
+                if not record:
+                    self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not part of the managed inventory."), HTTPStatus.NOT_FOUND)
+                    return
+                self.action_reboot(str(record.get("id")))
             else:
                 self.handle_job_cancel(parts[3], api=True)
         except (OSError, RuntimeError, UnicodeError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
