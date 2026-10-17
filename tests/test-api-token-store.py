@@ -18,9 +18,13 @@ with tempfile.TemporaryDirectory() as temporary:
     assert token_id and secret not in path.read_text(encoding="utf-8")
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert api_tokens.authenticate(path, secret) is None
+    check_id, check_secret = api_tokens.create_token(path, "check", ["check"])
+    update_id, update_secret = api_tokens.create_token(path, "update", ["update"])
     api_tokens.set_enabled(path, True)
     identity = api_tokens.authenticate(path, secret)
     assert identity["id"] == token_id and identity["permissions"] == ["read", "logs"]
+    assert api_tokens.authenticate(path, check_secret)["permissions"] == ["check"]
+    assert api_tokens.authenticate(path, update_secret)["permissions"] == ["update"]
     api_tokens.revoke_token(path, token_id)
     assert api_tokens.authenticate(path, secret) is None
 

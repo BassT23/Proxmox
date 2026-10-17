@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small, fail-closed token store for the read-only integration API.
+"""Small, fail-closed token store for the integration API.
 
 The file contains token metadata and SHA-256 digests only.  Token creation
 prints the secret once for the local administrator; normal reads never do.
@@ -19,7 +19,7 @@ import tempfile
 
 
 CONFIG_VERSION = 1
-SUPPORTED_PERMISSIONS = frozenset({"read", "logs"})
+SUPPORTED_PERMISSIONS = frozenset({"read", "logs", "check", "update", "reboot", "cancel"})
 TOKEN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 TOKEN_HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -169,7 +169,7 @@ def create_token(path, name, permissions, expires_at=None):
         raise ValueError("Name must be 1-80 characters without control characters.")
     if (not permissions or any(permission not in SUPPORTED_PERMISSIONS for permission in permissions)
             or ("logs" in permissions and "read" not in permissions)):
-        raise ValueError("Only read and logs permissions are supported by API v1.")
+        raise ValueError("The token permissions are not supported by the integration API.")
     if len(set(permissions)) != len(permissions):
         raise ValueError("Permissions must be unique.")
     if expires_at is not None:

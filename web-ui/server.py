@@ -156,6 +156,8 @@ SCHEDULER_LEGACY_DAYS = dict(zip(("Monday", "Tuesday", "Wednesday", "Thursday", 
 API_SCHEMA_VERSION = 1
 API_STATUS_MAX_BYTES = 8 * 1024 * 1024
 API_LOG_MAX_BYTES = 64 * 1024
+API_ACTION_PERMISSIONS = frozenset({"check", "update", "reboot", "cancel"})
+API_TARGET_ID_RE = re.compile(r"^(?:host:)?[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def scheduler_unit_name(schedule_id):
@@ -3876,7 +3878,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("AUTH_REQUIRED", "The bearer token is invalid, expired, or revoked."), HTTPStatus.UNAUTHORIZED)
             return None
         permissions = set(identity.get("permissions", []))
-        if "read" not in permissions or (permission == "logs" and "logs" not in permissions):
+        required = {"read", "logs"} if permission == "logs" else {permission}
+        if not required.issubset(permissions):
             self.send_json(error_payload("API_PERMISSION_REQUIRED", "The token lacks the required permission."), HTTPStatus.FORBIDDEN)
             return None
         return identity
@@ -4275,6 +4278,155 @@ class StatusHandler(BaseHTTPRequestHandler):
         except (OSError, RuntimeError, UnicodeError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
             self.send_json(error_payload("API_DATA_UNAVAILABLE", "The requested data is temporarily unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
 
+    def api_target_record(self, target):
+        """Return one exact target from the persisted managed inventory."""
+        if not isinstance(target, str) or len(target) > 160 or not API_TARGET_ID_RE.fullmatch(target):
+            return None
+        payload = self._api_v1_status_file(self.server.status_file)
+        return next((item for item in payload["targets"]
+                     if isinstance(item, dict) and str(item.get("id")) == target), None)
+
+    def _api_start_job(self, command, target, job_type, extra_env=None, timeout=30):
+        """Start an existing UU job and return its validated unit via HTTP."""
+        try:
+            result = self.run_command(command, timeout=timeout, extra_env=extra_env or {})
+        except subprocess.TimeoutExpired:
+            self.send_json(error_payload("JOB_START_TIMEOUT", "The job start timed out."), HTTPStatus.GATEWAY_TIMEOUT)
+            return
+        except OSError:
+            self.send_json(error_payload("JOB_START_FAILED", "The job could not be started."), HTTPStatus.BAD_GATEWAY)
+            return
+        output = f"{result.stdout}\n{result.stderr}"
+        match = re.search(r"^Job:\s*(\S+)", output, re.MULTILINE)
+        unit = match.group(1) if match else ""
+        expected_prefix = f"ultimate-updater-{job_type}-"
+        if result.returncode == 3:
+            self.send_json(error_payload("JOB_CONFLICT", "A conflicting Ultimate Updater job is already running."), HTTPStatus.CONFLICT)
+            return
+        if result.returncode:
+            if result.returncode == 41:
+                self.send_json(error_payload("BACKUP_REQUIRED", "The existing backup safety requirement was not met."), HTTPStatus.CONFLICT)
+                return
+            self.send_json(error_payload("JOB_START_FAILED", update_start_failure_message(result, "The job could not be started.")), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        if not match or not API_JOB_RE.fullmatch(unit) or not unit.startswith(expected_prefix):
+            self.send_json(error_payload("INVALID_JOB_RESPONSE", "The updater returned no valid job ID."), HTTPStatus.BAD_GATEWAY)
+            return
+        self.send_json({
+            "api_version": 1,
+            "schema_version": API_SCHEMA_VERSION,
+            "job": unit,
+            "target": target,
+            "type": job_type,
+            "state": "running",
+        }, HTTPStatus.ACCEPTED)
+
+    @staticmethod
+    def _api_confirmed(payload):
+        return isinstance(payload, dict) and payload == {"confirm": True}
+
+    def api_v1_post(self, parts):
+        """Dispatch explicitly scoped, token-authorized API-2 actions."""
+        route = None
+        permission = None
+        if parts == ["api", "v1", "check-all"]:
+            route, permission = "check-all", "check"
+        elif len(parts) == 4 and parts[:3] == ["api", "v1", "check"]:
+            route, permission = "check", "check"
+        elif len(parts) == 4 and parts[:3] == ["api", "v1", "check-node"]:
+            route, permission = "check-node", "check"
+        elif len(parts) == 4 and parts[:3] == ["api", "v1", "update"]:
+            route, permission = "update", "update"
+        elif len(parts) == 4 and parts[:3] == ["api", "v1", "update-node"]:
+            route, permission = "update-node", "update"
+        elif len(parts) == 4 and parts[:3] == ["api", "v1", "reboot"]:
+            route, permission = "reboot", "reboot"
+        elif len(parts) == 5 and parts[:3] == ["api", "v1", "jobs"] and parts[4] == "cancel":
+            route, permission = "cancel", "cancel"
+        else:
+            self.send_json(error_payload("METHOD_NOT_ALLOWED", "That API v1 endpoint does not accept POST."), HTTPStatus.METHOD_NOT_ALLOWED)
+            return
+
+        if self.api_token_authorized(permission) is None:
+            return
+        try:
+            payload = self.read_body()
+        except OverflowError as error:
+            self.send_json(error_payload("REQUEST_TOO_LARGE", str(error)), HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+            return
+        except ValueError as error:
+            self.send_json(error_payload("BAD_REQUEST", str(error)), HTTPStatus.BAD_REQUEST)
+            return
+
+        if route in {"update", "update-node", "reboot"} and not self._api_confirmed(payload):
+            self.send_json(error_payload("CONFIRMATION_REQUIRED", "This action requires JSON {\"confirm\": true}."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+        if route in {"check", "check-node", "check-all"} and payload != {}:
+            self.send_json(error_payload("INVALID_ACTION_BODY", "Check actions do not accept request fields."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
+
+        try:
+            if route == "check-all":
+                self._api_start_job(
+                    [str(self.server.job_runner), "start-check", "all-systems", str(self.server.cli), "all"],
+                    "all-systems", "check",
+                    {"UU_JOB_SOURCE": "initial-inventory", "UU_NONINTERACTIVE": "true"},
+                )
+            elif route == "check":
+                target = parts[3]
+                record = self.api_target_record(target)
+                if not record:
+                    self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not part of the managed inventory."), HTTPStatus.NOT_FOUND)
+                    return
+                if record.get("type") == "host":
+                    self.send_json(error_payload("USE_NODE_ACTION", "Use the node check endpoint for Proxmox hosts."), HTTPStatus.UNPROCESSABLE_ENTITY)
+                    return
+                self._api_start_job(
+                    [str(self.server.job_runner), "start-check", target, str(self.server.cli), "target"],
+                    target, "check",
+                    {"UU_JOB_SOURCE": "initial-inventory", "UU_NONINTERACTIVE": "true"},
+                )
+            elif route == "check-node":
+                node = parts[3]
+                if not self.known_node(node):
+                    self.send_json(error_payload("NODE_NOT_FOUND", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
+                    return
+                self._api_start_job(
+                    [str(self.server.job_runner), "start-check", self.node_action_target(node), str(self.server.cli), "node"],
+                    node, "check",
+                    {"UU_JOB_SOURCE": "initial-inventory", "UU_NONINTERACTIVE": "true"},
+                )
+            elif route == "update":
+                target = parts[3]
+                record = self.api_target_record(target)
+                if not record:
+                    self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not part of the managed inventory."), HTTPStatus.NOT_FOUND)
+                    return
+                if record.get("type") == "host":
+                    self.send_json(error_payload("USE_NODE_ACTION", "Use the node update endpoint for Proxmox hosts."), HTTPStatus.UNPROCESSABLE_ENTITY)
+                    return
+                # Deliberately omit --without-verified-backup. API actions
+                # inherit the normal update safety gates.
+                self._api_start_job(
+                    [str(self.server.cli), "update", target], target, "update",
+                    {"UU_NONINTERACTIVE": "true"},
+                )
+            elif route == "update-node":
+                node = parts[3]
+                if not self.known_node(node):
+                    self.send_json(error_payload("NODE_NOT_FOUND", "The requested Proxmox node is not known."), HTTPStatus.NOT_FOUND)
+                    return
+                self._api_start_job(
+                    [str(self.server.cli), "update-node", self.node_action_target(node)],
+                    node, "update", {"UU_NONINTERACTIVE": "true"},
+                )
+            elif route == "reboot":
+                self.action_reboot(parts[3])
+            else:
+                self.handle_job_cancel(parts[3], api=True)
+        except (OSError, RuntimeError, UnicodeError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("API_ACTION_UNAVAILABLE", "The requested action is temporarily unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+
     def schedule_remote_reconciliation(self):
         """Reconcile pending remote references outside the HTTP request.
 
@@ -4476,7 +4628,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 return row
         return None
 
-    def handle_job_cancel(self, unit):
+    def handle_job_cancel(self, unit, api=False):
         """Request cancellation of one running job.
 
         The client supplies only the job identifier.  The runner validates
@@ -4500,7 +4652,10 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("JOB_CANCEL_FAILED", "The job could not be stopped."), HTTPStatus.BAD_GATEWAY)
             return
         if result.returncode in (0, 6):
-            self.send_json({"unit": unit, "state": "stopping", "already_requested": result.returncode == 6}, HTTPStatus.ACCEPTED)
+            response = {"unit": unit, "state": "stopping", "already_requested": result.returncode == 6}
+            if api:
+                response.update({"api_version": 1, "schema_version": API_SCHEMA_VERSION})
+            self.send_json(response, HTTPStatus.ACCEPTED)
             return
         if result.returncode == 3:
             self.send_json(error_payload("JOB_ALREADY_FINISHED", "That job is no longer running."), HTTPStatus.CONFLICT)
@@ -5670,7 +5825,7 @@ class StatusHandler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802 - stdlib handler API
         parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
         if parts[:2] == ["api", "v1"]:
-            self.send_json(error_payload("METHOD_NOT_ALLOWED", "API v1 is read-only and accepts GET requests only."), HTTPStatus.METHOD_NOT_ALLOWED)
+            self.api_v1_post(parts)
             return
         try:
             payload = self.read_body()
