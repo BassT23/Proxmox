@@ -814,11 +814,21 @@ CHECK_HOST () {
   [[ "${UU_REMOTE_TRACE:-false}" == true ]] && remote_status_env=" UU_REMOTE_TRACE=true$remote_status_env"
   [[ "${UU_WINDOWS_HISTORY_ONLY:-false}" == true ]] && remote_status_env=" UU_WINDOWS_HISTORY_ONLY=true$remote_status_env"
   REMOTE_TRACE "host=host:$HOST_NODE step=helper_copy rc=0"
-  if [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]]; then
-    # The remote check derives its lifecycle-safe mode from this explicit
-    # job context. Never infer it from the command name.
-    remote_status_env=" UU_JOB_SOURCE=initial-inventory REMOTE_JOB_SOURCE=initial-inventory REMOTE_INITIAL_INVENTORY=true$remote_status_env"
-  fi
+  # Preserve the scheduler context on the remote worker.  Read-only checks
+  # intentionally use initial-inventory; explicitly selected normal checks
+  # use scheduler.  The separate marker is required for notification policy
+  # and must not be inferred from the source alone.
+  case "${UU_JOB_SOURCE:-}" in
+    initial-inventory|scheduler)
+      remote_status_env=" UU_JOB_SOURCE=${UU_JOB_SOURCE} REMOTE_JOB_SOURCE=${UU_JOB_SOURCE}$remote_status_env"
+      ;;
+  esac
+  [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]] &&
+    remote_status_env=" REMOTE_INITIAL_INVENTORY=true$remote_status_env"
+  [[ "${UU_SCHEDULED_CHECK:-false}" == true ]] &&
+    remote_status_env=" UU_SCHEDULED_CHECK=true$remote_status_env"
+  [[ "${UU_NONINTERACTIVE:-false}" == true ]] &&
+    remote_status_env=" UU_NONINTERACTIVE=true$remote_status_env"
   # Stage guest-specific helpers with the remote worker. The check script
   # itself is streamed via stdin, so using helpers already installed on the
   # remote node could mix versions during a cluster-wide check.

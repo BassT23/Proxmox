@@ -16,3 +16,10 @@ Negalein — original HTML email formatting contribution to preserve notificatio
 line breaks in Microsoft Outlook, adapted for the current status-model mail
 paths and extended with whitespace preservation, UTF-8 handling, HTML escaping,
 and mail-header validation. Source: [Ultimate Updater ioBroker forum thread](https://forum.iobroker.net/topic/62489/proxmox-updater-host-lxc-vm-auch-iobroker-pihole-etc).
+
+## Scheduled-check lifecycle safety
+
+X1pheR — original scheduled-check lifecycle-safety implementation and
+regression coverage in [PR #368](https://github.com/BassT23/Proxmox/pull/368),
+preserved in the develop history and extended here with explicit per-schedule
+read-only/normal modes, legacy-unit migration, and remote-context propagation.

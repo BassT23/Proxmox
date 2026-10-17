@@ -149,6 +149,7 @@ SCHEDULER_TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 SCHEDULER_DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 SCHEDULER_DAY_LABELS = dict(zip(SCHEDULER_DAYS, ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")))
 SCHEDULER_TYPES = {"check-all", "check-selected", "update-all", "update-selected"}
+SCHEDULER_LIFECYCLE_MODES = {"read_only", "normal"}
 SCHEDULER_SCHEMA_VERSION = 2
 SCHEDULER_TARGET_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,160}$")
 SCHEDULER_LEGACY_DAYS = dict(zip(("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), SCHEDULER_DAYS))
@@ -168,6 +169,7 @@ def scheduler_validate(payload, schedule_id=None):
         raise ValueError("Schedule must be an object")
     name = payload.get("name")
     schedule_type = payload.get("type")
+    requested_lifecycle_mode = payload.get("check_lifecycle_mode", "read_only")
     days = payload.get("days")
     month_days = payload.get("month_days", [])
     time_value = payload.get("time")
@@ -178,6 +180,8 @@ def scheduler_validate(payload, schedule_id=None):
         raise ValueError("Name must be 1-80 characters without control characters")
     if schedule_type not in SCHEDULER_TYPES:
         raise ValueError("Unknown scheduler action")
+    if requested_lifecycle_mode not in SCHEDULER_LIFECYCLE_MODES:
+        raise ValueError("Unknown check lifecycle mode")
     if days is None:
         if legacy_frequency == "daily":
             days = list(SCHEDULER_DAYS)
@@ -214,6 +218,8 @@ def scheduler_validate(payload, schedule_id=None):
     normalized = {"name": name, "type": schedule_type, "days": days,
                   "month_days": month_days,
                   "time": time_value, "enabled": enabled, "targets": targets}
+    if schedule_type.startswith("check-"):
+        normalized["check_lifecycle_mode"] = requested_lifecycle_mode
     if schedule_id is not None:
         if not SCHEDULER_ID_RE.fullmatch(schedule_id):
             raise ValueError("Invalid schedule ID")
@@ -313,10 +319,19 @@ def scheduler_save(path, schedules):
 
 
 def scheduler_execution_env(schedule):
-    """Use read-only inventory for scheduled checks, not package updates."""
+    """Build the same execution context for timers and ``Run now``.
+
+    Missing modes are deliberately read-only for backward compatibility.  A
+    normal scheduled check must therefore be explicitly represented in the
+    persisted schedule rather than inferred from an old unit file.
+    """
     env = {"UU_NONINTERACTIVE": "true"}
     if schedule["type"].startswith("check-"):
-        env.update({"UU_JOB_SOURCE": "initial-inventory", "UU_SCHEDULED_CHECK": "true"})
+        env["UU_SCHEDULED_CHECK"] = "true"
+        if schedule.get("check_lifecycle_mode", "read_only") == "normal":
+            env["UU_JOB_SOURCE"] = "scheduler"
+        else:
+            env["UU_JOB_SOURCE"] = "initial-inventory"
     else:
         env["UU_JOB_SOURCE"] = "scheduler"
     return env
@@ -356,6 +371,53 @@ def scheduler_commands(schedule, cli):
         return [[str(cli), "update-all"]]
     command = "check" if schedule["type"] == "check-selected" else "update"
     return [[str(cli), command, scheduler_cli_target(target)] for target in schedule["targets"]]
+
+
+def _atomic_scheduler_unit_write(path, content):
+    """Replace one generated unit without changing its activation state."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent), text=True)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as target:
+            target.write(content)
+            target.flush()
+            os.fsync(target.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def scheduler_migrate_units(scheduler_file, unit_dir, cli, reload_systemd=False):
+    """Bring existing generated units in line with persisted schedule modes.
+
+    Only units that already exist are rewritten.  This makes upgrades
+    idempotent and avoids creating or enabling schedules as a side effect.
+    ``reload_systemd`` is reserved for the installer; it reloads unit metadata
+    but never starts, stops, enables, or disables a timer.
+    """
+    if not scheduler_file.exists():
+        return []
+    schedules = scheduler_load(scheduler_file)
+    changed = []
+    for schedule in schedules:
+        _, service, timer, service_text, timer_text = scheduler_unit_files(schedule, unit_dir, cli)
+        for path, content in ((service, service_text), (timer, timer_text)):
+            if not path.exists():
+                continue
+            if path.read_text(encoding="utf-8") == content:
+                continue
+            _atomic_scheduler_unit_write(path, content)
+            changed.append(path)
+    if changed and reload_systemd:
+        result = subprocess.run(["systemctl", "daemon-reload"], capture_output=True, text=True, timeout=30, check=False)
+        if result.returncode:
+            raise RuntimeError("systemd daemon-reload failed")
+    return changed
 
 
 class TLSConfigurationError(RuntimeError):
@@ -1280,7 +1342,7 @@ PAGE = PAGE.replace('</head>', '<style>.pill.security-warn{display:inline-flex;w
 PAGE = PAGE.replace('<span class="view-note">Checks and updates use the existing CLI</span>', '<span class="view-note">Checks and updates use the existing CLI · <span id="target-selection-indicator" data-state="loading">Target selection: Loading…</span><button id="target-selection-retry" type="button" hidden onclick="retryTargetSelection()">Retry</button> · <span class="target-selection-legend">✓ Only · ✕ Exclude · empty = no explicit rule</span></span>')
 day_toggle_markup = "".join(f'<label><input type="checkbox" name="days" value="{day}"><span>{day}</span></label>' for day in SCHEDULER_DAYS)
 month_day_toggle_markup = "".join(f'<label><input type="checkbox" name="month_days" value="{day}"><span>{day}</span></label>' for day in range(1, 32))
-scheduler_markup = f'''<section id="scheduler-page" class="page-section" hidden><section class="scheduler-head"><div><h2>Scheduler</h2><p>Automatic checks and updates using the existing Ultimate Updater safety rules.</p></div><button id="schedule-add" class="primary" type="button">+ Add schedule</button></section><section class="scheduler-summary"><div><span>Scheduler</span><strong id="scheduler-state">Disabled</strong></div><div><span>Active schedules</span><strong id="scheduler-count">0</strong></div><div><span>Next run</span><strong id="scheduler-next">—</strong></div></section><div id="scheduler-message" class="management-message" hidden></div><section id="scheduler-list" class="scheduler-list"></section><div id="scheduler-empty" class="scheduler-empty">No schedules configured. Add a schedule to automate a full check or update.</div><section id="schedule-modal" class="scheduler-modal" hidden><form id="schedule-form" class="management-panel"><div class="section-title"><div><h2 id="schedule-modal-title">Add schedule</h2><span class="hint">Use the existing configured filters and safety rules.</span></div><button id="schedule-cancel" type="button">Cancel</button></div><input type="hidden" name="id"><label>Name<input name="name" maxlength="80" required></label><label>Action<select name="type"><option value="check-all">Check all systems</option><option value="check-selected">Check selected</option><option value="update-all">Update all systems</option><option value="update-selected">Update selected</option></select></label><fieldset class="schedule-days"><legend>Days of week</legend><div class="day-toggles">{day_toggle_markup}</div></fieldset><label>Time<input name="time" type="time" required></label><section id="schedule-targets" class="schedule-targets" hidden><div class="schedule-targets-head"><div><h3>Targets</h3><span class="hint">Select the concrete systems this schedule may run.</span></div><div class="schedule-target-tools"><button id="target-select-visible" type="button">Select all visible</button><button id="target-clear" type="button">Clear</button></div></div><label class="schedule-target-search">Search<input id="target-search" type="search" placeholder="Name, ID, node, type"></label><div id="schedule-missing" class="schedule-missing" hidden></div><div class="schedule-table-wrap"><table class="schedule-target-table"><thead><tr><th scope="col"><span class="visually-hidden">Select</span></th><th scope="col">ID</th><th scope="col">Node</th><th scope="col">Status</th><th scope="col">Name</th><th scope="col">Type</th></tr></thead><tbody id="schedule-target-body"></tbody></table></div><div id="schedule-selected" class="schedule-selected">Selected (0)</div></section><label class="schedule-enabled"><input name="enabled" type="checkbox" checked> Enabled</label><p id="schedule-update-warning" class="scheduler-warning" hidden>Scheduled updates use the same configured include/exclude and safety rules as manual updates. Reboots only occur according to the existing Ultimate Updater configuration.</p><div class="scheduler-form-actions"><button class="primary" type="submit">Save schedule</button><button id="schedule-delete" type="button" hidden>Delete</button></div></form></section></section>'''
+scheduler_markup = f'''<section id="scheduler-page" class="page-section" hidden><section class="scheduler-head"><div><h2>Scheduler</h2><p>Automatic checks and updates using the existing Ultimate Updater safety rules.</p></div><button id="schedule-add" class="primary" type="button">+ Add schedule</button></section><section class="scheduler-summary"><div><span>Scheduler</span><strong id="scheduler-state">Disabled</strong></div><div><span>Active schedules</span><strong id="scheduler-count">0</strong></div><div><span>Next run</span><strong id="scheduler-next">—</strong></div></section><div id="scheduler-message" class="management-message" hidden></div><section id="scheduler-list" class="scheduler-list"></section><div id="scheduler-empty" class="scheduler-empty">No schedules configured. Add a schedule to automate a full check or update.</div><section id="schedule-modal" class="scheduler-modal" hidden><form id="schedule-form" class="management-panel"><div class="section-title"><div><h2 id="schedule-modal-title">Add schedule</h2><span class="hint">Use the existing configured filters and safety rules.</span></div><button id="schedule-cancel" type="button">Cancel</button></div><input type="hidden" name="id"><label>Name<input name="name" maxlength="80" required></label><label>Action<select name="type"><option value="check-all">Check all systems</option><option value="check-selected">Check selected</option><option value="update-all">Update all systems</option><option value="update-selected">Update selected</option></select></label><fieldset id="schedule-check-mode" class="schedule-days" hidden><legend>Check mode</legend><label><select name="check_lifecycle_mode"><option value="read_only">Read-only (recommended)</option><option value="normal">Normal check</option></select></label><span class="hint">Read-only checks do not start stopped guests or resume paused VMs. Normal checks use the configured guest lifecycle settings.</span><p id="schedule-normal-warning" class="scheduler-warning" hidden>Normal checks may temporarily start stopped guests or resume paused VMs according to the configured lifecycle settings. Confirm this choice before saving.</p></fieldset><fieldset class="schedule-days"><legend>Days of week</legend><div class="day-toggles">{day_toggle_markup}</div></fieldset><label>Time<input name="time" type="time" required></label><section id="schedule-targets" class="schedule-targets" hidden><div class="schedule-targets-head"><div><h3>Targets</h3><span class="hint">Select the concrete systems this schedule may run.</span></div><div class="schedule-target-tools"><button id="target-select-visible" type="button">Select all visible</button><button id="target-clear" type="button">Clear</button></div></div><label class="schedule-target-search">Search<input id="target-search" type="search" placeholder="Name, ID, node, type"></label><div id="schedule-missing" class="schedule-missing" hidden></div><div class="schedule-table-wrap"><table class="schedule-target-table"><thead><tr><th scope="col"><span class="visually-hidden">Select</span></th><th scope="col">ID</th><th scope="col">Node</th><th scope="col">Status</th><th scope="col">Name</th><th scope="col">Type</th></tr></thead><tbody id="schedule-target-body"></tbody></table></div><div id="schedule-selected" class="schedule-selected">Selected (0)</div></section><label class="schedule-enabled"><input name="enabled" type="checkbox" checked> Enabled</label><p id="schedule-update-warning" class="scheduler-warning" hidden>Scheduled updates use the same configured include/exclude and safety rules as manual updates. Reboots only occur according to the existing Ultimate Updater configuration.</p><div class="scheduler-form-actions"><button class="primary" type="submit">Save schedule</button><button id="schedule-delete" type="button" hidden>Delete</button></div></form></section></section>'''
 scheduler_markup = scheduler_markup.replace(
     f'<fieldset class="schedule-days"><legend>Days of week</legend><div class="day-toggles">{day_toggle_markup}</div></fieldset>',
     f'<fieldset class="schedule-days"><legend>Days of week</legend><div class="day-toggles">{day_toggle_markup}</div></fieldset><fieldset class="schedule-days schedule-month-days"><legend>Days of month</legend><div class="day-toggles">{month_day_toggle_markup}</div><span class="hint schedule-day-hint">Optional. When selected, month days take precedence over weekdays.</span></fieldset>',
@@ -1296,25 +1358,27 @@ PAGE = PAGE.replace('</body></html>', '''<script>
 (() => {
   const modal=document.getElementById('schedule-modal'),form=document.getElementById('schedule-form'),list=document.getElementById('scheduler-list'),empty=document.getElementById('scheduler-empty'),message=document.getElementById('scheduler-message');
   if(!modal||!form)return;
-  let schedules=[],schedulerTargets=[],selectedTargets=new Set();
+  let schedules=[],schedulerTargets=[],selectedTargets=new Set(),originalCheckLifecycleMode='read_only';
   const scheduleApi=async(path,options={})=>{const response=await fetch(path,{...options,headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken,...(options.headers||{})}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data?.error?.message||'Scheduler request failed.');return data};
   const showScheduleMessage=(text,error=false)=>{message.hidden=!text;message.textContent=text||'';message.className=`management-message${error?' error':''}`};
   const formatScheduleTime=value=>{if(!value)return'—';const date=new Date(value);if(Number.isNaN(date.getTime()))return'—';const parts=new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}).formatToParts(date);const part=type=>parts.find(item=>item.type===type)?.value||'';return`${part('month')} ${part('day')} · ${part('hour')}:${part('minute')} ${part('dayPeriod')}`};
   const dayLabels={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
   const scheduleLabel=item=>{const monthDays=item.month_days||[];if(monthDays.length)return`Days ${monthDays.join(', ')} · ${item.time}`;const days=item.days||[];if(days.length===7)return`Daily · ${item.time}`;if(days.join(',')==='Mon,Tue,Wed,Thu,Fri')return`Weekdays · ${item.time}`;if(days.join(',')==='Sat,Sun')return`Weekend · ${item.time}`;if(days.length===1)return`${dayLabels[days[0]]||days[0]} · ${item.time}`;return`${days.join(', ')} · ${item.time}`};
+  const lifecycleLabel=item=>item.type.startsWith('check-')?`Check mode: ${item.check_lifecycle_mode==='normal'?'Normal':'Read-only'}`:'';
   const resultLabel=item=>item.last_run?`${item.last_run.result||'Started'} · ${formatScheduleTime(item.last_run.timestamp)}`:'Not run yet';
   const isSelected=item=>item.type==='check-selected'||item.type==='update-selected';
   const targetLabel=item=>`${item.name||item.id} · ${item.type_label||item.type}`;
   const renderTargetTable=()=>{const query=document.getElementById('target-search').value.trim().toLowerCase(),body=document.getElementById('schedule-target-body');const visible=schedulerTargets.filter(item=>[item.id,item.node,item.name,item.type_label,item.status].join(' ').toLowerCase().includes(query));body.replaceChildren();visible.forEach(item=>{const row=document.createElement('tr');row.innerHTML=`<td><input type="checkbox" data-target-id="${esc(item.id)}" ${selectedTargets.has(item.id)?'checked':''} aria-label="Select ${esc(targetLabel(item))}"></td><td>${esc(item.id.replace(/^host:/,''))}</td><td>${esc(item.node)}</td><td>${esc(item.status)}</td><td>${esc(item.name)}</td><td>${esc(item.type_label)}</td>`;body.appendChild(row)});document.getElementById('schedule-selected').textContent=`Selected (${selectedTargets.size})`;const known=new Set(schedulerTargets.map(item=>item.id)),missing=[...selectedTargets].filter(id=>!known.has(id)),missingBox=document.getElementById('schedule-missing');missingBox.hidden=!missing.length;missingBox.textContent=missing.length?`Missing targets: ${missing.join(', ')}`:''};
   const loadSchedulerTargets=async()=>{try{const data=await scheduleApi('/api/scheduler-targets');schedulerTargets=Array.isArray(data.targets)?data.targets:[];renderTargetTable()}catch(error){showScheduleMessage(error.message,true)}};
-  const renderSchedules=data=>{schedules=Array.isArray(data.schedules)?data.schedules:[];const enabled=schedules.filter(item=>item.enabled);document.getElementById('scheduler-state').textContent=enabled.length?'Enabled':'Disabled';document.getElementById('scheduler-count').textContent=enabled.length;const next=enabled.filter(item=>item.next_run).sort((a,b)=>a.next_run.localeCompare(b.next_run))[0];document.getElementById('scheduler-next').textContent=next?formatScheduleTime(next.next_run):'—';list.replaceChildren();empty.hidden=schedules.length>0;schedules.forEach(item=>{const card=document.createElement('article');card.className='scheduler-card';card.innerHTML=`<div class="scheduler-card-main"><div class="scheduler-card-title"><strong>${esc(item.name)}</strong><span class="schedule-state ${item.enabled?'enabled':'disabled'}">${item.enabled?'Enabled':'Disabled'}</span></div><span class="hint">${item.type==='check-all'?'Check all systems':item.type==='check-selected'?'Check selected':item.type==='update-all'?'Update all systems':'Update selected'} · ${item.type.endsWith('selected')?`${item.targets.length} targets · `:''}${scheduleLabel(item)}</span><small>Next run: ${item.enabled?formatScheduleTime(item.next_run):'Disabled'}<br>Last run: ${esc(resultLabel(item))}</small></div><div class="scheduler-card-actions"><button type="button" data-schedule-action="edit" data-schedule-id="${item.id}">Edit</button><button type="button" data-schedule-action="run" data-schedule-id="${item.id}">Run now</button><button type="button" data-schedule-action="toggle" data-schedule-id="${item.id}">${item.enabled?'Disable':'Enable'}</button><button type="button" data-schedule-action="delete" data-schedule-id="${item.id}">Delete</button></div>`;list.appendChild(card)})};
+  const renderSchedules=data=>{schedules=Array.isArray(data.schedules)?data.schedules:[];const enabled=schedules.filter(item=>item.enabled);document.getElementById('scheduler-state').textContent=enabled.length?'Enabled':'Disabled';document.getElementById('scheduler-count').textContent=enabled.length;const next=enabled.filter(item=>item.next_run).sort((a,b)=>a.next_run.localeCompare(b.next_run))[0];document.getElementById('scheduler-next').textContent=next?formatScheduleTime(next.next_run):'—';list.replaceChildren();empty.hidden=schedules.length>0;schedules.forEach(item=>{const card=document.createElement('article');card.className='scheduler-card';card.innerHTML=`<div class="scheduler-card-main"><div class="scheduler-card-title"><strong>${esc(item.name)}</strong><span class="schedule-state ${item.enabled?'enabled':'disabled'}">${item.enabled?'Enabled':'Disabled'}</span></div><span class="hint">${item.type==='check-all'?'Check all systems':item.type==='check-selected'?'Check selected':item.type==='update-all'?'Update all systems':'Update selected'} · ${item.type.endsWith('selected')?`${item.targets.length} targets · `:''}${lifecycleLabel(item)}${lifecycleLabel(item)?' · ':''}${scheduleLabel(item)}</span><small>Next run: ${item.enabled?formatScheduleTime(item.next_run):'Disabled'}<br>Last run: ${esc(resultLabel(item))}</small></div><div class="scheduler-card-actions"><button type="button" data-schedule-action="edit" data-schedule-id="${item.id}">Edit</button><button type="button" data-schedule-action="run" data-schedule-id="${item.id}">Run now</button><button type="button" data-schedule-action="toggle" data-schedule-id="${item.id}">${item.enabled?'Disable':'Enable'}</button><button type="button" data-schedule-action="delete" data-schedule-id="${item.id}">Delete</button></div>`;list.appendChild(card)})};
   const loadSchedules=async()=>{if(!csrfToken)return;try{renderSchedules(await scheduleApi('/api/schedules'));await loadSchedulerTargets()}catch(error){showScheduleMessage(error.message,true)}};
-  const openSchedule=item=>{form.reset();form.elements.id.value=item?.id||'';form.elements.name.value=item?.name||'';form.elements.type.value=item?.type||'check-all';form.elements.time.value=item?.time||'03:00';form.elements.enabled.checked=item?item.enabled:true;selectedTargets=new Set(item?.targets||[]);form.querySelectorAll('input[name="days"]').forEach(input=>input.checked=(item?.days||['Mon','Tue','Wed','Thu','Fri','Sat','Sun']).includes(input.value));form.querySelectorAll('input[name="month_days"]').forEach(input=>input.checked=(item?.month_days||[]).includes(Number(input.value)));document.getElementById('schedule-modal-title').textContent=item?'Edit schedule':'Add schedule';document.getElementById('schedule-delete').hidden=!item;modal.hidden=false;form.elements.type.dispatchEvent(new Event('change'));renderTargetTable()};
+  const openSchedule=item=>{form.reset();form.elements.id.value=item?.id||'';form.elements.name.value=item?.name||'';form.elements.type.value=item?.type||'check-all';form.elements.check_lifecycle_mode.value=item?.check_lifecycle_mode||'read_only';originalCheckLifecycleMode=item?.check_lifecycle_mode||'read_only';form.elements.time.value=item?.time||'03:00';form.elements.enabled.checked=item?item.enabled:true;selectedTargets=new Set(item?.targets||[]);form.querySelectorAll('input[name="days"]').forEach(input=>input.checked=(item?.days||['Mon','Tue','Wed','Thu','Fri','Sat','Sun']).includes(input.value));form.querySelectorAll('input[name="month_days"]').forEach(input=>input.checked=(item?.month_days||[]).includes(Number(input.value)));document.getElementById('schedule-modal-title').textContent=item?'Edit schedule':'Add schedule';document.getElementById('schedule-delete').hidden=!item;modal.hidden=false;form.elements.type.dispatchEvent(new Event('change'));renderTargetTable()};
   const closeSchedule=()=>{modal.hidden=true};
   document.getElementById('schedule-add').onclick=()=>openSchedule();document.getElementById('schedule-cancel').onclick=closeSchedule;document.getElementById('schedule-delete').onclick=async()=>{const id=form.elements.id.value,item=schedules.find(candidate=>candidate.id===id);if(!item||!confirm(`Delete schedule "${item.name}"?`))return;try{await scheduleApi(`/api/schedules/${id}`,{method:'DELETE'});closeSchedule();await loadSchedules()}catch(error){showScheduleMessage(error.message,true)}};
   const syncScheduleDayMode=()=>{const monthSelected=form.querySelectorAll('input[name="month_days"]:checked').length>0;form.querySelectorAll('input[name="days"]').forEach(input=>{input.disabled=monthSelected;input.closest('label').title=monthSelected?'Month days take precedence over weekdays':''});document.querySelector('.schedule-day-hint').textContent=monthSelected?'Month days take precedence over weekdays.':'Optional. When selected, month days take precedence over weekdays.'};
-  form.elements.type.onchange=()=>{const selected=isSelected({type:form.elements.type.value});document.getElementById('schedule-targets').hidden=!selected;document.getElementById('schedule-update-warning').hidden=!form.elements.type.value.startsWith('update');syncScheduleDayMode();renderTargetTable()};form.querySelectorAll('input[name="month_days"]').forEach(input=>input.onchange=syncScheduleDayMode);document.getElementById('target-search').oninput=renderTargetTable;document.getElementById('target-select-visible').onclick=()=>{document.querySelectorAll('#schedule-target-body [data-target-id]').forEach(input=>selectedTargets.add(input.dataset.targetId));renderTargetTable()};document.getElementById('target-clear').onclick=()=>{selectedTargets.clear();renderTargetTable()};document.getElementById('schedule-target-body').onchange=event=>{if(!event.target.matches('[data-target-id]'))return;if(event.target.checked)selectedTargets.add(event.target.dataset.targetId);else selectedTargets.delete(event.target.dataset.targetId);renderTargetTable()};
-  form.onsubmit=async event=>{event.preventDefault();const values={name:form.elements.name.value,type:form.elements.type.value,days:[...form.querySelectorAll('input[name="days"]:checked')].map(input=>input.value),month_days:[...form.querySelectorAll('input[name="month_days"]:checked')].map(input=>Number(input.value)),time:form.elements.time.value,enabled:form.elements.enabled.checked,targets:isSelected({type:form.elements.type.value})?[...selectedTargets]:[]},id=form.elements.id.value;try{if(!values.days.length&&!values.month_days.length)throw new Error('Select at least one weekday or month day.');if(isSelected(values)&&!values.targets.length)throw new Error('Select at least one target.');if(values.type.startsWith('update')&&!id&&!confirm('This schedule can automatically update systems using the configured safety rules. Continue?'))return;await scheduleApi(id?`/api/schedules/${id}`:'/api/schedules',{method:id?'PUT':'POST',body:JSON.stringify(values)});closeSchedule();await loadSchedules()}catch(error){showScheduleMessage(error.message,true)} };
+  const syncScheduleMode=()=>{const check=form.elements.type.value.startsWith('check-'),modeBox=document.getElementById('schedule-check-mode');modeBox.hidden=!check;document.getElementById('schedule-normal-warning').hidden=!check||form.elements.check_lifecycle_mode.value!=='normal'};
+  form.elements.type.onchange=()=>{const selected=isSelected({type:form.elements.type.value});document.getElementById('schedule-targets').hidden=!selected;document.getElementById('schedule-update-warning').hidden=!form.elements.type.value.startsWith('update');syncScheduleMode();syncScheduleDayMode();renderTargetTable()};form.elements.check_lifecycle_mode.onchange=syncScheduleMode;form.querySelectorAll('input[name="month_days"]').forEach(input=>input.onchange=syncScheduleDayMode);document.getElementById('target-search').oninput=renderTargetTable;document.getElementById('target-select-visible').onclick=()=>{document.querySelectorAll('#schedule-target-body [data-target-id]').forEach(input=>selectedTargets.add(input.dataset.targetId));renderTargetTable()};document.getElementById('target-clear').onclick=()=>{selectedTargets.clear();renderTargetTable()};document.getElementById('schedule-target-body').onchange=event=>{if(!event.target.matches('[data-target-id]'))return;if(event.target.checked)selectedTargets.add(event.target.dataset.targetId);else selectedTargets.delete(event.target.dataset.targetId);renderTargetTable()};
+  form.onsubmit=async event=>{event.preventDefault();const type=form.elements.type.value,values={name:form.elements.name.value,type,days:[...form.querySelectorAll('input[name="days"]:checked')].map(input=>input.value),month_days:[...form.querySelectorAll('input[name="month_days"]:checked')].map(input=>Number(input.value)),time:form.elements.time.value,enabled:form.elements.enabled.checked,targets:isSelected({type})?[...selectedTargets]:[]},id=form.elements.id.value;if(type.startsWith('check-'))values.check_lifecycle_mode=form.elements.check_lifecycle_mode.value;try{if(!values.days.length&&!values.month_days.length)throw new Error('Select at least one weekday or month day.');if(isSelected(values)&&!values.targets.length)throw new Error('Select at least one target.');if(type.startsWith('check-')&&values.check_lifecycle_mode==='normal'&&originalCheckLifecycleMode!=='normal'&&!confirm('Normal checks may start stopped guests or resume paused VMs. Continue?'))return;if(type.startsWith('update')&&!id&&!confirm('This schedule can automatically update systems using the configured safety rules. Continue?'))return;await scheduleApi(id?`/api/schedules/${id}`:'/api/schedules',{method:id?'PUT':'POST',body:JSON.stringify(values)});closeSchedule();await loadSchedules()}catch(error){showScheduleMessage(error.message,true)} };
   list.onclick=async event=>{const button=event.target.closest('[data-schedule-action]');if(!button)return;const item=schedules.find(candidate=>candidate.id===button.dataset.scheduleId);if(!item)return;try{if(button.dataset.scheduleAction==='edit')return openSchedule(item);if(button.dataset.scheduleAction==='delete'){if(!confirm(`Delete schedule "${item.name}"?`))return;await scheduleApi(`/api/schedules/${item.id}`,{method:'DELETE'})}else if(button.dataset.scheduleAction==='toggle'){await scheduleApi(`/api/schedules/${item.id}`,{method:'PUT',body:JSON.stringify({enabled:!item.enabled})})}else if(button.dataset.scheduleAction==='run'){button.disabled=true;await scheduleApi(`/api/schedules/${item.id}/run`,{method:'POST',body:'{}'})}await loadSchedules()}catch(error){showScheduleMessage(error.message,true)}finally{button.disabled=false}};
   window.addEventListener('scheduler-page-open',loadSchedules);window.addEventListener('uu-auth-ready',loadSchedules);if(window.__uu_authenticated&&csrfToken)loadSchedules();setInterval(()=>{if(!document.getElementById('scheduler-page').hidden&&csrfToken)loadSchedules()},10000);
 })();
@@ -5311,8 +5375,14 @@ class StatusHandler(BaseHTTPRequestHandler):
             jobs = self.jobs()
         except (OSError, RuntimeError, subprocess.TimeoutExpired):
             return None
-        matches = [job for job in jobs if job.get("source") == "scheduler"
-                   and job.get("type") == ("check" if schedule["type"].startswith("check") else "update")]
+        expected_type = "check" if schedule["type"].startswith("check") else "update"
+        allowed_sources = {"scheduler"}
+        if expected_type == "check":
+            # Read-only scheduled checks use the initial-inventory source so
+            # that the existing lifecycle-safe check engine is selected.
+            allowed_sources.add("initial-inventory")
+        matches = [job for job in jobs if job.get("source") in allowed_sources
+                   and job.get("type") == expected_type]
         if not matches:
             return None
         job = sorted(matches, key=lambda item: item.get("started_at") or "", reverse=True)[0]
@@ -6206,6 +6276,8 @@ def parse_args():
     parser.add_argument("--scheduler-unit-dir", type=Path, default=DEFAULT_SCHEDULER_UNIT_DIR)
     parser.add_argument("--auth-file", type=Path, default=DEFAULT_AUTH_FILE)
     parser.add_argument("--api-token-file", type=Path, default=DEFAULT_API_TOKEN_FILE)
+    parser.add_argument("--migrate-scheduler", action="store_true",
+                        help="safely refresh existing generated scheduler units and exit")
     parser.add_argument("--bind", default=DEFAULT_BIND, help="bind address (default: localhost)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser.parse_args()
@@ -6215,6 +6287,16 @@ def main():
     args = parse_args()
     if not 1 <= args.port <= 65535:
         raise SystemExit("port must be between 1 and 65535")
+    if args.migrate_scheduler:
+        try:
+            changed = scheduler_migrate_units(
+                args.scheduler_file, args.scheduler_unit_dir, args.cli, reload_systemd=True
+            )
+        except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as error:
+            print(f"Scheduler migration failed: {error}", flush=True)
+            raise SystemExit(1)
+        print(f"Scheduler units checked; {len(changed)} updated.", flush=True)
+        return
     try:
         tls_context, tls_source, tls_cert, tls_fallback_reason = build_tls_context()
     except TLSConfigurationError as error:

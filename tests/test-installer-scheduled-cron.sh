@@ -11,7 +11,7 @@ eval "$helper"
 fresh="$WORK_DIR/fresh.cron"
 : > "$fresh"
 ensure_scheduled_check_cron "$fresh"
-grep -Fq '00 06   * * *   root RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler /usr/local/sbin/update -check >/dev/null 2>&1' "$fresh"
+grep -Fq '00 06   * * *   root RUN_FROM_CRON=true UU_NONINTERACTIVE=true UU_JOB_SOURCE=initial-inventory UU_SCHEDULED_CHECK=true /usr/local/sbin/update -check >/dev/null 2>&1' "$fresh"
 
 legacy="$WORK_DIR/legacy.cron"
 cat > "$legacy" <<'EOF'
@@ -19,26 +19,26 @@ cat > "$legacy" <<'EOF'
 00 06 * * * root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1
 EOF
 ensure_scheduled_check_cron "$legacy"
-grep -Fq '00 06 * * * root RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler /usr/local/sbin/update -check >/dev/null 2>&1' "$legacy"
+grep -Fq '00 06 * * * root RUN_FROM_CRON=true UU_NONINTERACTIVE=true UU_JOB_SOURCE=initial-inventory UU_SCHEDULED_CHECK=true /usr/local/sbin/update -check >/dev/null 2>&1' "$legacy"
 grep -Fq '# unrelated entry' "$legacy"
 
 known_legacy="$WORK_DIR/known-legacy.cron"
 printf '00 06 * * * root RUN_FROM_CRON=true /etc/ultimate-updater/check-updates.sh >/dev/null 2>&1\n' > "$known_legacy"
 ensure_scheduled_check_cron "$known_legacy"
-grep -Fq 'RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler /etc/ultimate-updater/check-updates.sh' "$known_legacy"
+grep -Fq 'RUN_FROM_CRON=true UU_NONINTERACTIVE=true UU_JOB_SOURCE=initial-inventory UU_SCHEDULED_CHECK=true /etc/ultimate-updater/check-updates.sh' "$known_legacy"
 
 custom="$WORK_DIR/custom.cron"
 printf '30 04 * * * root RUN_FROM_CRON=true /usr/local/sbin/update -check >/dev/null 2>&1\n' > "$custom"
 ensure_scheduled_check_cron "$custom"
 grep -Fq '30 04 * * *' "$custom"
-grep -Fq 'RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler' "$custom"
+grep -Fq 'RUN_FROM_CRON=true UU_NONINTERACTIVE=true UU_JOB_SOURCE=initial-inventory UU_SCHEDULED_CHECK=true' "$custom"
 
 before=$(sha256sum "$custom")
 ensure_scheduled_check_cron "$custom"
 after=$(sha256sum "$custom")
 [[ "$before" == "$after" ]]
 [[ $(grep -Fc 'update -check' "$custom") -eq 1 ]]
-[[ $(grep -Fc 'UU_JOB_SOURCE=scheduler' "$custom") -eq 1 ]]
+[[ $(grep -Fc 'UU_JOB_SOURCE=initial-inventory' "$custom") -eq 1 ]]
 
 unrelated="$WORK_DIR/unrelated.cron"
 cat > "$unrelated" <<'EOF'

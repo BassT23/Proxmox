@@ -43,7 +43,7 @@ if env RUN_FROM_CRON=true LOCAL_FILES="$WORK_DIR/local" \
   exit 1
 fi
 
-grep -Fq 'Environment=UU_NONINTERACTIVE=true' "$ROOT_DIR/web-ui/server.py"
+grep -Fq '"UU_NONINTERACTIVE": "true"' "$ROOT_DIR/web-ui/server.py"
 grep -Fq '"UU_NONINTERACTIVE": "true"' "$ROOT_DIR/web-ui/server.py"
 grep -Fq -- '--setenv=UU_NONINTERACTIVE=true' "$ROOT_DIR/job-runner.sh"
 grep -Fq 'UU_NONINTERACTIVE=true' "$ROOT_DIR/update.sh"

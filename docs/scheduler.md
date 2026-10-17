@@ -30,15 +30,27 @@ include/exclude filters, safety rules, locks, lifecycle handling, notifications,
 status capture, and reboot policy therefore remain authoritative. `Run now`
 uses the same job entry point.
 
-Scheduled **Check** jobs select the existing read-only `initial-inventory`
+Scheduled **Check** jobs default to the existing read-only `initial-inventory`
 lifecycle, preserving the rule that stopped/paused VMs and containers must not
-be started or resumed just to collect update availability. A separate
-`UU_SCHEDULED_CHECK=true` environment marker controls scheduled notification
-policy without replacing the guest lifecycle selector. The marker is passed
-through background systemd check jobs and applies equally to timer and `Run now`
-execution. Scheduled **Update** jobs keep their existing operator-configured
-update behavior and remain distinct from read-only Checks. No new scheduler,
-collector, guest power action, or automatic package update is introduced.
+be started or resumed just to collect update availability. Each check schedule
+stores `check_lifecycle_mode`: `read_only` (the default, including older
+schedules without the field) or an explicitly selected `normal` mode. Normal
+mode uses the existing configured `CHECK_STOPPED_*` and paused-VM rules and is
+never enabled implicitly. The WebUI asks for confirmation when normal mode is
+first selected.
+
+All scheduled checks carry the separate `UU_SCHEDULED_CHECK=true` marker for
+notification policy. The lifecycle source and marker are passed through
+background systemd check jobs, remote checks, and `Run now` execution. Scheduled
+**Update** jobs remain distinct, continue to use `UU_JOB_SOURCE=scheduler`, and
+are unaffected by the check lifecycle mode. On upgrade, existing generated
+units are reconciled from `schedules.json` without creating, enabling,
+disabling, starting, or stopping timers.
+
+Legacy cron check entries are also lifecycle-safe by default and receive the
+same read-only context. Custom unrelated cron entries are not changed. No new
+scheduler, collector, guest power action, or automatic package update is
+introduced.
 
 Times use the local system timezone shown in the WebUI. Schedules can be
 enabled, disabled, edited, or deleted without changing `update.conf`.

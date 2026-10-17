@@ -15,8 +15,15 @@ base = {
     "id": "0123456789ab", "name": "Nightly check", "type": "check-all",
     "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     "month_days": [], "time": "03:00", "enabled": True, "targets": [],
+    "check_lifecycle_mode": "read_only",
 }
 assert server.scheduler_validate(base, base["id"]) == base
+assert server.scheduler_validate({key: value for key, value in base.items() if key != "check_lifecycle_mode"}, base["id"])["check_lifecycle_mode"] == "read_only"
+normal = server.scheduler_validate({**base, "check_lifecycle_mode": "normal"}, base["id"])
+assert normal["check_lifecycle_mode"] == "normal"
+assert server.scheduler_execution_env(normal) == {
+    "UU_NONINTERACTIVE": "true", "UU_JOB_SOURCE": "scheduler", "UU_SCHEDULED_CHECK": "true"
+}
 assert server.scheduler_calendar(base) == "*-*-* 03:00:00"
 single = {**base, "days": ["Sun"], "time": "04:05"}
 assert server.scheduler_calendar(single) == "Sun *-*-* 04:05:00"
@@ -39,6 +46,8 @@ assert server.scheduler_commands(selected, Path("/usr/local/sbin/ultimate-update
     ["/usr/local/sbin/ultimate-updater", "check", "101"],
 ]
 assert server.scheduler_validate({**selected, "type": "update-selected"}, base["id"])["type"] == "update-selected"
+update_with_mode = server.scheduler_validate({**base, "type": "update-all", "check_lifecycle_mode": "normal"}, base["id"])
+assert "check_lifecycle_mode" not in update_with_mode
 
 legacy_daily = {"id": base["id"], "name": base["name"], "type": "check-all",
                 "frequency": "daily", "day": "", "time": "03:00", "enabled": True}
@@ -59,6 +68,8 @@ for invalid in (
     {**base, "name": "bad\nname"},
     {**base, "type": "check-selected", "targets": []},
     {**base, "targets": ["bad target"]},
+    {**base, "check_lifecycle_mode": "unsafe"},
+    {**base, "check_lifecycle_mode": None},
 ):
     try:
         server.scheduler_validate(invalid, base["id"])
@@ -88,10 +99,20 @@ with tempfile.TemporaryDirectory() as directory:
     assert "ExecStart=/usr/local/sbin/ultimate-updater check 101" in service
     assert "OnCalendar=Mon,Wed,Fri *-*-* 03:00:00" in timer
     assert ";" not in service
+    normal_service = server.scheduler_unit_files(normal, Path(directory), Path("/usr/local/sbin/ultimate-updater"))[3]
+    assert "Environment=UU_JOB_SOURCE=scheduler" in normal_service
+    assert "Environment=UU_SCHEDULED_CHECK=true" in normal_service
+    old_service = Path(directory) / "ultimate-updater-schedule-0123456789ab.service"
+    old_service.write_text("[Service]\nEnvironment=UU_JOB_SOURCE=scheduler\n", encoding="utf-8")
+    changed = server.scheduler_migrate_units(path, Path(directory), Path("/usr/local/sbin/ultimate-updater"))
+    assert old_service in changed
+    assert "Environment=UU_JOB_SOURCE=initial-inventory" in old_service.read_text(encoding="utf-8")
+    assert server.scheduler_migrate_units(path, Path(directory), Path("/usr/local/sbin/ultimate-updater")) == []
 
 source = (root / "web-ui" / "server.py").read_text(encoding="utf-8")
 assert server.scheduler_execution_env(base)["UU_JOB_SOURCE"] == "initial-inventory"
 assert server.scheduler_execution_env(base)["UU_SCHEDULED_CHECK"] == "true"
+assert server.scheduler_execution_env(normal)["UU_JOB_SOURCE"] == "scheduler"
 assert server.scheduler_execution_env({**base,"type":"update-all"})["UU_JOB_SOURCE"] == "scheduler"
 assert "scheduler_execution_env(schedule)" in source
 assert "EMAIL_DAILY_CHECK:'Email for scheduled checks'" in source
@@ -102,5 +123,7 @@ status_model = (root / "status-model.sh").read_text(encoding="utf-8")
 assert 'UU_SCHEDULED_CHECK:-false' in status_model
 check_script = (root / "check-updates.sh").read_text(encoding="utf-8")
 assert 'UU_SCHEDULED_CHECK:-false' in check_script
+assert 'REMOTE_JOB_SOURCE=${UU_JOB_SOURCE}' in check_script
+assert 'UU_SCHEDULED_CHECK=true' in check_script
 
 print("scheduler tests: PASS")

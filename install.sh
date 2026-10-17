@@ -262,6 +262,23 @@ SETUP_WEB_SERVICE () {
   printf '✅ Web UI ready on port %s.\n' "$port"
 }
 
+MIGRATE_SCHEDULER_UNITS () {
+  # Existing generated services are not recreated merely by replacing the
+  # WebUI.  Reconcile only units that are already present; never create,
+  # enable, disable, start, or stop a schedule during an upgrade.
+  local scheduler_file="$LOCAL_FILES/schedules.json"
+  [[ -f "$scheduler_file" ]] || return 0
+  [[ -f "$LOCAL_FILES/web-ui/server.py" ]] || return 0
+  if ! python3 "$LOCAL_FILES/web-ui/server.py" \
+      --migrate-scheduler \
+      --scheduler-file "$scheduler_file" \
+      --scheduler-unit-dir /etc/systemd/system \
+      --cli /usr/local/sbin/ultimate-updater; then
+    echo "⚠ Existing scheduler units could not be safely migrated; update stopped before WebUI restart." >&2
+    return 1
+  fi
+}
+
 START_INITIAL_INVENTORY () {
   local job_runner="$LOCAL_FILES/job-runner.sh" cli="$LOCAL_FILES/ultimate-updater"
   local output job marker_tmp lock_fd
@@ -422,32 +439,21 @@ ensure_scheduled_check_cron() {
         (line ~ /(^|[[:space:]])\/usr\/local\/sbin\/update[[:space:]]+-check([[:space:]]|$)/ ||
          line ~ /(^|[[:space:]])\/etc\/ultimate-updater\/check-updates[.]sh([[:space:]]|$)/)
     }
-    function add_scheduler(line) {
+    function add_check_context(line) {
+      gsub(/[[:space:]]*RUN_FROM_CRON=true/, "", line)
+      gsub(/[[:space:]]*UU_JOB_SOURCE=(scheduler|initial-inventory)/, "", line)
+      gsub(/[[:space:]]*UU_SCHEDULED_CHECK=[^[:space:]]+/, "", line)
+      gsub(/[[:space:]]*UU_NONINTERACTIVE=[^[:space:]]+/, "", line)
       if (line ~ /\/usr\/local\/sbin\/update[[:space:]]+-check/) {
-        sub(/\/usr\/local\/sbin\/update[[:space:]]+-check/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler &", line)
+        sub(/\/usr\/local\/sbin\/update[[:space:]]+-check/, "RUN_FROM_CRON=true UU_NONINTERACTIVE=true UU_JOB_SOURCE=initial-inventory UU_SCHEDULED_CHECK=true &", line)
       } else {
-        sub(/\/etc\/ultimate-updater\/check-updates[.]sh/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler &", line)
-      }
-      return line
-    }
-    function add_headless(line) {
-      if (line ~ /\/usr\/local\/sbin\/update[[:space:]]+-check/) {
-        sub(/\/usr\/local\/sbin\/update[[:space:]]+-check/, "RUN_FROM_CRON=true &", line)
-      } else {
-        sub(/\/etc\/ultimate-updater\/check-updates[.]sh/, "RUN_FROM_CRON=true &", line)
+        sub(/\/etc\/ultimate-updater\/check-updates[.]sh/, "RUN_FROM_CRON=true UU_NONINTERACTIVE=true UU_JOB_SOURCE=initial-inventory UU_SCHEDULED_CHECK=true &", line)
       }
       return line
     }
     {
       if (is_uu_check($0)) {
-        if ($0 !~ /UU_JOB_SOURCE=scheduler/) {
-          if ($0 ~ /RUN_FROM_CRON=true/) {
-            sub(/RUN_FROM_CRON=true/, "RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler")
-          } else {
-            $0 = add_scheduler($0)
-          }
-        }
-        if ($0 !~ /RUN_FROM_CRON=true/) $0 = add_headless($0)
+        $0 = add_check_context($0)
       }
       print
     }
@@ -457,7 +463,7 @@ ensure_scheduled_check_cron() {
       rm -f -- "$temp"
       return 0
     fi
-    printf '%s\n' '00 06   * * *   root RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler /usr/local/sbin/update -check >/dev/null 2>&1' >> "$temp"
+    printf '%s\n' '00 06   * * *   root RUN_FROM_CRON=true UU_NONINTERACTIVE=true UU_JOB_SOURCE=initial-inventory UU_SCHEDULED_CHECK=true /usr/local/sbin/update -check >/dev/null 2>&1' >> "$temp"
   fi
   if cmp -s "$temp" "$cron_file"; then
     rm -f -- "$temp"
@@ -488,14 +494,14 @@ OLD_FILESYSTEM_CHECK () {
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv /etc/crontab /etc/crontab.bak_name_change
       cp /etc/crontab.bak /etc/crontab
-      echo "00 07,19 * * *  root    RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler $LOCAL_FILES/check-updates.sh" >> /etc/crontab
+      echo "00 07,19 * * *  root    RUN_FROM_CRON=true UU_NONINTERACTIVE=true UU_JOB_SOURCE=initial-inventory UU_SCHEDULED_CHECK=true $LOCAL_FILES/check-updates.sh" >> /etc/crontab
     fi
   fi
   if [[ -d /root/Ultimative-Updater/ ]]; then
     if [[ -f /etc/update-motd.d/01-welcome-screen ]]; then
       mv /etc/crontab /etc/crontab.bak_name_change
       cp /etc/crontab.bak /etc/crontab
-      echo "00 07,19 * * *  root    RUN_FROM_CRON=true UU_JOB_SOURCE=scheduler $LOCAL_FILES/check-updates.sh" >> /etc/crontab
+      echo "00 07,19 * * *  root    RUN_FROM_CRON=true UU_NONINTERACTIVE=true UU_JOB_SOURCE=initial-inventory UU_SCHEDULED_CHECK=true $LOCAL_FILES/check-updates.sh" >> /etc/crontab
     fi
   fi
   if [ -d "/root/Ultimative-Update-Scripts" ]; then
@@ -1029,6 +1035,7 @@ UPDATE () {
         echo -e "⚠️ ${OR:-}Legacy SSH migration needs attention; existing files were kept.${CL:-}" >&2
       fi
     fi
+    MIGRATE_SCHEDULER_UNITS || return 1
     SETUP_WEB_SERVICE restart
     if [[ "$UPGRADE_RESTART_REQUIRED" == true ]]; then
       START_INITIAL_INVENTORY

@@ -138,6 +138,13 @@ assert 'Select all visible' in scheduler
 assert 'schedule-target-table' in scheduler
 assert 'schedule-selected' in scheduler
 assert 'name="type"' in scheduler
+assert 'name="check_lifecycle_mode"' in scheduler
+assert 'Read-only (recommended)' in scheduler
+assert 'Normal check' in scheduler
+assert 'Normal checks may temporarily start stopped guests' in scheduler
+assert "originalCheckLifecycleMode='read_only'" in page
+assert "check_lifecycle_mode==='normal'" in page
+assert 'Check mode:' in page
 assert 'id="scheduler-timezone"' not in scheduler
 assert '<span>Timezone</span>' not in scheduler
 assert '.scheduler-summary{display:grid;grid-template-columns:repeat(3' in page
