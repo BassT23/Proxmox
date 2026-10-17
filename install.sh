@@ -632,6 +632,10 @@ INSTALL () {
       install -m 0750 "$TEMP_FILES"/web-auth.sh "$LOCAL_FILES/web-auth.sh"
       ln -sf "$LOCAL_FILES/web-auth.sh" /usr/local/sbin/ultimate-updater-web-auth
     fi
+    if [[ -f "$TEMP_FILES"/api-token.sh ]]; then
+      install -m 0750 "$TEMP_FILES"/api-token.sh "$LOCAL_FILES/api-token.sh"
+      ln -sf "$LOCAL_FILES/api-token.sh" /usr/local/sbin/ultimate-updater-api-token
+    fi
     cp "$TEMP_FILES"/job-runner.sh $LOCAL_FILES/job-runner.sh
     chmod 750 $LOCAL_FILES/job-runner.sh
     if [[ -f "$TEMP_FILES"/job-pty-bridge.py ]]; then
@@ -649,6 +653,9 @@ INSTALL () {
     mkdir -p "$LOCAL_FILES/web-ui"
     cp "$TEMP_FILES"/web-ui/server.py "$LOCAL_FILES/web-ui/server.py"
     chmod 750 "$LOCAL_FILES/web-ui/server.py"
+    if [[ -f "$TEMP_FILES/web-ui/api_tokens.py" ]]; then
+      install -m 0750 "$TEMP_FILES/web-ui/api_tokens.py" "$LOCAL_FILES/web-ui/api_tokens.py"
+    fi
     if [[ -f "$TEMP_FILES/web-ui/pam_auth.py" ]]; then
       install -m 0640 "$TEMP_FILES/web-ui/pam_auth.py" "$LOCAL_FILES/web-ui/pam_auth.py"
     fi
@@ -899,6 +906,13 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/web-auth.sh ]]; then
       install -m 0750 "$TEMP_FILES"/web-auth.sh "$LOCAL_FILES/web-auth.sh"
       ln -sf "$LOCAL_FILES/web-auth.sh" /usr/local/sbin/ultimate-updater-web-auth
+    fi
+    if [[ -f "$TEMP_FILES"/api-token.sh ]]; then
+      install -m 0750 "$TEMP_FILES"/api-token.sh "$LOCAL_FILES/api-token.sh"
+      ln -sf "$LOCAL_FILES/api-token.sh" /usr/local/sbin/ultimate-updater-api-token
+    fi
+    if [[ -f "$TEMP_FILES/web-ui/api_tokens.py" ]]; then
+      install -m 0750 "$TEMP_FILES/web-ui/api_tokens.py" "$LOCAL_FILES/web-ui/api_tokens.py"
     fi
     if [[ -f "$TEMP_FILES/web-ui/assets/ultimate-updater-header.png" || -f "$TEMP_FILES/web-ui/assets/ultimate-updater-icon.png" || -f "$TEMP_FILES/web-ui/assets/favicon.png" ]]; then
       mkdir -p "$LOCAL_FILES/web-ui/assets"

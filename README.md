@@ -111,6 +111,9 @@ The authenticated Web UI is served by `ultimate-updater-web.service` on port
 checks, updates, settings, Internal SSH management, persistent jobs/logs, and
 version/build information. See [Web UI](docs/web-ui.md).
 
+External read-only integrations can use the separately disabled-by-default
+[integration API v1](docs/api-v1.md).
+
 ![Ultimate Updater Web UI dashboard](docs/images/web-ui/dashboard.png)
 
 > Web UI dashboard from a dedicated test environment. More views are shown in
@@ -147,6 +150,7 @@ and limitations in [Supported systems](docs/supported-systems.md) and
 - [Checks and updates](docs/checks-and-updates.md)
 - [Cluster operation](docs/cluster.md)
 - [Web UI](docs/web-ui.md)
+- [Integration API v1](docs/api-v1.md)
 - [SSH and VM access](docs/ssh.md)
 - [External systems](docs/external-systems.md)
 - [Backup and snapshots](docs/backup-and-snapshots.md)
@@ -155,6 +159,7 @@ and limitations in [Supported systems](docs/supported-systems.md) and
 - [Troubleshooting](docs/troubleshooting.md)
 - [Upgrading](docs/upgrading.md)
 - [Advanced operation](docs/advanced.md)
+- [Acknowledgments](docs/acknowledgments.md)
 
 Additional project documents: [Testing](TESTING.md), [5.1 release notes](RELEASE_NOTES_5.1.md), [5.1 upgrade notes](UPGRADE_NOTES_5.1.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
 

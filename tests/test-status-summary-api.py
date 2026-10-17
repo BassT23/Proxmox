@@ -4,6 +4,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import secrets
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -14,21 +15,29 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 import server as updater  # noqa: E402
+from api_tokens import hash_token  # noqa: E402
 
 
-def exercise(status, token_content="fixture-secret-not-for-production", configured=True, credential_mode=0o600, security_checks=False):
+def exercise(status, token_content=None, configured=True, credential_mode=0o600, security_checks=False):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
+        token_content = token_content or secrets.token_urlsafe(32)
         status_path = root / "status.json"
         if status is not None:
             status_path.write_text(json.dumps(status))
         credential = root / "status-token"
-        credential.write_text(token_content)
+        credential.write_text(json.dumps({
+            "version": 1,
+            "enabled": True,
+            "tokens": [{"id": "fixture", "name": "fixture", "hash": hash_token(token_content),
+                        "permissions": ["read"], "expires_at": None, "revoked": False}],
+        }))
         credential.chmod(credential_mode)
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), updater.StatusHandler)
         httpd.status_file = status_path
         httpd.status_api_token_file = credential if configured else None
         httpd.status_api_max_age_seconds = 86400
+        httpd.tls_enabled = True
         # Fake native login without invoking PAM, Proxmox, jobs or update actions.
         httpd.auth = SimpleNamespace(
             configured=True,
@@ -77,7 +86,7 @@ def exercise(status, token_content="fixture-secret-not-for-production", configur
             deny_status, denied = request("/api/status-summary")
             assert deny_status == 401, (deny_status, denied)
             assert "fixture-secret" not in str(denied)
-            invalid_status, invalid = request("/api/status-summary", token="wrong-credential")
+            invalid_status, invalid = request("/api/status-summary", token="A" * 43)
             assert invalid_status == 401, (invalid_status, invalid)
             method_status, _ = request("/api/status-summary", token=token_content, method="POST")
             assert method_status != 200

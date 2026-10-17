@@ -7,6 +7,7 @@ from collections import deque
 import fcntl
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import re
@@ -33,6 +34,18 @@ try:
     from pam_auth import authenticate as pam_authenticate
 except ImportError:  # pragma: no cover - direct installed-script fallback
     pam_authenticate = None
+
+try:
+    from api_tokens import TokenConfigError, authenticate as authenticate_api_token, load_config as load_api_token_config
+except ImportError:  # pragma: no cover - direct module-loading fallback for tests
+    _api_tokens_spec = importlib.util.spec_from_file_location(
+        "ultimate_updater_api_tokens", Path(__file__).with_name("api_tokens.py")
+    )
+    _api_tokens_module = importlib.util.module_from_spec(_api_tokens_spec)
+    _api_tokens_spec.loader.exec_module(_api_tokens_module)
+    TokenConfigError = _api_tokens_module.TokenConfigError
+    authenticate_api_token = _api_tokens_module.authenticate
+    load_api_token_config = _api_tokens_module.load_config
 
 
 DEFAULT_STATUS_FILE = Path("/etc/ultimate-updater/status.json")
@@ -113,6 +126,7 @@ DEFAULT_INTERACTIVE_RUNTIME_DIR = Path("/run/ultimate-updater/jobs")
 VISIBLE_JOB_LIMIT = 20
 DEFAULT_BACKUP_STATE_FILE = Path("/var/lib/ultimate-updater/external-backup-verification.json")
 DEFAULT_AUTH_FILE = Path("/etc/ultimate-updater/web-auth.json")
+DEFAULT_API_TOKEN_FILE = Path("/etc/ultimate-updater/api-tokens.json")
 DEFAULT_INTERNAL_SSH_FILE = Path("/etc/ultimate-updater/internal-ssh.conf")
 DEFAULT_SCHEDULER_FILE = Path("/etc/ultimate-updater/schedules.json")
 DEFAULT_SCHEDULER_UNIT_DIR = Path("/etc/systemd/system")
@@ -124,6 +138,7 @@ DEFAULT_PROXMOX_CUSTOM_CERT = Path("/etc/pve/local/pveproxy-ssl.pem")
 DEFAULT_PROXMOX_CUSTOM_KEY = Path("/etc/pve/local/pveproxy-ssl.key")
 TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 JOB_RE = re.compile(r"^ultimate-updater-(?:update|check|reboot)-[A-Za-z0-9_.-]+$")
+API_JOB_RE = JOB_RE
 HOST_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 USER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 REALM_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
@@ -137,6 +152,9 @@ SCHEDULER_TYPES = {"check-all", "check-selected", "update-all", "update-selected
 SCHEDULER_SCHEMA_VERSION = 2
 SCHEDULER_TARGET_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,160}$")
 SCHEDULER_LEGACY_DAYS = dict(zip(("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), SCHEDULER_DAYS))
+API_SCHEMA_VERSION = 1
+API_STATUS_MAX_BYTES = 8 * 1024 * 1024
+API_LOG_MAX_BYTES = 64 * 1024
 
 
 def scheduler_unit_name(schedule_id):
@@ -3739,36 +3757,52 @@ class StatusHandler(BaseHTTPRequestHandler):
         return bool(session) or self.auth_error()
 
     def status_api_authorized(self):
-        """Read-only machine credentials are separate from admin browser sessions."""
-        path = getattr(self.server, "status_api_token_file", None)
-        if path is None:
-            self.send_json(error_payload("STATUS_API_DISABLED", "Status API is not configured."), HTTPStatus.SERVICE_UNAVAILABLE)
-            return False
-        if not path.is_absolute():
-            self.send_json(error_payload("STATUS_API_UNAVAILABLE", "Machine credential is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
-            return False
+        """Keep the original unversioned endpoint on the same token boundary."""
+        return self.api_token_authorized("read", legacy=True) is not None
+
+    def api_token_authorized(self, permission="read", legacy=False):
+        """Authenticate a machine request without touching WebUI sessions."""
+        if not getattr(self.server, "tls_enabled", False):
+            self.send_json(error_payload("HTTPS_REQUIRED", "Machine API access requires HTTPS."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return None
+        token_file = getattr(self.server, "api_token_file", None)
+        if token_file is None:
+            token_file = getattr(self.server, "status_api_token_file", None)
+        if token_file is None:
+            self.send_json(error_payload("API_DISABLED", "The integration API is disabled."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return None
         try:
-            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-            try:
-                details = os.fstat(descriptor)
-                if (not stat.S_ISREG(details.st_mode) or details.st_mode & 0o077
-                        or details.st_uid != os.geteuid() or details.st_size > 4096):
-                    raise ValueError("invalid credential file")
-                with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as source:
-                    configured = source.read(4097).strip()
-            finally:
-                os.close(descriptor)
-            if not 24 <= len(configured) <= 4096 or any(ord(char) < 33 or ord(char) > 126 for char in configured):
-                raise ValueError("invalid credential")
-        except (OSError, UnicodeError, ValueError):
-            self.send_json(error_payload("STATUS_API_UNAVAILABLE", "Machine credential is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
-            return False
+            config = load_api_token_config(token_file)
+        except TokenConfigError:
+            self.send_json(error_payload("API_CONFIG_INVALID", "The machine token configuration is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return None
+        if not config.get("enabled"):
+            self.send_json(error_payload("API_DISABLED", "The integration API is disabled."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return None
+        if any(part.strip().startswith("UU_SESSION=") for part in self.headers.get("Cookie", "").split(";")):
+            self.send_json(error_payload("AUTH_REQUIRED", "Use a bearer token for machine API access."), HTTPStatus.UNAUTHORIZED)
+            return None
         headers = self.headers.get_all("Authorization", [])
-        expected = "Bearer " + configured
-        if len(headers) != 1 or not hmac.compare_digest(headers[0], expected):
-            self.send_json(error_payload("AUTH_REQUIRED", "A valid machine token is required."), HTTPStatus.UNAUTHORIZED)
-            return False
-        return True
+        if len(headers) != 1 or not isinstance(headers[0], str):
+            self.send_json(error_payload("AUTH_REQUIRED", "A bearer token is required."), HTTPStatus.UNAUTHORIZED)
+            return None
+        match = re.fullmatch(r"Bearer ([A-Za-z0-9_-]{43})", headers[0])
+        if not match:
+            self.send_json(error_payload("AUTH_REQUIRED", "A bearer token is required."), HTTPStatus.UNAUTHORIZED)
+            return None
+        try:
+            identity = authenticate_api_token(token_file, match.group(1))
+        except TokenConfigError:
+            self.send_json(error_payload("API_CONFIG_INVALID", "The machine token configuration is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
+            return None
+        if not identity:
+            self.send_json(error_payload("AUTH_REQUIRED", "The bearer token is invalid, expired, or revoked."), HTTPStatus.UNAUTHORIZED)
+            return None
+        permissions = set(identity.get("permissions", []))
+        if "read" not in permissions or (permission == "logs" and "logs" not in permissions):
+            self.send_json(error_payload("API_PERMISSION_REQUIRED", "The token lacks the required permission."), HTTPStatus.FORBIDDEN)
+            return None
+        return identity
 
     def handle_status_summary(self):
         try:
@@ -3926,7 +3960,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             options.update(encoding=encoding, errors="replace")
         return subprocess.run(args, **options)
 
-    def jobs(self):
+    def jobs(self, reconcile=True):
         runner = self.server.job_runner
         if not runner.is_file() or not runner.stat().st_mode & 0o111:
             raise RuntimeError("job runner is not available")
@@ -3953,10 +3987,212 @@ class StatusHandler(BaseHTTPRequestHandler):
         for row in selected:
             if row.get("interactive"):
                 row["attached"] = self.server.interactive_broker.attached(row["unit"])
-        schedule_reconciliation = getattr(self, "schedule_remote_reconciliation", None)
-        if schedule_reconciliation is not None:
-            schedule_reconciliation()
+        if reconcile:
+            schedule_reconciliation = getattr(self, "schedule_remote_reconciliation", None)
+            if schedule_reconciliation is not None:
+                schedule_reconciliation()
         return selected
+
+    @staticmethod
+    def _api_v1_public_value(value, kind=None, maximum=2048):
+        if value is None:
+            return None
+        if kind == "int":
+            return value if isinstance(value, int) and not isinstance(value, bool) else None
+        if kind == "bool":
+            return value if isinstance(value, bool) else None
+        return value[:maximum] if isinstance(value, str) else None
+
+    @classmethod
+    def _api_v1_last_update(cls, value):
+        if not isinstance(value, dict):
+            return None
+        allowed = {
+            "status", "timestamp", "exit_code", "pending_before", "result_code",
+            "reboot_required", "processed", "message", "job_id", "guest_job_id",
+            "hresult", "started_at", "finished_at",
+        }
+        result = {}
+        for key in allowed & value.keys():
+            item = value[key]
+            if isinstance(item, (bool, int)) and not isinstance(item, bool) or isinstance(item, bool):
+                result[key] = item
+            elif isinstance(item, str):
+                result[key] = item[:2048]
+        return result or None
+
+    @classmethod
+    def _api_v1_windows_update(cls, value):
+        if not isinstance(value, dict):
+            return None
+        result = {}
+        for key in ("source", "queried_at"):
+            if isinstance(value.get(key), str):
+                result[key] = value[key][:256]
+        if isinstance(value.get("post_reboot_verified"), bool):
+            result["post_reboot_verified"] = value["post_reboot_verified"]
+        if isinstance(value.get("history"), list):
+            result["history"] = []
+            for item in value["history"][:20]:
+                if not isinstance(item, dict):
+                    continue
+                public = {}
+                for key in ("date", "title", "kb", "operation", "result", "result_code", "hresult"):
+                    if isinstance(item.get(key), str):
+                        public[key] = item[key][:2048]
+                    elif isinstance(item.get(key), int) and not isinstance(item.get(key), bool):
+                        public[key] = item[key]
+                result["history"].append(public)
+        return result or None
+
+    @classmethod
+    def _api_v1_target(cls, record):
+        if not isinstance(record, dict):
+            return None
+        updates = record.get("updates") if isinstance(record.get("updates"), dict) else {}
+        target = {
+            "id": cls._api_v1_public_value(record.get("id"), maximum=256),
+            "name": cls._api_v1_public_value(record.get("name")),
+            "type": cls._api_v1_public_value(record.get("type"), maximum=32),
+            "node": cls._api_v1_public_value(record.get("node"), maximum=256),
+            "transport": cls._api_v1_public_value(record.get("transport"), maximum=32),
+            "reachable": cls._api_v1_public_value(record.get("reachable"), "bool"),
+            "os": cls._api_v1_public_value(record.get("os")),
+            "updater": cls._api_v1_public_value(record.get("updater"), maximum=64),
+            "check_status": cls._api_v1_public_value(record.get("check_status"), maximum=64),
+            "last_check": cls._api_v1_public_value(record.get("last_check"), maximum=128),
+            "updates": {"available": cls._api_v1_public_value(updates.get("available"), "int")},
+            "normal_updates": cls._api_v1_public_value(record.get("normal_updates"), "int"),
+            "security_updates": cls._api_v1_public_value(record.get("security_updates"), "int"),
+            "security_split_supported": cls._api_v1_public_value(record.get("security_split_supported"), "bool"),
+            "reboot_required": cls._api_v1_public_value(record.get("reboot_required"), "bool"),
+            "last_update": cls._api_v1_last_update(record.get("last_update")),
+        }
+        windows_update = cls._api_v1_windows_update(record.get("windows_update"))
+        if windows_update is not None:
+            target["windows_update"] = windows_update
+        return target
+
+    @staticmethod
+    def _api_v1_status_file(path):
+        try:
+            if path.stat().st_size > API_STATUS_MAX_BYTES:
+                raise OverflowError
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raise
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise ValueError("status data is invalid") from error
+        if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
+            raise ValueError("status data is invalid")
+        return payload
+
+    def _api_v1_status(self):
+        payload = self._api_v1_status_file(self.server.status_file)
+        generated_at = payload.get("generated_at") if isinstance(payload.get("generated_at"), str) else None
+        state = "unknown"
+        age = None
+        if generated_at:
+            try:
+                stamp = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+                if stamp.tzinfo is not None:
+                    age = max(0.0, (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds())
+                    state = "current" if age <= self.server.status_api_max_age_seconds else "stale"
+            except ValueError:
+                pass
+        return {
+            "api_version": 1,
+            "schema_version": 1,
+            "generated_at": generated_at,
+            "state": state,
+            "stale": state == "stale" if state != "unknown" else None,
+            "age_seconds": int(age) if age is not None else None,
+            "targets": [item for item in (self._api_v1_target(record) for record in payload["targets"]) if item],
+        }
+
+    def _api_v1_status_summary(self):
+        payload = self._api_v1_status_file(self.server.status_file)
+        summary = build_status_summary(payload, max_age_seconds=self.server.status_api_max_age_seconds)
+        counts = dict(summary["targets"])
+        counts["targets"] = counts.pop("total")
+        return {
+            "api_version": 1,
+            "schema_version": 1,
+            "generated_at": summary.get("generated_at"),
+            "state": summary["state"],
+            "stale": summary["state"] != "current",
+            "summary": counts,
+            "updates_available": summary["updates_available"],
+            "reboot_required": summary["reboot_required"],
+        }
+
+    @staticmethod
+    def _api_v1_job(row):
+        return {key: row.get(key) for key in ("unit", "target", "type", "state", "started_at", "finished_at", "exit_code")}
+
+    def _api_v1_version(self):
+        local = self.local_version()
+        cached = getattr(self.server, "version_last_data", None)
+        if isinstance(cached, dict) and cached.get("state") == "ok":
+            local.update({key: cached.get(key) for key in (
+                "available", "available_commit", "available_beta", "update_available", "components",
+            ) if key in cached})
+            local["update_state"] = "available" if cached.get("update_available") else "up_to_date"
+        else:
+            local["update_state"] = "unknown"
+        return {"api_version": 1, "schema_version": 1, **local}
+
+    def api_v1(self, path):
+        parts = [unquote(part) for part in path.split("/") if part]
+        needs_logs = len(parts) == 5 and parts[:3] == ["api", "v1", "jobs"] and parts[4] == "log"
+        if self.api_token_authorized("logs" if needs_logs else "read") is None:
+            return
+        try:
+            if path == "/api/v1/status-summary":
+                self.send_json(self._api_v1_status_summary())
+            elif path == "/api/v1/status":
+                self.send_json(self._api_v1_status())
+            elif path == "/api/v1/jobs":
+                rows = self.jobs(reconcile=False)
+                self.send_json({"api_version": 1, "schema_version": 1,
+                                "jobs": [self._api_v1_job(row) for row in rows]})
+            elif len(parts) == 4 and parts[:3] == ["api", "v1", "jobs"]:
+                unit = parts[3]
+                if not API_JOB_RE.fullmatch(unit):
+                    self.send_json(error_payload("INVALID_JOB_ID", "Invalid job ID."), HTTPStatus.BAD_REQUEST)
+                    return
+                row = next((item for item in self.jobs(reconcile=False) if item.get("unit") == unit), None)
+                if not row:
+                    self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
+                else:
+                    self.send_json({"api_version": 1, "schema_version": 1, "job": self._api_v1_job(row)})
+            elif needs_logs:
+                unit = parts[3]
+                if not API_JOB_RE.fullmatch(unit):
+                    self.send_json(error_payload("INVALID_JOB_ID", "Invalid job ID."), HTTPStatus.BAD_REQUEST)
+                    return
+                row = next((item for item in self.jobs(reconcile=False) if item.get("unit") == unit), None)
+                if not row:
+                    self.send_json(error_payload("JOB_NOT_FOUND", "That job does not exist."), HTTPStatus.NOT_FOUND)
+                    return
+                command = ([str(self.server.job_runner), "remote-log", unit]
+                           if row.get("remote") else
+                           ["journalctl", "-u", unit, "-n", "200", "--no-pager", "-o", "cat"])
+                result = self.run_command(command, timeout=15, encoding="utf-8")
+                if result.returncode:
+                    raise RuntimeError("job log unavailable")
+                self.send_json({"api_version": 1, "schema_version": 1, "unit": unit,
+                                "log": strip_ansi(result.stdout or "")[-API_LOG_MAX_BYTES:]})
+            elif path == "/api/v1/updater-version":
+                self.send_json(self._api_v1_version())
+            else:
+                self.send_json(error_payload("NOT_FOUND", "Not found."), HTTPStatus.NOT_FOUND)
+        except FileNotFoundError:
+            self.send_json(error_payload("STATUS_NOT_FOUND", "No status data is available."), HTTPStatus.NOT_FOUND)
+        except OverflowError:
+            self.send_json(error_payload("STATUS_TOO_LARGE", "Status data is too large."), HTTPStatus.SERVICE_UNAVAILABLE)
+        except (OSError, RuntimeError, UnicodeError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
+            self.send_json(error_payload("API_DATA_UNAVAILABLE", "The requested data is temporarily unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
 
     def schedule_remote_reconciliation(self):
         """Reconcile pending remote references outside the HTTP request.
@@ -5140,6 +5376,9 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802 - stdlib handler API
         path = urlsplit(self.path).path
+        if path == "/api/v1" or path.startswith("/api/v1/"):
+            self.api_v1(path)
+            return
         if path in ("/", "/overview", "/settings", "/scheduler"):
             self.send_bytes(PAGE.encode(), "text/html; charset=utf-8")
             return
@@ -5344,6 +5583,10 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_json(error_payload("NOT_FOUND", "Not found."), HTTPStatus.NOT_FOUND)
 
     def do_POST(self):  # noqa: N802 - stdlib handler API
+        parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
+        if parts[:2] == ["api", "v1"]:
+            self.send_json(error_payload("METHOD_NOT_ALLOWED", "API v1 is read-only and accepts GET requests only."), HTTPStatus.METHOD_NOT_ALLOWED)
+            return
         try:
             payload = self.read_body()
         except OverflowError as error:
@@ -5352,7 +5595,6 @@ class StatusHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             self.send_json(error_payload("BAD_REQUEST", str(error)), HTTPStatus.BAD_REQUEST)
             return
-        parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
         if parts == ["api", "login"]:
             if not self.same_origin():
                 self.send_json(error_payload("ORIGIN_REJECTED", "The request origin is not allowed."), HTTPStatus.FORBIDDEN)
@@ -5948,6 +6190,7 @@ def parse_args():
     parser.add_argument("--scheduler-file", type=Path, default=DEFAULT_SCHEDULER_FILE)
     parser.add_argument("--scheduler-unit-dir", type=Path, default=DEFAULT_SCHEDULER_UNIT_DIR)
     parser.add_argument("--auth-file", type=Path, default=DEFAULT_AUTH_FILE)
+    parser.add_argument("--api-token-file", type=Path, default=DEFAULT_API_TOKEN_FILE)
     parser.add_argument("--bind", default=DEFAULT_BIND, help="bind address (default: localhost)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser.parse_args()
@@ -5968,7 +6211,8 @@ def main():
         server.socket = tls_context.wrap_socket(server.socket, server_side=True)
     server.status_file, server.cli = args.status_file, args.cli
     token_file = os.environ.get("UU_STATUS_API_TOKEN_FILE", "").strip()
-    server.status_api_token_file = Path(token_file) if token_file else None
+    server.api_token_file = args.api_token_file if not token_file else Path(token_file)
+    server.status_api_token_file = server.api_token_file
     try:
         server.status_api_max_age_seconds = int(os.environ.get("UU_STATUS_API_MAX_AGE_SECONDS", "86400"))
         if not 60 <= server.status_api_max_age_seconds <= 604800:
