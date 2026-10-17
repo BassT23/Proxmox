@@ -1498,6 +1498,7 @@ UPDATE_HOST () {
       return 6
     fi
     for source in "$LOCAL_FILES/check-updates.sh" "$LOCAL_FILES/status-model.sh" \
+      "$LOCAL_FILES/notification-apprise.py" \
       "$apt_count_file" "$apt_count_shell_file" "$rpm_count_file" "$package_count_file" \
       "$product_metadata_file"; do
       [[ -f "$source" ]] || continue
