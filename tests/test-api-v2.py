@@ -206,7 +206,7 @@ with tempfile.TemporaryDirectory() as temporary:
         status, payload = fixture.request("/api/v1/reboot/986", t["reboot"], method="POST")
         assert status == 422 and payload["error"]["code"] == "CONFIRMATION_REQUIRED"
         status, payload = fixture.request("/api/v1/reboot/986", t["reboot"], method="POST", body={"confirm": True})
-        assert status == 202 and payload["type"] == "reboot"
+        assert status == 202 and payload["type"] == "reboot" and payload["api_version"] == 1
 
         status, payload = fixture.request(f"/api/v1/jobs/{fixture.cancel_unit}/cancel", t["cancel"], method="POST")
         assert status == 202 and payload["state"] == "stopping"

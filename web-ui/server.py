@@ -4435,7 +4435,11 @@ class StatusHandler(BaseHTTPRequestHandler):
                 if not record:
                     self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not part of the managed inventory."), HTTPStatus.NOT_FOUND)
                     return
-                self.action_reboot(str(record.get("id")))
+                self._api_action_response = True
+                try:
+                    self.action_reboot(str(record.get("id")))
+                finally:
+                    self._api_action_response = False
             else:
                 self.handle_job_cancel(parts[3], api=True)
         except (OSError, RuntimeError, UnicodeError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
@@ -6357,8 +6361,11 @@ class StatusHandler(BaseHTTPRequestHandler):
         if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
             self.send_json(error_payload("REBOOT_START_FAILED", "The reboot job could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
-        self.send_json({"target": target_id, "job": job_match.group(1), "type": "reboot",
-                        "state": "running", "message": "Reboot job started."}, HTTPStatus.ACCEPTED)
+        response = {"target": target_id, "job": job_match.group(1), "type": "reboot",
+                    "state": "running", "message": "Reboot job started."}
+        if getattr(self, "_api_action_response", False):
+            response.update({"api_version": 1, "schema_version": API_SCHEMA_VERSION})
+        self.send_json(response, HTTPStatus.ACCEPTED)
 
     def do_PUT(self):  # noqa: N802
         if not self.write_allowed():
