@@ -911,6 +911,7 @@ remote_target_check() {
   local target="$1" kind="$2" node="$3" host="$4" mode remote_check_dir remote_config
   local remote_tag_filter remote_cluster_target remote_runtime remote_qga remote_windows_update remote_status_model remote_internal_ssh remote_internal_conf remote_status_file
   local tag_filter_script target_runtime_file target_selection_script qga_helper windows_update_file internal_ssh_file internal_ssh_conf legacy_profile local_file transport_rc
+  local remote_job_source="${UU_JOB_SOURCE:-}" remote_noninteractive="${UU_NONINTERACTIVE:-false}" remote_scheduled_check="${UU_SCHEDULED_CHECK:-false}"
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]:-}")
   mode=$([[ "$kind" == container ]] && printf ccontainer || printf cvm)
   if ! resolve_remote_node_transport "$node" "$host"; then
@@ -1025,10 +1026,10 @@ remote_target_check() {
       }
   fi
   # shellcheck disable=SC2016
-  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q PACKAGE_COUNT_SCRIPT=%q QGA_EXEC_SCRIPT=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_SINGLE_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true bash -s -- %q %q >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote guest status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; if [[ "$finish_rc" -ne 0 ]]; then exit "$finish_rc"; fi; exit "$remote_rc"' \
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q PACKAGE_COUNT_SCRIPT=%q QGA_EXEC_SCRIPT=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_JOB_SOURCE=%q UU_NONINTERACTIVE=%q UU_SCHEDULED_CHECK=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_SINGLE_TARGET_CHECK=true STATUS_MODEL_PARTIAL=true bash -s -- %q %q >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote guest status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; if [[ "$finish_rc" -ne 0 ]]; then exit "$finish_rc"; fi; exit "$remote_rc"' \
     "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
     "$remote_runtime" "$remote_package_count" "$remote_qga" "$remote_internal_ssh" "$remote_internal_conf" "$node" "$remote_status_model" "$remote_status_file" \
-    "$remote_status_file.records" "$mode" "$target" "$remote_status_file.records" \
+    "$remote_status_file.records" "$remote_job_source" "$remote_noninteractive" "$remote_scheduled_check" "$mode" "$target" "$remote_status_file.records" \
     "$node" "$remote_status_file" "$remote_status_file.records" "$remote_status_model" \
     "$remote_status_file" "$target" "$remote_check_dir" "$remote_status_file" "$remote_check_dir"
   timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
