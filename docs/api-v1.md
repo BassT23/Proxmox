@@ -65,6 +65,32 @@ timestamp and age are included where available. The default stale threshold is
 86400 seconds and can be bounded by the existing `UU_STATUS_API_MAX_AGE_SECONDS`
 setting (60–604800 seconds).
 
+For example, a summary response has this shape (values are illustrative):
+
+```json
+{
+  "api_version": 1,
+  "schema_version": 1,
+  "generated_at": "2026-10-17T10:00:00Z",
+  "state": "current",
+  "stale": false,
+  "summary": {
+    "targets": 3,
+    "reachable": 2,
+    "unreachable": 1,
+    "failed": 0,
+    "unknown_updates": 1,
+    "unknown_reboot": 1
+  },
+  "updates_available": null,
+  "reboot_required": null
+}
+```
+
+The response is derived from the persisted status file. It does not imply
+that any update was installed by Ultimate Updater; installation provenance is
+available only from the corresponding persisted Ultimate Updater job metadata.
+
 The API reads persisted status and cached job data. The API job list uses the
 existing `job-runner list --cached` path without scheduling remote
 reconciliation. It is therefore safe for regular polling and does not make a
