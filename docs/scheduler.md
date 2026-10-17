@@ -30,6 +30,14 @@ include/exclude filters, safety rules, locks, lifecycle handling, notifications,
 status capture, and reboot policy therefore remain authoritative. `Run now`
 uses the same job entry point.
 
+Scheduled **Update** jobs do not reboot by default. They use
+`REBOOT_IF_NEEDED="false"` unless an administrator explicitly enables the
+setting. When enabled, only the existing supported guest reboot path may be
+requested after a fresh successful update result requires it; originally
+stopped guests retain their stopped state. API updates never use this
+automatic reboot path, and Proxmox host, external, unsupported, or uncertain
+reboots remain manual.
+
 Scheduled **Check** jobs default to the existing read-only `initial-inventory`
 lifecycle, preserving the rule that stopped/paused VMs and containers must not
 be started or resumed just to collect update availability. Each check schedule

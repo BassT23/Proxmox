@@ -10,6 +10,10 @@ Added:
   realm-enforced YubiKey OTP through a short-lived server-side challenge flow.
 - Proxmox WebAuthn login support through the same server-side challenge flow,
   with browser assertion handling and secure origin validation.
+- API-2.6 update context propagation, target-scoped unsafe-script rejection,
+  and noninteractive external/remote dispatch safeguards.
+- Opt-in automatic reboot handling with one-time legacy configuration migration
+  and explicit Web UI confirmation.
 
 **v5.1.3** (30.09.2026)
 
