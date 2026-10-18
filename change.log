@@ -40,6 +40,15 @@ Added:
   own `API` navigation entry, safe token metadata, one-time secret display,
   authenticated CSRF-protected token revocation, and an overview of the
   available API endpoints; API enable/disable remains CLI-only.
+- Issue #379: optional automatic repair of a clearly interrupted dpkg state is
+  available before APT updates through the disabled-by-default
+  `APT_AUTO_REPAIR_DPKG` setting.
+- Issue #379: the repair uses a read-only `dpkg --audit` preflight, allows at
+  most one bounded-timeout repair attempt per target, and supports the host,
+  LXC, VM over SSH, and VM over QEMU Guest Agent APT paths.
+- Issue #379: the Web UI exposes the setting as a Boolean field with explicit
+  maintainer-script and host-protection help, using the existing secure
+  `/api/config` persistence path.
 
 Improved:
 - Issue #378: the separate Jobs navigation entry was removed while Jobs, Logs,
@@ -59,6 +68,9 @@ Improved:
   sections or stale update-result data.
 - Transient guest connectivity failures use a bounded read-only retry for
   LXC and VM SSH/QGA checks.
+- Guest dpkg repair runs after the existing snapshot/backup gates, while the
+  Proxmox host's possible lack of snapshot/backup protection is reported
+  explicitly.
 
 Fixed:
 - No-op runs and paths without actual package mutation are no longer reported
@@ -73,6 +85,10 @@ Fixed:
   Update Agent metadata without claiming full Windows update support.
 - Stopped or paused guests with a neutral skip are no longer presented as
   offline solely because no package check was performed.
+- A failed dpkg repair reports `DPKG_REPAIR_FAILED` and does not start an APT
+  follow-up path; a repair itself is never counted as an update success.
+- DNF/YUM, Pacman, APK, FreeBSD, Windows, and External-APT paths remain
+  unchanged by the optional dpkg repair.
 
 Security/Safety:
 - Capability and unsupported paths remain fail-closed before mutation,
