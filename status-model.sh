@@ -629,7 +629,7 @@ with open(record_file, encoding="utf-8") as records:
         neutral_skip_codes = {
             "STOPPED_READ_ONLY", "PAUSED_READ_ONLY", "RUNNING_DISABLED",
             "CHECK_DISABLED", "CHECK_WITH_HOST_DISABLED", "NETWORK_UNAVAILABLE",
-            "UNSUPPORTED_GUEST_OS",
+            "UNSUPPORTED_GUEST_OS", "NO_SUPPORTED_TRANSPORT",
         }
         # A stopped/paused target in a read-only inventory was intentionally
         # not checked.  Its explanatory record is neutral metadata, not a
@@ -1009,7 +1009,7 @@ def nullable_int(value):
 neutral_skip_codes = {
     "STOPPED_READ_ONLY", "PAUSED_READ_ONLY", "RUNNING_DISABLED",
     "CHECK_DISABLED", "CHECK_WITH_HOST_DISABLED", "NETWORK_UNAVAILABLE",
-    "UNSUPPORTED_GUEST_OS",
+    "UNSUPPORTED_GUEST_OS", "NO_SUPPORTED_TRANSPORT",
 }
 neutral_check = check_status in ("not_checked", "skipped", "stopped")
 skip_reason = None
@@ -2261,7 +2261,7 @@ def check_skip_message(target):
         return None
     if code in {"RUNNING_DISABLED", "CHECK_WITH_HOST_DISABLED", "CHECK_DISABLED"}:
         return "Check disabled"
-    if code in {"STOPPED_READ_ONLY", "PAUSED_READ_ONLY", "UNSUPPORTED_GUEST_OS"}:
+    if code in {"STOPPED_READ_ONLY", "PAUSED_READ_ONLY", "UNSUPPORTED_GUEST_OS", "NO_SUPPORTED_TRANSPORT"}:
         return "Skipped by configuration"
     return None
 

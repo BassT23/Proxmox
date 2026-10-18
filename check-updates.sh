@@ -1157,7 +1157,7 @@ HOST_KERNEL_REBOOT_REQUIRED () {
 # Container Check Start
 CONTAINER_CHECK_START () {
   USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
-  local lifecycle_failure=0 lifecycle_message
+  local lifecycle_failure=0 lifecycle_message resolved_guest_name
   # Get the list of containers
   CONTAINERS=$(pct list | tail -n +2 | cut -f1 -d' ')
   if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
@@ -1175,13 +1175,29 @@ CONTAINER_CHECK_START () {
     elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
       continue
     else
+      # Resolve display metadata for this target before any record is written.
+      # The global name variable is deliberately reset for every container so
+      # a stopped or unreadable guest cannot inherit the previous guest name.
+      resolved_guest_name=""
+      STATUS_MODEL_GUEST_NAME="$CONTAINER"
+      if declare -f cluster_target_guest_name >/dev/null 2>&1; then
+        resolved_guest_name=$(cluster_target_guest_name "$CONTAINER" 2>/dev/null || true)
+        [[ -n "$resolved_guest_name" ]] && STATUS_MODEL_GUEST_NAME="$resolved_guest_name"
+      fi
       if ! STATUS=$(timeout 10 pct status "$CONTAINER" 2>/dev/null); then
-        echo -e "${RD}Skipping LXC $CONTAINER because Proxmox did not return its state within 10 seconds${CL}"
+        echo -e "${RD}Could not read state for LXC $CONTAINER; recording an unavailable check${CL}"
+        STATUS_MODEL_RECORD "$CONTAINER" lxc pct false "" "" "null" "null" error PROXMOX_STATUS_UNAVAILABLE \
+          "Could not read state for LXC $CONTAINER" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         continue
       fi
       if [[ "$STATUS" == "status: stopped" && "${INITIAL_INVENTORY:-false}" == true ]]; then
         STATUS_MODEL_RECORD "$CONTAINER" lxc pct false "" "" "null" "null" not_checked STOPPED_READ_ONLY "LXC $CONTAINER is stopped; initial inventory did not start it" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
-      elif [[ "$STATUS" == "status: stopped" && "$STOPPED" == true ]]; then
+      elif [[ "$STATUS" == "status: stopped" ]]; then
+        if [[ "$STOPPED" != true ]]; then
+          STATUS_MODEL_RECORD "$CONTAINER" lxc pct false "" "" "null" "null" not_checked STOPPED_READ_ONLY \
+            "LXC $CONTAINER is stopped; configured check does not start it" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+          continue
+        fi
         # Start the container
         RUN_PROXMOX_COMMAND pct start "$CONTAINER"
         if WAIT_FOR_BOOTUP_LXC; then
@@ -1203,17 +1219,26 @@ CONTAINER_CHECK_START () {
           echo -e "${RD}$lifecycle_message${CL}"
         fi
         if [[ "$lifecycle_failure" -ne 0 ]]; then
-          STATUS_MODEL_GUEST_NAME=""
+          STATUS_MODEL_GUEST_NAME="$CONTAINER"
           if declare -f cluster_target_guest_name >/dev/null 2>&1; then
-            STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$CONTAINER" 2>/dev/null || true)
+            resolved_guest_name=$(cluster_target_guest_name "$CONTAINER" 2>/dev/null || true)
+            [[ -n "$resolved_guest_name" ]] && STATUS_MODEL_GUEST_NAME="$resolved_guest_name"
           fi
           STATUS_MODEL_RECORD "$CONTAINER" lxc pct true "" "" "null" "null" error LIFECYCLE_RESTORE_FAILED "$lifecycle_message" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
           CHECK_FAILURE=1
         fi
-      elif [[ "$STATUS" == "status: running" && "$RUNNING" == true ]]; then
-        if ! CHECK_CONTAINER "$CONTAINER"; then
-          CHECK_FAILURE=1
+      elif [[ "$STATUS" == "status: running" ]]; then
+        if [[ "$RUNNING" == true ]]; then
+          if ! CHECK_CONTAINER "$CONTAINER"; then
+            CHECK_FAILURE=1
+          fi
+        else
+          STATUS_MODEL_RECORD "$CONTAINER" lxc pct false "" "" "null" "null" not_checked RUNNING_DISABLED \
+            "LXC $CONTAINER is running; configured check does not check it" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         fi
+      else
+        STATUS_MODEL_RECORD "$CONTAINER" lxc pct false "" "" "null" "null" error CHECK_STATE \
+          "Unsupported LXC state for $CONTAINER: $STATUS" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
       fi
     fi
   done
@@ -1256,10 +1281,11 @@ CHECK_CONTAINER () {
   fi
   local CONTAINER_UPDATES=0 CONTAINER_NORMAL_UPDATES=null CONTAINER_SECURITY_UPDATES=null
   local OS_VERSION="" OS_RELEASE="" OS_RELEASE_ID="" OS_RELEASE_PRETTY="" OS_DISPLAY=""
-  local CONTAINER_STATUS=ok CONTAINER_REBOOT=false pct_config_error
-  STATUS_MODEL_GUEST_NAME=""
+  local CONTAINER_STATUS=ok CONTAINER_REBOOT=false pct_config_error resolved_guest_name
+  STATUS_MODEL_GUEST_NAME="$CONTAINER"
   if declare -f cluster_target_guest_name >/dev/null 2>&1; then
-    STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$CONTAINER" 2>/dev/null || true)
+    resolved_guest_name=$(cluster_target_guest_name "$CONTAINER" 2>/dev/null || true)
+    [[ -n "$resolved_guest_name" ]] && STATUS_MODEL_GUEST_NAME="$resolved_guest_name"
   fi
   if ! mkdir -p -- "$LOCAL_FILES/temp"; then
     CHECK_CONTAINER_FAILURE "Could not initialize temporary LXC check directory for $CONTAINER"
@@ -1417,8 +1443,13 @@ CHECK_CONTAINER () {
 # also executed on the owner node by the remote-check wrapper, so every pct
 # command below runs in the correct Proxmox context.
 CHECK_SINGLE_CONTAINER () {
-  local target="$1" status check_rc=0 lifecycle_failure=0 lifecycle_message
+  local target="$1" status check_rc=0 lifecycle_failure=0 lifecycle_message resolved_guest_name
   CONTAINER="$target"
+  STATUS_MODEL_GUEST_NAME="$target"
+  if declare -f cluster_target_guest_name >/dev/null 2>&1; then
+    resolved_guest_name=$(cluster_target_guest_name "$target" 2>/dev/null || true)
+    [[ -n "$resolved_guest_name" ]] && STATUS_MODEL_GUEST_NAME="$resolved_guest_name"
+  fi
   if declare -f STATUS_MODEL_CAPTURE_TARGET_GENERATION >/dev/null 2>&1; then
     STATUS_MODEL_CAPTURE_TARGET_GENERATION "$target" || true
   fi
@@ -1426,7 +1457,7 @@ CHECK_SINGLE_CONTAINER () {
     ! API_CHECK_TARGET_IDENTITY_GUARD "$target" lxc; then
     STATUS_MODEL_RECORD "$target" lxc pct false "" "" "null" "null" \
       error API_TARGET_IDENTITY_MISMATCH "The current LXC identity could not be verified before the API check" \
-      "${STATUS_MODEL_NODE:-$HOSTNAME}" ""
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
     return 46
   fi
   if ! status=$(timeout 10 pct status "$target" 2>/dev/null); then
@@ -1436,10 +1467,6 @@ CHECK_SINGLE_CONTAINER () {
   if [[ "$status" == "status: stopped" ]]; then
     if [[ "${INITIAL_INVENTORY:-false}" == true ||
           ( "${UU_EXPLICIT_TARGET_CHECK:-false}" != true && "$STOPPED" != true ) ]]; then
-      STATUS_MODEL_GUEST_NAME=""
-      if declare -f cluster_target_guest_name >/dev/null 2>&1; then
-        STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$target" 2>/dev/null || true)
-      fi
       local stopped_message="LXC $target is stopped; configured check does not start it"
       if [[ "${INITIAL_INVENTORY:-false}" == true ]]; then
         stopped_message="LXC $target is stopped; initial inventory did not start it"
@@ -1467,9 +1494,10 @@ CHECK_SINGLE_CONTAINER () {
       lifecycle_message="LXC $target did not return to stopped state"
     fi
     if [[ "$lifecycle_failure" -ne 0 ]]; then
-      STATUS_MODEL_GUEST_NAME=""
+      STATUS_MODEL_GUEST_NAME="$target"
       if declare -f cluster_target_guest_name >/dev/null 2>&1; then
-        STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$target" 2>/dev/null || true)
+        resolved_guest_name=$(cluster_target_guest_name "$target" 2>/dev/null || true)
+        [[ -n "$resolved_guest_name" ]] && STATUS_MODEL_GUEST_NAME="$resolved_guest_name"
       fi
       STATUS_MODEL_RECORD "$target" lxc pct true "" "" "null" "null" \
         error LIFECYCLE_RESTORE_FAILED "$lifecycle_message" \
@@ -1480,9 +1508,10 @@ CHECK_SINGLE_CONTAINER () {
   fi
   if [[ "$status" == "status: running" ]]; then
     if [[ "${UU_EXPLICIT_TARGET_CHECK:-false}" != true && "$RUNNING" != true ]]; then
-      STATUS_MODEL_GUEST_NAME=""
+      STATUS_MODEL_GUEST_NAME="$target"
       if declare -f cluster_target_guest_name >/dev/null 2>&1; then
-        STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$target" 2>/dev/null || true)
+        resolved_guest_name=$(cluster_target_guest_name "$target" 2>/dev/null || true)
+        [[ -n "$resolved_guest_name" ]] && STATUS_MODEL_GUEST_NAME="$resolved_guest_name"
       fi
       STATUS_MODEL_RECORD "$target" lxc pct false "" "" "null" "null" \
         not_checked RUNNING_DISABLED "LXC $target is running; configured check does not check it" \
@@ -1500,6 +1529,7 @@ CHECK_SINGLE_CONTAINER () {
 # VM Check Start
 VM_CHECK_START () {
   USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
+  local resolved_guest_name
   # Get the list of VMs
   VMS=$(qm list | tail -n +2 | cut -c -10)
   if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
@@ -1518,26 +1548,64 @@ VM_CHECK_START () {
         vm_has_internal_ssh=true
       fi
     fi
-    STATUS_MODEL_GUEST_NAME=""
+    # Resolve the current Proxmox name independently for every VM.  A numeric
+    # ID is the safe fallback when inventory metadata is unavailable.
+    resolved_guest_name=""
+    STATUS_MODEL_GUEST_NAME="$VM"
     if declare -f cluster_target_guest_name >/dev/null 2>&1; then
-      STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$VM" 2>/dev/null || true)
+      resolved_guest_name=$(cluster_target_guest_name "$VM" 2>/dev/null || true)
+      [[ -n "$resolved_guest_name" ]] && STATUS_MODEL_GUEST_NAME="$resolved_guest_name"
     fi
     REBOOT_REQUIRED=false
     SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "${VM_START_DELAY:-45}")
     SSH_START_DELAY_TIME=${SSH_START_DELAY_TIME:-45}
-    # Check if connection is available
+    # Apply scope filters before transport handling.  A target without a
+    # supported guest transport is still part of the selected inventory and
+    # receives a neutral record, while excluded targets remain untouched.
+    if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS check "$VM" "$VMS"; then
+      continue
+    elif guest_id_matches "$EXCLUDED" "$VM"; then
+      continue
+    elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
+      continue
+    fi
+    # Check if a read-only guest transport is available.
     if QGA_CONFIG_ENABLED "$VM" ||
       [[ -f $LOCAL_FILES/VMs/"$VM" ]] || [[ "$vm_has_internal_ssh" == true ]]; then
-      # Check VM
       PRE_OS=$(qm config "$VM" | grep 'ostype:' | sed 's/ostype:\s*//')
-      if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && ! TARGET_SELECTION_ALLOWS check "$VM" "$VMS"; then
+      CHECK_VM_LIFECYCLE "$VM"
+    else
+      # Do not probe, start, resume, or otherwise access a guest when neither
+      # QGA nor an approved SSH transport exists.  The Proxmox state itself is
+      # inventory metadata and lets the API distinguish stopped/paused guests.
+      if ! STATUS=$(timeout 10 qm status "$VM" 2>/dev/null); then
+        STATUS_MODEL_RECORD "$VM" vm none false "" "" "null" "null" error PROXMOX_STATUS_UNAVAILABLE \
+          "Could not read state for VM $VM" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
         continue
-      elif guest_id_matches "$EXCLUDED" "$VM"; then
-        continue
-      elif [[ "$ONLY" != "" ]] && ! guest_id_matches "$ONLY" "$VM"; then
-        continue
+      fi
+      if [[ "$STATUS" == "status: stopped" ]]; then
+        STATUS_MODEL_RECORD "$VM" vm none false "" "" "null" "null" not_checked STOPPED_READ_ONLY \
+          "VM $VM is stopped; no supported read-only transport is configured" \
+          "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+      elif [[ "$STATUS" == "status: paused" ]]; then
+        STATUS_MODEL_RECORD "$VM" vm none false "" "" "null" "null" not_checked PAUSED_READ_ONLY \
+          "VM $VM is paused; no supported read-only transport is configured" \
+          "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
       else
-        CHECK_VM_LIFECYCLE "$VM"
+        if [[ "$STATUS" == "status: running" ]]; then
+          if [[ "${UU_EXPLICIT_TARGET_CHECK:-false}" != true && "$RUNNING_VM" != true ]]; then
+            STATUS_MODEL_RECORD "$VM" vm none false "" "" "null" "null" not_checked RUNNING_DISABLED \
+              "VM $VM is running; configured check does not check it" \
+              "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+          else
+            STATUS_MODEL_RECORD "$VM" vm none false "" "" "null" "null" not_checked NO_SUPPORTED_TRANSPORT \
+              "VM $VM has no supported read-only transport; package check was skipped" \
+              "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+          fi
+        else
+          STATUS_MODEL_RECORD "$VM" vm none false "" "" "null" "null" error CHECK_STATE \
+            "Unsupported VM state for VM $VM: $STATUS" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
+        fi
       fi
     fi
   done
@@ -1547,7 +1615,8 @@ VM_CHECK_START () {
 # The original state is read before any mutation and restoration is attempted
 # independently of the check result.
 CHECK_VM_LIFECYCLE () {
-  local target="$1" status check_rc=0 lifecycle_failure=0 lifecycle_message=""
+  local target="$1" status check_rc=0 lifecycle_failure=0 lifecycle_message="" resolved_guest_name
+  STATUS_MODEL_GUEST_NAME="$target"
   if declare -f STATUS_MODEL_CAPTURE_TARGET_GENERATION >/dev/null 2>&1; then
     STATUS_MODEL_CAPTURE_TARGET_GENERATION "$target" || true
   fi
@@ -1555,11 +1624,15 @@ CHECK_VM_LIFECYCLE () {
     printf 'Cannot check VM: missing or invalid VMID\n' >&2
     return 2
   fi
+  if declare -f cluster_target_guest_name >/dev/null 2>&1; then
+    resolved_guest_name=$(cluster_target_guest_name "$target" 2>/dev/null || true)
+    [[ -n "$resolved_guest_name" ]] && STATUS_MODEL_GUEST_NAME="$resolved_guest_name"
+  fi
   if declare -f API_CHECK_TARGET_IDENTITY_GUARD >/dev/null 2>&1 &&
     ! API_CHECK_TARGET_IDENTITY_GUARD "$target" vm; then
     STATUS_MODEL_RECORD "$target" vm qga false "" "" "null" "null" \
       error API_TARGET_IDENTITY_MISMATCH "The current VM identity could not be verified before the API check" \
-      "${STATUS_MODEL_NODE:-$HOSTNAME}" ""
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME"
     return 46
   fi
   SSH_START_DELAY_TIME=$(SANITIZE_NUMBER "${VM_START_DELAY:-45}")
@@ -1656,7 +1729,7 @@ CHECK_VM_LIFECYCLE () {
 # VM Check
 CHECK_VM () {
   local IP USER SSH_VM_PORT SSH_START_DELAY_TIME ssh_profile_configured=false ssh_error ostype
-  local qga_os_info
+  local qga_os_info resolved_guest_name
   REBOOT_REQUIRED=false
   CHECK_SSH_FALLBACK_ERROR=""
   if [[ "$RDU" != true ]]; then
@@ -1667,9 +1740,10 @@ CHECK_VM () {
   if declare -f STATUS_MODEL_CAPTURE_TARGET_GENERATION >/dev/null 2>&1; then
     STATUS_MODEL_CAPTURE_TARGET_GENERATION "$VM" || true
   fi
-  STATUS_MODEL_GUEST_NAME=""
+  STATUS_MODEL_GUEST_NAME="$VM"
   if declare -f cluster_target_guest_name >/dev/null 2>&1; then
-    STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$VM" 2>/dev/null || true)
+    resolved_guest_name=$(cluster_target_guest_name "$VM" 2>/dev/null || true)
+    [[ -n "$resolved_guest_name" ]] && STATUS_MODEL_GUEST_NAME="$resolved_guest_name"
   fi
   if [[ -f "$LOCAL_FILES/VMs/$VM" ]]; then
     ssh_profile_configured=true

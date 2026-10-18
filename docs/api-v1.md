@@ -81,7 +81,8 @@ performed; it is not a check failure. A target with a skip has
 
 Known neutral codes include `STOPPED_READ_ONLY`, `PAUSED_READ_ONLY`,
 `RUNNING_DISABLED`, `CHECK_DISABLED`, `CHECK_WITH_HOST_DISABLED`,
-`NETWORK_UNAVAILABLE`, and `UNSUPPORTED_GUEST_OS`. Operational failures such
+`NETWORK_UNAVAILABLE`, `UNSUPPORTED_GUEST_OS`, and `NO_SUPPORTED_TRANSPORT`.
+Operational failures such
 as `CHECK_COMMAND_FAILED`, `LIFECYCLE_RESTORE_FAILED`, and
 `API_TARGET_IDENTITY_MISMATCH` remain errors and are never converted to a
 skip. A neutral skip has `error: null`; a successful check has both
