@@ -37,7 +37,13 @@ except ImportError:  # pragma: no cover - direct installed-script fallback
     pam_authenticate = None
 
 try:
-    from api_tokens import TokenConfigError, authenticate as authenticate_api_token, load_config as load_api_token_config
+    from api_tokens import (
+        TokenConfigError,
+        authenticate as authenticate_api_token,
+        create_token as create_api_token,
+        load_config as load_api_token_config,
+        revoke_token as revoke_api_token,
+    )
 except ImportError:  # pragma: no cover - direct module-loading fallback for tests
     _api_tokens_spec = importlib.util.spec_from_file_location(
         "ultimate_updater_api_tokens", Path(__file__).with_name("api_tokens.py")
@@ -46,7 +52,9 @@ except ImportError:  # pragma: no cover - direct module-loading fallback for tes
     _api_tokens_spec.loader.exec_module(_api_tokens_module)
     TokenConfigError = _api_tokens_module.TokenConfigError
     authenticate_api_token = _api_tokens_module.authenticate
+    create_api_token = _api_tokens_module.create_token
     load_api_token_config = _api_tokens_module.load_config
+    revoke_api_token = _api_tokens_module.revoke_token
 
 
 DEFAULT_STATUS_FILE = Path("/etc/ultimate-updater/status.json")
@@ -1095,7 +1103,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     async function cancelTfa(){const challenge=pendingTfa;resetTfaFormState();setLoginLoading(false);document.querySelectorAll('[data-login-factor="first"]').forEach(item=>item.hidden=false);if(challenge?.challenge_id){await fetch('/api/login/tfa/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({challenge_id:challenge.challenge_id})}).catch(()=>{})}document.getElementById('login-message').textContent='Login cancelled.'}
     function showDashboard(){beginAuthenticatedSession();document.getElementById('auth-loading').classList.remove('open');document.getElementById('login-screen').classList.remove('open');document.getElementById('dashboard').hidden=false;window.dispatchEvent(new Event('uu-auth-ready'))}
     function startDashboardLoad(generation=authGeneration){beginInitialSystemDataLoad(generation);loadStatus(generation);loadJobs(generation);loadTargets(generation);loadTargetSelection(generation);scheduleUpdaterVersionCheck()}
-    function applyPageRoute(push=false,requestedPage=null){let page=requestedPage|| (location.pathname==='/settings'?'settings':location.pathname==='/scheduler'?'scheduler':'overview');if(push)history.pushState({},'',page==='overview'?'/':`/${page}`);const subtitles={overview:'A clear overview of updates across your systems.',settings:'Manage configuration without leaving your authenticated session.',scheduler:''};document.querySelectorAll('.page-nav a').forEach(link=>{const active=link.dataset.page===page;link.classList.toggle('active',active);link.setAttribute('aria-current',active?'page':'false')});document.getElementById('page-subtitle').textContent=subtitles[page];document.querySelector('.dashboard-kpis').hidden=page!=='overview';document.getElementById('overview-page').hidden=page!=='overview';document.getElementById('settings-page').hidden=page!=='settings';document.getElementById('scheduler-page').hidden=page!=='scheduler';if(page==='settings')loadConfig()}
+    function applyPageRoute(push=false,requestedPage=null){let page=requestedPage|| (location.pathname==='/settings'?'settings':location.pathname==='/api'?'api':location.pathname==='/scheduler'?'scheduler':'overview');if(push)history.pushState({},'',page==='overview'?'/':`/${page}`);const subtitles={overview:'A clear overview of updates across your systems.',settings:'Manage configuration without leaving your authenticated session.',api:'Manage API access and token metadata securely.',scheduler:''};document.querySelectorAll('.page-nav a').forEach(link=>{const active=link.dataset.page===page;link.classList.toggle('active',active);link.setAttribute('aria-current',active?'page':'false')});document.getElementById('page-subtitle').textContent=subtitles[page];document.querySelector('.dashboard-kpis').hidden=page!=='overview';document.getElementById('overview-page').hidden=page!=='overview';document.getElementById('settings-page').hidden=page!=='settings';document.getElementById('api-page').hidden=page!=='api';document.getElementById('scheduler-page').hidden=page!=='scheduler';if(page==='settings')loadConfig();if(page==='api'&&window.loadApiManagement)window.loadApiManagement()}
     document.getElementById('theme-select')?.addEventListener('change',event=>applyTheme(event.target.value,true));
     const nav=document.querySelector('.page-nav'),navToggle=document.querySelector('.nav-toggle');
     const navScrim=document.createElement('button');navScrim.type='button';navScrim.className='nav-scrim';navScrim.setAttribute('aria-label','Close navigation');navScrim.hidden=true;document.body.append(navScrim);
@@ -1421,8 +1429,8 @@ PAGE = PAGE.replace('<p id="login-version" class="login-version" aria-live="poli
 PAGE = PAGE.replace('<label>Name<input name="id"', '<label>Name *<input name="id"')
 PAGE = PAGE.replace('<button type="button" id="target-modal-test">Test connection</button>', '<button type="button" id="target-modal-test" disabled>Test connection</button>')
 PAGE = PAGE.replace('<section class="management-panel" id="settings-entry"><div class="section-title"><div><h2>Configuration</h2><span class="hint">Manage Ultimate Updater settings</span></div><a class="button primary" href="/settings">Open settings</a></div></section>', '')
-PAGE = PAGE.replace('<nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav><section class="summary dashboard-kpis" hidden><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>', '</header><nav class="page-nav" aria-label="Primary"><button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><a href="/" data-page="overview" class="active" aria-current="page">Dashboard</a><a href="#systems" data-anchor="systems">Systems</a><a href="#systems" data-anchor="systems">Updates</a><a href="#global-actions" data-anchor="global-actions">Actions</a><a href="#jobs" data-anchor="jobs">Logs</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav>')
-PAGE = re.sub(r'<nav class="page-nav" aria-label="Primary">.*?</nav><section class="summary dashboard-kpis" hidden>.*?</section></header>', '</header><nav class="page-nav" aria-label="Primary"><button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><a href="/" data-page="overview" class="active" aria-current="page">Dashboard</a><a href="#systems" data-anchor="systems">Systems</a><a href="#systems" data-anchor="systems">Updates</a><a href="#global-actions" data-anchor="global-actions">Actions</a><a href="#jobs" data-anchor="jobs">Logs</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav>', PAGE, count=1, flags=re.S)
+PAGE = PAGE.replace('<nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview">Overview</a><a href="/settings" data-page="settings">Settings</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav><section class="summary dashboard-kpis" hidden><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section></header>', '</header><nav class="page-nav" aria-label="Primary"><button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><a href="/" data-page="overview" class="active" aria-current="page">Dashboard</a><a href="#systems" data-anchor="systems">Systems</a><a href="#systems" data-anchor="systems">Updates</a><a href="#global-actions" data-anchor="global-actions">Actions</a><a href="/settings" data-page="settings">Settings</a><a href="/api" data-page="api">API</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav>')
+PAGE = re.sub(r'<nav class="page-nav" aria-label="Primary">.*?</nav><section class="summary dashboard-kpis" hidden>.*?</section></header>', '</header><nav class="page-nav" aria-label="Primary"><button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><a href="/" data-page="overview" class="active" aria-current="page">Dashboard</a><a href="#systems" data-anchor="systems">Systems</a><a href="#systems" data-anchor="systems">Updates</a><a href="#global-actions" data-anchor="global-actions">Actions</a><a href="/settings" data-page="settings">Settings</a><a href="/api" data-page="api">API</a><a href="/scheduler" data-page="scheduler">Scheduler</a></nav>', PAGE, count=1, flags=re.S)
 PAGE = PAGE.replace('</header><nav class="page-nav"', '</header><div class="main-body"><nav class="page-nav"', 1)
 PAGE = PAGE.replace('    <footer>', '    </div>\n    <footer>', 1)
 PAGE = PAGE.replace('<section id="overview-page" class="page-section">', '<section id="overview-page" class="page-section"><section class="summary dashboard-kpis"><div class="metric"><strong id="total">–</strong><span>known systems</span></div><div class="metric"><strong id="online">–</strong><span>reachable</span></div><div class="metric"><strong id="normal-updates">–</strong><span>normal updates</span></div><div class="metric"><strong id="security-updates">–</strong><span>security updates</span></div><div class="metric"><strong id="other-updates">–</strong><span>other updates</span></div><div class="metric"><strong id="attention">–</strong><span>needs attention</span></div></section>')
@@ -1466,7 +1474,10 @@ scheduler_markup = scheduler_markup.replace(
     f'<fieldset class="schedule-days"><legend>Days of week</legend><div class="day-toggles">{day_toggle_markup}</div></fieldset><fieldset class="schedule-days schedule-month-days"><legend>Days of month</legend><div class="day-toggles">{month_day_toggle_markup}</div><span class="hint schedule-day-hint">Optional. When selected, month days take precedence over weekdays.</span></fieldset>',
 )
 PAGE = re.sub(r'<section id="scheduler-page" class="page-section" hidden>.*?</section></section>', scheduler_markup, PAGE, count=1, flags=re.S)
-PAGE = PAGE.replace("if(page==='settings')loadConfig()}", "if(page==='settings')loadConfig();if(page==='scheduler')window.dispatchEvent(new Event('scheduler-page-open'))}")
+api_markup = '''<section id="api-page" class="page-section" hidden><div class="section-title"><div><h2>API</h2><span class="hint">Manage integration API access without exposing token secrets.</span></div></div><section class="management-grid api-grid"><section class="management-panel"><div class="section-title"><div><h2>API status</h2><span class="hint">Read-only status for API v1 and the current endpoint.</span></div><span id="api-status-state" class="pill neutral">Loading…</span></div><div class="detail-grid api-status-details"><div><span>API v1</span><strong id="api-status-enabled">Unknown</strong></div><div><span>HTTPS required</span><strong id="api-status-https">Yes</strong></div><div><span>Endpoint</span><strong id="api-status-endpoint">Unknown</strong></div></div><p id="api-status-message" class="management-message" role="status"></p></section><section class="management-panel"><div class="section-title"><div><h2>Token management</h2><span class="hint">Only metadata is listed. A new secret is shown once after creation.</span></div></div><form id="api-token-form" class="management-form open"><label>Name<input name="name" maxlength="80" required autocomplete="off"></label><fieldset id="api-token-permissions" class="api-permissions"><legend>Permissions</legend><label><input type="checkbox" name="permission" value="read" checked> read</label><label><input type="checkbox" name="permission" value="logs"> logs (requires read)</label><label><input type="checkbox" name="permission" value="check"> check</label><label><input type="checkbox" name="permission" value="update"> update</label><label><input type="checkbox" name="permission" value="reboot"> reboot</label><label><input type="checkbox" name="permission" value="cancel"> cancel</label></fieldset><label>Expiry (optional ISO-8601 with timezone)<input name="expires_at" maxlength="64" placeholder="2027-01-01T00:00:00Z" autocomplete="off"></label><div class="form-actions"><button class="primary" type="submit">Create token</button></div></form><div id="api-token-secret" class="api-token-secret" hidden><strong>Token secret — store it now</strong><code id="api-token-secret-value"></code><p>This secret is shown only once and cannot be displayed again.</p></div><div id="api-token-message" class="management-message" role="status"></div><div id="api-token-list" class="api-token-list"><p class="empty">Loading token metadata…</p></div></section><section class="management-panel api-permissions-panel"><div class="section-title"><div><h2>Permissions</h2><span class="hint">Existing API permission rules remain unchanged.</span></div></div><ul><li><code>read</code> — read API data</li><li><code>logs</code> — read job logs; requires <code>read</code></li><li><code>check</code> — start checks</li><li><code>update</code> — start updates</li><li><code>reboot</code> — request reboots</li><li><code>cancel</code> — cancel jobs</li></ul></section><section class="management-panel api-endpoints-panel"><div class="section-title"><div><h2>API v1 endpoints</h2><span class="hint">See <a href="https://github.com/BassT23/Proxmox/blob/develop/docs/api-v1.md" target="_blank" rel="noopener noreferrer">docs/api-v1.md</a> for the full contract.</span></div></div><ul><li><code>/api/v1/status-summary</code></li><li><code>/api/v1/status</code></li><li><code>/api/v1/jobs</code></li><li><code>/api/v1/jobs/{id}</code></li><li><code>/api/v1/jobs/{id}/log</code></li><li><code>/api/v1/updater-version</code></li><li><code>/api/v1/capabilities</code></li></ul></section></section></section>'''
+PAGE = PAGE.replace('<section id="scheduler-page"', api_markup + '<section id="scheduler-page"', 1)
+PAGE = PAGE.replace('</head>', '<style>.api-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.api-status-details{margin-top:0}.api-token-secret{margin-top:14px;padding:12px;border:1px solid #55d39a77;border-radius:10px;color:var(--good);background:#55d39a12}.api-token-secret code{display:block;margin-top:8px;padding:10px;overflow-wrap:anywhere;color:var(--text);background:#050914;border-radius:7px}.api-token-secret p{margin:8px 0 0;color:var(--muted);font-size:.72rem}.api-permissions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 12px;margin:0;padding:10px;border:1px solid var(--line);border-radius:8px}.api-permissions legend{padding:0 4px;color:var(--muted);font-size:.72rem}.api-permissions label{display:flex;align-items:center;gap:7px;margin:0}.api-permissions input{width:auto;margin:0}.api-token-list{margin-top:16px;overflow-x:auto}.api-token-list table{width:100%;border-collapse:collapse;font-size:.72rem}.api-token-list th,.api-token-list td{padding:8px 6px;border-top:1px solid var(--line);text-align:left;vertical-align:top}.api-token-list th{color:var(--muted)}.api-token-list code{overflow-wrap:anywhere}.api-token-list .revoked{color:var(--muted)}.api-endpoints-panel,.api-permissions-panel{min-width:0}.api-grid ul{margin:0;padding-left:20px;color:var(--muted);font-size:.78rem;line-height:1.8}.api-grid a{color:var(--accent)}@media(max-width:760px){.api-grid{grid-template-columns:1fr}.api-permissions{grid-template-columns:1fr}}</style></head>', 1)
+PAGE = PAGE.replace("if(page==='settings')loadConfig()}", "if(page==='settings')loadConfig();if(page==='api')loadApiManagement();if(page==='scheduler')window.dispatchEvent(new Event('scheduler-page-open'))}")
 # The route function is assembled from the base page before the scheduler
 # markup is injected. Keep the event hook explicit so in-page navigation
 # refreshes scheduler data without changing the existing routing model.
@@ -1501,6 +1512,22 @@ PAGE = PAGE.replace('</body></html>', '''<script>
   window.addEventListener('scheduler-page-open',loadSchedules);window.addEventListener('uu-auth-ready',loadSchedules);if(window.__uu_authenticated&&csrfToken)loadSchedules();setInterval(()=>{if(!document.getElementById('scheduler-page').hidden&&csrfToken)loadSchedules()},10000);
 })();
 </script></body></html>''', 1)
+PAGE = PAGE.replace('</body>', '''<script>
+(() => {
+  const page=document.getElementById('api-page');
+  if(!page)return;
+  const managementMessage=(text,error=false)=>{const node=document.getElementById('api-token-message');node.textContent=text||'';node.className=`management-message${error?' error':''}`};
+  const apiManagement=async()=>{const response=await fetch('/api/api-management',{cache:'no-store'}),data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data?.error?.message||'API management data is unavailable.');return data};
+  const renderStatus=data=>{const status=data.api||{},state=status.state||'invalid',stateNode=document.getElementById('api-status-state');stateNode.textContent=state==='enabled'?'Enabled':state==='disabled'?'Disabled':'Unavailable';stateNode.className=`pill ${state==='enabled'?'good':state==='disabled'?'neutral':'bad'}`;document.getElementById('api-status-enabled').textContent=status.enabled===true?'Enabled':status.enabled===false?'Disabled':'Unknown';document.getElementById('api-status-https').textContent=status.https_required===true?'Yes':'Unknown';document.getElementById('api-status-endpoint').textContent=status.endpoint||'Unavailable';document.getElementById('api-status-message').textContent=status.message||'Machine API access remains HTTPS-only and permission-gated.'};
+  const renderTokens=items=>{const list=document.getElementById('api-token-list');if(!Array.isArray(items)||!items.length){list.innerHTML='<p class="empty">No API tokens configured.</p>';return}const rows=items.map(item=>{const state=item.revoked?'Revoked':'Active';return `<tr class="${item.revoked?'revoked':''}"><td><strong>${esc(item.name)}</strong><br><code>${esc(item.id)}</code></td><td>${(item.permissions||[]).map(esc).join(', ')||'—'}</td><td>${esc(item.expires_at||'Never')}</td><td>${state}</td><td>${item.revoked?'':`<button type="button" data-api-token-revoke="${esc(item.id)}">Revoke</button>`}</td></tr>`}).join('');list.innerHTML=`<table><thead><tr><th>Name / ID</th><th>Permissions</th><th>Expires</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`};
+  let loaded=false;
+  async function loadApiManagement(){if(!window.__uu_authenticated||loaded&&page.hidden)return;try{const data=await apiManagement();renderStatus(data);renderTokens(data.tokens);loaded=true;managementMessage('')}catch(error){loaded=false;managementMessage(error.message||'API management data is unavailable.',true)}}
+  window.loadApiManagement=loadApiManagement;
+  document.getElementById('api-token-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget,permissions=[...form.querySelectorAll('input[name="permission"]:checked')].map(input=>input.value),payload={name:form.elements.name.value,permissions,expires_at:form.elements.expires_at.value.trim()||null};try{const data=await api('/api/api-tokens',{method:'POST',body:JSON.stringify(payload)});document.getElementById('api-token-secret-value').textContent=data.token||'';document.getElementById('api-token-secret').hidden=false;form.reset();form.querySelector('input[value="read"]').checked=true;managementMessage(data.message||'Token created.')}catch(error){managementMessage(error.message||'Token could not be created.',true)}};
+  document.getElementById('api-token-list').onclick=async event=>{const button=event.target.closest('[data-api-token-revoke]');if(!button)return;const id=button.dataset.apiTokenRevoke;if(!confirm(`Revoke API token "${id}"?`))return;button.disabled=true;try{await api(`/api/api-tokens/${encodeURIComponent(id)}`,{method:'DELETE'});loaded=false;await loadApiManagement();managementMessage('Token revoked.')}catch(error){managementMessage(error.message||'Token could not be revoked.',true);button.disabled=false}};
+  window.addEventListener('uu-auth-ready',()=>{loaded=false;loadApiManagement()});if(window.__uu_authenticated&&!page.hidden)loadApiManagement();
+})();
+</script></body>''', 1)
 PAGE = PAGE.replace(
     '<span id="interactive-terminal-status" class="pill warn">Disconnected</span><button id="interactive-terminal-detach"',
     '<span id="interactive-terminal-status" class="pill warn">Disconnected</span><button id="interactive-terminal-stop" class="danger" type="button" hidden>Stop job</button><button id="interactive-terminal-detach"',
@@ -1580,6 +1607,11 @@ PAGE = PAGE.replace('</head>', '''<style>
   </style></head>''', 1)
 header_nav = '<button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><nav class="page-nav" aria-label="Primary"><a href="/" data-page="overview"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3.5 11 8.5-7 8.5 7v8.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5Z"/><path d="M9 21v-6h6v6"/></svg><span>Dashboard</span></a><a href="/settings" data-page="settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9.7 3.4.5-1.4h3.6l.5.6 1.4.6 1.4-.6 2.5 2.5-.6 1.4.6 1.4 1.4.5v3.6l-1.4.5-.6 1.4.6 1.4-2.5 2.5-1.4-.6-1.4.6-.5 1.4h-3.6l-.5-1.4-1.4-.6-1.4.6-2.5-2.5.6-1.4-.6-1.4-1.4-.5V9.2l1.4-.5-.6-1.4-.6-1.4 2.5-2.5 1.4.6Z"/><circle cx="12" cy="11" r="3.2"/></svg><span>Settings</span></a><a href="/scheduler" data-page="scheduler"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>Scheduler</span></a><span class="nav-separator" aria-hidden="true"></span><a class="nav-support" href="https://ko-fi.com/basst" target="_blank" rel="noopener noreferrer"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 7h10v7.5A4.5 4.5 0 0 1 10.5 19h-1A4.5 4.5 0 0 1 5 14.5Z"/><path d="M15 9h2a2.5 2.5 0 0 1 0 5h-2M7 4h6"/></svg><span>Support project</span></a><button id="logout-menu" class="nav-logout" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H10M14 8l4 4-4 4M18 12H9"/></svg><span>Log out</span></button></nav>'
 header_nav = header_nav.replace('h3.6l.5.6 1.4.6', 'h3.6l.5 1.4 1.4.6')
+header_nav = header_nav.replace(
+    '</svg><span>Settings</span></a><a href="/scheduler"',
+    '</svg><span>Settings</span></a><a href="/api" data-page="api"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="7" cy="7" r="1"/><circle cx="7" cy="12" r="1"/><circle cx="7" cy="17" r="1"/></svg><span>API</span></a><a href="/scheduler"',
+    1,
+)
 header_nav = header_nav.replace(
     '</svg><span>Dashboard</span></a><a href="/settings"',
     '</svg><span>Dashboard</span></a><a href="#jobs" data-anchor="jobs"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 5h14v14H5z"/><path d="M8 9h8M8 12h8M8 15h5"/></svg><span>Jobs</span></a><a href="/settings"',
@@ -4885,6 +4917,98 @@ class StatusHandler(BaseHTTPRequestHandler):
             },
         }
 
+    def _api_token_path(self):
+        """Return the configured token path without accepting unsafe overrides."""
+        token_file = getattr(self.server, "api_token_file", None)
+        if not isinstance(token_file, Path) or not token_file.is_absolute():
+            raise TokenConfigError("The machine token configuration is unavailable.")
+        return token_file
+
+    def _api_management_endpoint(self):
+        """Return the current public API base without exposing local config."""
+        try:
+            origin = self._effective_origin_descriptor()
+        except ProxyConfigurationError:
+            return None
+        return f"{origin['canonical']}/api/v1" if origin else None
+
+    def _api_management_payload(self):
+        """Build a browser-safe API administration snapshot."""
+        try:
+            config = load_api_token_config(self._api_token_path())
+        except (OSError, TokenConfigError, ValueError):
+            config = None
+        if config is None:
+            api_state = {
+                "state": "invalid",
+                "enabled": None,
+                "message": "The API token configuration is unavailable or invalid.",
+            }
+            tokens = []
+        else:
+            enabled = config.get("enabled") is True
+            api_state = {
+                "state": "enabled" if enabled else "disabled",
+                "enabled": enabled,
+                "message": None,
+            }
+            tokens = [
+                {
+                    "id": record.get("id"),
+                    "name": record.get("name"),
+                    "permissions": list(record.get("permissions", [])),
+                    "expires_at": record.get("expires_at"),
+                    "revoked": record.get("revoked") is True,
+                }
+                for record in config.get("tokens", [])
+            ]
+        return {
+            "api_version": 1,
+            "schema_version": API_SCHEMA_VERSION,
+            "api": {
+                **api_state,
+                "https_required": True,
+                "endpoint": self._api_management_endpoint(),
+            },
+            "permissions": ["read", "logs", "check", "update", "reboot", "cancel"],
+            "tokens": tokens,
+        }
+
+    def handle_api_management_get(self):
+        self.send_json(self._api_management_payload())
+
+    def handle_api_token_create(self, payload):
+        if not isinstance(payload, dict):
+            raise ValueError("The token request is invalid.")
+        name = payload.get("name")
+        permissions = payload.get("permissions")
+        expires_at = payload.get("expires_at")
+        if not isinstance(name, str) or not isinstance(permissions, list):
+            raise ValueError("Token name and permissions are required.")
+        if expires_at == "":
+            expires_at = None
+        if expires_at is not None and not isinstance(expires_at, str):
+            raise ValueError("Token expiry is invalid.")
+        token_id, token = create_api_token(self._api_token_path(), name, permissions, expires_at)
+        self.send_json({
+            "api_version": 1,
+            "schema_version": API_SCHEMA_VERSION,
+            "token_id": token_id,
+            "token": token,
+            "message": "Token created. Store the secret now; it will not be displayed again.",
+            "metadata": {
+                "id": token_id,
+                "name": name,
+                "permissions": list(permissions),
+                "expires_at": expires_at,
+                "revoked": False,
+            },
+        }, HTTPStatus.CREATED)
+
+    def handle_api_token_revoke(self, token_id):
+        revoke_api_token(self._api_token_path(), token_id)
+        self.send_json({"message": "Token revoked."})
+
     def api_v1(self, path, query=""):
         parts = [unquote(part) for part in path.split("/") if part]
         needs_logs = len(parts) == 5 and parts[:3] == ["api", "v1", "jobs"] and parts[4] == "log"
@@ -6559,7 +6683,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         if path == "/api/v1" or path.startswith("/api/v1/"):
             self.api_v1(path, request.query)
             return
-        if path in ("/", "/overview", "/settings", "/scheduler"):
+        if path in ("/", "/overview", "/settings", "/scheduler", "/api"):
             self.send_bytes(PAGE.encode(), "text/html; charset=utf-8")
             return
         if path in UI_ASSETS:
@@ -6603,6 +6727,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.send_json({"authenticated": True, "username": session["user"], "csrf": session["csrf"]})
             return
         if not self.authenticated():
+            return
+        if path == "/api/api-management":
+            try:
+                self.handle_api_management_get()
+            except (OSError, ValueError, TokenConfigError):
+                self.send_json(error_payload("API_CONFIG_INVALID", "The API token configuration is unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
             return
         if path == "/api/schedules":
             try:
@@ -6855,6 +6985,12 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json_with_cookie({"authenticated": False}, "UU_SESSION=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
             return
         if not self.write_allowed():
+            return
+        if parts == ["api", "api-tokens"]:
+            try:
+                self.handle_api_token_create(payload)
+            except (OSError, TokenConfigError, ValueError):
+                self.send_json(error_payload("API_TOKEN_NOT_CREATED", "The API token request was rejected."), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         if len(parts) == 4 and parts[:2] == ["api", "windows-history"] and parts[3] == "refresh":
             self.action_windows_history(parts[2])
@@ -7323,6 +7459,14 @@ class StatusHandler(BaseHTTPRequestHandler):
         if not self.write_allowed():
             return
         parts = [unquote(part) for part in urlsplit(self.path).path.split("/") if part]
+        if len(parts) == 3 and parts[:2] == ["api", "api-tokens"]:
+            try:
+                self.handle_api_token_revoke(parts[2])
+            except KeyError:
+                self.send_json(error_payload("API_TOKEN_NOT_FOUND", "That API token does not exist."), HTTPStatus.NOT_FOUND)
+            except (OSError, TokenConfigError, ValueError):
+                self.send_json(error_payload("API_TOKEN_NOT_REVOKED", "The API token could not be revoked."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            return
         if len(parts) == 3 and parts[:2] == ["api", "schedules"]:
             schedules = self.scheduler_read()
             current = next((item for item in schedules if item["id"] == parts[2]), None)

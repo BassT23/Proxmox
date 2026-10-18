@@ -12,20 +12,25 @@ page = server.PAGE
 
 assert 'data-page="overview"' in page
 assert 'data-page="settings"' in page
+assert 'data-page="api"' in page
 assert 'data-page="scheduler"' in page
 assert 'href="/settings"' in page
+assert 'href="/api"' in page
 assert 'href="/scheduler"' in page
-assert page.count('class="nav-icon"') == 6
+assert page.count('class="nav-icon"') == 7
 assert 'class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"' in page
 assert '.dashboard-meta .page-nav a .nav-icon' in page
 assert 'href="#jobs" data-anchor="jobs"' in page
 assert '<span>Jobs</span>' in page
+assert '<span>API</span>' in page
+assert '<span>Logs</span>' not in page
 assert 'display:flex!important;align-items:center;gap:8px;min-width:0' in page
 assert 'id="logout-menu"' in page
 assert 'href="https://ko-fi.com/basst"' in page
 assert 'target="_blank" rel="noopener noreferrer"' in page
 assert 'id="overview-page"' in page
 assert 'id="settings-page"' in page
+assert 'id="api-page"' in page
 assert 'id="scheduler-page"' in page
 assert 'id="page-subtitle"' in page
 assert 'Automatic checks and updates using the existing Ultimate Updater safety rules.' in page
@@ -38,8 +43,10 @@ assert 'Update all systems' in page
 assert 'Update selected' in page
 assert 'function applyPageRoute(push=false,requestedPage=null)' in page
 assert "location.pathname==='/settings'" in page
+assert "location.pathname==='/api'" in page
 assert "location.pathname==='/scheduler'" in page
 assert "document.getElementById('settings-page').hidden=page!=='settings'" in page
+assert "document.getElementById('api-page').hidden=page!=='api'" in page
 assert "document.getElementById('scheduler-page').hidden=page!=='scheduler'" in page
 assert "document.querySelector('.dashboard-kpis').hidden=page!=='overview'" in page
 assert "applyPageRoute(true,link.dataset.page)" in page
@@ -93,7 +100,8 @@ assert '[str(runner), "list", "--cached"]' in (root / 'web-ui' / 'server.py').re
 assert 'class="overview-actions-card"' in overview
 assert 'id="check-all"' in overview
 assert 'id="update-all"' in overview
-settings = page.split('id="settings-page"', 1)[1].split('id="scheduler-page"', 1)[0]
+settings = page.split('id="settings-page"', 1)[1].split('id="api-page"', 1)[0]
+api = page.split('id="api-page"', 1)[1].split('id="scheduler-page"', 1)[0]
 assert 'id="config-form"' in settings
 assert 'class="management-form open"' in settings
 assert 'class="summary dashboard-kpis"' not in settings
@@ -126,6 +134,14 @@ assert '#settings-page #config-form.management-form.open { grid-template-columns
 assert 'background:#151d34e8' in page
 assert 'min-width:112px' in page
 assert '.page-nav a.active' in page
+assert 'id="api-token-form"' in api
+assert 'id="api-token-secret"' in api
+assert 'id="api-token-list"' in api
+assert 'https://github.com/BassT23/Proxmox/blob/develop/docs/api-v1.md' in api
+for endpoint in ('/api/v1/status-summary', '/api/v1/status', '/api/v1/jobs',
+                 '/api/v1/jobs/{id}', '/api/v1/jobs/{id}/log',
+                 '/api/v1/updater-version', '/api/v1/capabilities'):
+    assert endpoint in api
 # Scheduler exposes only the supported full check/update controls.
 scheduler = page.split('id="scheduler-page"', 1)[1].split('<footer', 1)[0]
 assert 'class="summary dashboard-kpis"' not in scheduler
