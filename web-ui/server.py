@@ -28,7 +28,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, urlencode, unquote, urlsplit
+from urllib.parse import parse_qs, parse_qsl, urlencode, unquote, urlsplit
 from urllib.request import Request, build_opener, ProxyHandler
 
 try:
@@ -4373,7 +4373,61 @@ class StatusHandler(BaseHTTPRequestHandler):
             options.update(encoding=encoding, errors="replace")
         return subprocess.run(args, **options)
 
-    def jobs(self, reconcile=True):
+    @staticmethod
+    def _api_v1_target_aliases(record):
+        """Return only safe, persisted aliases for one managed target."""
+        if not isinstance(record, dict):
+            return set()
+        target_id = str(record.get("id") or "")
+        target_type = str(record.get("type") or "").lower()
+        if not target_id:
+            return set()
+        aliases = {target_id}
+        if target_type in {"lxc", "vm"}:
+            guest_id = target_id.removeprefix("guest:")
+            aliases.update({guest_id, f"guest:{guest_id}"})
+        elif target_type == "host":
+            node = str(record.get("node") or target_id.removeprefix("host:"))
+            aliases.update({node, f"host:{node}"})
+        return aliases
+
+    @classmethod
+    def _api_v1_target_matches(cls, reference, record):
+        if not isinstance(reference, str) or not isinstance(record, dict):
+            return False
+        aliases = cls._api_v1_target_aliases(record)
+        if reference in aliases:
+            return True
+        # Node names are case-insensitive in the existing identity contract;
+        # guest and external IDs remain exact to avoid cross-target matches.
+        if str(record.get("type") or "").lower() == "host":
+            return reference.casefold() in {alias.casefold() for alias in aliases}
+        return False
+
+    def _api_v1_managed_target_for_filter(self, target):
+        if not isinstance(target, str) or len(target) > 160 or not API_TARGET_ID_RE.fullmatch(target):
+            raise ValueError("invalid target filter")
+        payload = self._api_v1_status_file(self.server.status_file)
+        matches = [record for record in payload["targets"]
+                   if self._api_v1_target_matches(target, record)]
+        if len(matches) != 1:
+            raise LookupError("target is not managed")
+        return matches[0]
+
+    @staticmethod
+    def _api_v1_job_target_filter(query):
+        if not query:
+            return None
+        try:
+            pairs = parse_qsl(query, keep_blank_values=True, max_num_fields=16)
+        except ValueError as error:
+            raise ValueError("invalid job query") from error
+        values = [value for key, value in pairs if key == "target"]
+        if len(values) > 1:
+            raise ValueError("target must be specified once")
+        return values[0] if values else None
+
+    def jobs(self, reconcile=True, target_record=None):
         runner = self.server.job_runner
         if not runner.is_file() or not runner.stat().st_mode & 0o111:
             raise RuntimeError("job runner is not available")
@@ -4387,6 +4441,9 @@ class StatusHandler(BaseHTTPRequestHandler):
             raise RuntimeError("job state could not be read")
         rows = [parse_state_line(line) for line in result.stdout.splitlines()]
         rows = [row for row in rows if row and JOB_RE.fullmatch(row["unit"])]
+        if target_record is not None:
+            rows = [row for row in rows
+                    if self._api_v1_target_matches(row.get("target"), target_record)]
         # Keep the API response bounded. Running jobs are always retained; the
         # remaining slots contain the newest terminal jobs by metadata time.
         def sort_key(row):
@@ -4531,6 +4588,9 @@ class StatusHandler(BaseHTTPRequestHandler):
             "transport": cls._api_v1_public_value(record.get("transport"), maximum=32),
             "reachable": cls._api_v1_public_value(record.get("reachable"), "bool"),
             "os": cls._api_v1_public_value(record.get("os")),
+            "os_display": cls._api_v1_public_value(
+                normalize_os_display(record.get("os"), record.get("os_version")), maximum=256
+            ),
             "updater": cls._api_v1_public_value(record.get("updater"), maximum=64),
             "check_status": cls._api_v1_public_value(record.get("check_status"), maximum=64),
             "error": error,
@@ -4631,7 +4691,75 @@ class StatusHandler(BaseHTTPRequestHandler):
             local["update_state"] = "unknown"
         return {"api_version": 1, "schema_version": 1, **local}
 
-    def api_v1(self, path):
+    @staticmethod
+    def _api_v1_config_bool(values, key):
+        value = values.get(key)
+        if value is None:
+            return None
+        value = str(value).strip().lower()
+        if value == "true":
+            return True
+        if value == "false":
+            return False
+        return None
+
+    @staticmethod
+    def _api_v1_capability_behavior(enabled, enabled_behavior):
+        if enabled is True:
+            return enabled_behavior
+        if enabled is False:
+            return "skipped"
+        return "unknown"
+
+    def _api_v1_capabilities(self):
+        values = parse_config_text(self.config_content())
+
+        def lifecycle_capability(check_key, update_key):
+            check_enabled = self._api_v1_config_bool(values, check_key)
+            update_enabled = self._api_v1_config_bool(values, update_key)
+            return {
+                "check": {
+                    "configured": check_enabled,
+                    "normal_behavior": self._api_v1_capability_behavior(check_enabled, "lifecycle_check"),
+                    "initial_inventory_behavior": "read_only_skip",
+                },
+                "update": {
+                    "configured": update_enabled,
+                    "behavior": self._api_v1_capability_behavior(update_enabled, "lifecycle_update"),
+                },
+            }
+
+        paused_check = self._api_v1_config_bool(values, "CHECK_PAUSED_VM")
+        return {
+            "api_version": 1,
+            "schema_version": API_SCHEMA_VERSION,
+            "capabilities": {
+                "api": {
+                    "status": True,
+                    "status_summary": True,
+                    "jobs": True,
+                    "capabilities": True,
+                    "actions": "permission_gated",
+                },
+                "stopped_container": lifecycle_capability(
+                    "CHECK_STOPPED_CONTAINER", "STOPPED_CONTAINER"
+                ),
+                "stopped_vm": lifecycle_capability("CHECK_STOPPED_VM", "STOPPED_VM"),
+                "paused_vm": {
+                    "check": {
+                        "configured": paused_check,
+                        "normal_behavior": self._api_v1_capability_behavior(paused_check, "lifecycle_check"),
+                        "initial_inventory_behavior": "read_only_skip",
+                    },
+                    "update": {
+                        "configured": None,
+                        "behavior": "not_configurable",
+                    },
+                },
+            },
+        }
+
+    def api_v1(self, path, query=""):
         parts = [unquote(part) for part in path.split("/") if part]
         needs_logs = len(parts) == 5 and parts[:3] == ["api", "v1", "jobs"] and parts[4] == "log"
         if self.api_token_authorized("logs" if needs_logs else "read") is None:
@@ -4642,7 +4770,15 @@ class StatusHandler(BaseHTTPRequestHandler):
             elif path == "/api/v1/status":
                 self.send_json(self._api_v1_status())
             elif path == "/api/v1/jobs":
-                rows = self.jobs(reconcile=False)[:VISIBLE_JOB_LIMIT]
+                target_filter = self._api_v1_job_target_filter(query)
+                target_record = None
+                if target_filter is not None:
+                    try:
+                        target_record = self._api_v1_managed_target_for_filter(target_filter)
+                    except LookupError:
+                        self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not managed."), HTTPStatus.NOT_FOUND)
+                        return
+                rows = self.jobs(reconcile=False, target_record=target_record)[:VISIBLE_JOB_LIMIT]
                 self.send_json({"api_version": 1, "schema_version": 1,
                                 "jobs": [self._api_v1_job(row) for row in rows]})
             elif len(parts) == 4 and parts[:3] == ["api", "v1", "jobs"]:
@@ -4674,13 +4810,22 @@ class StatusHandler(BaseHTTPRequestHandler):
                                 "log": strip_ansi(result.stdout or "")[-API_LOG_MAX_BYTES:]})
             elif path == "/api/v1/updater-version":
                 self.send_json(self._api_v1_version())
+            elif path == "/api/v1/capabilities":
+                self.send_json(self._api_v1_capabilities())
             else:
                 self.send_json(error_payload("NOT_FOUND", "Not found."), HTTPStatus.NOT_FOUND)
+        except LookupError:
+            self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not managed."), HTTPStatus.NOT_FOUND)
+        except ValueError as error:
+            if str(error) in {"invalid target filter", "target must be specified once", "invalid job query"}:
+                self.send_json(error_payload("INVALID_TARGET_FILTER", "The target filter is invalid."), HTTPStatus.BAD_REQUEST)
+            else:
+                self.send_json(error_payload("API_DATA_UNAVAILABLE", "The requested data is temporarily unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
         except FileNotFoundError:
             self.send_json(error_payload("STATUS_NOT_FOUND", "No status data is available."), HTTPStatus.NOT_FOUND)
         except OverflowError:
             self.send_json(error_payload("STATUS_TOO_LARGE", "Status data is too large."), HTTPStatus.SERVICE_UNAVAILABLE)
-        except (OSError, RuntimeError, UnicodeError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
+        except (OSError, RuntimeError, UnicodeError, json.JSONDecodeError, subprocess.TimeoutExpired):
             self.send_json(error_payload("API_DATA_UNAVAILABLE", "The requested data is temporarily unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
 
     def api_target_record(self, target):
@@ -6281,9 +6426,10 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_json(response, HTTPStatus.ACCEPTED)
 
     def do_GET(self):  # noqa: N802 - stdlib handler API
-        path = urlsplit(self.path).path
+        request = urlsplit(self.path)
+        path = request.path
         if path == "/api/v1" or path.startswith("/api/v1/"):
-            self.api_v1(path)
+            self.api_v1(path, request.query)
             return
         if path in ("/", "/overview", "/settings", "/scheduler"):
             self.send_bytes(PAGE.encode(), "text/html; charset=utf-8")

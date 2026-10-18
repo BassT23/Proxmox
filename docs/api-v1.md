@@ -45,22 +45,38 @@ where a response object is returned.
 
 * `GET /api/v1/status-summary` — bounded aggregate status.
 * `GET /api/v1/status` — public target status records.
-* `GET /api/v1/jobs` — bounded cached job metadata.
+* `GET /api/v1/jobs` — bounded cached job metadata. An optional
+  `?target=<managed-target>` filter is applied before the visible job limit.
 * `GET /api/v1/jobs/{id}` — one validated Ultimate Updater job.
 * `GET /api/v1/jobs/{id}/log` — bounded job output; requires `logs`.
 * `GET /api/v1/updater-version` — local build metadata and an already cached
   public version result. It does not start a network version check.
+* `GET /api/v1/capabilities` — read-only configured lifecycle and API
+  capability metadata.
 
 Job IDs must match an Ultimate Updater job identifier. Arbitrary systemd unit
-names, paths, commands, VMIDs, and query-token forms are rejected.
+names, paths, commands, VMIDs, and query-token forms are rejected. The job
+filter accepts a managed target reference such as `118`, `guest:118`, or
+`host:node1`; it returns `404` for a valid but unmanaged or ambiguous target
+and `400` for invalid or repeated `target` parameters. Filtering happens
+before the bounded visible-job limit. No target filter leaves the existing job
+list behavior unchanged.
 
 ## Status contract
 
 `/api/v1/status` exposes `id`, `name`, `type`, `node`, `transport`,
-`reachable`, `os`, `updater`, `check_status`, `last_check`, update counts,
+`reachable`, `os`, additive `os_display`, `updater`, `check_status`, `last_check`, update counts,
 `reboot_required`, `last_update`, `error`, optional `skip_reason`, and bounded
 Windows Update metadata when it is already present in the status model. Missing
-values remain `null`.
+values remain `null`; `os_display` is the normalized human-readable label
+(`Debian 13`, for example) and is `Unknown` when the existing OS metadata is
+missing or insufficient. It never performs a guest query or invents a version.
+For example, a target may contain both the unchanged raw value and the
+additive display value:
+
+```json
+{"os": "Debian GNU/Linux 13 (trixie)", "os_display": "Debian 13"}
+```
 
 `error` is either `null` or a bounded object containing a validated error code
 and a generic public message. The API never exposes raw command output, stack
@@ -215,6 +231,47 @@ The API reads persisted status and cached job data. The API job list uses the
 existing `job-runner list --cached` path without scheduling remote
 reconciliation. It is therefore safe for regular polling and does not make a
 fresh guest query.
+
+## Capabilities
+
+`GET /api/v1/capabilities` is read-only and requires the existing `read`
+permission. It reads only the configured `CHECK_*` and update-selection values
+from `update.conf`; it does not contact Proxmox, guests, SSH, QGA, a package
+manager, or the job runner. The response contains `api_version: 1` and
+`schema_version: 1` and does not expose configuration text, credentials, or
+tokens. Missing or invalid boolean settings are represented as
+`configured: null` and `behavior: "unknown"`.
+
+The lifecycle section distinguishes normal checks from initial inventory and
+updates. For example:
+
+```json
+{
+  "api_version": 1,
+  "schema_version": 1,
+  "capabilities": {
+    "stopped_container": {
+      "check": {
+        "configured": true,
+        "normal_behavior": "lifecycle_check",
+        "initial_inventory_behavior": "read_only_skip"
+      },
+      "update": {
+        "configured": false,
+        "behavior": "skipped"
+      }
+    }
+  }
+}
+```
+
+`lifecycle_check` means the configured normal check path may apply its
+existing lifecycle policy; `lifecycle_update` means the configured update path
+may apply its existing lifecycle policy. A `skipped` value means that mode is
+disabled by configuration. These values describe configuration and existing
+semantics, not a claim that a particular target is reachable or updateable.
+Initial inventory is always reported as `read_only_skip` for stopped and
+paused guests. The endpoint does not change those lifecycle rules.
 
 ## Errors and polling
 
