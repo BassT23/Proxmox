@@ -105,6 +105,37 @@ skip. A neutral skip has `error: null`; a successful check has both
 `error: null` and `skip_reason: null`. Older status files without either
 optional field remain valid and expose the missing values as `null`.
 
+An optional `GET /api/v1/status?include=power_state` adds the transient
+`power_state` field to every target. It performs one shared, read-only
+Proxmox `/cluster/resources` query for that response and does not contact a
+guest, write `status.json`, or start a job. The value is taken only from the
+current Proxmox resource object and is never inferred from `reachable`,
+`check_status`, or historical status data:
+
+```json
+{
+  "id": "118",
+  "power_state": {
+    "value": "running",
+    "source": "proxmox",
+    "observed_at": "2026-10-18T12:00:00Z"
+  }
+}
+```
+
+Proxmox values such as `running`, `stopped`, and `paused` are preserved when
+they are valid and unambiguous. Hosts may expose the current node value such
+as `online` or `offline`. External targets and targets absent from the live
+Proxmox response contain `"power_state": null`; `null` does not mean either
+running or stopped. Missing, invalid, ambiguous, or failed live data never
+falls back to an older value. Without the `include` parameter, the additional
+query and field are absent and the existing response behavior is unchanged.
+Repeated or unknown `include` values are rejected with `400`.
+
+Clients should poll this optional view deliberately because each request can
+cause an additional read-only Proxmox query; it is not a replacement for the
+persisted package/status model.
+
 `last_check` records when the target's check observation was written. It can
 change for an intentional skip, so `check_status: "not_checked"` means that
 package data was not queried and must not be interpreted as fresh package

@@ -2971,6 +2971,21 @@ def proxmox_inventory_snapshot(runner=subprocess.run):
     return node_resources + resources
 
 
+def proxmox_power_state_snapshot(runner=subprocess.run):
+    """Read one current cluster resource snapshot for API power state."""
+    try:
+        result = runner(
+            ["pvesh", "get", "/cluster/resources", "--output-format", "json"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        if result.returncode:
+            return None
+        resources = json.loads(result.stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+    return resources if isinstance(resources, list) else None
+
+
 def canonical_inventory(payload, inventory, proxmox_resources=None, backup_state_file=None):
     """Build the active inventory shared by Systems and Target Preview."""
     if proxmox_resources is None:
@@ -4623,13 +4638,102 @@ class StatusHandler(BaseHTTPRequestHandler):
             raise ValueError("status data is invalid")
         return payload
 
-    def _api_v1_status(self):
+    @staticmethod
+    def _api_v1_power_state_value(resource):
+        if not isinstance(resource, dict):
+            return None
+        value = resource.get("status")
+        resource_type = resource.get("type")
+        allowed = {"online", "offline"} if resource_type == "node" else {
+            "running", "stopped", "paused"
+        } if resource_type in {"lxc", "qemu"} else set()
+        return value if isinstance(value, str) and value in allowed else None
+
+    @classmethod
+    def _api_v1_power_state_resources(cls, resources, target):
+        if not isinstance(target, dict):
+            return None
+        target_type = str(target.get("type") or "").lower()
+        target_node = str(target.get("node") or "")
+        if target_type == "external" or not target_node:
+            return None
+        matches = []
+        if target_type == "host":
+            for resource in resources:
+                if (isinstance(resource, dict) and resource.get("type") == "node"
+                        and str(resource.get("node") or "").casefold() == target_node.casefold()):
+                    matches.append(resource)
+        elif target_type in {"lxc", "vm"}:
+            target_id = str(target.get("id") or "").removeprefix("guest:")
+            expected_type = "lxc" if target_type == "lxc" else "qemu"
+            for resource in resources:
+                if not isinstance(resource, dict) or resource.get("type") != expected_type:
+                    continue
+                raw_id = resource.get("vmid", resource.get("id"))
+                if isinstance(raw_id, str) and "/" in raw_id:
+                    raw_id = raw_id.rsplit("/", 1)[-1]
+                if (str(raw_id) == target_id
+                        and str(resource.get("node") or "").casefold() == target_node.casefold()):
+                    matches.append(resource)
+        if len(matches) != 1:
+            return None
+        return cls._api_v1_power_state_value(matches[0])
+
+    def _api_v1_power_states(self, targets):
+        """Return one current, non-persistent Proxmox power-state projection."""
+        provider = getattr(self.server, "proxmox_power_state_provider", None)
+        if not callable(provider):
+            # The existing provider hook keeps isolated API tests deterministic;
+            # production uses one read-only cluster/resources request below.
+            provider = getattr(self.server, "proxmox_inventory_provider", None)
+        try:
+            resources = provider() if callable(provider) else proxmox_power_state_snapshot()
+        except (OSError, RuntimeError, ValueError, UnicodeError, json.JSONDecodeError,
+                subprocess.TimeoutExpired):
+            resources = None
+        observed_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z") \
+            if isinstance(resources, list) else None
+        result = []
+        for target in targets:
+            value = self._api_v1_power_state_resources(resources, target) if isinstance(resources, list) else None
+            result.append(
+                {"value": value, "source": "proxmox", "observed_at": observed_at}
+                if value is not None else None
+            )
+        return result
+
+    @staticmethod
+    def _api_v1_status_include(query):
+        if not query:
+            return False
+        try:
+            pairs = parse_qsl(query, keep_blank_values=True, max_num_fields=16)
+        except ValueError as error:
+            raise ValueError("invalid status include") from error
+        values = [value for key, value in pairs if key == "include"]
+        if len(values) > 1 or (values and values[0] != "power_state"):
+            raise ValueError("invalid status include")
+        return bool(values)
+
+    def _api_v1_status(self, include_power_state=False):
         payload = self._api_v1_status_file(self.server.status_file)
         current = datetime.now(timezone.utc)
         state, age = classify_timestamp(
             payload.get("generated_at"), self.server.status_api_max_age_seconds, now=current
         )
         generated_at = payload.get("generated_at") if isinstance(payload.get("generated_at"), str) else None
+        power_states = self._api_v1_power_states(payload["targets"]) if include_power_state else []
+        targets = []
+        for index, record in enumerate(payload["targets"]):
+            item = self._api_v1_target(
+                record,
+                getattr(self.server, "package_freshness_max_age_seconds", PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS),
+                now=current,
+            )
+            if item is not None:
+                if include_power_state:
+                    item["power_state"] = power_states[index]
+                targets.append(item)
         return {
             "api_version": 1,
             "schema_version": 1,
@@ -4637,14 +4741,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             "state": state,
             "stale": state == "stale" if state != "unknown" else None,
             "age_seconds": int(age) if age is not None else None,
-            "targets": [item for item in (
-                self._api_v1_target(
-                    record,
-                    getattr(self.server, "package_freshness_max_age_seconds", PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS),
-                    now=current,
-                )
-                for record in payload["targets"]
-            ) if item],
+            "targets": targets,
         }
 
     def _api_v1_status_summary(self):
@@ -4768,7 +4865,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             if path == "/api/v1/status-summary":
                 self.send_json(self._api_v1_status_summary())
             elif path == "/api/v1/status":
-                self.send_json(self._api_v1_status())
+                self.send_json(self._api_v1_status(include_power_state=self._api_v1_status_include(query)))
             elif path == "/api/v1/jobs":
                 target_filter = self._api_v1_job_target_filter(query)
                 target_record = None
@@ -4817,7 +4914,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         except LookupError:
             self.send_json(error_payload("TARGET_NOT_FOUND", "That target is not managed."), HTTPStatus.NOT_FOUND)
         except ValueError as error:
-            if str(error) in {"invalid target filter", "target must be specified once", "invalid job query"}:
+            if str(error) == "invalid status include":
+                self.send_json(error_payload("INVALID_STATUS_INCLUDE", "The status include parameter is invalid."), HTTPStatus.BAD_REQUEST)
+            elif str(error) in {"invalid target filter", "target must be specified once", "invalid job query"}:
                 self.send_json(error_payload("INVALID_TARGET_FILTER", "The target filter is invalid."), HTTPStatus.BAD_REQUEST)
             else:
                 self.send_json(error_payload("API_DATA_UNAVAILABLE", "The requested data is temporarily unavailable."), HTTPStatus.SERVICE_UNAVAILABLE)
