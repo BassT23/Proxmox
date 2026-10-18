@@ -177,7 +177,7 @@ if record is None:
     raise SystemExit(88)
 
 check_status = record.get("check_status")
-if check_status in (None, "", "not_checked", "skipped", "stopped"):
+if check_status in (None, "", "not_checked", "skipped", "stopped", "error"):
     print(
         f"POST_UPDATE_CAPTURE_NOT_CHECKED: target {target_id} has check_status={check_status or 'missing'}",
         file=sys.stderr,
@@ -1515,21 +1515,25 @@ STATUS_MODEL_UPDATE_RESULT() {
   local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
   local target_id="$1" update_status="$2" exit_code="$3"
   local result_code="${4:-}" reboot_required="${5:-}" processed="${6:-}"
+  local pending_before_override="${7:-}"
   local status_lock_file="${status_file}.lock" status_lock_fd
+  if [[ -z "$pending_before_override" ]] && declare -p UPDATE_PENDING_BEFORE >/dev/null 2>&1; then
+    pending_before_override="${UPDATE_PENDING_BEFORE[$target_id]-}"
+  fi
   exec {status_lock_fd}>"$status_lock_file" || return 1
   if ! flock -x "$status_lock_fd"; then
     exec {status_lock_fd}>&-
     return 1
   fi
   python3 - "$status_file" "$target_id" "$update_status" "$exit_code" \
-    "$result_code" "$reboot_required" "$processed" <<'PY'
+    "$result_code" "$reboot_required" "$processed" "$pending_before_override" <<'PY'
 import json
 import os
 import sys
 import tempfile
 from datetime import datetime, timezone
 
-status_file, target_id, update_status, exit_code, result_code, reboot_required, processed = sys.argv[1:]
+status_file, target_id, update_status, exit_code, result_code, reboot_required, processed, pending_override = sys.argv[1:]
 try:
     with open(status_file, encoding="utf-8") as source:
         payload = json.load(source)
@@ -1553,7 +1557,18 @@ if isinstance(existing_updates, dict):
     candidate = existing_updates.get("available")
     if isinstance(candidate, int) and not isinstance(candidate, bool):
         pending_before = candidate
-last_update = {"status": update_status, "timestamp": timestamp, "exit_code": int(exit_code)}
+if pending_override:
+    if not pending_override.isdigit():
+        print("STATUS_MODEL_UPDATE_REJECTED_PENDING_COUNT", file=sys.stderr)
+        raise SystemExit(95)
+    pending_before = int(pending_override)
+effective_status = update_status
+# A successful updater command with no pending packages is a valid no-op,
+# not an update success.  Keep the result explicit so job/API consumers do
+# not mistake a completed wrapper for a completed package mutation.
+if pending_override and effective_status in ("success", "completed") and pending_before == 0:
+    effective_status = "skipped"
+last_update = {"status": effective_status, "timestamp": timestamp, "exit_code": int(exit_code)}
 if pending_before is not None:
     last_update["pending_before"] = pending_before
 if result_code not in ("", "null"):
@@ -1584,6 +1599,21 @@ except Exception:
 PY
   local result=$?
   exec {status_lock_fd}>&-
+  if [[ "$result" -eq 0 ]] && declare -p UPDATE_RESULT_RECORDED >/dev/null 2>&1; then
+    local update_pending=""
+    if declare -p UPDATE_PENDING_BEFORE >/dev/null 2>&1; then
+      update_pending="${UPDATE_PENDING_BEFORE[$target_id]-}"
+    fi
+    UPDATE_RESULT_RECORDED=true
+    # These flags are consumed by the sourced update runner.
+    # shellcheck disable=SC2034
+    UPDATE_RESULT_TARGET="$target_id"
+    if [[ "$update_status" == skipped || "$update_status" == unsupported ||
+      "$update_pending" == 0 ]]; then
+      # shellcheck disable=SC2034
+      UPDATE_WARNING=true
+    fi
+  fi
   return "$result"
 }
 
@@ -2293,7 +2323,7 @@ def update_status(target):
     status = str(result.get("status") or "").lower()
     if status in ("failed", "interrupted"):
         return "failed"
-    if status == "skipped":
+    if status in ("skipped", "unsupported"):
         return "skipped"
     if status in ("success", "completed"):
         return "success"
@@ -2307,8 +2337,12 @@ def update_line(target):
     if skipped is not None:
         return "💤", skipped
     status = update_status(target)
-    if status == "skipped":
-        return "💤", "Windows update installation disabled"
+    if status in ("skipped", "unsupported"):
+        if status == "unsupported":
+            return "💤", "Update unsupported"
+        if result.get("pending_before") == 0:
+            return "💤", "No updates available"
+        return "💤", "Update skipped"
     if status == "failed":
         return "❌", "Update failed"
     if status != "success":
@@ -2353,6 +2387,8 @@ if run_type == "update":
         result_status = update_status(target)
         if result_status == "failed":
             guest_failed.append(target)
+        elif result_status in ("skipped", "unsupported"):
+            guest_skipped.append(target)
         elif result_status == "success":
             values = target.get("updates")
             available = values.get("available") if isinstance(values, dict) else None
@@ -2388,7 +2424,8 @@ if run_type == "update":
     if guest_skipped:
         lines.extend(["", "Skipped checks:"])
         for target in guest_skipped:
-            lines.extend([f"💤 {target_icon(target)} {target_name(target)}", f"   {check_skip_message(target)}"])
+            _, skipped_message = update_line(target)
+            lines.extend([f"💤 {target_icon(target)} {target_name(target)}", f"   {skipped_message}"])
     print("STATE=issues" if any(update_status(target) == "failed" for target in hosts + guest_failed) or guest_offline else "STATE=updates")
     print("\n".join(lines))
     raise SystemExit(0)

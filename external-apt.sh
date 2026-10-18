@@ -352,7 +352,7 @@ REMOTE_UPDATE
 }
 
 update_target() {
-  local output rc code operation_id="${UU_PACKAGE_MUTATION_OPERATION_ID:-}"
+  local output rc code operation_id="${UU_PACKAGE_MUTATION_OPERATION_ID:-}" pending_before=""
   local -a safety_args=("$EXTERNAL_SAFETY_SCRIPT" check "$EXTERNAL_TARGET")
   if [[ "${UU_EXTERNAL_BACKUP_OVERRIDE:-false}" == true ]]; then
     safety_args+=(--override)
@@ -362,6 +362,21 @@ update_target() {
     return 42
   }
   [[ -n "$operation_id" ]] || operation_id=$(STATUS_MODEL_NEW_OPERATION_ID) || return 43
+  pending_before=$(python3 - "${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}" "$EXTERNAL_TARGET" <<'PY'
+import json
+import sys
+
+try:
+    payload = json.load(open(sys.argv[1], encoding="utf-8"))
+    target = next(item for item in payload.get("targets", [])
+                  if isinstance(item, dict) and str(item.get("id")) == sys.argv[2])
+    value = target.get("updates", {}).get("available")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        print(value)
+except (OSError, ValueError, TypeError, StopIteration, json.JSONDecodeError):
+    pass
+PY
+  ) || pending_before=""
   STATUS_MODEL_TRACE_EVENT external_before_update "$EXTERNAL_TARGET" "" || true
   "${safety_args[@]}" || return $?
   if declare -f STATUS_MODEL_INVALIDATE_PACKAGE_DATA >/dev/null 2>&1; then
@@ -381,20 +396,37 @@ update_target() {
   if [[ $rc -eq 0 ]]; then
     if [[ "$output" == *EXTERNAL_FILTERED* ]]; then
       STATUS_MODEL_TRACE_EVENT external_before_result_write "$EXTERNAL_TARGET" "" || true
-      STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" skipped 0
+      STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" skipped 0 "" "" "" "$pending_before"
       local result_rc=$?
       STATUS_MODEL_TRACE_EVENT external_result_write_rc "$EXTERNAL_TARGET" "$result_rc" || true
       STATUS_MODEL_TRACE_EVENT external_after_result_write "$EXTERNAL_TARGET" "" || true
+      [[ "$result_rc" -eq 0 ]] || return 43
       printf '%s: update skipped by local External filter\n' "$EXTERNAL_TARGET"
-      STATUS_MODEL_TRACE_EVENT external_returned "$EXTERNAL_TARGET" 0 || true
-      return 0
+      STATUS_MODEL_TRACE_EVENT external_returned "$EXTERNAL_TARGET" "${UU_UPDATE_WARNING_RC:-10}" || true
+      return "${UU_UPDATE_WARNING_RC:-10}"
+    fi
+    if [[ "$output" == *'UU_RESULT|unsupported|'* ]]; then
+      STATUS_MODEL_TRACE_EVENT external_before_result_write "$EXTERNAL_TARGET" "" || true
+      STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" unsupported 21 "" "" "" "$pending_before"
+      local result_rc=$?
+      STATUS_MODEL_TRACE_EVENT external_result_write_rc "$EXTERNAL_TARGET" "$result_rc" || true
+      STATUS_MODEL_TRACE_EVENT external_after_result_write "$EXTERNAL_TARGET" "" || true
+      [[ "$result_rc" -eq 0 ]] || return 43
+      printf '%s: update unsupported\n' "$EXTERNAL_TARGET"
+      STATUS_MODEL_TRACE_EVENT external_returned "$EXTERNAL_TARGET" "${UU_UPDATE_WARNING_RC:-10}" || true
+      return "${UU_UPDATE_WARNING_RC:-10}"
     fi
     STATUS_MODEL_TRACE_EVENT external_before_result_write "$EXTERNAL_TARGET" "" || true
-    STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" success 0
+    STATUS_MODEL_UPDATE_RESULT "$EXTERNAL_TARGET" success 0 "" "" "" "$pending_before"
     local result_rc=$?
     STATUS_MODEL_TRACE_EVENT external_result_write_rc "$EXTERNAL_TARGET" "$result_rc" || true
     STATUS_MODEL_TRACE_EVENT external_after_result_write "$EXTERNAL_TARGET" "" || true
+    [[ "$result_rc" -eq 0 ]] || return 43
     printf '%s: update completed successfully\n' "$EXTERNAL_TARGET"
+    if [[ "$pending_before" == 0 ]]; then
+      STATUS_MODEL_TRACE_EVENT external_returned "$EXTERNAL_TARGET" "${UU_UPDATE_WARNING_RC:-10}" || true
+      return "${UU_UPDATE_WARNING_RC:-10}"
+    fi
     STATUS_MODEL_TRACE_EVENT external_returned "$EXTERNAL_TARGET" 0 || true
     return 0
   fi

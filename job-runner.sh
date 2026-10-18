@@ -12,6 +12,7 @@ JOB_PREFIX="ultimate-updater-update-"
 CHECK_PREFIX="ultimate-updater-check-"
 REBOOT_PREFIX="ultimate-updater-reboot-"
 CHECK_WARNING_RC="${UU_CHECK_WARNING_RC:-10}"
+UPDATE_WARNING_RC="${UU_UPDATE_WARNING_RC:-10}"
 MAX_COMPLETED_JOBS="${UU_MAX_COMPLETED_JOBS:-50}"
 CHECK_SCRIPT="${UU_CHECK_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/check-updates.sh}"
 CHECK_CLI="${UU_CHECK_CLI:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/ultimate-updater}"
@@ -217,7 +218,7 @@ write_state() {
   chmod 0644 "$temp" || return 1
   mv -f -- "$temp" "$file"
   case "$state" in
-    completed|completed_with_warnings|failed|interrupted|cancelled)
+    completed|completed_with_warnings|skipped|failed|interrupted|cancelled)
       if [[ "$state" == cancelled ]]; then
         rm -f -- "$(cancel_marker "$unit")" 2>/dev/null || true
       fi
@@ -509,7 +510,7 @@ sync_remote_last_update() {
   local target="$1" state="$2" finished="$3" exit_code="$4"
   local status_file="${UU_STATUS_MODEL_FILE:-/etc/ultimate-updater/status.json}"
   local status_lock_file="${status_file}.lock" status_lock_fd
-  [[ "$state" == completed || "$state" == failed || "$state" == interrupted ]] || return 0
+  [[ "$state" == completed || "$state" == completed_with_warnings || "$state" == skipped || "$state" == failed || "$state" == interrupted ]] || return 0
   [[ "$target" =~ ^[0-9]+$ ]] || return 0
   [[ "$exit_code" =~ ^[0-9]+$ ]] || exit_code=1
   exec {status_lock_fd}>"$status_lock_file" || return 1
@@ -540,7 +541,12 @@ record = next((item for item in targets
 if record is None:
     raise SystemExit(0)
 
-status = "success" if job_state == "completed" and exit_code == "0" else "failed"
+if job_state == "completed" and exit_code == "0":
+    status = "success"
+elif job_state in {"completed_with_warnings", "skipped"}:
+    status = "skipped"
+else:
+    status = "failed"
 last_update = record.get("last_update")
 if not isinstance(last_update, dict):
     last_update = {}
@@ -879,7 +885,7 @@ start_global_job() {
 
 run_job() {
   local unit="$1" target="$2" update_script="$3" file started exit_code lock_file
-  local post_check_rc=0 post_check_message="" captured_status_file captured_status_rc unresolved_file unresolved_job
+  local post_check_rc=0 post_check_message="" captured_status_file captured_status_rc unresolved_file unresolved_job terminal_state
   valid_target "$target" || return 2
   file=$(state_file "$unit")
   started=$(state_value "$file" started_at)
@@ -918,6 +924,7 @@ run_job() {
     cleanup_interactive_runtime "$unit" || true
     return 130
   fi
+  terminal_state="failed"
   if [[ "$exit_code" -eq 0 ]]; then
     captured_status_file="${UU_REMOTE_WORK_DIR:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/temp}/post-update-status.rc"
     if [[ "$target" =~ ^[0-9]+$ && -f "$captured_status_file" ]]; then
@@ -965,16 +972,27 @@ run_job() {
       post_check_message="post-update target status refresh rc=127 (CLI unavailable)"
     fi
     if [[ "$post_check_rc" -ne 0 ]]; then
-      printf 'Post-update status refresh failed (exit code %s); update result remains successful.\n' "$post_check_rc" >&2
+      terminal_state="completed_with_warnings"
+      printf 'Post-update status refresh failed (exit code %s); update job completed with warnings.\n' "$post_check_rc" >&2
     else
+      terminal_state="completed"
       printf 'Post-update status refresh completed successfully.\n'
     fi
-    send_update_notification "$STATUS_MODEL_FILE"
+    send_update_notification "$STATUS_MODEL_FILE" "$started"
+  elif [[ "$exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
+    # Exit 10 is the neutral update result used for no-op, skipped, and
+    # unsupported targets.  It must not be presented as a completed update or
+    # as completed_with_warnings: that state is reserved for a real mutation
+    # whose post-update capture could not be confirmed.
+    terminal_state="skipped"
+    post_check_message="update skipped; no confirmed package mutation was recorded"
+    printf 'Update job skipped; no confirmed package mutation was recorded.\n' >&2
+    send_update_notification "$STATUS_MODEL_FILE" "$started"
   else
-    send_update_notification "$STATUS_MODEL_FILE"
+    send_update_notification "$STATUS_MODEL_FILE" "$started"
   fi
-  if [[ "$exit_code" -eq 0 ]]; then
-    write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
+  if [[ "$exit_code" -eq 0 || "$exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
+    write_state "$unit" "$target" "$terminal_state" "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
   else
     write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
   fi
@@ -987,7 +1005,7 @@ run_job() {
 
 run_global_job() {
   local unit="$1" update_script="$2" target=all-systems file started exit_code lock_file
-  local post_check_rc=0 preserve_rc=0 post_check_message="" update_result_snapshot="" pre_update_snapshot=""
+  local post_check_rc=0 preserve_rc=0 post_check_message="" update_result_snapshot="" pre_update_snapshot="" terminal_state
   valid_unit "$unit" || return 2
   valid_global_target "$target" || return 2
   file=$(state_file "$unit")
@@ -1029,6 +1047,7 @@ run_global_job() {
   list_jobs >/dev/null 2>&1 || true
   trace_external_event after_remote_sync
   [[ -z "$pre_update_snapshot" ]] || apply_pre_update_counts "$STATUS_MODEL_FILE" "$pre_update_snapshot" "$started" || true
+  terminal_state="failed"
   if [[ "$exit_code" -eq 0 ]]; then
     # The following full check is the inventory authority and must be allowed
     # to prune stale targets without a later import resurrecting them.
@@ -1048,8 +1067,10 @@ run_global_job() {
       post_check_message="post-update full status refresh rc=127 (CLI unavailable)"
     fi
     if [[ "$post_check_rc" -ne 0 ]]; then
-      printf 'Post-update status refresh failed (exit code %s); update result remains successful.\n' "$post_check_rc" >&2
+      terminal_state="completed_with_warnings"
+      printf 'Post-update status refresh failed (exit code %s); update job completed with warnings.\n' "$post_check_rc" >&2
     else
+      terminal_state="completed"
       printf 'Post-update status refresh completed successfully.\n'
     fi
     trace_external_event after_post_check "$post_check_rc"
@@ -1061,11 +1082,21 @@ run_global_job() {
       preserve_rc=1
     fi
     if [[ "$preserve_rc" -ne 0 ]]; then
+      terminal_state="completed_with_warnings"
       printf 'Post-update result preservation failed (exit code %s).\n' "$preserve_rc" >&2
     fi
     [[ -z "$pre_update_snapshot" ]] || apply_pre_update_counts "$STATUS_MODEL_FILE" "$pre_update_snapshot" "$started" || true
     trace_external_event after_preserve "$preserve_rc"
     [[ -z "$update_result_snapshot" ]] || rm -f -- "$update_result_snapshot"
+    trace_external_event before_update_notification
+    send_update_notification "$STATUS_MODEL_FILE" "$started"
+  elif [[ "$exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
+    # Keep the aggregate job neutral when every update path reports no
+    # confirmed mutation.  completed_with_warnings is reserved for an update
+    # that ran and completed but lost its post-update capture.
+    terminal_state="skipped"
+    post_check_message="update skipped; no confirmed package mutation was recorded"
+    printf 'Update job skipped; no confirmed package mutation was recorded.\n' >&2
     trace_external_event before_update_notification
     send_update_notification "$STATUS_MODEL_FILE" "$started"
   else
@@ -1074,8 +1105,8 @@ run_global_job() {
   fi
   [[ -z "$pre_update_snapshot" ]] || rm -f -- "$pre_update_snapshot"
   cleanup_interactive_runtime "$unit" || true
-  if [[ "$exit_code" -eq 0 ]]; then
-    write_state "$unit" "$target" completed "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
+  if [[ "$exit_code" -eq 0 || "$exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
+    write_state "$unit" "$target" "$terminal_state" "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
   else
     write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
   fi
@@ -1527,7 +1558,7 @@ list_jobs() {
     remote_state=$(remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port")
     printf '%s\n' "$remote_state"
     IFS=$'\t' read -r _ remote_target remote_status _ remote_finished remote_exit _ <<< "$remote_state"
-    if [[ "$remote_status" == completed || "$remote_status" == completed_with_warnings || "$remote_status" == failed || "$remote_status" == interrupted ]]; then
+    if [[ "$remote_status" == completed || "$remote_status" == completed_with_warnings || "$remote_status" == skipped || "$remote_status" == failed || "$remote_status" == interrupted ]]; then
       refresh_remote_target_status "$unit" "$owner_node" "$remote_target"
     fi
     sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true
@@ -1598,7 +1629,7 @@ reconcile_remote_job() {
   printf '%s\n' "$remote_state"
   local remote_target remote_status remote_finished remote_exit
   IFS=$'\t' read -r _ remote_target remote_status _ remote_finished remote_exit _ <<< "$remote_state"
-  if [[ "$remote_status" == completed || "$remote_status" == completed_with_warnings ||
+  if [[ "$remote_status" == completed || "$remote_status" == completed_with_warnings || "$remote_status" == skipped ||
     "$remote_status" == failed || "$remote_status" == interrupted ]]; then
     refresh_remote_target_status "$unit" "$owner_node" "$remote_target"
     sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true

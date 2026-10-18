@@ -202,6 +202,15 @@ The response is derived from the persisted status file. It does not imply
 that any update was installed by Ultimate Updater; installation provenance is
 available only from the corresponding persisted Ultimate Updater job metadata.
 
+An update result with `last_update.status: "skipped"` or `"unsupported"` is a
+neutral no-op/capability result, not a successful package mutation. An update
+job with no confirmed package mutation is exposed as terminal state `skipped`;
+it is not `completed` or `completed_with_warnings`. For update jobs, the
+`completed_with_warnings` state is reserved for an update that actually ran
+and completed, but whose required post-update status capture or result
+preservation could not be confirmed. Clients must therefore distinguish the
+terminal job state from a target's persisted `last_update` result.
+
 The API reads persisted status and cached job data. The API job list uses the
 existing `job-runner list --cached` path without scheduling remote
 reconciliation. It is therefore safe for regular polling and does not make a

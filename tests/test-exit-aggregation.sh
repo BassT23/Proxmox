@@ -15,6 +15,12 @@ source "$WORK_DIR/update-final-rc.sh"
 SAFETY_FAILURE=false
 # shellcheck disable=SC2034
 UPDATE_FAILURE=false
+# This fixture exercises failure aggregation after a result has been recorded;
+# a full update with no result is now deliberately a warning, not success.
+# shellcheck disable=SC2034
+UPDATE_RESULT_RECORDED=true
+# shellcheck disable=SC2034
+UPDATE_WARNING=false
 UPDATE_FINAL_RC 0
 UPDATE_FAILURE=true
 if UPDATE_FINAL_RC 0; then

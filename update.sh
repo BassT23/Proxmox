@@ -17,6 +17,10 @@ SAFETY_FAILURE=false
 # Continue-on-error keeps processing later targets, but real target failures
 # must still produce a non-zero final update result.
 UPDATE_FAILURE=false
+UPDATE_WARNING=false
+UPDATE_WARNING_RC=10
+UPDATE_RESULT_RECORDED=false
+UPDATE_RESULT_TARGET=""
 SINGLE_TARGET_EXECUTED=false
 TARGET_SELECTION_RUNTIME_ERROR=false
 # Informational commands share the normal EXIT trap so that their cleanup and
@@ -26,6 +30,7 @@ NON_UPDATE_COMMAND=false
 declare -a PACKAGE_MUTATION_TARGETS=()
 declare -A PACKAGE_MUTATION_KEYS=()
 declare -A PACKAGE_MUTATION_OPERATIONS=()
+declare -A UPDATE_PENDING_BEFORE=()
 
 # Variable / Function
 LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
@@ -77,6 +82,131 @@ RUN_UPDATE_COMMAND() {
     UPDATE_STEP_OUTPUT="The command output was streamed directly above."
   fi
   return "$rc"
+}
+
+# Capture the package count before a mutating path or its post-check can
+# replace the target record.  A missing/invalid count remains unknown; it is
+# never interpreted as zero.
+CAPTURE_UPDATE_PENDING_BEFORE() {
+  local target="$1" status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}" count
+  [[ -n "${UPDATE_PENDING_BEFORE[$target]+set}" ]] && return 0
+  count=$(python3 - "$status_file" "$target" <<'PY'
+import json
+import sys
+
+path, wanted = sys.argv[1:]
+try:
+    with open(path, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+for item in payload.get("targets", []):
+    if isinstance(item, dict) and str(item.get("id")) == wanted:
+        updates = item.get("updates")
+        available = updates.get("available") if isinstance(updates, dict) else None
+        if isinstance(available, int) and not isinstance(available, bool) and available >= 0:
+            print(available)
+            raise SystemExit(0)
+        raise SystemExit(1)
+raise SystemExit(1)
+PY
+  ) || count=""
+  UPDATE_PENDING_BEFORE["$target"]="$count"
+}
+
+# All update result writes go through this wrapper.  It keeps the old
+# STATUS_MODEL_UPDATE_RESULT contract while making writer failures visible and
+# marking no-op/capability paths as warnings instead of successes.
+RECORD_UPDATE_RESULT() {
+  local target="$1" status="$2" rc="${3:-0}" result_code="${4:-}" reboot="${5:-}" processed="${6:-}"
+  local pending="${UPDATE_PENDING_BEFORE[$target]-}"
+  CAPTURE_UPDATE_PENDING_BEFORE "$target"
+  pending="${UPDATE_PENDING_BEFORE[$target]-}"
+  if [[ "$status" == success && "$pending" == 0 ]]; then
+    UPDATE_WARNING=true
+  elif [[ "$status" == skipped || "$status" == unsupported ]]; then
+    UPDATE_WARNING=true
+  fi
+  if ! declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
+    UPDATE_FAILURE=true
+    printf 'Update result writer is unavailable for %s; refusing a successful result.\n' "$target" >&2
+    return 1
+  fi
+  if [[ -n "$pending" ]]; then
+    STATUS_MODEL_UPDATE_RESULT "$target" "$status" "$rc" "$result_code" "$reboot" "$processed" "$pending"
+  else
+    STATUS_MODEL_UPDATE_RESULT "$target" "$status" "$rc" "$result_code" "$reboot" "$processed"
+  fi
+  local result_rc=$?
+  if [[ "$result_rc" -ne 0 ]]; then
+    UPDATE_FAILURE=true
+    printf 'Could not record update result for %s.\n' "$target" >&2
+    return "$result_rc"
+  fi
+  UPDATE_RESULT_RECORDED=true
+  UPDATE_RESULT_TARGET="$target"
+  return 0
+}
+
+# Read-only capability gate.  It may inspect Proxmox configuration and the
+# last authoritative status record, but it must not contact a guest or change
+# lifecycle state.  Return 21 for a known unsupported/no-op path and 1 for a
+# capability read failure.
+UPDATE_TARGET_CAPABILITY_PRECHECK() {
+  local target="$1" kind="$2" config ostype status_file
+  if [[ "$kind" == lxc ]]; then
+    config=$(pct config "$target" 2>/dev/null) || return 1
+    ostype=$(printf '%s\n' "$config" | awk '/^ostype/ {print tolower($2); exit}')
+    [[ -n "$ostype" ]] || return 1
+    case "$ostype" in
+      debian|ubuntu|devuan|fedora|archlinux|alpine|centos) ;;
+      *) return 21 ;;
+    esac
+  elif [[ "$kind" == vm ]]; then
+    config=$(qm config "$target" 2>/dev/null) || return 1
+    ostype=$(printf '%s\n' "$config" | awk -F': ' '$1 == "ostype" {print tolower($2); exit}')
+    [[ -n "$ostype" ]] || return 1
+    if [[ "$ostype" =~ ^win ]] && [[ "${WINDOWS_UPDATE_ENABLED:-false}" != true ]]; then
+      return 21
+    fi
+    status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+    if [[ -r "$status_file" ]]; then
+      if python3 - "$status_file" "$target" <<'PY'
+import json
+import sys
+
+path, wanted = sys.argv[1:]
+try:
+    payload = json.load(open(path, encoding="utf-8"))
+except (OSError, ValueError, TypeError):
+    raise SystemExit(0)
+for item in payload.get("targets", []):
+    if not isinstance(item, dict) or str(item.get("id")) != wanted:
+        continue
+    code = item.get("error", {}).get("code") if isinstance(item.get("error"), dict) else None
+    if item.get("check_status") == "unsupported" or code in {
+        "UNSUPPORTED_OS", "UNSUPPORTED_GUEST_OS", "NO_SUPPORTED_TRANSPORT"
+    }:
+        raise SystemExit(21)
+raise SystemExit(0)
+PY
+      then :; else return 21; fi
+    fi
+  else
+    return 1
+  fi
+  return 0
+}
+
+UPDATE_TARGET_CAPABILITY_GUARD() {
+  local target="$1" kind="$2" capability_rc
+  UPDATE_TARGET_CAPABILITY_PRECHECK "$target" "$kind"
+  capability_rc=$?
+  case "$capability_rc" in
+    0) return 0 ;;
+    21) RECORD_UPDATE_RESULT "$target" unsupported 21 || true; return 21 ;;
+    *) RECORD_UPDATE_RESULT "$target" failed "$capability_rc" || true; return 1 ;;
+  esac
 }
 CLUSTER_TARGET_FILE="${CLUSTER_TARGET_FILE:-$LOCAL_FILES/cluster-target.sh}"
 if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
@@ -968,7 +1098,11 @@ CAPTURE_POST_UPDATE_STATUS() {
   [[ "${UU_POST_UPDATE_STATUS_CAPTURE:-false}" == true ]] || return 0
   artifact_dir="${UU_REMOTE_WORK_DIR:-$TEMP_STATE_DIR}"
   if ! mkdir -p -- "$artifact_dir" "$TEMP_STATE_DIR"; then
-    printf '%s\n' "$refresh_rc" > "$TEMP_STATE_DIR/post-update-status.rc"
+    # A failed artifact directory setup is an incomplete capture.  Preserve a
+    # non-zero marker when the local temp directory is still writable; the job
+    # runner must not turn this into a completed update.
+    refresh_rc=87
+    printf '%s\n' "$refresh_rc" > "$TEMP_STATE_DIR/post-update-status.rc" 2>/dev/null || true
     return 0
   fi
   if [[ -x "$CHECK_SCRIPT" && -f "$LOCAL_FILES/status-model.sh" ]]; then
@@ -1609,24 +1743,51 @@ DIST_UPGRADE () {
 
 # Check Updates for Welcome-Screen
 UPDATE_CHECK () {
+  local status_target="" check_rc=0
+  if [[ "$CHOST" == true ]]; then
+    status_target="host:${HOSTNAME}"
+  elif [[ "$CCONTAINER" == true ]]; then
+    status_target="$CONTAINER"
+  elif [[ "$CVM" == true ]]; then
+    status_target="$VM"
+  fi
+  [[ -n "$status_target" ]] || return 0
+  if declare -f CAPTURE_UPDATE_PENDING_BEFORE >/dev/null 2>&1; then
+    CAPTURE_UPDATE_PENDING_BEFORE "$status_target"
+  fi
   if [[ "$WELCOME_SCREEN" == true ]]; then
-    local status_target=""
     echo -e "${OR:-}--- Check Status for Welcome-Screen ---${CL:-}"
     if [[ "$CHOST" == true ]]; then
 #      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u chost" | tee -a "$LOCAL_FILES/check-output"
       STATUS_MODEL_PARTIAL=true "$LOCAL_FILES/check-updates.sh" -u chost | tee -a "$LOCAL_FILES/check-output"
-      status_target="host:$HOSTNAME"
+      check_rc=${PIPESTATUS[0]}
     elif [[ "$CCONTAINER" == true ]]; then
 #      ssh -q -p "$SSH_PORT" "$HOSTNAME" "\"$LOCAL_FILES/check-updates.sh\" -u ccontainer" | tee -a $LOCAL_FILES/check-output
       STATUS_MODEL_PARTIAL=true "$LOCAL_FILES/check-updates.sh" -u ccontainer "$CONTAINER" | tee -a "$LOCAL_FILES/check-output"
-      status_target="$CONTAINER"
+      check_rc=${PIPESTATUS[0]}
     elif [[ "$CVM" == true ]]; then
       ssh -q -p "$SSH_PORT" "$HOSTNAME" "STATUS_MODEL_PARTIAL=true \"$LOCAL_FILES/check-updates.sh\" -u cvm \"$VM\"" | tee -a $LOCAL_FILES/check-output
-      status_target="$VM"
+      check_rc=${PIPESTATUS[0]}
     fi
-    if [[ -n "$status_target" ]] && declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
-      STATUS_MODEL_UPDATE_RESULT "$status_target" success 0 || true
+  fi
+  if [[ "$check_rc" -eq 0 ]]; then
+    if declare -f RECORD_UPDATE_RESULT >/dev/null 2>&1; then
+      RECORD_UPDATE_RESULT "$status_target" success 0 || return 1
+    elif declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
+      STATUS_MODEL_UPDATE_RESULT "$status_target" success 0 || return 1
+    else
+      return 1
     fi
+  else
+    if declare -f RECORD_UPDATE_RESULT >/dev/null 2>&1; then
+      RECORD_UPDATE_RESULT "$status_target" failed "$check_rc" || true
+    elif declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
+      STATUS_MODEL_UPDATE_RESULT "$status_target" failed "$check_rc" || true
+    fi
+    UPDATE_FAILURE=true
+    return "$check_rc"
+  fi
+  if [[ "$WELCOME_SCREEN" == true ]]; then
     echo -e "${GN:-}---          Finished check         ---${CL:-}\n"
     [[ "$WILL_STOP" != true ]] && echo
   else
@@ -1847,7 +2008,11 @@ HOST_UPDATE_START () {
       UPDATE_FAILURE=true
     else
       [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
-      if ! UPDATE_HOST "$HOST"; then
+      UPDATE_HOST "$HOST"
+      local host_update_rc=$?
+      if [[ "$host_update_rc" -eq "${UPDATE_WARNING_RC:-10}" ]]; then
+        UPDATE_WARNING=true
+      elif [[ "$host_update_rc" -ne 0 ]]; then
         UPDATE_FAILURE=true
       fi
       unset UU_INTERNAL_SKIP_HOST_TARGET
@@ -2004,6 +2169,9 @@ UPDATE_HOST () {
 
 # shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
+  if declare -f CAPTURE_UPDATE_PENDING_BEFORE >/dev/null 2>&1; then
+    CAPTURE_UPDATE_PENDING_BEFORE "host:$(hostname -s 2>/dev/null || hostname)"
+  fi
   REQUIRE_PACKAGE_DATA_INVALIDATION || return 1
   MARK_PACKAGE_DATA_INVALIDATED "host:$(hostname -s 2>/dev/null || hostname)" host "$(hostname -s 2>/dev/null || hostname)" || {
     UPDATE_FAILURE=true
@@ -2069,6 +2237,11 @@ CONTAINER_UPDATE_START () {
       fi
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
+        if declare -f UPDATE_TARGET_CAPABILITY_GUARD >/dev/null 2>&1; then
+          UPDATE_TARGET_CAPABILITY_GUARD "$CONTAINER" lxc
+          capability_rc=$?
+          [[ "$capability_rc" -eq 0 ]] || { [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true; continue; }
+        fi
         if [[ "${UU_API_ACTION:-}" == update ]]; then
           OS=$(pct config "$CONTAINER" 2>/dev/null | awk '/^ostype/ {print $2; exit}')
           NAME="LXC $CONTAINER"
@@ -2108,6 +2281,11 @@ CONTAINER_UPDATE_START () {
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" != true ]]; then
         echo -e "⏩${BL:-} Skipped LXC $CONTAINER because stopped containers are disabled${CL:-}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" == true ]]; then
+        if declare -f UPDATE_TARGET_CAPABILITY_GUARD >/dev/null 2>&1; then
+          UPDATE_TARGET_CAPABILITY_GUARD "$CONTAINER" lxc
+          capability_rc=$?
+          [[ "$capability_rc" -eq 0 ]] || { [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true; continue; }
+        fi
         SINGLE_TARGET_EXECUTED=true
         UPDATE_CONTAINER "$CONTAINER"
         MARK_PACKAGE_DATA_MUTATION_COMPLETE "$CONTAINER" lxc || UPDATE_FAILURE=true
@@ -2131,6 +2309,14 @@ UPDATE_CONTAINER () {
   CCONTAINER="true"
   echo 'CONTAINER="'"$CONTAINER"'"' > "$TEMP_STATE_DIR/var"
   OS=$(pct config "$CONTAINER" | awk '/^ostype/' - | cut -d' ' -f2)
+  if declare -f CAPTURE_UPDATE_PENDING_BEFORE >/dev/null 2>&1; then
+    CAPTURE_UPDATE_PENDING_BEFORE "$CONTAINER"
+  fi
+  if declare -f UPDATE_TARGET_CAPABILITY_GUARD >/dev/null 2>&1; then
+    UPDATE_TARGET_CAPABILITY_GUARD "$CONTAINER" lxc
+    local capability_rc=$?
+    [[ "$capability_rc" -eq 0 ]] || { CCONTAINER=""; return "$capability_rc"; }
+  fi
   NAME=$(pct exec "$CONTAINER" hostname)
   API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH "$CONTAINER" lxc "$OS" || return $?
   REQUIRE_PACKAGE_DATA_INVALIDATION || return 1
@@ -2178,8 +2364,8 @@ UPDATE_CONTAINER () {
       ERROR_MSG="${SCRIPT_ONLY_ERROR:-Script-only user scripts failed or were not found}"
       ERROR
     }
-    if [[ -z "${ERROR_CODE:-}" ]] && declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
-      STATUS_MODEL_UPDATE_RESULT "$CONTAINER" success 0 || true
+    if [[ -z "${ERROR_CODE:-}" ]]; then
+      RECORD_UPDATE_RESULT "$CONTAINER" success 0 || return 1
     fi
     CCONTAINER=""
     return
@@ -2190,14 +2376,15 @@ UPDATE_CONTAINER () {
     local dist_result=$?
     if declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
       if [[ $dist_result -eq 0 ]]; then
-        STATUS_MODEL_UPDATE_RESULT "$CONTAINER" success 0 || true
+        RECORD_UPDATE_RESULT "$CONTAINER" success 0 || return 1
       else
-        STATUS_MODEL_UPDATE_RESULT "$CONTAINER" failed "$dist_result" || true
+        RECORD_UPDATE_RESULT "$CONTAINER" failed "$dist_result" || return 1
       fi
     fi
     return "$dist_result"
   elif [[ "$CHECK_DIST" == true ]]; then
     echo -e "${OR:-} ❌ Distribution not supported\n${CL:-}"
+    RECORD_UPDATE_RESULT "$CONTAINER" unsupported 21 || return 1
     return 0
   fi
   # Run update
@@ -2275,9 +2462,10 @@ UPDATE_CONTAINER () {
     UPDATE_CHECK
   else
     echo -e "${OR:-}The system could not be idetified.${CL:-}"
+    RECORD_UPDATE_RESULT "$CONTAINER" unsupported 21 || return 1
   fi
-  if declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
-    STATUS_MODEL_UPDATE_RESULT "$CONTAINER" success 0 || true
+  if [[ "${UPDATE_RESULT_TARGET:-}" != "$CONTAINER" ]]; then
+    RECORD_UPDATE_RESULT "$CONTAINER" success 0 || return 1
   fi
   CCONTAINER=""
 }
@@ -2332,6 +2520,11 @@ VM_UPDATE_START () {
         # Check if update is possible
         if QGA_CONFIG_ENABLED "$VM" ||
           { [[ "$vm_internal_ssh_state" -ne 1 ]] && [[ -f $LOCAL_FILES/VMs/$VM || "$vm_internal_ssh_state" -eq 0 || "$vm_internal_ssh_state" -eq 2 ]]; }; then
+          if declare -f UPDATE_TARGET_CAPABILITY_GUARD >/dev/null 2>&1; then
+            UPDATE_TARGET_CAPABILITY_GUARD "$VM" vm
+            capability_rc=$?
+            [[ "$capability_rc" -eq 0 ]] || { [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true; continue; }
+          fi
           if [[ "${UU_API_ACTION:-}" == update ]]; then
             local api_os_hint
             api_os_hint=$(qm config "$VM" 2>/dev/null | awk -F': ' '$1 == "ostype" {print $2; exit}')
@@ -2367,6 +2560,11 @@ VM_UPDATE_START () {
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" != true ]]; then
         echo -e "⏩${BL:-} Skipped VM $VM because stopped VMs are disabled${CL:-}\n\n"
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
+        if declare -f UPDATE_TARGET_CAPABILITY_GUARD >/dev/null 2>&1; then
+          UPDATE_TARGET_CAPABILITY_GUARD "$VM" vm
+          capability_rc=$?
+          [[ "$capability_rc" -eq 0 ]] || { [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true; continue; }
+        fi
         SINGLE_TARGET_EXECUTED=true
         UPDATE_VM "$VM"
         MARK_PACKAGE_DATA_MUTATION_COMPLETE "$VM" vm || UPDATE_FAILURE=true
@@ -2401,6 +2599,14 @@ UPDATE_VM () {
   CVM="true"
   echo 'VM="'"$VM"'"' > "$TEMP_STATE_DIR/var"
   echo -e "🔄${GN:-} Updating VM ${BL:-}$VM${CL:-} : ${GN:-}$NAME${CL:-}\n"
+  if declare -f CAPTURE_UPDATE_PENDING_BEFORE >/dev/null 2>&1; then
+    CAPTURE_UPDATE_PENDING_BEFORE "$VM"
+  fi
+  if declare -f UPDATE_TARGET_CAPABILITY_GUARD >/dev/null 2>&1; then
+    UPDATE_TARGET_CAPABILITY_GUARD "$VM" vm
+    local capability_rc=$?
+    [[ "$capability_rc" -eq 0 ]] || { CVM=""; return "$capability_rc"; }
+  fi
   if [[ "${UU_API_ACTION:-}" == update ]]; then
     api_os_hint=$(qm guest cmd "$VM" get-osinfo 2>/dev/null || true)
     [[ -n "$api_os_hint" ]] || api_os_hint=$(qm config "$VM" 2>/dev/null | awk -F': ' '$1 == "ostype" {print $2; exit}')
@@ -2411,6 +2617,9 @@ UPDATE_VM () {
     if declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
       STATUS_MODEL_UPDATE_RESULT "$VM" skipped 0 || true
     fi
+    UPDATE_WARNING=true
+    UPDATE_RESULT_RECORDED=true
+    UPDATE_RESULT_TARGET="$VM"
     CVM=""
     return 0
   fi
@@ -2441,8 +2650,16 @@ UPDATE_VM () {
   # Do not attempt a partial SSH implementation even when SSH is configured.
   if VM_IS_WINDOWS "$VM"; then
     UPDATE_VM_QEMU
+    local qemu_rc=$?
+    if [[ "$qemu_rc" -eq 0 ]]; then
+      UPDATE_RESULT_RECORDED=true
+      UPDATE_RESULT_TARGET="$VM"
+      if [[ "${UPDATE_PENDING_BEFORE[$VM]-}" == 0 ]]; then
+        UPDATE_WARNING=true
+      fi
+    fi
     CVM=""
-    return $?
+    return "$qemu_rc"
   fi
   # Resolve Internal SSH independently of the legacy VM profile.  The WebUI
   # configuration is the preferred source, while legacy VM files remain a
@@ -2531,9 +2748,11 @@ UPDATE_VM () {
         RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg autoremove -y || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
         echo
+        RECORD_UPDATE_RESULT "$VM" success 0 || return 1
         return
       elif [[ "$KERNEL" =~ FreeBSD ]]; then
         echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
+        RECORD_UPDATE_RESULT "$VM" skipped 0 || return 1
         return
       # Debian Base
       elif [[ "${OS,,}" =~ debian|ubuntu|mint|kali|neon|devuan ]]; then
@@ -2610,6 +2829,7 @@ UPDATE_VM () {
       else
         echo -e "${RD:-}  ❌ The system is not supported.\n  Maybe with later version ;)\n${CL:-}"
         echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
+        RECORD_UPDATE_RESULT "$VM" unsupported 21 || return 1
       fi
       return
     fi
@@ -2653,6 +2873,7 @@ UPDATE_VM_QEMU () {
       return
     elif [[ "$KERNEL" =~ FreeBSD ]]; then
       echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
+      RECORD_UPDATE_RESULT "$VM" skipped 0 || return 1
       return
     elif [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
       # Check Internet connection
@@ -2697,6 +2918,7 @@ UPDATE_VM_QEMU () {
       echo -e "${OR:-}--- APK UPDATE ---${CL:-}"
       RUN_QEMU_COMMAND "$VM" -- ash -c "apk -U upgrade" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
       if [[ $ERROR_CODE != "" ]]; then return; fi
+      RECORD_UPDATE_RESULT "$VM" success 0 || return 1
     elif [[ "$OS" =~ CentOS ]]; then
       echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
       RUN_QEMU_COMMAND "$VM" -- bash -c "yum -y update" || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$QEMU_EXEC_OUTPUT"; ERROR; }
@@ -2708,6 +2930,7 @@ UPDATE_VM_QEMU () {
     else
       echo -e "${RD:-}  The system is not supported.\n  Maybe with later version ;)\n${CL:-}"
       echo -e "  If you want, make a request here: <https://github.com/BassT23/Proxmox/issues>\n"
+      RECORD_UPDATE_RESULT "$VM" unsupported 21 || return 1
     fi
   else
     echo -e "${RD:-}  ❌ ${QGA_ERROR:-SSH or QEMU guest agent is not initialized on VM $VM}${CL:-}\n\
@@ -2936,8 +3159,16 @@ ERROR () {
 
 UPDATE_FINAL_RC() {
   local command_rc="${1:-0}"
+  local warning_rc="${UPDATE_WARNING_RC:-10}"
   if [[ "$command_rc" -ne 0 || "$UPDATE_FAILURE" == true || "$SAFETY_FAILURE" == true ]]; then
     return 1
+  fi
+  if [[ "${REMOTE_TARGET_DISPATCHED:-false}" != true &&
+    "${UPDATE_RESULT_RECORDED:-false}" != true ]]; then
+    UPDATE_WARNING=true
+  fi
+  if [[ "${UPDATE_WARNING:-false}" == true ]]; then
+    return "$warning_rc"
   fi
   return 0
 }
@@ -2952,13 +3183,14 @@ UPDATE_MAIL_BODY() {
   if [[ "${SINGLE_UPDATE:-false}" != true && -f "$LOCAL_FILES/status.json" ]] &&
     declare -f STATUS_MODEL_RENDER_NOTIFICATION >/dev/null 2>&1; then
     local status_notification status_body
-    if status_notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$LOCAL_FILES/status.json" update 2>/dev/null) &&
+    if status_notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$LOCAL_FILES/status.json" update "" "" "$UPDATE_RUN_STARTED_AT" 2>/dev/null) &&
       [[ "$status_notification" == STATE=* ]]; then
       status_body=${status_notification#*$'\n'}
       printf '%s\n' "$status_body"
       return 0
     fi
   fi
+  local warning_rc="${UPDATE_WARNING_RC:-10}"
   local target="${ID:-${CONTAINER:-${VM:-$HOSTNAME}}}"
   local display_name="${NAME:-$target}" target_type="host" icon="🐧" package_count
   if [[ "${CVM:-}" == true || "${VM:-}" =~ ^[0-9]+$ ]]; then
@@ -2980,6 +3212,9 @@ UPDATE_MAIL_BODY() {
   if [[ "${EXIT_CODE:-1}" -eq 0 && ! -s "$ERROR_LOG_FILE" ]]; then
     printf '✅ Update successful\n'
     [[ -n "$package_count" ]] && printf '⬆️ %s\n' "$package_count"
+  elif [[ "${EXIT_CODE:-1}" -eq "$warning_rc" && ! -s "$ERROR_LOG_FILE" ]]; then
+    printf '⚠️ Update completed with warnings\n'
+    printf 'No confirmed package mutation was recorded for every selected target.\n'
   else
     printf '⚠️ Update failed\n'
     printf 'Exitcode: %s\n' "${EXIT_CODE:-1}"
@@ -3000,6 +3235,7 @@ fi
 # shellcheck disable=SC2329
 EXIT () {
   EXIT_CODE=$?
+  local warning_rc="${UPDATE_WARNING_RC:-10}"
   if declare -f CLEAR_PACKAGE_MUTATION_RESERVATIONS >/dev/null 2>&1; then
     CLEAR_PACKAGE_MUTATION_RESERVATIONS
   fi
@@ -3028,6 +3264,11 @@ EXIT () {
   elif [[ "$EXIT_CODE" == 2 ]]; then
     exit
   # Update Finish
+  elif [[ "$EXIT_CODE" == "$warning_rc" ]]; then
+    if [[ "$RICM" != true ]]; then
+      echo -e "${OR:-}⚠ Finished with warnings; no confirmed package mutation was recorded.${CL:-}\n"
+      CLEAN_LOGFILE
+    fi
   elif [[ "$EXIT_CODE" == 0 ]]; then
     if [[ "$RICM" != true ]]; then
       if [[ -f $ERROR_LOG_FILE && -s $ERROR_LOG_FILE ]]; then
@@ -3159,8 +3400,9 @@ if [[ "$SINGLE_UPDATE" == true && "$SINGLE_TARGET_EXECUTED" != true ]]; then
   UPDATE_FAILURE=true
 fi
 
-if ! UPDATE_FINAL_RC 0; then
+final_rc=0
+UPDATE_FINAL_RC 0 || final_rc=$?
+if [[ "$final_rc" -eq 1 ]]; then
   exit 1
 fi
-
-exit 0
+exit "$final_rc"

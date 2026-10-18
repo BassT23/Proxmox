@@ -82,8 +82,29 @@ CAPTURE_POST_UPDATE_STATUS 191 ccontainer 2>"$WORK_DIR/not-checked-error"
 grep -Fq 'POST_UPDATE_CAPTURE_NOT_CHECKED' "$WORK_DIR/not-checked-error"
 grep -Fxq 89 "$UU_REMOTE_WORK_DIR/post-update-status.rc"
 
+# A failed check is not a successful status capture even when old package
+# counts remain present in the record.
+sed 's/"check_status":"ok"/"check_status":"error"/' "$WORK_DIR/check-status.json" > "$WORK_DIR/check-status-error.json"
+cat > "$WORK_DIR/check.sh" <<'EOF'
+#!/usr/bin/env bash
+cp "$WORK_DIR/check-status-error.json" "$LOCAL_FILES/status.json"
+exit 0
+EOF
+chmod 750 "$CHECK_SCRIPT"
+CAPTURE_POST_UPDATE_STATUS 191 ccontainer 2>"$WORK_DIR/check-failed-error"
+grep -Fq 'POST_UPDATE_CAPTURE_NOT_CHECKED' "$WORK_DIR/check-failed-error"
+grep -Fxq 89 "$UU_REMOTE_WORK_DIR/post-update-status.rc"
+
 chmod 640 "$CHECK_SCRIPT"
 CAPTURE_POST_UPDATE_STATUS 191 ccontainer 2>"$WORK_DIR/capture-error"
 grep -Fq 'POST_UPDATE_CAPTURE_HELPER_NOT_EXECUTABLE' "$WORK_DIR/capture-error"
 grep -Fxq 127 "$UU_REMOTE_WORK_DIR/post-update-status.rc"
+
+# A capture workspace that cannot be created is incomplete and must not be
+# represented by a successful marker in the local fallback workspace.
+chmod 750 "$CHECK_SCRIPT"
+printf 'not-a-directory\n' > "$WORK_DIR/blocked"
+UU_REMOTE_WORK_DIR="$WORK_DIR/blocked/remote"
+CAPTURE_POST_UPDATE_STATUS 191 ccontainer 2>"$WORK_DIR/workspace-error"
+grep -Fxq 87 "$TEMP_STATE_DIR/post-update-status.rc"
 echo 'post-update capture workspace path: PASS'

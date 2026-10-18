@@ -105,7 +105,7 @@ EOF
 POST_REFRESH_LOG="$WORK_DIR/log" POST_CHECK_RC=17 UU_JOB_STATE_DIR="$WORK_DIR/jobs" \
   UU_CHECK_SCRIPT="$WORK_DIR/check.sh" UU_UPDATE_SCOPE=host \
   "$ROOT_DIR/job-runner.sh" run "$unit" host "$WORK_DIR/update.sh" >/dev/null
-grep -Eq '^state=completed$' "$WORK_DIR/jobs/$unit.state"
+grep -Eq '^state=completed_with_warnings$' "$WORK_DIR/jobs/$unit.state"
 grep -Eq '^exit_code=0$' "$WORK_DIR/jobs/$unit.state"
 grep -Fq 'post-update host status refresh rc=17' "$WORK_DIR/jobs/$unit.state"
 
@@ -126,7 +126,7 @@ POST_REFRESH_LOG="$WORK_DIR/log" UU_JOB_STATE_DIR="$WORK_DIR/jobs" \
   UU_CHECK_CLI="$WORK_DIR/check.sh" \
   "$ROOT_DIR/job-runner.sh" run-global "$unit" "$WORK_DIR/update.sh" >/dev/null
 grep -Fq 'CHECK_SCOPE= CHECK_ARGS=check' "$WORK_DIR/log"
-grep -Eq '^state=completed$' "$WORK_DIR/jobs/$unit.state"
+grep -Eq '^state=completed_with_warnings$' "$WORK_DIR/jobs/$unit.state"
 grep -Eq '^exit_code=0$' "$WORK_DIR/jobs/$unit.state"
 grep -Fq 'post-update full status refresh rc=0' "$WORK_DIR/jobs/$unit.state"
 
@@ -192,7 +192,7 @@ grep -Fq 'Post-update status capture failed for 191: POST_UPDATE_CAPTURE_NOT_CHE
 if grep -Fq 'Post-update status captured before lifecycle restore for 191.' "$WORK_DIR/not-checked-output"; then
   exit 1
 fi
-grep -Eq '^state=completed$' "$WORK_DIR/jobs/$unit.state"
+grep -Eq '^state=completed_with_warnings$' "$WORK_DIR/jobs/$unit.state"
 grep -Fq 'POST_UPDATE_CAPTURE_NOT_CHECKED' "$WORK_DIR/jobs/$unit.state"
 
 grep -Fq 'Continue after errors: enabled' "$ROOT_DIR/update.sh"
