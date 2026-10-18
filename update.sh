@@ -91,6 +91,15 @@ RUN_UPDATE_COMMAND() {
 CAPTURE_UPDATE_PENDING_BEFORE() {
   local target="$1" status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}" count
   [[ -n "${UPDATE_PENDING_BEFORE[$target]+set}" ]] && return 0
+  # Remote workers do not receive the controller status file.  The controller
+  # passes the validated pre-update observation explicitly; preserve even an
+  # empty or invalid value here so the normal fail-closed writer can classify
+  # it as unavailable/invalid rather than inventing a zero baseline.
+  if [[ "${UU_UPDATE_PENDING_BEFORE_TARGET+x}" == x &&
+    "$UU_UPDATE_PENDING_BEFORE_TARGET" == "$target" ]]; then
+    UPDATE_PENDING_BEFORE["$target"]="${UU_UPDATE_PENDING_BEFORE-}"
+    return 0
+  fi
   count=$(python3 - "$status_file" "$target" <<'PY'
 import json
 import sys
@@ -705,8 +714,12 @@ ARGUMENTS () {
                 printf 'Package freshness for remote target %s could not be invalidated; update aborted.\n' "$ARGUMENT" >&2
                 return 1
               fi
-              printf -v remote_command 'exec /usr/bin/env UU_PACKAGE_MUTATION_OPERATION_ID=%q %q start %q %q' \
-                "$remote_operation_id" "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" "$ARGUMENT"
+              CAPTURE_UPDATE_PENDING_BEFORE "$ARGUMENT"
+              local remote_pending_env
+              printf -v remote_pending_env 'UU_UPDATE_PENDING_BEFORE_TARGET=%q UU_UPDATE_PENDING_BEFORE=%q ' \
+                "$ARGUMENT" "${UPDATE_PENDING_BEFORE[$ARGUMENT]-}"
+              printf -v remote_command 'exec /usr/bin/env %sUU_PACKAGE_MUTATION_OPERATION_ID=%q %q start %q %q' \
+                "$remote_pending_env" "$remote_operation_id" "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" "$ARGUMENT"
               echo -e "ℹ ${OR:-} Target $ARGUMENT resolved to $CLUSTER_TARGET_NODE; starting remote update job${CL:-}\n"
               local remote_output remote_job_unit
               if ! remote_output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "${SSH_PORT:-22}" \

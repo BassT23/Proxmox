@@ -812,6 +812,12 @@ start_job() {
   )
   [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && systemd_env+=("--setenv=UU_REMOTE_WORK_DIR=$UU_REMOTE_WORK_DIR")
   [[ -n "${UU_PACKAGE_MUTATION_OPERATION_ID:-}" ]] && systemd_env+=("--setenv=UU_PACKAGE_MUTATION_OPERATION_ID=$UU_PACKAGE_MUTATION_OPERATION_ID")
+  if [[ "${UU_UPDATE_PENDING_BEFORE_TARGET+x}" == x ]]; then
+    systemd_env+=("--setenv=UU_UPDATE_PENDING_BEFORE_TARGET=$UU_UPDATE_PENDING_BEFORE_TARGET")
+  fi
+  if [[ "${UU_UPDATE_PENDING_BEFORE+x}" == x ]]; then
+    systemd_env+=("--setenv=UU_UPDATE_PENDING_BEFORE=${UU_UPDATE_PENDING_BEFORE-}")
+  fi
   [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   [[ "$target" =~ ^[0-9]+$ ]] && systemd_env+=("--setenv=UU_POST_UPDATE_STATUS_CAPTURE=true")
   prepare_systemd_log_filters

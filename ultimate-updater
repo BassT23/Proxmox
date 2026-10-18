@@ -18,6 +18,8 @@ CHECK_SCRIPT="$LOCAL_FILES/check-updates.sh"
 INVENTORY_SCRIPT="$LOCAL_FILES/target-inventory.sh"
 JOB_RUNNER="$LOCAL_FILES/job-runner.sh"
 STATUS_FILE="$LOCAL_FILES/status.json"
+REMOTE_UPDATE_PENDING_BEFORE=""
+REMOTE_UPDATE_PENDING_TARGET=""
 EXTERNAL_APT_SCRIPT="$LOCAL_FILES/external-apt.sh"
 EXTERNAL_HELPER_FILE="$LOCAL_FILES/external-helper.sh"
 EXTERNAL_BOOTSTRAP_FILE="$LOCAL_FILES/external-bootstrap.sh"
@@ -813,6 +815,43 @@ REMOTE_UPDATE_CONTROLLER_INVALIDATE() {
   return 0
 }
 
+# Remote workers run from an isolated workspace and do not receive the
+# controller status file. Capture the controller's validated pre-update count
+# and transport it explicitly; an unavailable value remains unavailable so
+# the worker's existing fail-closed result writer can reject success.
+CAPTURE_REMOTE_UPDATE_PENDING_BEFORE() {
+  local target_id="$1" target_type="$2" target_node="$3"
+  REMOTE_UPDATE_PENDING_TARGET="$target_id"
+  REMOTE_UPDATE_PENDING_BEFORE=""
+  REMOTE_UPDATE_PENDING_BEFORE=$(python3 - "$STATUS_FILE" "$target_id" "$target_type" "$target_node" <<'PY'
+import json
+import sys
+
+status_file, target_id, target_type, target_node = sys.argv[1:]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
+    raise SystemExit(1)
+
+matches = [item for item in payload.get("targets", [])
+           if isinstance(item, dict) and str(item.get("id")) == target_id
+           and item.get("type") == target_type
+           and (target_type == "external" or item.get("node") == target_node)]
+if len(matches) != 1:
+    raise SystemExit(1)
+updates = matches[0].get("updates")
+available = updates.get("available") if isinstance(updates, dict) else None
+if type(available) is not int or available < 0:
+    raise SystemExit(1)
+print(available)
+PY
+  ) || REMOTE_UPDATE_PENDING_BEFORE=""
+  return 0
+}
+
 run_node_check() {
   local node="$1" result
   cluster_node_resolve "$node" || { printf 'Unknown Proxmox node: %s\n' "$node" >&2; return 3; }
@@ -883,6 +922,7 @@ remote_update_job() {
   local product_metadata_file="$LOCAL_FILES/product-metadata.sh"
   local target_selection_file="${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}"
   local interactive_env=''
+  local pending_target="${REMOTE_UPDATE_PENDING_TARGET:-}" pending_env=''
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
   remote_update_dir="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
   [[ -f "$apt_count_file" ]] || apt_count_file="$SCRIPT_DIR/apt-count.py"
@@ -970,6 +1010,11 @@ remote_update_job() {
     printf -v operation_env 'UU_PACKAGE_MUTATION_OPERATION_ID=%q ' "$operation_id"
     context_env+="$operation_env"
   fi
+  if [[ -n "$pending_target" ]]; then
+    printf -v pending_env 'UU_UPDATE_PENDING_BEFORE_TARGET=%q UU_UPDATE_PENDING_BEFORE=%q ' \
+      "$pending_target" "${REMOTE_UPDATE_PENDING_BEFORE-}"
+    context_env+="$pending_env"
+  fi
   printf -v command 'exec /usr/bin/env %s%s%sUU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q UU_TARGET_SELECTION_FILE=%q %q start %q %q' \
     "$scope_env" "$interactive_env" "$context_env" "$remote_update_dir" "$remote_update_dir" "$remote_update_dir/target-selection.json" "$remote_update_dir/job-runner.sh" \
     "$remote_update_dir/update.sh" "$remote_target"
@@ -1015,6 +1060,7 @@ run_node_update() {
       printf 'Could not resolve the existing UU SSH transport for node %s.\n' "$RESOLVED_NODE" >&2
       return 1
     fi
+    CAPTURE_REMOTE_UPDATE_PENDING_BEFORE "host:$RESOLVED_NODE" host "$RESOLVED_NODE"
     REMOTE_UPDATE_CONTROLLER_INVALIDATE "host:$RESOLVED_NODE" host "$RESOLVED_NODE" || return $?
     remote_node_update "$RESOLVED_NODE" "$RESOLVED_NODE_HOST" "$REMOTE_UPDATE_OPERATION_ID"
   fi
@@ -1555,6 +1601,7 @@ run_update() {
       vm) status_target_type=vm ;;
       *) printf 'Remote target type is not supported for update dispatch: %s\n' "$kind" >&2; return 46 ;;
     esac
+    CAPTURE_REMOTE_UPDATE_PENDING_BEFORE "$target" "$status_target_type" "$RESOLVED_TARGET_NODE"
     REMOTE_UPDATE_CONTROLLER_INVALIDATE "$target" "$status_target_type" "$RESOLVED_TARGET_NODE" || return $?
     remote_target_update "$target" "$RESOLVED_TARGET_NODE" "$RESOLVED_TARGET_HOST" "$REMOTE_UPDATE_OPERATION_ID" "$status_target_type"
     return $?
