@@ -4585,12 +4585,40 @@ class StatusHandler(BaseHTTPRequestHandler):
         return {"code": code, "message": messages.get(code, messages["STATUS_ERROR"])}
 
     @classmethod
+    def _api_v1_packages(cls, record, freshness):
+        """Expose only a bounded package result from the current check epoch."""
+        if (not isinstance(record, dict) or record.get("check_status") not in {"ok", "updates_available"}
+                or not isinstance(freshness, dict) or freshness.get("state") != "current"):
+            return None
+        updates = record.get("updates") if isinstance(record.get("updates"), dict) else {}
+        available = updates.get("available")
+        if type(available) is not int or available < 0:
+            return None
+        packages = record.get("packages")
+        if not isinstance(packages, list) or len(packages) != available or len(packages) > 10000:
+            return None
+        result = []
+        for package in packages:
+            if not isinstance(package, dict) or set(package) != {"name", "old_version", "new_version"}:
+                return None
+            public = {}
+            for key in ("name", "old_version", "new_version"):
+                value = package.get(key)
+                if (not isinstance(value, str) or not value or len(value) > 512 or
+                        any(ord(char) < 32 for char in value)):
+                    return None
+                public[key] = value
+            result.append(public)
+        return result
+
+    @classmethod
     def _api_v1_target(cls, record, package_max_age_seconds=PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS, now=None):
         if not isinstance(record, dict):
             return None
         updates = record.get("updates") if isinstance(record.get("updates"), dict) else {}
         neutral_status = record.get("check_status") in ("not_checked", "skipped", "stopped")
         error = cls._api_v1_error(record.get("error"))
+        package_state = package_freshness(record, package_max_age_seconds, now=now)
         skip_reason = (
             cls._api_v1_skip_reason(record.get("skip_reason"))
             if neutral_status and error is None else None
@@ -4617,7 +4645,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             "reboot_required": cls._api_v1_public_value(record.get("reboot_required"), "bool"),
             "last_update": cls._api_v1_last_update(record.get("last_update")),
             "skip_reason": skip_reason,
-            "package_freshness": package_freshness(record, package_max_age_seconds, now=now),
+            "package_freshness": package_state,
+            "packages": cls._api_v1_packages(record, package_state),
         }
         windows_update = cls._api_v1_windows_update(record.get("windows_update"))
         if windows_update is not None:

@@ -166,7 +166,7 @@ if [ "$updater" = apt ]; then
     printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|structured APT metadata query failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
     exit 25
   }
-  IFS='|' read -r apt_marker apt_total apt_normal apt_security apt_known _ <<EOF
+  IFS='|' read -r apt_marker apt_total apt_normal apt_security apt_known apt_packages _ <<EOF
 $apt_counts
 EOF
   if [[ "$apt_marker" != APT_COUNTS || ! "$apt_total" =~ ^[0-9]+$ ||
@@ -206,11 +206,11 @@ EOF
   fi
 fi
 if [ "$updater" = apt ]; then
-  printf 'UU_RESULT|ok|%s|%s|%s|%s|%s|||%s|%s|true\n' \
+  printf 'UU_RESULT|ok|%s|%s|%s|%s|%s|||%s|%s|true|%s\n' \
     "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}" "$updates" "$reboot" "$updater" \
-    "$apt_normal" "$apt_security"
+    "$apt_normal" "$apt_security" "${apt_packages:-}"
 else
-  printf 'UU_RESULT|ok|%s|%s|%s|%s|%s|||null|null|false\n' \
+  printf 'UU_RESULT|ok|%s|%s|%s|%s|%s|||null|null|false|\n' \
     "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}" "$updates" "$reboot" "$updater"
 fi
 REMOTE_CHECK
@@ -222,7 +222,7 @@ record_check_error() {
 }
 
 check_target() {
-  local result rc marker check_status os_name os_version updates reboot updater code message
+  local result rc marker check_status os_name os_version updates reboot updater code message package_details_encoded package_details_json
   local normal_updates security_updates security_split_supported
   result=$(remote_check 2>&1)
   rc=$?
@@ -237,7 +237,7 @@ check_target() {
     return 1
   fi
   IFS='|' read -r marker check_status os_name os_version updates reboot updater code message \
-    normal_updates security_updates security_split_supported <<< "$result"
+    normal_updates security_updates security_split_supported package_details_encoded <<< "$result"
   if [[ "$marker" != UU_RESULT ]]; then
     record_check_error true error REMOTE_CHECK_FAILED "Unexpected remote check response"
     return 1
@@ -246,8 +246,14 @@ check_target() {
     ok)
       local state=ok
       [[ "$updates" -gt 0 || "$reboot" == true ]] && state=updates_available
+      package_details_json=""
+      if [[ -n "$package_details_encoded" ]]; then
+        package_details_json=$(printf '%s' "$package_details_encoded" | base64 -d 2>/dev/null || true)
+      elif [[ "$updates" == 0 && "$updater" == apt ]]; then
+        package_details_json='[]'
+      fi
       STATUS_MODEL_UPSERT "$EXTERNAL_TARGET" external ssh true "$os_name" "$os_version" "$updater" \
-        "$updates" "$reboot" "$state" "" "" "$normal_updates" "$security_updates" "$security_split_supported" now
+        "$updates" "$reboot" "$state" "" "" "$normal_updates" "$security_updates" "$security_split_supported" now "" "" "$package_details_json"
       printf '%s: %s, %s updates, reboot_required=%s\n' "$EXTERNAL_TARGET" "$os_name" "$updates" "$reboot"
       ;;
     unsupported|error)

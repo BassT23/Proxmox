@@ -66,7 +66,7 @@ list behavior unchanged.
 
 `/api/v1/status` exposes `id`, `name`, `type`, `node`, `transport`,
 `reachable`, `os`, additive `os_display`, `updater`, `check_status`, `last_check`, update counts,
-`reboot_required`, `last_update`, `error`, optional `skip_reason`, and bounded
+additive `packages`, `reboot_required`, `last_update`, `error`, optional `skip_reason`, and bounded
 Windows Update metadata when it is already present in the status model. Missing
 values remain `null`; `os_display` is the normalized human-readable label
 (`Debian 13`, for example) and is `Unknown` when the existing OS metadata is
@@ -76,6 +76,40 @@ additive display value:
 
 ```json
 {"os": "Debian GNU/Linux 13 (trixie)", "os_display": "Debian 13"}
+```
+
+The additive `packages` field reports normalized package version details from
+the current, validated package check. Each item has exactly `name`,
+`old_version`, and `new_version`:
+
+```json
+"packages": [
+  {"name": "openssl", "old_version": "3.0.11-1",
+   "new_version": "3.0.11-1+deb12u5"}
+]
+```
+
+`packages` is `[]` when the current validated check found no available
+updates. It is `null` when package details are unavailable, the check failed
+or was unsupported, the package result is stale/historical, or the details
+cannot be validated. Details from an older run are never exposed as the
+current result. The existing `updates.available` count remains authoritative
+for count semantics; a package list is not used to turn an incomplete result
+into a current package status. The current implementation exposes version
+details when the APT check has reliable installed and candidate versions.
+DNF/YUM, Pacman, APK, FreeBSD `pkg`, Windows Update Agent, and other paths
+remain `null` unless their existing check data contains the same reliable
+normalized detail set. No new package-manager-specific API shape is exposed.
+For example, a validated no-update result is:
+
+```json
+{"updates": {"available": 0}, "packages": []}
+```
+
+whereas an unsupported or incomplete result is explicitly unknown:
+
+```json
+{"updates": {"available": null}, "packages": null}
 ```
 
 `error` is either `null` or a bounded object containing a validated error code

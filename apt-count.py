@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""Emit deterministic APT update counts from python-apt metadata."""
+"""Emit deterministic APT update counts and optional version details."""
 
+import base64
+import json
+import os
 import sys
 
 
@@ -14,10 +17,24 @@ def main():
     try:
         cache = apt.Cache()
         total = normal = security = 0
+        packages = []
         for package in cache:
             if not package.is_upgradable:
                 continue
             candidate = package.candidate
+            installed = getattr(package, "installed", None)
+            if os.environ.get("UU_PACKAGE_DETAILS") == "1":
+                old_version = getattr(installed, "version", None) if installed is not None else None
+                new_version = getattr(candidate, "version", None) if candidate is not None else None
+                if not isinstance(package.name, str) or not isinstance(old_version, str) or not old_version or \
+                        not isinstance(new_version, str) or not new_version:
+                    print("APT_COUNTS|unknown|unknown|unknown|false")
+                    return 2
+                packages.append({
+                    "name": package.name,
+                    "old_version": old_version,
+                    "new_version": new_version,
+                })
             origins = list(candidate.origins) if candidate is not None else []
             if not origins:
                 print("APT_COUNTS|unknown|unknown|unknown|false")
@@ -50,7 +67,13 @@ def main():
         print(f"APT_COUNTS|unknown|unknown|unknown|false|{type(error).__name__}")
         return 2
 
-    print(f"APT_COUNTS|{total}|{normal}|{security}|true")
+    output = f"APT_COUNTS|{total}|{normal}|{security}|true"
+    if os.environ.get("UU_PACKAGE_DETAILS") == "1":
+        encoded = base64.b64encode(
+            json.dumps(packages, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        ).decode("ascii")
+        output += f"|{encoded}"
+    print(output)
     return 0
 
 

@@ -222,17 +222,18 @@ STATUS_MODEL_RECORD() {
   local package_check_generation="${19:-${STATUS_MODEL_CHECK_GENERATION:-}}"
   local package_check_started_during_mutation="${20:-${STATUS_MODEL_CHECK_STARTED_DURING_MUTATION:-}}"
   local package_mutation_operation_id="${21:-${UU_PACKAGE_MUTATION_OPERATION_ID:-${STATUS_MODEL_CHECK_OPERATION_ID:-}}}"
+  local package_details_json="${22:-}"
   local status_metadata=""
   if [[ -n "$package_checked_at" || -n "$package_data_invalidated" ||
     -n "$package_check_generation" || -n "$package_check_started_during_mutation" ||
-    -n "$package_mutation_operation_id" ]]; then
+    -n "$package_mutation_operation_id" || -n "$package_details_json" ]]; then
     status_metadata=$(python3 - "$package_checked_at" "$package_data_invalidated" \
       "$package_check_generation" "$package_check_started_during_mutation" \
-      "$package_mutation_operation_id" <<'PY'
+      "$package_mutation_operation_id" "$package_details_json" <<'PY'
 import json
 import sys
 
-package_checked_at, package_data_invalidated, package_check_generation, started_during_mutation, operation_id = sys.argv[1:]
+package_checked_at, package_data_invalidated, package_check_generation, started_during_mutation, operation_id, package_details_json = sys.argv[1:]
 metadata = {}
 if package_checked_at:
     metadata["package_checked_at"] = package_checked_at
@@ -244,6 +245,11 @@ if started_during_mutation in ("true", "false"):
     metadata["package_check_started_during_mutation"] = started_during_mutation == "true"
 if operation_id:
     metadata["package_mutation_operation_id"] = operation_id
+if package_details_json:
+    try:
+        metadata["packages"] = json.loads(package_details_json)
+    except (TypeError, ValueError):
+        metadata["packages"] = package_details_json
 print(json.dumps(metadata, separators=(",", ":")))
 PY
     ) || return 1
@@ -375,6 +381,9 @@ with open(record_file, "a", encoding="utf-8") as records:
         if "package_mutation_operation_id" in target:
             metadata["package_mutation_operation_id_present"] = True
             metadata["package_mutation_operation_id"] = target["package_mutation_operation_id"]
+        if "packages" in target:
+            metadata["packages_present"] = True
+            metadata["packages"] = target.get("packages")
         fields.append(encode(json.dumps(metadata, separators=(",", ":"))))
         records.write("\t".join(fields) + "\n")
 PY
@@ -469,6 +478,25 @@ def valid_package_result(status, reachable_value, updates_value, error_value, ti
         return False
     return True
 
+def normalize_packages(value, expected_count=None):
+    if not isinstance(value, list) or len(value) > 10000:
+        return None
+    if expected_count is not None and len(value) != expected_count:
+        return None
+    result = []
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {"name", "old_version", "new_version"}:
+            return None
+        normalized = {}
+        for key in ("name", "old_version", "new_version"):
+            field = item.get(key)
+            if (not isinstance(field, str) or not field or len(field) > 512 or
+                    any(ord(char) < 32 for char in field)):
+                return None
+            normalized[key] = field
+        result.append(normalized)
+    return result
+
 with open(record_file, encoding="utf-8") as records:
     for line in records:
         fields = line.rstrip("\n").split("\t")
@@ -493,6 +521,8 @@ with open(record_file, encoding="utf-8") as records:
         imported_package_check_started_during_mutation_present = False
         imported_package_mutation_operation_id = None
         imported_package_mutation_operation_id_present = False
+        imported_packages = None
+        imported_packages_present = False
         imported_status_metadata = False
 
         def parse_json_field(value):
@@ -512,7 +542,8 @@ with open(record_file, encoding="utf-8") as records:
                                        "package_check_started_during_mutation",
                                        "package_check_started_during_mutation_present",
                                        "package_mutation_operation_id",
-                                       "package_mutation_operation_id_present"}):
+                                       "package_mutation_operation_id_present",
+                                       "packages", "packages_present"}):
                 return None, None, None, parsed
             if isinstance(parsed, dict) and isinstance(parsed.get("history"), list):
                 return None, parsed, None, None
@@ -563,6 +594,8 @@ with open(record_file, encoding="utf-8") as records:
                 imported_package_mutation_operation_id_present = metadata.get(
                     "package_mutation_operation_id_present"
                 ) is True
+                imported_packages = metadata.get("packages")
+                imported_packages_present = metadata.get("packages_present") is True or "packages" in metadata
                 imported_status_metadata = metadata.get("source") == "status_import"
             cursor += 1
         else:
@@ -588,6 +621,8 @@ with open(record_file, encoding="utf-8") as records:
                     imported_package_mutation_operation_id_present = metadata.get(
                         "package_mutation_operation_id_present"
                     ) is True
+                    imported_packages = metadata.get("packages")
+                    imported_packages_present = metadata.get("packages_present") is True or "packages" in metadata
                     imported_status_metadata = metadata.get("source") == "status_import"
                 cursor += 1
             elif cursor < len(optional_fields):
@@ -618,6 +653,8 @@ with open(record_file, encoding="utf-8") as records:
                     imported_package_mutation_operation_id_present = metadata.get(
                         "package_mutation_operation_id_present"
                     ) is True
+                    imported_packages = metadata.get("packages")
+                    imported_packages_present = metadata.get("packages_present") is True or "packages" in metadata
                     imported_status_metadata = metadata.get("source") == "status_import"
                 elif imported_last_update is None:
                     imported_last_update = candidate_last
@@ -809,12 +846,13 @@ with open(record_file, encoding="utf-8") as records:
         if package_result_ok and not package_result_safe and isinstance(existing_record, dict):
             # A result from before/during a mutation is an observation, not a
             # new package state. Preserve the previous package provenance.
-            for key in ("updates", "normal_updates", "security_updates", "package_checked_at",
+            for key in ("updates", "normal_updates", "security_updates", "packages", "package_checked_at",
                         "package_mutation_generation", "package_mutation_in_progress",
                         "package_mutation_operation_id", "package_data_invalidated", "package_data_invalidated_at"):
                 if key in existing_record:
                     record[key] = copy.deepcopy(existing_record[key])
         elif package_result_safe and package_timestamp is not None:
+            incoming_available = int(updates) if re.fullmatch(r"[0-9]+", updates or "") else None
             record["package_checked_at"] = package_timestamp
             record["package_mutation_generation"] = (
                 existing_generation if remote_operation_completion else (
@@ -824,11 +862,17 @@ with open(record_file, encoding="utf-8") as records:
             record["package_mutation_in_progress"] = False
             record["package_data_invalidated"] = False
             record.pop("package_data_invalidated_at", None)
+            normalized_packages = normalize_packages(
+                imported_packages, incoming_available
+            ) if imported_packages_present else None
+            # A successful check without a complete package-detail result is
+            # still a valid count check, but it must not inherit an old list.
+            record["packages"] = normalized_packages
         elif check_status != "history_only" and isinstance(existing_record, dict):
             # A neutral skip or a failed observation is not a package result.
             # Preserve the last known package data instead of replacing it with
             # null counts and a newer observation timestamp.
-            for key in ("updates", "normal_updates", "security_updates", "package_checked_at",
+            for key in ("updates", "normal_updates", "security_updates", "packages", "package_checked_at",
                         "package_mutation_generation", "package_mutation_in_progress",
                         "package_mutation_operation_id", "package_data_invalidated", "package_data_invalidated_at"):
                 if key in existing_record:
@@ -856,7 +900,7 @@ with open(record_file, encoding="utf-8") as records:
             # A history refresh is read-only and must not replace the latest
             # check observation, update count, reboot flag, or error state.
             for key in ("name", "type", "transport", "reachable", "os", "os_version",
-                        "updater", "updates", "normal_updates", "security_updates",
+                        "updater", "updates", "normal_updates", "security_updates", "packages",
                         "reboot_required", "last_check", "check_status", "error", "skip_reason", "node",
                         "security_split_supported", "package_checked_at", "package_mutation_generation",
                         "package_mutation_in_progress", "package_mutation_operation_id"):
@@ -940,6 +984,7 @@ STATUS_MODEL_UPSERT() {
   local package_checked_at="${16:-}"
   local package_check_generation="${17:-${STATUS_MODEL_CHECK_GENERATION:-}}"
   local package_check_started_during_mutation="${18:-${STATUS_MODEL_CHECK_STARTED_DURING_MUTATION:-}}"
+  local package_details_json="${19:-}"
 
   local status_lock_file="${status_file}.lock" status_lock_fd
   exec {status_lock_fd}>"$status_lock_file" || return 1
@@ -952,7 +997,7 @@ STATUS_MODEL_UPSERT() {
     "$reachable" "$os_name" "$os_version" "$updater" "$updates" \
     "$reboot_required" "$check_status" "$error_code" "$error_message" \
     "$normal_updates" "$security_updates" "$security_split_supported" "$package_checked_at" \
-    "$package_check_generation" "$package_check_started_during_mutation" <<'PY'
+    "$package_check_generation" "$package_check_started_during_mutation" "$package_details_json" <<'PY'
 import json
 import os
 import re
@@ -963,7 +1008,8 @@ from datetime import datetime, timezone
 (status_file, target_id, target_type, transport, reachable, os_name,
  os_version, updater, updates, reboot_required, check_status, error_code,
  error_message, normal_updates, security_updates, security_split_supported,
- package_checked_at, package_check_generation, package_check_started_during_mutation) = sys.argv[1:]
+ package_checked_at, package_check_generation, package_check_started_during_mutation,
+ package_details_json) = sys.argv[1:]
 
 try:
     with open(status_file, encoding="utf-8") as source:
@@ -994,7 +1040,7 @@ elif target_type == "external" and record.get("node") not in (None, ""):
 
 existing_package_state = {
     key: record[key] for key in (
-        "updates", "normal_updates", "security_updates", "package_checked_at",
+        "updates", "normal_updates", "security_updates", "packages", "package_checked_at",
         "package_mutation_generation", "package_mutation_in_progress",
         "package_mutation_operation_id", "package_data_invalidated", "package_data_invalidated_at"
     ) if key in record
@@ -1059,6 +1105,25 @@ def valid_package_result():
         (package_checked_at == "now" or valid_timestamp(package_checked_at) is not None)
     )
 
+def normalize_packages(value, expected_count=None):
+    if not isinstance(value, list) or len(value) > 10000:
+        return None
+    if expected_count is not None and len(value) != expected_count:
+        return None
+    result = []
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {"name", "old_version", "new_version"}:
+            return None
+        normalized = {}
+        for key in ("name", "old_version", "new_version"):
+            field = item.get(key)
+            if (not isinstance(field, str) or not field or len(field) > 512 or
+                    any(ord(char) < 32 for char in field)):
+                return None
+            normalized[key] = field
+        result.append(normalized)
+    return result
+
 current_generation_present = "package_mutation_generation" in record
 current_generation = record.get("package_mutation_generation", 0)
 current_generation_valid = (
@@ -1090,6 +1155,11 @@ if package_result_safe:
     record["package_mutation_in_progress"] = False
     record["package_data_invalidated"] = False
     record.pop("package_data_invalidated_at", None)
+    try:
+        package_details = json.loads(package_details_json) if package_details_json else None
+    except (TypeError, ValueError):
+        package_details = None
+    record["packages"] = normalize_packages(package_details, int(updates)) if package_details is not None else None
 elif existing_package_state:
     record.update(existing_package_state)
 if package_result_ok and not package_result_safe:

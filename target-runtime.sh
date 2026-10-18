@@ -52,14 +52,14 @@ READ_APT_UPDATE_COUNTS() {
   local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
   local result
   if [[ ! -f "$script" ]]; then
-    result=$(python3 "$python_script") || {
+    result=$(UU_PACKAGE_DETAILS=1 python3 "$python_script") || {
       SECURITY_APT_UPDATES=null
       NORMAL_APT_UPDATES=null
       APT_COUNTS_TOTAL=null
       return 1
     }
   else
-    result=$(APT_COUNT_PYTHON_SCRIPT="$python_script" sh "$script") || {
+    result=$(UU_PACKAGE_DETAILS=1 APT_COUNT_PYTHON_SCRIPT="$python_script" sh "$script") || {
       SECURITY_APT_UPDATES=null
       NORMAL_APT_UPDATES=null
       APT_COUNTS_TOTAL=null
@@ -76,8 +76,8 @@ READ_APT_UPDATE_COUNTS() {
 }
 
 PARSE_APT_UPDATE_COUNTS() {
-  local result="$1" total normal security known
-  IFS='|' read -r _ total normal security known _ <<<"$result"
+  local result="$1" total normal security known details
+  IFS='|' read -r _ total normal security known details _ <<<"$result"
   if [[ ! "$total" =~ ^[0-9]+$ || ! "$normal" =~ ^[0-9]+$ ||
     ! "$security" =~ ^[0-9]+$ || "$known" != true ]]; then
     SECURITY_APT_UPDATES=null
@@ -91,7 +91,43 @@ PARSE_APT_UPDATE_COUNTS() {
   NORMAL_APT_UPDATES="$normal"
   # shellcheck disable=SC2034
   SECURITY_APT_UPDATES="$security"
+  PARSE_PACKAGE_DETAILS "$details" "$total"
   [[ $((normal + security)) -eq $total ]]
+}
+
+PARSE_PACKAGE_DETAILS() {
+  local encoded="${1:-}" total="${2:-}" normalized
+  PACKAGE_DETAILS_JSON=""
+  if [[ "$total" == 0 ]]; then
+    PACKAGE_DETAILS_JSON='[]'
+  fi
+  [[ -n "$encoded" ]] || return 0
+  normalized=$(printf '%s' "$encoded" | python3 -c '
+import base64
+import json
+import sys
+
+try:
+    total = int(sys.argv[1])
+    raw = base64.b64decode(sys.stdin.buffer.read().strip(), validate=True)
+    items = json.loads(raw.decode("utf-8"))
+    if not isinstance(items, list) or len(items) != total or len(items) > 10000:
+        raise ValueError("package detail count mismatch")
+    normalized = []
+    for item in items:
+        if not isinstance(item, dict) or set(item) != {"name", "old_version", "new_version"}:
+            raise ValueError("invalid package detail object")
+        values = {key: item[key] for key in ("name", "old_version", "new_version")}
+        if any(not isinstance(value, str) or not value or len(value) > 512 or
+               any(ord(char) < 32 for char in value) for value in values.values()):
+            raise ValueError("invalid package detail value")
+        normalized.append(values)
+    print(json.dumps(normalized, ensure_ascii=False, separators=(",", ":")))
+except (ValueError, TypeError, UnicodeError, json.JSONDecodeError, base64.binascii.Error):
+    raise SystemExit(1)
+' "$total" 2>/dev/null) || return 0
+  # shellcheck disable=SC2034  # consumed by the caller after parsing
+  PACKAGE_DETAILS_JSON="$normalized"
 }
 
 APT_COUNT_REMOTE_COMMAND() {
@@ -100,19 +136,19 @@ APT_COUNT_REMOTE_COMMAND() {
   local shell_encoded python_encoded
   if [[ ! -f "$shell_script" ]]; then
     python_encoded=$(base64 -w0 "$python_script") || return 1
-    printf 'python3 -c %q' "import base64;exec(base64.b64decode('$python_encoded'))"
+    printf 'UU_PACKAGE_DETAILS=1 python3 -c %q' "import base64;exec(base64.b64decode('$python_encoded'))"
     return 0
   fi
   shell_encoded=$(base64 -w0 "$shell_script") || return 1
   python_encoded=$(base64 -w0 "$python_script") || return 1
-  printf 'printf %%s %q | base64 -d | APT_COUNT_PYTHON_B64=%q sh -s' \
+  printf 'printf %%s %q | base64 -d | UU_PACKAGE_DETAILS=1 APT_COUNT_PYTHON_B64=%q sh -s' \
     "$shell_encoded" "$python_encoded"
 }
 
 READ_RPM_UPDATE_COUNTS() {
   local script="${RPM_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/rpm-count.py}"
   local result
-  result=$(python3 "$script") || {
+  result=$(UU_PACKAGE_DETAILS=1 python3 "$script") || {
     RPM_COUNTS_TOTAL=null
     RPM_SECURITY_UPDATES=null
     RPM_NORMAL_UPDATES=null
@@ -122,8 +158,8 @@ READ_RPM_UPDATE_COUNTS() {
 }
 
 PARSE_RPM_UPDATE_COUNTS() {
-  local result="$1" marker status total normal security known
-  IFS='|' read -r marker status total normal security known _ <<<"$result"
+  local result="$1" marker status total normal security known details
+  IFS='|' read -r marker status total normal security known details _ <<<"$result"
   if [[ "$marker" != UU_RPM_COUNTS || "$status" != ok ||
     ! "$total" =~ ^[0-9]+$ || "$normal" != null || "$security" != null ||
     "$known" != false ]]; then
@@ -138,6 +174,7 @@ PARSE_RPM_UPDATE_COUNTS() {
   RPM_SECURITY_UPDATES=null
   # shellcheck disable=SC2034
   RPM_NORMAL_UPDATES=null
+  PARSE_PACKAGE_DETAILS "$details" "$total"
 }
 
 RPM_COUNT_REMOTE_COMMAND() {
@@ -148,8 +185,8 @@ RPM_COUNT_REMOTE_COMMAND() {
 }
 
 PARSE_PACKAGE_UPDATE_COUNTS() {
-  local result="$1" marker status manager total normal security known
-  IFS='|' read -r marker status manager total normal security known _ <<<"$result"
+  local result="$1" marker status manager total normal security known details
+  IFS='|' read -r marker status manager total normal security known details _ <<<"$result"
   if [[ "$marker" != UU_PACKAGE_COUNTS || "$status" != ok ||
     ! "$total" =~ ^[0-9]+$ || "$normal" != null || "$security" != null ||
     "$known" != false ]]; then
@@ -164,6 +201,7 @@ PARSE_PACKAGE_UPDATE_COUNTS() {
   PACKAGE_NORMAL_UPDATES=null
   # shellcheck disable=SC2034
   PACKAGE_SECURITY_UPDATES=null
+  PARSE_PACKAGE_DETAILS "$details" "$total"
 }
 
 PACKAGE_COUNT_REMOTE_COMMAND() {

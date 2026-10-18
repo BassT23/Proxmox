@@ -10,6 +10,7 @@ VERSION="2.1"
 
 CHECK_FAILURE=0
 INITIAL_INVENTORY=false
+PACKAGE_DETAILS_JSON=""
 [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]] && INITIAL_INVENTORY=true
 
 #Variable / Function
@@ -37,11 +38,11 @@ else
     local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
     local result
     if [[ ! -f "$script" ]]; then
-      result=$(python3 "$python_script") || {
+      result=$(UU_PACKAGE_DETAILS=1 python3 "$python_script") || {
         SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
       }
     else
-      result=$(APT_COUNT_PYTHON_SCRIPT="$python_script" sh "$script") || {
+      result=$(UU_PACKAGE_DETAILS=1 APT_COUNT_PYTHON_SCRIPT="$python_script" sh "$script") || {
         SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
       }
     fi
@@ -51,14 +52,44 @@ else
     PARSE_APT_UPDATE_COUNTS "$result"
   }
   PARSE_APT_UPDATE_COUNTS() {
-    local result="$1" total normal security known
-    IFS='|' read -r _ total normal security known _ <<<"$result"
+    local result="$1" total normal security known details
+    IFS='|' read -r _ total normal security known details _ <<<"$result"
     if [[ ! "$total" =~ ^[0-9]+$ || ! "$normal" =~ ^[0-9]+$ ||
       ! "$security" =~ ^[0-9]+$ || "$known" != true ]]; then
       SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
     fi
     APT_COUNTS_TOTAL="$total"; NORMAL_APT_UPDATES="$normal"; SECURITY_APT_UPDATES="$security"
+    PARSE_PACKAGE_DETAILS "$details" "$total"
     [[ $((normal + security)) -eq $total ]]
+  }
+  PARSE_PACKAGE_DETAILS() {
+    local encoded="${1:-}" total="${2:-}" normalized
+    PACKAGE_DETAILS_JSON=""
+    if [[ "$total" == 0 ]]; then PACKAGE_DETAILS_JSON='[]'; fi
+    [[ -n "$encoded" ]] || return 0
+    normalized=$(printf '%s' "$encoded" | python3 -c '
+import base64
+import json
+import sys
+try:
+    total = int(sys.argv[1])
+    items = json.loads(base64.b64decode(sys.stdin.buffer.read().strip(), validate=True).decode("utf-8"))
+    if not isinstance(items, list) or len(items) != total or len(items) > 10000:
+        raise ValueError
+    output = []
+    for item in items:
+        if not isinstance(item, dict) or set(item) != {"name", "old_version", "new_version"}:
+            raise ValueError
+        values = {key: item[key] for key in ("name", "old_version", "new_version")}
+        if any(not isinstance(value, str) or not value or len(value) > 512 or
+               any(ord(char) < 32 for char in value) for value in values.values()):
+            raise ValueError
+        output.append(values)
+    print(json.dumps(output, ensure_ascii=False, separators=(",", ":")))
+except Exception:
+    raise SystemExit(1)
+' "$total" 2>/dev/null) || return 0
+    PACKAGE_DETAILS_JSON="$normalized"
   }
   APT_COUNT_REMOTE_COMMAND() {
     local shell_script="${APT_COUNT_SHELL_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.sh}"
@@ -66,22 +97,22 @@ else
     local shell_encoded python_encoded
     if [[ ! -f "$shell_script" ]]; then
       python_encoded=$(base64 -w0 "$python_script") || return 1
-      printf 'python3 -c %q' "import base64;exec(base64.b64decode('$python_encoded'))"
+      printf 'UU_PACKAGE_DETAILS=1 python3 -c %q' "import base64;exec(base64.b64decode('$python_encoded'))"
       return 0
     fi
     shell_encoded=$(base64 -w0 "$shell_script") || return 1
     python_encoded=$(base64 -w0 "$python_script") || return 1
-    printf 'printf %%s %q | base64 -d | APT_COUNT_PYTHON_B64=%q sh -s' \
+    printf 'printf %%s %q | base64 -d | UU_PACKAGE_DETAILS=1 APT_COUNT_PYTHON_B64=%q sh -s' \
       "$shell_encoded" "$python_encoded"
   }
   PARSE_RPM_UPDATE_COUNTS() {
-    local result="$1" marker status total normal security known
-    IFS='|' read -r marker status total normal security known _ <<<"$result"
+    local result="$1" marker status total normal security known details
+    IFS='|' read -r marker status total normal security known details _ <<<"$result"
     if [[ "$marker" != UU_RPM_COUNTS || "$status" != ok || ! "$total" =~ ^[0-9]+$ ||
       "$normal" != null || "$security" != null || "$known" != false ]]; then
       RPM_COUNTS_TOTAL=null; return 1
     fi
-    RPM_COUNTS_TOTAL="$total"
+    RPM_COUNTS_TOTAL="$total"; PARSE_PACKAGE_DETAILS "$details" "$total"
   }
   RPM_COUNT_REMOTE_COMMAND() {
     local script="${RPM_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/rpm-count.py}" encoded
@@ -89,13 +120,13 @@ else
     printf 'python3 -c %q' "import base64;exec(base64.b64decode('$encoded'))"
   }
   PARSE_PACKAGE_UPDATE_COUNTS() {
-    local result="$1" marker status manager total normal security known
-    IFS='|' read -r marker status manager total normal security known _ <<<"$result"
+    local result="$1" marker status manager total normal security known details
+    IFS='|' read -r marker status manager total normal security known details _ <<<"$result"
     if [[ "$marker" != UU_PACKAGE_COUNTS || "$status" != ok || ! "$total" =~ ^[0-9]+$ ||
       "$normal" != null || "$security" != null || "$known" != false ]]; then
       PACKAGE_COUNTS_TOTAL=null; return 1
     fi
-    PACKAGE_COUNTS_TOTAL="$total"
+    PACKAGE_COUNTS_TOTAL="$total"; PARSE_PACKAGE_DETAILS "$details" "$total"
   }
   PACKAGE_COUNT_REMOTE_COMMAND() {
     local manager="$1" script="${PACKAGE_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/package-count.sh}" encoded
@@ -1134,7 +1165,7 @@ CHECK_HOST_ITSELF () {
   # STATUS_MODEL_RECORD is positional: error code, error message, node,
   # display name, normal count, security count.  Keep the host name in both
   # identity positions so the split is not shifted during serialization.
-  STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true "${HOST_OS:-unknown}" apt "$HOST_UPDATES" "${REBOOT_REQUIRED:-false}" "$HOST_STATUS" "" "" "$STATUS_HOST_NAME" "$STATUS_HOST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES" "" now
+  STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true "${HOST_OS:-unknown}" apt "$HOST_UPDATES" "${REBOOT_REQUIRED:-false}" "$HOST_STATUS" "" "" "$STATUS_HOST_NAME" "$STATUS_HOST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES" "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
 }
 
 # Proxmox kernel packages can install a new bootable kernel without leaving
@@ -1460,7 +1491,7 @@ CHECK_CONTAINER () {
     fi
   fi
   [[ "$CONTAINER_UPDATES" -gt 0 ]] && CONTAINER_STATUS=updates_available
-  STATUS_MODEL_RECORD "$CONTAINER" lxc pct true "$OS_DISPLAY" "${OS,,}" "$CONTAINER_UPDATES" "$CONTAINER_REBOOT" "$CONTAINER_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$CONTAINER_NORMAL_UPDATES" "$CONTAINER_SECURITY_UPDATES" "" now
+  STATUS_MODEL_RECORD "$CONTAINER" lxc pct true "$OS_DISPLAY" "${OS,,}" "$CONTAINER_UPDATES" "$CONTAINER_REBOOT" "$CONTAINER_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$CONTAINER_NORMAL_UPDATES" "$CONTAINER_SECURITY_UPDATES" "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
 }
 
 # Single-target checks use the same lifecycle contract as check-all.  This is
@@ -1874,7 +1905,7 @@ CHECK_VM () {
       STATUS_MODEL_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pkg "$UPDATES" false "$STATUS_MODEL_STATUS" "" "" \
-        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
+        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
       return 0
     fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
@@ -1985,23 +2016,23 @@ CHECK_VM () {
       SSH_MODEL_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
       SSH_MODEL_STATUS=ok
       [[ "$SSH_MODEL_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && SSH_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "$SSH_MODEL_UPDATES" "${REBOOT_REQUIRED:-false}" "$SSH_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES" "" now
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "$SSH_MODEL_UPDATES" "${REBOOT_REQUIRED:-false}" "$SSH_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES" "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
     elif [[ ${OS,,} =~ fedora ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
     elif [[ ${OS,,} =~ arch ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pacman "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pacman "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
     elif [[ ${OS,,} =~ alpine ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apk "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apk "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
     elif [[ ${OS,,} =~ centos ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
     else
       STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" "" "null" "null" unsupported UNSUPPORTED_OS "No supported updater detected"
     fi
@@ -2194,7 +2225,7 @@ print(data.get("id") or "")
       QEMU_APT_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
       QEMU_APT_STATUS=ok
       [[ "$QEMU_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && QEMU_APT_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "$QEMU_APT_UPDATES" "$REBOOT_REQUIRED" "$QEMU_APT_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES" "" now
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "$QEMU_APT_UPDATES" "$REBOOT_REQUIRED" "$QEMU_APT_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES" "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
     elif [[ "$OS" =~ Fedora ]]; then
       local rpm_count_command rpm_count_result
       if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
@@ -2221,7 +2252,7 @@ print(data.get("id") or "")
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_DNF_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_DNF_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "$UPDATES" false "$QEMU_DNF_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "$UPDATES" false "$QEMU_DNF_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
     elif [[ "$OS" =~ Arch ]]; then
       local package_count_command package_count_result
       if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pacman); then
@@ -2248,7 +2279,7 @@ print(data.get("id") or "")
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_PACMAN_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_PACMAN_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "$UPDATES" false "$QEMU_PACMAN_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "$UPDATES" false "$QEMU_PACMAN_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
     elif [[ "$OS" =~ Alpine ]]; then
       local package_count_command package_count_result
       if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND apk); then
@@ -2275,7 +2306,7 @@ print(data.get("id") or "")
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_APK_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_APK_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "$UPDATES" false "$QEMU_APK_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "$UPDATES" false "$QEMU_APK_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
     elif [[ "$OS" =~ CentOS ]]; then
       local rpm_count_command rpm_count_result
       if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
@@ -2302,7 +2333,7 @@ print(data.get("id") or "")
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_YUM_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_YUM_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "$UPDATES" false "$QEMU_YUM_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "$UPDATES" false "$QEMU_YUM_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now "" "" "" "" "${PACKAGE_DETAILS_JSON:-}"
     else
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" "" "null" "null" unsupported UNSUPPORTED_OS "No supported updater detected"
     fi
