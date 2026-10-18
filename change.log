@@ -51,6 +51,12 @@ Added:
   `/api/config` persistence path.
 
 Improved:
+- Issue #379: normal `/api/v1/status`, `/api/v1/status-summary`, and
+  `/api/status-summary` requests now trigger asynchronous remote
+  reconciliation without adding update, guest, snapshot, or lifecycle actions.
+- Issue #379: remote reconciliation uses an asynchronous single-flight
+  reconciler with existing locks, bounded retry handling, idempotency, and
+  identity, generation, and operations-ID gates.
 - Issue #378: the separate Jobs navigation entry was removed while Jobs, Logs,
   live output, and download functionality remain available through the
   Overview; the API page displays the `API under development` banner with a
@@ -73,6 +79,16 @@ Improved:
   explicitly.
 
 Fixed:
+- Issue #379: update results now fail closed when `pending_before` is missing
+  or invalid. Missing baselines produce `failed`,
+  `PENDING_BEFORE_UNAVAILABLE`, and exit code 96; invalid baselines produce
+  `failed`, `PENDING_BEFORE_INVALID`, and exit code 97.
+- Issue #379: `pending_before=0` remains a `skipped` no-op with exit code 10;
+  a valid baseline with actual package mutation may produce `success`/`completed`,
+  while capture/preservation failures remain `completed_with_warnings`.
+- Issue #379: remote handback applies the same baseline and provenance
+  semantics, so missing provenance cannot create a false success; existing
+  reconciliation gates remain fail-closed.
 - No-op runs and paths without actual package mutation are no longer reported
   as successful updates.
 - Capability checks run before unnecessary snapshot, lifecycle, or guest
@@ -91,6 +107,10 @@ Fixed:
   unchanged by the optional dpkg repair.
 
 Security/Safety:
+- Issue #379: remote status reconciliation remains fail-closed across target
+  identity, generation, operations-ID, provenance, and active-mutation gates;
+  no status query can clear a mutation invalidation without a validated
+  terminal result.
 - Capability and unsupported paths remain fail-closed before mutation,
   snapshots, or guest lifecycle actions.
 - Connectivity retry repeats only bounded, read-only connectivity probes.
