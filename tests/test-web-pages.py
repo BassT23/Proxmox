@@ -35,6 +35,10 @@ assert 'id="settings-page"' in page
 assert 'id="api-page"' in page
 assert 'id="api-development-banner"' in page
 assert 'API under development — endpoint names and semantics may change before release.' in page
+assert '.api-development-banner{' in page
+assert 'color:#000' in page
+assert 'background:var(--bad)' in page
+assert 'text-align:center' in page
 assert 'id="scheduler-page"' in page
 assert 'id="page-subtitle"' in page
 assert 'Automatic checks and updates using the existing Ultimate Updater safety rules.' in page
