@@ -28,6 +28,14 @@ Added:
   External/Remote or invalid/ambiguous live data, never uses historical values
   or changes persisted status, and leaves normal `/api/v1/status` polling
   unchanged without the additional query.
+- Issue #378: API-v1 package details now expose normalized per-target entries
+  with `name`, `old_version`, and `new_version`; current successful checks with
+  no available updates use `packages=[]`, while missing, invalid, stale, or
+  unverifiable details use `packages=null`. APT counts remain valid when
+  version data is missing without publishing incomplete details, package lists
+  are deterministically sorted, and External DNF/YUM checks follow the same
+  empty-list/null semantics; API and schema versions remain `1` and existing
+  persistence, freshness, identity, and security semantics are unchanged.
 
 Improved:
 - API check-all identity and target-context handling now separates global
