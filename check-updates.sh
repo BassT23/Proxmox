@@ -856,6 +856,8 @@ CHECK_HOST () {
     remote_status_env=" UU_SCHEDULED_CHECK=true$remote_status_env"
   [[ "${UU_NONINTERACTIVE:-false}" == true ]] &&
     remote_status_env=" UU_NONINTERACTIVE=true$remote_status_env"
+  [[ "${UU_API_ACTION:-}" == check-all ]] &&
+    remote_status_env=" UU_API_ACTION=check-all$remote_status_env"
   # Stage guest-specific helpers with the remote worker. The check script
   # itself is streamed via stdin, so using helpers already installed on the
   # remote node could mix versions during a cluster-wide check.

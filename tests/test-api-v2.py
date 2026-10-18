@@ -202,8 +202,25 @@ with tempfile.TemporaryDirectory() as temporary:
 
         status, payload = fixture.request("/api/v1/check-all", t["check"], method="POST")
         assert status == 202 and payload["target"] == "all-systems"
+        global_check_call = fixture.httpd.calls[-1]
+        assert global_check_call["env"] == {
+            "UU_API_ACTION": "check-all",
+            "UU_JOB_SOURCE": "initial-inventory",
+            "UU_NONINTERACTIVE": "true",
+        }
+        assert global_check_call["args"][1:] == [
+            "start-check", "all-systems", str(fixture.cli), "all",
+        ]
         status, payload = fixture.request("/api/v1/check-node/test-node", t["check"], method="POST")
         assert status == 202 and payload["target"] == "test-node"
+        node_check_call = fixture.httpd.calls[-1]
+        assert node_check_call["env"]["UU_API_ACTION"] == "check"
+        assert node_check_call["env"]["UU_API_EXPECTED_TARGET_ID"] == "host:test-node"
+        assert node_check_call["env"]["UU_API_EXPECTED_TARGET_KIND"] == "host"
+        assert node_check_call["env"]["UU_API_EXPECTED_TARGET_NODE"] == "test-node"
+        assert node_check_call["args"][1:] == [
+            "start-check", "test-node", str(fixture.cli), "node",
+        ]
         before = len(fixture.httpd.calls)
         status, payload = fixture.request("/api/v1/check/host:test-node", t["check"], method="POST")
         assert status == 422 and payload["error"]["code"] == "USE_NODE_ACTION"

@@ -4793,7 +4793,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self._api_start_job(
                     [str(self.server.job_runner), "start-check", "all-systems", str(self.server.cli), "all"],
                     "all-systems", "check",
-                    {"UU_API_ACTION": "check", "UU_JOB_SOURCE": "initial-inventory", "UU_NONINTERACTIVE": "true"},
+                    {"UU_API_ACTION": "check-all", "UU_JOB_SOURCE": "initial-inventory", "UU_NONINTERACTIVE": "true"},
                 )
             elif route == "check":
                 target = parts[3]

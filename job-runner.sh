@@ -1108,7 +1108,11 @@ start_check_job() {
   [[ -n "${UU_JOB_SOURCE:-}" ]] && systemd_env+=("--setenv=UU_JOB_SOURCE=$UU_JOB_SOURCE")
   [[ "${UU_SCHEDULED_CHECK:-false}" == true ]] && systemd_env+=("--setenv=UU_SCHEDULED_CHECK=true")
   [[ "${UU_NONINTERACTIVE:-false}" == true ]] && systemd_env+=("--setenv=UU_NONINTERACTIVE=true")
-  [[ "${UU_API_ACTION:-}" == check ]] && systemd_env+=("--setenv=UU_API_ACTION=check")
+  case "${UU_API_ACTION:-}" in
+    check|check-all)
+      systemd_env+=("--setenv=UU_API_ACTION=${UU_API_ACTION}")
+      ;;
+  esac
   if [[ -n "${UU_API_EXPECTED_TARGET_ID:-}" ]]; then
     for identity_key in ID KIND NODE LOCAL; do
       identity_var="UU_API_EXPECTED_TARGET_${identity_key}"
