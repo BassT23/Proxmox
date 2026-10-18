@@ -2276,13 +2276,47 @@ def target_name(target):
     return f"{target_id} · {value}" if value and value != target_id else target_id
 
 def target_icon(target):
-    if target.get("type") == "host":
+    target_type = target.get("type")
+    if target_type == "host":
         return "🖥️"
-    if target.get("type") == "vm" and "windows" in str(target.get("os") or "").lower():
-        return "🪟"
-    if target.get("type") in ("lxc", "vm"):
+    if target_type == "external":
+        return "🌐"
+    if target_type == "lxc":
         return "🐧"
-    return "🌐"
+    if target_type != "vm":
+        return "🌐"
+
+    # Do not infer Linux merely because a VM has no successful OS probe.  A
+    # Windows updater or Windows Update Agent record is authoritative enough
+    # to retain the Windows icon even when the latest OS text is unavailable.
+    os_values = (
+        target.get("os"),
+        target.get("os_version"),
+        target.get("os_display"),
+        target.get("os_detail_display"),
+    )
+    os_text = " ".join(str(value) for value in os_values if value).lower()
+    windows_update = target.get("windows_update")
+    windows_source = (
+        str(windows_update.get("source") or "").lower()
+        if isinstance(windows_update, dict) else ""
+    )
+    updater = str(target.get("updater") or "").lower()
+    if "windows" in os_text or updater == "windows-update" or "windows update agent" in windows_source:
+        return "🪟"
+
+    # Existing non-Windows VM icon rules remain unchanged when a Unix-like OS
+    # or package updater is known.  An otherwise unclassified VM is neutral.
+    known_linux_updaters = {"apt", "dnf", "pkg", "pacman", "apk", "yum", "ha"}
+    known_os_markers = (
+        "linux", "debian", "ubuntu", "freebsd", "pfsense", "fedora",
+        "centos", "rhel", "rocky", "alma", "opensuse", "suse", "arch",
+        "alpine", "gentoo", "home assistant", "haos",
+    )
+    known_os = any(marker in os_text for marker in known_os_markers)
+    if known_os or updater in known_linux_updaters:
+        return "🐧"
+    return "❔"
 
 def short_error(target):
     error = target.get("error")
@@ -2438,14 +2472,16 @@ if run_type == "update":
         if is_host:
             hosts.append(target)
             continue
+        skip_message = check_skip_message(target)
+        if skip_message is not None:
+            guest_skipped.append(target)
+            continue
         if status == "offline" or reachable is False:
             guest_offline.append(target)
             continue
         result_status = update_status(target)
         if result_status == "warning":
             guest_warning.append(target)
-        elif result_status == "unknown" and check_skip_message(target) is not None:
-            guest_skipped.append(target)
         elif result_status == "unknown":
             guest_unavailable.append(target)
         elif result_status == "skipped":
@@ -2527,17 +2563,17 @@ for target in targets:
     if target.get("reboot_required") is True:
         reboots.append(target)
 
-    if status == "offline" or reachable is False:
+    skip_message = check_skip_message(target)
+    if skip_message is not None:
+        skipped.append(target)
+    elif status == "offline" or reachable is False:
         offline.append(target)
     elif status == "unsupported":
         unsupported.append(target)
     elif status == "error":
         errors.append((target, short_error(target)))
     elif status in ("not_checked", "skipped", "stopped"):
-        if check_skip_message(target) is not None:
-            skipped.append(target)
-        else:
-            not_checked.append(target)
+        not_checked.append(target)
 
 has_issues = bool(offline or unsupported or errors or not_checked)
 if updates or reboots:
