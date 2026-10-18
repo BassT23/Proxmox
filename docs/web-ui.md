@@ -15,6 +15,61 @@ HTTPS has no usable certificate, the documented transition fallback is HTTP;
 set `WEB_UI_HTTPS=true` when HTTPS must be required. Use the trusted
 management network; this is an action-enabled administrator interface.
 
+## Reverse proxy (explicit opt-in)
+
+Reverse-proxy origin handling is disabled by default. Direct access continues
+to compare the browser `Origin` with the request host and the actual Web UI
+scheme. For a proxy, configure both settings in the root-owned
+`/etc/ultimate-updater/web-ui.conf` and restart the Web UI service:
+
+```text
+WEB_UI_PUBLIC_ORIGIN="https://uu.example.invalid"
+WEB_UI_TRUSTED_PROXY_CIDRS="127.0.0.1/32"
+```
+
+`WEB_UI_PUBLIC_ORIGIN` is the exact public browser origin: HTTPS or HTTP, DNS
+name or IP address, and an optional non-default port, without a path or
+wildcard. It is authoritative for CSRF, login, WebAuthn, secure-cookie, and
+machine-API scheme checks. A configured public origin requires at least one
+explicit trusted proxy IP or CIDR in `WEB_UI_TRUSTED_PROXY_CIDRS`; hostnames,
+wildcards, empty list entries, duplicate entries, and invalid values are
+rejected at startup.
+
+When no public origin is configured, a request from a trusted proxy may use
+exactly one `X-Forwarded-Host` and one `X-Forwarded-Proto` header, or one
+`Forwarded` header containing an unambiguous `host` and `proto` pair. These
+headers are accepted only when the peer address is inside
+`WEB_UI_TRUSTED_PROXY_CIDRS`; direct clients cannot enable proxy mode by
+adding them. Duplicate, mixed, incomplete, malformed, or conflicting values
+are rejected. With `WEB_UI_PUBLIC_ORIGIN` configured, forwarded values are
+optional but, when present, must agree with that origin.
+
+The proxy must overwrite forwarded headers rather than pass through client
+values. For example, a local Nginx proxy can use:
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-Host $host;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_pass http://127.0.0.1:8765;
+```
+
+An HAProxy frontend can use the equivalent controlled headers:
+
+```haproxy
+http-request set-header X-Forwarded-Host %[req.hdr(host)]
+http-request set-header X-Forwarded-Proto https if { ssl_fc }
+http-request set-header X-Forwarded-Proto http unless { ssl_fc }
+server ultimate-updater 127.0.0.1:8765 check
+```
+
+The same contract applies to Caddy, Traefik, Nginx Proxy Manager, and other
+proxies: restrict backend access to the proxy, overwrite the forwarded
+headers, and configure the proxy's source address or network explicitly.
+Forwarded headers are never trusted from arbitrary public client requests.
+CSRF tokens, sessions, authentication, and WebAuthn validation remain
+required; proxy configuration is not a security bypass.
+
 ## Main areas
 
 - **Dashboard:** nodes, LXC/VM guests, external targets, reachability, update

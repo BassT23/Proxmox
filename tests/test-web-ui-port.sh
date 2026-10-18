@@ -11,7 +11,7 @@ printf 'WEB_UI_PORT=8876\n' > "$CONFIG"
 WEB_UI_CONFIG_FILE="$CONFIG" "$ROOT_DIR/web-ui-port.sh" ensure >/dev/null
 grep -Fxq 'WEB_UI_PORT=8876' "$CONFIG"
 
-printf 'WEB_UI_PORT=8876\nWEB_UI_HTTPS=auto\nWEB_UI_CERT_FILE=/etc/pve/local/pve-ssl.pem\nWEB_UI_KEY_FILE=/etc/pve/local/pve-ssl.key\nWEB_UI_PAM_USER=admin\n' > "$CONFIG"
+printf 'WEB_UI_PORT=8876\nWEB_UI_HTTPS=auto\nWEB_UI_CERT_FILE=/etc/pve/local/pve-ssl.pem\nWEB_UI_KEY_FILE=/etc/pve/local/pve-ssl.key\nWEB_UI_PAM_USER=admin\nWEB_UI_PUBLIC_ORIGIN=https://ui.example.test\nWEB_UI_TRUSTED_PROXY_CIDRS=127.0.0.1/32\n' > "$CONFIG"
 [[ "$(WEB_UI_CONFIG_FILE="$CONFIG" "$ROOT_DIR/web-ui-port.sh" get)" == 8876 ]]
 if [[ "$(id -u)" -eq 0 ]]; then
   WEB_UI_CONFIG_FILE="$CONFIG" "$ROOT_DIR/web-ui-port.sh" set 8877 >/dev/null
@@ -19,6 +19,8 @@ if [[ "$(id -u)" -eq 0 ]]; then
   grep -Fxq 'WEB_UI_CERT_FILE=/etc/pve/local/pve-ssl.pem' "$CONFIG"
   grep -Fxq 'WEB_UI_KEY_FILE=/etc/pve/local/pve-ssl.key' "$CONFIG"
   grep -Fxq 'WEB_UI_PAM_USER=admin' "$CONFIG"
+  grep -Fxq 'WEB_UI_PUBLIC_ORIGIN=https://ui.example.test' "$CONFIG"
+  grep -Fxq 'WEB_UI_TRUSTED_PROXY_CIDRS=127.0.0.1/32' "$CONFIG"
 fi
 
 for invalid in 0 65536 abc -1 8765x ''; do

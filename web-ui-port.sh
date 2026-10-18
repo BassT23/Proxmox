@@ -25,7 +25,7 @@ read_port() {
         value="${value#"${value%%[![:space:]]*}"}"
         value="${value%"${value##*[![:space:]]}"}"
         ;;
-      WEB_UI_HTTPS|WEB_UI_CERT_FILE|WEB_UI_KEY_FILE|WEB_UI_PAM_USER) ;;
+      WEB_UI_HTTPS|WEB_UI_CERT_FILE|WEB_UI_KEY_FILE|WEB_UI_PAM_USER|WEB_UI_PUBLIC_ORIGIN|WEB_UI_TRUSTED_PROXY_CIDRS) ;;
       *) printf 'Unsupported Web UI config key: %s\n' "$key" >&2; return 64 ;;
     esac
   done < "$WEB_UI_CONFIG_FILE"

@@ -8,6 +8,7 @@ import fcntl
 import hashlib
 import hmac
 import importlib.util
+import ipaddress
 import json
 import os
 import re
@@ -136,6 +137,8 @@ DEFAULT_PROXMOX_CERT = Path("/etc/pve/local/pve-ssl.pem")
 DEFAULT_PROXMOX_KEY = Path("/etc/pve/local/pve-ssl.key")
 DEFAULT_PROXMOX_CUSTOM_CERT = Path("/etc/pve/local/pveproxy-ssl.pem")
 DEFAULT_PROXMOX_CUSTOM_KEY = Path("/etc/pve/local/pveproxy-ssl.key")
+WEB_UI_PUBLIC_ORIGIN_ENV = "WEB_UI_PUBLIC_ORIGIN"
+WEB_UI_TRUSTED_PROXY_CIDRS_ENV = "WEB_UI_TRUSTED_PROXY_CIDRS"
 TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 JOB_RE = re.compile(r"^ultimate-updater-(?:update|check|reboot)-[A-Za-z0-9_.-]+$")
 API_JOB_RE = JOB_RE
@@ -158,6 +161,117 @@ API_STATUS_MAX_BYTES = 8 * 1024 * 1024
 API_LOG_MAX_BYTES = 64 * 1024
 API_ACTION_PERMISSIONS = frozenset({"check", "update", "reboot", "cancel"})
 API_TARGET_ID_RE = re.compile(r"^(?:(?:host|guest):)?[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+
+class ProxyConfigurationError(ValueError):
+    """Raised when the opt-in reverse-proxy origin configuration is unsafe."""
+
+
+def _valid_origin_hostname(hostname):
+    if not isinstance(hostname, str) or not hostname or len(hostname) > 253:
+        return False
+    if ":" in hostname:
+        try:
+            ipaddress.ip_address(hostname)
+        except ValueError:
+            return False
+        return True
+    return bool(re.fullmatch(
+        r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*",
+        hostname,
+    ))
+
+
+def _parse_host_authority(value):
+    if (not isinstance(value, str) or not value or value != value.strip() or len(value) > 255
+            or any(ord(character) < 0x21 or ord(character) == 0x7f for character in value)
+            or any(character in value for character in "/\\@?#,")):
+        raise ProxyConfigurationError("proxy host is invalid")
+    parsed = urlsplit(f"//{value}")
+    if (parsed.netloc != value or parsed.username is not None or parsed.password is not None
+            or parsed.path or parsed.query or parsed.fragment or not parsed.hostname):
+        raise ProxyConfigurationError("proxy host is invalid")
+    try:
+        port = parsed.port
+    except ValueError as error:
+        raise ProxyConfigurationError("proxy host port is invalid") from error
+    if port is not None and not 1 <= port <= 65535:
+        raise ProxyConfigurationError("proxy host port is invalid")
+    hostname = parsed.hostname.lower()
+    if not _valid_origin_hostname(hostname):
+        raise ProxyConfigurationError("proxy host is invalid")
+    if ":" in hostname:
+        authority = f"[{hostname}]"
+    else:
+        authority = hostname
+    if port is not None:
+        authority += f":{port}"
+    return authority, hostname, port
+
+
+def _origin_descriptor(value):
+    if (not isinstance(value, str) or not value or value != value.strip() or len(value) > 255
+            or any(ord(character) < 0x21 or ord(character) == 0x7f for character in value)):
+        raise ProxyConfigurationError("public origin is invalid")
+    parsed = urlsplit(value)
+    scheme = parsed.scheme.lower()
+    if (scheme not in {"http", "https"} or not parsed.netloc or parsed.path
+            or parsed.query or parsed.fragment):
+        raise ProxyConfigurationError("public origin must be an http(s) origin without a path")
+    authority, hostname, port = _parse_host_authority(parsed.netloc)
+    default_port = 443 if scheme == "https" else 80
+    canonical_port = "" if port in (None, default_port) else f":{port}"
+    canonical_host = f"[{hostname}]" if ":" in hostname else hostname
+    return {
+        "scheme": scheme,
+        "authority": authority,
+        "key": (scheme, hostname, port or default_port),
+        "canonical": f"{scheme}://{canonical_host}{canonical_port}",
+    }
+
+
+def parse_public_origin(value):
+    """Validate the explicit public browser origin, if configured."""
+    if value is None or not str(value).strip():
+        return None
+    return _origin_descriptor(str(value).strip())["canonical"]
+
+
+def parse_trusted_proxy_cidrs(value):
+    """Parse explicit proxy source networks; hostnames are never accepted."""
+    raw = "" if value is None else str(value).strip()
+    if not raw:
+        return ()
+    if len(raw) > 4096:
+        raise ProxyConfigurationError("trusted proxy configuration is too long")
+    networks = []
+    seen = set()
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            raise ProxyConfigurationError("trusted proxy configuration contains an empty entry")
+        try:
+            network = ipaddress.ip_network(item, strict=False)
+        except ValueError as error:
+            raise ProxyConfigurationError("trusted proxy entries must be IP addresses or CIDRs") from error
+        if network.prefixlen == 0:
+            raise ProxyConfigurationError("a wildcard trusted proxy network is not allowed")
+        key = network.with_prefixlen
+        if key in seen:
+            raise ProxyConfigurationError("trusted proxy configuration contains a duplicate entry")
+        seen.add(key)
+        networks.append(network)
+    return tuple(networks)
+
+
+def load_proxy_configuration():
+    public_origin = parse_public_origin(os.environ.get(WEB_UI_PUBLIC_ORIGIN_ENV, ""))
+    trusted_proxies = parse_trusted_proxy_cidrs(os.environ.get(WEB_UI_TRUSTED_PROXY_CIDRS_ENV, ""))
+    if public_origin and not trusted_proxies:
+        raise ProxyConfigurationError(
+            f"{WEB_UI_PUBLIC_ORIGIN_ENV} requires {WEB_UI_TRUSTED_PROXY_CIDRS_ENV}"
+        )
+    return public_origin, trusted_proxies
 
 
 def scheduler_unit_name(schedule_id):
@@ -3969,7 +4083,7 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def api_token_authorized(self, permission="read", legacy=False):
         """Authenticate a machine request without touching WebUI sessions."""
-        if not getattr(self.server, "tls_enabled", False):
+        if not self.request_is_secure():
             self.send_json(error_payload("HTTPS_REQUIRED", "Machine API access requires HTTPS."), HTTPStatus.SERVICE_UNAVAILABLE)
             return None
         token_file = getattr(self.server, "api_token_file", None)
@@ -4036,39 +4150,123 @@ class StatusHandler(BaseHTTPRequestHandler):
         else:
             self.send_json(summary)
 
+    def _header_values(self, name):
+        getter = getattr(self.headers, "get_all", None)
+        if getter is not None:
+            return list(getter(name, []) or [])
+        value = self.headers.get(name)
+        return [] if value is None else [value]
+
+    def _trusted_proxy_request(self):
+        networks = getattr(self.server, "trusted_proxy_networks", ())
+        try:
+            address = ipaddress.ip_address(self.client_address[0])
+        except (AttributeError, IndexError, ValueError):
+            return False
+        return any(address in network for network in networks)
+
+    def _forwarded_origin_descriptor(self):
+        """Return one unambiguous forwarded origin from a trusted proxy only."""
+        values = self._header_values("Forwarded")
+        x_forwarded_host = self._header_values("X-Forwarded-Host")
+        x_forwarded_proto = self._header_values("X-Forwarded-Proto")
+        if not values and not x_forwarded_host and not x_forwarded_proto:
+            return None
+        if not self._trusted_proxy_request():
+            # Forwarded headers from a direct client are deliberately ignored.
+            return None
+        if values and (x_forwarded_host or x_forwarded_proto):
+            raise ProxyConfigurationError("multiple forwarded origin formats are not allowed")
+        if values:
+            if len(values) != 1:
+                raise ProxyConfigurationError("duplicate Forwarded headers are not allowed")
+            raw = values[0].strip()
+            if not raw or "," in raw or any(ord(character) < 0x21 or ord(character) == 0x7f for character in raw):
+                raise ProxyConfigurationError("Forwarded header is invalid")
+            fields = {}
+            for part in raw.split(";"):
+                if "=" not in part:
+                    raise ProxyConfigurationError("Forwarded header is invalid")
+                key, value = (item.strip().lower() for item in part.split("=", 1))
+                if key not in {"by", "for", "host", "proto"} or not value or key in fields:
+                    raise ProxyConfigurationError("Forwarded header is invalid")
+                if any(character in value for character in '\"\\'):
+                    raise ProxyConfigurationError("Forwarded header is invalid")
+                fields[key] = value
+            if "host" not in fields or "proto" not in fields:
+                raise ProxyConfigurationError("Forwarded header must contain host and proto")
+            host = fields["host"]
+            proto = fields["proto"].lower()
+        else:
+            if len(x_forwarded_host) != 1 or len(x_forwarded_proto) != 1:
+                raise ProxyConfigurationError("duplicate or incomplete forwarded headers are not allowed")
+            host = x_forwarded_host[0].strip()
+            proto = x_forwarded_proto[0].strip().lower()
+            if not host or "," in host or not proto or "," in proto:
+                raise ProxyConfigurationError("forwarded headers are invalid")
+        if proto not in {"http", "https"}:
+            raise ProxyConfigurationError("forwarded protocol is invalid")
+        try:
+            authority, _, _ = _parse_host_authority(host)
+            return _origin_descriptor(f"{proto}://{authority}")
+        except ProxyConfigurationError:
+            raise ProxyConfigurationError("forwarded host is invalid")
+
+    def _effective_origin_descriptor(self):
+        """Resolve the origin used for CSRF and Proxmox browser-context checks."""
+        public_value = getattr(self.server, "public_origin", None)
+        try:
+            public = _origin_descriptor(public_value) if public_value else None
+            forwarded = self._forwarded_origin_descriptor()
+        except ProxyConfigurationError:
+            return None
+        if public:
+            # An explicit public origin is authoritative, but only a configured
+            # trusted proxy may use it.  This prevents a direct client from
+            # spoofing the public browser origin on an internal Host header.
+            if not self._trusted_proxy_request():
+                return None
+            if forwarded and forwarded["key"] != public["key"]:
+                return None
+            return public
+        if forwarded:
+            return forwarded
+        host_values = self._header_values("Host")
+        if len(host_values) != 1:
+            return None
+        try:
+            authority, _, _ = _parse_host_authority(host_values[0])
+            scheme = "https" if getattr(self.server, "tls_enabled", False) else "http"
+            return _origin_descriptor(f"{scheme}://{authority}")
+        except ProxyConfigurationError:
+            return None
+
     def same_origin(self):
-        origin = self.headers.get("Origin")
-        if not origin:
+        origins = self._header_values("Origin")
+        if len(origins) > 1:
+            return False
+        expected = self._effective_origin_descriptor()
+        if expected is None:
+            return False
+        if not origins:
             return True
-        host = self.headers.get("Host", "")
-        return origin in {f"http://{host}", f"https://{host}"}
+        try:
+            return _origin_descriptor(origins[0])["key"] == expected["key"]
+        except ProxyConfigurationError:
+            return False
 
     def proxmox_request_context(self):
         """Return a validated browser host/origin pair for Proxmox WebAuthn."""
-        host = self.headers.get("Host", "")
-        origin = self.headers.get("Origin")
-        if (not host or len(host) > 255 or any(ord(char) < 0x21 for char in host)
-                or any(char in host for char in "/\\@?#")):
+        if not self.same_origin():
             return None
-        parsed_host = urlsplit(f"//{host}")
-        if (not parsed_host.hostname or parsed_host.username is not None
-                or parsed_host.password is not None or parsed_host.path):
+        expected = self._effective_origin_descriptor()
+        if expected is None:
             return None
-        try:
-            parsed_host.port
-        except ValueError:
-            return None
-        if origin:
-            parsed_origin = urlsplit(origin)
-            if (parsed_origin.scheme not in {"http", "https"} or parsed_origin.netloc != host
-                    or parsed_origin.username is not None or parsed_origin.password is not None
-                    or parsed_origin.path or parsed_origin.query or parsed_origin.fragment):
-                return None
-            try:
-                parsed_origin.port
-            except ValueError:
-                return None
-        return host, origin
+        return expected["authority"], expected["canonical"] if self._header_values("Origin") else None
+
+    def request_is_secure(self):
+        expected = self._effective_origin_descriptor()
+        return bool(expected and expected["scheme"] == "https")
 
     def write_allowed(self):
         try:
@@ -6324,7 +6522,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             login = self.server.auth.login(username, password, realm, self.client_address[0], *request_context)
             if login.get("code") == "TFA_REQUIRED" and login.get("challenge_id"):
                 binding = login.pop("_tfa_binding")
-                secure = "; Secure" if getattr(self.server, "tls_enabled", False) or self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+                secure = "; Secure" if self.request_is_secure() else ""
                 cookie = f"UU_TFA={binding}; Path=/; Max-Age={AuthStore.TFA_SECONDS}; HttpOnly; SameSite=Strict{secure}"
                 self.send_json_with_cookie({key: value for key, value in login.items()
                                             if key not in {"ok", "_tfa_binding"}}, cookie)
@@ -6334,7 +6532,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                                HTTPStatus.UNAUTHORIZED)
                 return
             token, csrf = login["token"], login["csrf"]
-            secure = "; Secure" if getattr(self.server, "tls_enabled", False) or self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+            secure = "; Secure" if self.request_is_secure() else ""
             cookie = f"UU_SESSION={token}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; HttpOnly; SameSite=Lax{secure}"
             self.send_json_with_cookie({"authenticated": True, "username": username, "csrf": csrf}, cookie)
             return
@@ -6361,7 +6559,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self.send_json(error_payload(login.get("code", "TFA_FAILED"), login.get("message", "Two-factor authentication failed.")), status)
                 return
             token, csrf = login["token"], login["csrf"]
-            secure = "; Secure" if getattr(self.server, "tls_enabled", False) or self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+            secure = "; Secure" if self.request_is_secure() else ""
             cookie = f"UU_SESSION={token}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; HttpOnly; SameSite=Lax{secure}"
             clear_tfa = "UU_TFA=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
             self.send_json_with_cookies({"authenticated": True, "username": login["user"], "csrf": csrf}, [cookie, clear_tfa])
@@ -6933,8 +7131,15 @@ def main():
     except TLSConfigurationError as error:
         print(f"WebUI TLS configuration error: {error}", flush=True)
         raise SystemExit(78)
+    try:
+        public_origin, trusted_proxy_networks = load_proxy_configuration()
+    except ProxyConfigurationError as error:
+        print(f"WebUI reverse-proxy configuration error: {error}", flush=True)
+        raise SystemExit(78)
     server = ThreadingHTTPServer((args.bind, args.port), StatusHandler)
     server.tls_enabled = tls_context is not None
+    server.public_origin = public_origin
+    server.trusted_proxy_networks = trusted_proxy_networks
     if tls_context is not None:
         server.socket = tls_context.wrap_socket(server.socket, server_side=True)
     server.status_file, server.cli = args.status_file, args.cli
