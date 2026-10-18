@@ -16,6 +16,43 @@ Added:
   unsafe or unverifiable optional paths are rejected before guest start.
 - Opt-in automatic reboot handling with one-time legacy configuration migration
   and explicit Web UI confirmation.
+- Package freshness and package-status metadata for distinguishing document
+  freshness, target observation, successful package checks, and update history.
+
+Improved:
+- API check-all identity and target-context handling now separates global
+  dispatch from single-target validation while retaining node and remote
+  identity guards.
+- Inventory handling preserves valid targets including stopped LXCs and VMs
+  without a supported transport, and records the correct target names.
+- Update-result semantics distinguish completed updates from no-op, skipped,
+  unsupported, failed, and completed-with-warnings runs.
+- Status-mail and summary rendering is scoped to the current run, including
+  complete cluster, external, and remote results without duplicate guest
+  sections or stale update-result data.
+- Transient guest connectivity failures use a bounded read-only retry for
+  LXC and VM SSH/QGA checks.
+
+Fixed:
+- No-op runs and paths without actual package mutation are no longer reported
+  as successful updates.
+- Capability checks run before unnecessary snapshot, lifecycle, or guest
+  access, while supported update paths retain their existing safety gates.
+- Missing, failed, or incomplete post-update captures no longer produce a
+  completed result; completed-with-warnings is reserved for an executed update
+  with a capture warning.
+- Unknown VM operating systems are no longer rendered as Linux by default.
+- Windows icon and recognition fallback uses existing OS, updater, and Windows
+  Update Agent metadata without claiming full Windows update support.
+- Stopped or paused guests with a neutral skip are no longer presented as
+  offline solely because no package check was performed.
+
+Security/Safety:
+- Capability and unsupported paths remain fail-closed before mutation,
+  snapshots, or guest lifecycle actions.
+- Connectivity retry repeats only bounded, read-only connectivity probes.
+- Retry and preflight paths introduce no additional lifecycle, snapshot, or
+  update actions.
 
 **v5.1.3** (30.09.2026)
 
