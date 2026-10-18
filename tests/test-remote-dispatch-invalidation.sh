@@ -167,6 +167,50 @@ import_remote_fixture() {
     _ "$ROOT_DIR" "$fixture"
 }
 
+# Exercise the real successful-check record boundary used by a remote
+# post-update capture.  The worker already has the operation reservation, but
+# the check caller leaves the positional invalidation field empty.  The
+# common record helper must make the successful false provenance explicit so
+# the controller can safely complete its matching reservation.
+emit_remote_successful_check_record() {
+  local operation_id="$1" worker_status="$WORK_DIR/remote-worker-status.json"
+  python3 - "$worker_status" "$operation_id" <<'PY'
+import json
+import sys
+
+path, operation_id = sys.argv[1:]
+json.dump({"schema_version": 1, "targets": [{
+    "id": "200", "type": "vm", "node": "node2", "reachable": True,
+    "os": "Debian", "updater": "apt", "updates": {"available": 0},
+    "check_status": "ok", "package_mutation_generation": 1,
+    "package_mutation_in_progress": False,
+    "package_mutation_operation_id": operation_id,
+}]}, open(path, "w", encoding="utf-8"))
+PY
+  STATUS_MODEL_FILE="$worker_status" \
+  STATUS_MODEL_RECORD_FILE="$WORK_DIR/remote-worker.records" \
+  STATUS_MODEL_GENERATION_FILE="$WORK_DIR/remote-worker.generations" \
+  STATUS_MODEL_NODE=node2 LOCAL_FILES="$WORK_DIR" \
+  UU_PACKAGE_MUTATION_OPERATION_ID="$operation_id" \
+    bash -c '
+      set -e
+      source "$1/status-model.sh"
+      STATUS_MODEL_INIT
+      STATUS_MODEL_CAPTURE_TARGET_GENERATION 200
+      STATUS_MODEL_RECORD 200 vm ssh true Debian apt 0 false ok "" "" node2 vm-200 null null "" now "" "" "" ""
+      STATUS_MODEL_FINISH
+    ' _ "$ROOT_DIR"
+  python3 - "$worker_status" <<'PY'
+import json
+import sys
+
+item = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]
+assert item["package_data_invalidated"] is False
+assert item["package_mutation_operation_id"]
+PY
+  printf '%s\n' "$worker_status"
+}
+
 assert_controller_still_invalidated() {
   python3 - "$STATUS_MODEL_FILE" <<'PY'
 import json
@@ -187,6 +231,22 @@ cat > "$WORK_DIR/remote-missing-operation.json" <<'JSON'
 JSON
 import_remote_fixture "$WORK_DIR/remote-missing-operation.json" "$WORK_DIR/remote-missing-operation.records"
 assert_controller_still_invalidated
+
+# The successful check path must emit explicit false provenance.  Without the
+# fix this worker artifact has no package_data_invalidated field and the
+# controller remains conservatively invalidated.
+reset_controller_reservation uu-op-controller-20261017T123000 1
+worker_status=$(emit_remote_successful_check_record uu-op-controller-20261017T123000)
+import_remote_fixture "$worker_status" "$WORK_DIR/remote-worker.records.import"
+python3 - "$STATUS_MODEL_FILE" <<'PY'
+import json
+import sys
+
+item = next(x for x in json.load(open(sys.argv[1], encoding="utf-8"))["targets"] if x["id"] == "200")
+assert item["package_data_invalidated"] is False
+assert item["package_mutation_in_progress"] is False
+assert item["package_mutation_operation_id"] == "uu-op-controller-20261017T123000"
+PY
 
 reset_controller_reservation uu-op-controller-20261017T123000 1
 cat > "$WORK_DIR/remote-wrong-operation.json" <<'JSON'

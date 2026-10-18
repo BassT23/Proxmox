@@ -224,6 +224,17 @@ STATUS_MODEL_RECORD() {
   local package_mutation_operation_id="${21:-${UU_PACKAGE_MUTATION_OPERATION_ID:-${STATUS_MODEL_CHECK_OPERATION_ID:-}}}"
   local package_details_json="${22:-}"
   local status_metadata=""
+  # A successful check must carry explicit package provenance into remote
+  # status artifacts.  Remote completion is deliberately fail-closed when
+  # this Boolean is absent, so make the successful check contract explicit at
+  # the common record boundary instead of relying on every caller to remember
+  # the positional field.
+  if [[ -z "$package_data_invalidated" && "$package_checked_at" == now &&
+    "$reachable" == true ]]; then
+    case "$check_status" in
+      ok|updates_available) package_data_invalidated=false ;;
+    esac
+  fi
   if [[ -n "$package_checked_at" || -n "$package_data_invalidated" ||
     -n "$package_check_generation" || -n "$package_check_started_during_mutation" ||
     -n "$package_mutation_operation_id" || -n "$package_details_json" ]]; then
