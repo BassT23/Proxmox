@@ -31,6 +31,7 @@ declare -a PACKAGE_MUTATION_TARGETS=()
 declare -A PACKAGE_MUTATION_KEYS=()
 declare -A PACKAGE_MUTATION_OPERATIONS=()
 declare -A UPDATE_PENDING_BEFORE=()
+declare -A DPKG_REPAIR_CHECKED=()
 
 # Variable / Function
 LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
@@ -411,6 +412,125 @@ APT_COMMAND() {
   else
     apt-get "$@"
   fi
+}
+
+# Optional dpkg repair is deliberately a preflight, not a generic APT error
+# retry. dpkg --audit is read-only and only a non-empty successful result is
+# considered proof of an interrupted package configuration. Every transport
+# performs the same audit -> one repair -> audit sequence after its existing
+# safety gate and before the first APT command for that target.
+DPKG_REPAIR_TIMEOUT="${UU_DPKG_REPAIR_TIMEOUT:-120}"
+if [[ ! "$DPKG_REPAIR_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+  DPKG_REPAIR_TIMEOUT=120
+elif (( DPKG_REPAIR_TIMEOUT > 600 )); then
+  DPKG_REPAIR_TIMEOUT=600
+fi
+DPKG_REPAIR_ERROR=""
+
+# shellcheck disable=SC2329
+DPKG_REPAIR_RUN_LOCAL() {
+  local action="$1"
+  case "$action" in
+    audit)
+      timeout "$DPKG_REPAIR_TIMEOUT" dpkg --audit
+      ;;
+    repair)
+      timeout "$DPKG_REPAIR_TIMEOUT" env DEBIAN_FRONTEND=noninteractive \
+        dpkg --configure -a --force-confdef --force-confold
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+# shellcheck disable=SC2329
+DPKG_REPAIR_RUN_LXC() {
+  local action="$1" target="$2"
+  case "$action" in
+    audit)
+      UU_CHECK_PCT_COMMAND_TIMEOUT="$DPKG_REPAIR_TIMEOUT" \
+        RUN_PCT_COMMAND "$target" bash -c 'dpkg --audit'
+      ;;
+    repair)
+      UU_CHECK_PCT_COMMAND_TIMEOUT="$DPKG_REPAIR_TIMEOUT" \
+        RUN_PCT_COMMAND "$target" bash -c \
+        'DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confdef --force-confold'
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+# shellcheck disable=SC2329
+DPKG_REPAIR_RUN_SSH() {
+  local action="$1" host="$2" port="$3" user="$4"
+  case "$action" in
+    audit)
+      UU_SSH_COMMAND_TIMEOUT="$DPKG_REPAIR_TIMEOUT" \
+        RUN_SSH_COMMAND "$host" "$port" "$user" bash -c 'dpkg --audit'
+      ;;
+    repair)
+      UU_SSH_COMMAND_TIMEOUT="$DPKG_REPAIR_TIMEOUT" \
+        RUN_SSH_COMMAND "$host" "$port" "$user" bash -c \
+        'DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confdef --force-confold'
+      ;;
+    *) return 2 ;
+  esac
+}
+
+# shellcheck disable=SC2329
+DPKG_REPAIR_RUN_QGA() {
+  local action="$1" target="$2"
+  case "$action" in
+    audit)
+      RUN_QEMU_COMMAND "$target" --timeout "$DPKG_REPAIR_TIMEOUT" -- \
+        bash -c 'dpkg --audit'
+      ;;
+    repair)
+      RUN_QEMU_COMMAND "$target" --timeout "$DPKG_REPAIR_TIMEOUT" -- \
+        bash -c 'DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confdef --force-confold'
+      ;;
+    *) return 2 ;
+  esac
+}
+
+DPKG_REPAIR_PREPARE() {
+  local key="$1" label="$2" runner="$3" audit_output audit_rc
+  shift 3
+  DPKG_REPAIR_ERROR=""
+  [[ "${APT_AUTO_REPAIR_DPKG:-false}" == true ]] || return 0
+  [[ -n "${DPKG_REPAIR_CHECKED[$key]+set}" ]] && return 0
+  DPKG_REPAIR_CHECKED["$key"]=true
+
+  audit_rc=0
+  audit_output=$("$runner" audit "$@" 2>&1) || audit_rc=$?
+  if [[ "$audit_rc" -ne 0 ]]; then
+    # An unavailable read-only probe is not proof of a broken dpkg state.
+    # Leave the normal APT error handling in charge and never repair blindly.
+    printf 'DPKG_REPAIR_CHECK_UNAVAILABLE: %s\n' "$label"
+    return 0
+  fi
+  [[ -n "${audit_output//[[:space:]]/}" ]] || return 0
+
+  printf 'DPKG_REPAIR_BEGIN: %s\n' "$label"
+  if [[ "$key" == host:* ]]; then
+    printf 'DPKG_REPAIR_WARNING: the Proxmox host has no configured guest snapshot/backup gate.\n'
+  else
+    printf 'DPKG_REPAIR_INFO: existing snapshot/backup gate completed before repair.\n'
+  fi
+  if ! "$runner" repair "$@"; then
+    DPKG_REPAIR_ERROR="DPKG_REPAIR_FAILED"
+    printf '%s: %s\n' "$DPKG_REPAIR_ERROR" "$label" >&2
+    return 1
+  fi
+
+  audit_rc=0
+  audit_output=$("$runner" audit "$@" 2>&1) || audit_rc=$?
+  if [[ "$audit_rc" -ne 0 || -n "${audit_output//[[:space:]]/}" ]]; then
+    DPKG_REPAIR_ERROR="DPKG_REPAIR_FAILED"
+    printf '%s: %s (dpkg audit still reports an interrupted state)\n' \
+      "$DPKG_REPAIR_ERROR" "$label" >&2
+    return 1
+  fi
+  printf 'DPKG_REPAIR_COMPLETE: %s\n' "$label"
 }
 
 # Tag filter
@@ -1003,6 +1123,8 @@ READ_CONFIG () {
   EXIT_ON_ERROR=$(awk -F'"' '/^EXIT_ON_ERROR=/ {print $2}' "$CONFIG_FILE")
   REBOOT_IF_NEEDED=$(awk -F'"' '/^REBOOT_IF_NEEDED=/ {print $2; exit}' "$CONFIG_FILE")
   [[ "$REBOOT_IF_NEEDED" == true ]] || REBOOT_IF_NEEDED=false
+  APT_AUTO_REPAIR_DPKG=$(awk -F'"' '/^APT_AUTO_REPAIR_DPKG=/ {print $2; exit}' "$CONFIG_FILE")
+  [[ "$APT_AUTO_REPAIR_DPKG" == true ]] || APT_AUTO_REPAIR_DPKG=false
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' "$CONFIG_FILE")
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' "$CONFIG_FILE")
@@ -1694,6 +1816,14 @@ DIST_UPGRADE () {
         ERROR
         return 1
       fi
+      if ! DPKG_REPAIR_PREPARE "lxc:$CONTAINER" "LXC $CONTAINER" DPKG_REPAIR_RUN_LXC "$CONTAINER"; then
+        SAFETY_FAILURE=true
+        ERROR_CODE=1
+        ID=$CONTAINER
+        ERROR_MSG="${DPKG_REPAIR_ERROR:-DPKG_REPAIR_FAILED}"
+        ERROR
+        return 1
+      fi
       echo -e "${GR:-}⏩ Upgrade to Debian 13 (Trixie) now:${CL:-}"
       echo -e "${OR:-}--- Enable stop on error ---\n${CL:-}"
       set -e
@@ -2178,6 +2308,15 @@ UPDATE_HOST_ITSELF () {
     return 1
   }
   echo -e "${OR:-}--- PVE UPDATE ---${CL:-}" && pveupdate || true
+  if ! DPKG_REPAIR_PREPARE "host:$(hostname -s 2>/dev/null || hostname)" \
+      "Proxmox host (no snapshot/backup protection)" DPKG_REPAIR_RUN_LOCAL; then
+    ERROR_CODE=1
+    ID=$HOSTNAME
+    NAME=$HOSTNAME
+    ERROR_MSG="${DPKG_REPAIR_ERROR:-DPKG_REPAIR_FAILED}"
+    ERROR
+    return
+  fi
   if EFFECTIVE_HEADLESS; then
     echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}" && \
     RUN_UPDATE_COMMAND APT_COMMAND "${DPKG_OPTIONS[@]}" dist-upgrade -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
@@ -2390,6 +2529,14 @@ UPDATE_CONTAINER () {
   # Run update
   # shellcheck disable=SC2015
   if [[ "${OS,,}" =~ ubuntu|debian|devuan ]]; then
+    if ! DPKG_REPAIR_PREPARE "lxc:$CONTAINER" "LXC $CONTAINER" DPKG_REPAIR_RUN_LXC "$CONTAINER"; then
+      SAFETY_FAILURE=true
+      ERROR_CODE=1
+      ID=$CONTAINER
+      ERROR_MSG="${DPKG_REPAIR_ERROR:-DPKG_REPAIR_FAILED}"
+      ERROR
+      return 1
+    fi
     echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
     # Check APT in Container for Unifi before update
     if pct exec "$CONTAINER" -- bash -c "grep -rnw /etc/apt -e unifi >/dev/null 2>&1"; then
@@ -2765,6 +2912,13 @@ UPDATE_VM () {
         if [[ "$USER" != root ]]; then
           UPDATE_USER="sudo "
         fi
+        if ! DPKG_REPAIR_PREPARE "vm:$VM" "VM $VM via SSH" DPKG_REPAIR_RUN_SSH "$IP" "$SSH_VM_PORT" "$USER"; then
+          ERROR_CODE=1
+          ID=$VM
+          ERROR_MSG="${DPKG_REPAIR_ERROR:-DPKG_REPAIR_FAILED}"
+          ERROR
+          return
+        fi
         local apt_prefix="$UPDATE_USER"
         if EFFECTIVE_HEADLESS; then
           if [[ -n "$UPDATE_USER" ]]; then
@@ -2879,6 +3033,13 @@ UPDATE_VM_QEMU () {
       # Check Internet connection
       if ! (RUN_QEMU_COMMAND "$VM" -- bash -c "$CHECK_URL_EXE -q -c1 $CHECK_URL &>/dev/null"); then
         echo -e "${OR:-} ❌ Internet is not reachable - skip the update${CL:-}\n"
+        return
+      fi
+      if ! DPKG_REPAIR_PREPARE "vm:$VM" "VM $VM via QEMU Guest Agent" DPKG_REPAIR_RUN_QGA "$VM"; then
+        ERROR_CODE=1
+        ID=$VM
+        ERROR_MSG="${DPKG_REPAIR_ERROR:-DPKG_REPAIR_FAILED}"
+        ERROR
         return
       fi
       echo -e "${OR:-}--- APT UPDATE ---${CL:-}"

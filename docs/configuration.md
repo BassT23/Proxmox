@@ -58,6 +58,21 @@ per-invocation headless override. QEMU Guest Agent updates remain
 non-interactive because `qm guest exec` does not provide a guest stdin
 channel.
 
+`APT_AUTO_REPAIR_DPKG` is `false` by default. When explicitly enabled, the
+updater performs a bounded, read-only `dpkg --audit` probe immediately after
+the existing guest snapshot/backup gate and before an APT update. Only a
+clearly non-empty audit result is eligible for one
+`DEBIAN_FRONTEND=noninteractive dpkg --configure -a` repair attempt, followed
+by an audit verification. APT then follows its normal update and post-update
+capture path; a repair is not itself an update and cannot create a successful
+result for a no-op. Repair is limited to the local host, LXC `pct`, VM SSH,
+and VM QEMU Guest Agent APT paths. DNF/YUM, Pacman, APK, FreeBSD pkg,
+Windows, and External-APT paths are unchanged. A failed repair stops the
+target with `DPKG_REPAIR_FAILED` and does not retry APT. Guest repair runs only
+after the existing snapshot/backup safety gate; the Proxmox host may not have
+snapshot protection, which is reported in the job output. Enable this option
+only when running package maintainer scripts is explicitly desired.
+
 ## Snapshots and backups
 
 `SNAPSHOT`, `KEEP_SNAPSHOTS`, `BACKUP`, `BACKUP_MODE`, `BACKUP_LXC_MP`, and
