@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regression coverage for the optional dpkg-repair WebUI setting."""
 
+import re
 import sys
 from pathlib import Path
 
@@ -22,6 +23,8 @@ assert server.config_value_map(updated)["APT_AUTO_REPAIR_DPKG"] is True
 
 page = server.PAGE
 assert "APT_AUTO_REPAIR_DPKG" in page
+boolean_keys = re.search(r"const configBooleanKeys=\[(.*?)\];", page)
+assert boolean_keys and "'APT_AUTO_REPAIR_DPKG'" in boolean_keys.group(1)
 assert "Repair interrupted dpkg before APT updates" in page
 assert "dpkg --configure -a may run package configuration and maintainer scripts" in page
 assert "the Proxmox host may have no snapshot protection" in page
