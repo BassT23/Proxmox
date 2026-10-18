@@ -107,6 +107,90 @@ class Cache:
     assert json.loads(base64.b64decode(fields[5]).decode("utf-8")) == details
 
 
+with tempfile.TemporaryDirectory() as temporary:
+    fixture = Path(temporary)
+    (fixture / "apt.py").write_text(
+        """class Origin:
+    archive = 'stable-security'
+
+class Version:
+    def __init__(self, value):
+        self.version = value
+    @property
+    def origins(self):
+        return [Origin()]
+
+class Package:
+    is_upgradable = True
+    def __init__(self, name, old_version, new_version):
+        self.name = name
+        self.installed = Version(old_version)
+        self.candidate = Version(new_version)
+
+class Cache:
+    def __iter__(self):
+        return iter([
+            Package('zulu', '1', '2'),
+            Package('alpha', '3', '4'),
+        ])
+""",
+        encoding="utf-8",
+    )
+    helper = subprocess.run(
+        [sys.executable, str(ROOT / "apt-count.py")],
+        cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": str(fixture), "UU_PACKAGE_DETAILS": "1"},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert helper.returncode == 0, helper.stderr
+    fields = helper.stdout.strip().split("|")
+    assert fields[:5] == ["APT_COUNTS", "2", "0", "2", "true"]
+    assert json.loads(base64.b64decode(fields[5]).decode("utf-8")) == [
+        {"name": "alpha", "old_version": "3", "new_version": "4"},
+        {"name": "zulu", "old_version": "1", "new_version": "2"},
+    ]
+
+
+with tempfile.TemporaryDirectory() as temporary:
+    fixture = Path(temporary)
+    (fixture / "apt.py").write_text(
+        """class Origin:
+    archive = 'stable-security'
+
+class Version:
+    def __init__(self, value):
+        self.version = value
+    @property
+    def origins(self):
+        return [Origin()]
+
+class Package:
+    name = 'openssl'
+    is_upgradable = True
+    installed = None
+    candidate = Version('3.0.11-1+deb12u5')
+
+class Cache:
+    def __iter__(self):
+        return iter([Package()])
+""",
+        encoding="utf-8",
+    )
+    helper = subprocess.run(
+        [sys.executable, str(ROOT / "apt-count.py")],
+        cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": str(fixture), "UU_PACKAGE_DETAILS": "1"},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert helper.returncode == 0, helper.stderr
+    fields = helper.stdout.strip().split("|")
+    assert fields == ["APT_COUNTS", "1", "0", "1", "true"]
+
+
 # The status writer carries the normalized list in the existing optional
 # metadata object; no positional record layout or schema version is changed.
 with tempfile.TemporaryDirectory() as temporary:

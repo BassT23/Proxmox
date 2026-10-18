@@ -249,7 +249,7 @@ check_target() {
       package_details_json=""
       if [[ -n "$package_details_encoded" ]]; then
         package_details_json=$(printf '%s' "$package_details_encoded" | base64 -d 2>/dev/null || true)
-      elif [[ "$updates" == 0 && "$updater" == apt ]]; then
+      elif [[ "$updates" == 0 ]]; then
         package_details_json='[]'
       fi
       STATUS_MODEL_UPSERT "$EXTERNAL_TARGET" external ssh true "$os_name" "$os_version" "$updater" \

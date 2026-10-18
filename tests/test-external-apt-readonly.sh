@@ -15,7 +15,12 @@ if os.environ.get("APT_MODE") == "error":
 print("APT_COUNTS|1|1|0|true" if os.environ.get("APT_MODE") == "updates" else "APT_COUNTS|0|0|0|true")
 PY
 cat > "$WORK_DIR/rpm-count.py" <<'PY'
-print("UU_RPM_COUNTS|ok|2|null|null|false")
+import os
+
+if os.environ.get("RPM_MODE") == "zero":
+  print("UU_RPM_COUNTS|ok|0|null|null|false")
+else:
+  print("UU_RPM_COUNTS|ok|2|null|null|false")
 PY
 
 cat > "$WORK_DIR/fake-bin/ssh" <<'FAKE_SSH'
@@ -116,11 +121,12 @@ port=22
 CONFIG
 
 run_check() {
-  local target=$1 mode=$2 expected_rc=$3 expected_state=$4
+  local target=$1 mode=$2 expected_rc=$3 expected_state=$4 rpm_mode=${5:-updates}
   local status_file="$WORK_DIR/$target-status.json"
   local remote_os_release="$WORK_DIR/debian-os-release"
   [[ "$target" == dnf ]] && remote_os_release="$WORK_DIR/fedora-os-release"
-  APT_MODE="$mode" MUTATION_MARKER="$WORK_DIR/mutation" \
+  printf '{"%s":{"generation":0,"active":false,"operation_id":""}}\n' "$target" > "$WORK_DIR/$target-generation.json"
+  APT_MODE="$mode" RPM_MODE="$rpm_mode" MUTATION_MARKER="$WORK_DIR/mutation" \
     UU_REBOOT_REQUIRED_FILE="$WORK_DIR/no-reboot-required" \
     UU_REBOOT_REQUIRED_PACKAGES_FILE="$WORK_DIR/no-reboot-required.pkgs" \
     REMOTE_CONFIG="$WORK_DIR/external.conf" \
@@ -129,6 +135,7 @@ run_check() {
     TARGET_INVENTORY_SCRIPT="$ROOT_DIR/target-inventory.sh" \
     STATUS_MODEL_SCRIPT="$ROOT_DIR/status-model.sh" TARGET_RUNTIME_SCRIPT="$ROOT_DIR/target-runtime.sh" \
     STATUS_MODEL_FILE="$status_file" STATUS_MODEL_RECORD_FILE="$WORK_DIR/$target-records" \
+    STATUS_MODEL_GENERATION_FILE="$WORK_DIR/$target-generation.json" \
     RPM_COUNT_SCRIPT="$WORK_DIR/rpm-count.py" \
     REMOTE_OS_RELEASE="$remote_os_release" \
     SSH_ARGS_LOG="$WORK_DIR/$target-ssh.args" UU_SSH_COMMAND_TIMEOUT=1 "$ROOT_DIR/external-apt.sh" check "$target" > "$WORK_DIR/$target.out" 2>&1 || rc=$?
@@ -170,6 +177,7 @@ assert target["updates"]["available"] == 0
 assert target["normal_updates"] == 0
 assert target["security_updates"] == 0
 assert target["security_split_supported"] is True
+assert target["packages"] == []
 PY
 run_check error error 1 error
 run_check timeout updates 1 offline
@@ -213,6 +221,16 @@ assert target["updates"]["available"] == 2
 assert target["normal_updates"] is None
 assert target["security_updates"] is None
 assert target["security_split_supported"] is False
+assert target["packages"] is None
+PY
+run_check dnf zero 0 ok zero
+python3 - "$WORK_DIR/dnf-status.json" <<'PY'
+import json
+import sys
+
+target = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]
+assert target["updates"]["available"] == 0
+assert target["packages"] == []
 PY
 
 echo 'external apt read-only tests: PASS'
