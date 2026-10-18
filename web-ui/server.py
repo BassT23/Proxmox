@@ -4183,6 +4183,10 @@ class StatusHandler(BaseHTTPRequestHandler):
         return identity
 
     def handle_status_summary(self):
+        # The unversioned WebUI summary is a normal polling path as well.
+        # Reconciliation remains asynchronous and single-flight; this call
+        # does not start a job or perform any guest/lifecycle action.
+        self.schedule_remote_reconciliation()
         try:
             with self.server.status_file.open("rb") as source:
                 raw = source.read(4 * 1024 * 1024 + 1)
@@ -4783,6 +4787,11 @@ class StatusHandler(BaseHTTPRequestHandler):
         return bool(values)
 
     def _api_v1_status(self, include_power_state=False):
+        # Status polling is also a reconciliation trigger. Remote workers
+        # publish their terminal artifact asynchronously, so a status request
+        # must give the single-flight reconciler an opportunity to import it
+        # before projecting the central status model.
+        self.schedule_remote_reconciliation()
         payload = self._api_v1_status_file(self.server.status_file)
         current = datetime.now(timezone.utc)
         state, age = classify_timestamp(
@@ -4812,6 +4821,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         }
 
     def _api_v1_status_summary(self):
+        # Keep the summary endpoint consistent with the target-level status
+        # endpoint: polling must eventually converge a completed remote job.
+        self.schedule_remote_reconciliation()
         payload = self._api_v1_status_file(self.server.status_file)
         summary = build_status_summary(
             payload,
