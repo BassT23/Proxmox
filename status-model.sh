@@ -2182,21 +2182,35 @@ targets = payload.get("targets")
 if not isinstance(targets, list):
     raise SystemExit(1)
 
-try:
-    started = datetime.fromisoformat(run_started_at.replace("Z", "+00:00")) if run_started_at else None
-except (TypeError, ValueError):
-    started = None
+def parse_timestamp(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    # A run boundary without timezone information cannot safely distinguish
+    # current results from historical records.
+    return parsed if parsed.tzinfo is not None else None
+
+run_scope_requested = bool(run_started_at)
+started = parse_timestamp(run_started_at)
 
 def current_update_result(target):
-    if run_type != "update" or started is None:
+    if run_type != "update" or not run_scope_requested:
         return True
+    if started is None:
+        return False
     result = target.get("last_update")
     timestamp = result.get("timestamp") if isinstance(result, dict) else None
     if not timestamp:
         return False
+    result_time = parse_timestamp(timestamp)
+    if result_time is None:
+        return False
     try:
-        return datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")) >= started
-    except (TypeError, ValueError):
+        return result_time >= started
+    except TypeError:
         return False
 
 def target_matches_scope(target):
@@ -2257,6 +2271,8 @@ def target_name(target):
         return str(target.get("node") or target_id.removeprefix("host:"))
     if target_id.startswith("guest:"):
         target_id = target_id[6:]
+    elif target_id.startswith("external:"):
+        target_id = target_id[9:]
     return f"{target_id} · {value}" if value and value != target_id else target_id
 
 def target_icon(target):
@@ -2316,6 +2332,40 @@ def update_result(target):
     result = target.get("last_update")
     return result if isinstance(result, dict) else {}
 
+def update_result_has_evidence(target, result):
+    # Direct legacy renderer callers do not provide a run boundary.  Keep
+    # their established result interpretation; production update mail passes
+    # UPDATE_RUN_STARTED_AT and therefore takes the strict branch below.
+    if not run_scope_requested:
+        return True
+    pending_before = result.get("pending_before")
+    if isinstance(pending_before, bool) or not isinstance(pending_before, int):
+        pending_before = None
+    updated_packages = result.get("updated_packages")
+    if isinstance(updated_packages, bool) or not isinstance(updated_packages, int):
+        updated_packages = None
+    processed = result.get("processed")
+    if isinstance(processed, bool) or not isinstance(processed, int):
+        processed = None
+
+    if pending_before is None:
+        return (updated_packages is not None and updated_packages > 0) or \
+               (processed is not None and processed > 0)
+    if pending_before < 0:
+        return False
+    if pending_before == 0:
+        values = target.get("updates")
+        available = values.get("available") if isinstance(values, dict) else None
+        return target.get("check_status") in ("ok", "updates_available") and \
+               isinstance(available, int) and not isinstance(available, bool) and available == 0
+    if updated_packages is not None:
+        return updated_packages > 0
+    if processed is not None:
+        return processed > 0
+    # A positive pre-update count is sufficient evidence for the legacy
+    # backends that do not report a post-update package count.
+    return True
+
 def update_status(target):
     if not current_update_result(target):
         return "unknown"
@@ -2323,28 +2373,36 @@ def update_status(target):
     status = str(result.get("status") or "").lower()
     if status in ("failed", "interrupted"):
         return "failed"
-    if status in ("skipped", "unsupported"):
+    if status in ("skipped", "no-op", "no_op"):
         return "skipped"
+    if status == "unsupported":
+        return "unsupported"
+    if status == "completed_with_warnings":
+        return "warning" if update_result_has_evidence(target, result) else "unknown"
     if status in ("success", "completed"):
-        return "success"
+        return "success" if update_result_has_evidence(target, result) else "unknown"
     return "unknown"
 
 def update_line(target):
     result = update_result(target)
     if target.get("check_status") == "offline" or target.get("reachable") is False:
         return "⚠️", "Not reachable"
+    status = update_status(target)
+    if status == "warning":
+        return "⚠️", "Update completed with warnings"
+    if status == "failed":
+        return "❌", "Update failed"
+    if status == "unsupported":
+        return "💤", "Update unsupported"
+    if status == "success" and not update_result_has_evidence(target, result):
+        return "⚠️", "Result unavailable"
     skipped = check_skip_message(target)
     if skipped is not None:
         return "💤", skipped
-    status = update_status(target)
-    if status in ("skipped", "unsupported"):
-        if status == "unsupported":
-            return "💤", "Update unsupported"
+    if status == "skipped":
         if result.get("pending_before") == 0:
             return "💤", "No updates available"
         return "💤", "Update skipped"
-    if status == "failed":
-        return "❌", "Update failed"
     if status != "success":
         return "⚠️", "Result unavailable"
     if target.get("reboot_required") is True:
@@ -2369,6 +2427,8 @@ if run_type == "update":
     guest_offline = []
     guest_reboot = []
     guest_skipped = []
+    guest_warning = []
+    guest_unavailable = []
     for target in targets:
         if not isinstance(target, dict):
             continue
@@ -2381,14 +2441,19 @@ if run_type == "update":
         if status == "offline" or reachable is False:
             guest_offline.append(target)
             continue
-        if check_skip_message(target) is not None:
-            guest_skipped.append(target)
-            continue
         result_status = update_status(target)
-        if result_status == "failed":
-            guest_failed.append(target)
-        elif result_status in ("skipped", "unsupported"):
+        if result_status == "warning":
+            guest_warning.append(target)
+        elif result_status == "unknown" and check_skip_message(target) is not None:
             guest_skipped.append(target)
+        elif result_status == "unknown":
+            guest_unavailable.append(target)
+        elif result_status == "skipped":
+            guest_skipped.append(target)
+        elif result_status == "unsupported":
+            guest_skipped.append(target)
+        elif result_status == "failed":
+            guest_failed.append(target)
         elif result_status == "success":
             values = target.get("updates")
             available = values.get("available") if isinstance(values, dict) else None
@@ -2426,7 +2491,18 @@ if run_type == "update":
         for target in guest_skipped:
             _, skipped_message = update_line(target)
             lines.extend([f"💤 {target_icon(target)} {target_name(target)}", f"   {skipped_message}"])
-    print("STATE=issues" if any(update_status(target) == "failed" for target in hosts + guest_failed) or guest_offline else "STATE=updates")
+    if guest_warning:
+        lines.extend(["", "Update warnings:"])
+        for target in guest_warning:
+            _, warning_message = update_line(target)
+            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", f"   {warning_message}"])
+    if guest_unavailable:
+        lines.extend(["", "Results unavailable:"])
+        for target in guest_unavailable:
+            _, unavailable_message = update_line(target)
+            lines.extend([f"⚠️ {target_icon(target)} {target_name(target)}", f"   {unavailable_message}"])
+    print("STATE=issues" if any(update_status(target) == "failed" for target in hosts + guest_failed) or
+          guest_offline or guest_warning or guest_unavailable else "STATE=updates")
     print("\n".join(lines))
     raise SystemExit(0)
 

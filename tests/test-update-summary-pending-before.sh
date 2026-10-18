@@ -28,10 +28,9 @@ grep -Fq 'Updated – reboot required' "$WORK_DIR/rendered.txt"
 grep -Fq 'ext01' "$WORK_DIR/rendered.txt"
 [[ $(grep -Fc 'Guests:' "$WORK_DIR/rendered.txt") -eq 1 ]]
 
-# A legacy success result without pending_before is intentionally treated as
-# work completed rather than falsely inferred to be up to date.
-grep -Fq '🐧  unknown-before' "$WORK_DIR/rendered.txt" ||
-  grep -Fq 'unknown-before' "$WORK_DIR/rendered.txt"
+# Direct legacy renderer callers without a run boundary retain their historic
+# interpretation. Run-scoped mail uses the strict current-result checks.
+grep -A1 -F 'unknown-before' "$WORK_DIR/rendered.txt" | grep -Fq 'Successfully updated'
 
 # STATUS_MODEL_UPDATE_RESULT captures the pre-update count in the result.
 cat > "$WORK_DIR/write-status.json" <<'JSON'

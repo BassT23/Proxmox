@@ -17,7 +17,7 @@ cat >"$WORK_DIR/status.json" <<'JSON'
 {"schema_version":1,"targets":[
   {"id":"guest:201","type":"lxc","node":"node2","name":"updated","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-25T16:00:01Z","exit_code":0,"pending_before":0}},
   {"id":"external:e2e-ext","type":"external","name":"e2e-ext","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-25T16:00:02Z","exit_code":0,"pending_before":0}},
-  {"id":"guest:202","type":"lxc","node":"node1","name":"current","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-25T16:00:03Z","exit_code":0}},
+  {"id":"guest:202","type":"lxc","node":"node1","name":"current","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-25T16:00:03Z","exit_code":0,"pending_before":0}},
   {"id":"host:old","type":"host","node":"old","name":"old","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-23T11:00:00Z","exit_code":0,"pending_before":5}}
 ]}
 JSON
@@ -57,6 +57,6 @@ cat >"$WORK_DIR/legacy.json" <<'JSON'
 JSON
 LOCAL_FILES="$WORK_DIR" bash -c \
   'source "$1"; STATUS_MODEL_RENDER_NOTIFICATION "$2" update "" "" 2026-09-25T16:00:00Z' \
-  _ "$ROOT_DIR/status-model.sh" "$WORK_DIR/legacy.json" | grep -Fq 'Successfully updated'
+  _ "$ROOT_DIR/status-model.sh" "$WORK_DIR/legacy.json" | grep -Fq 'Result unavailable'
 
 echo 'update summary run-scope regression: PASS'
