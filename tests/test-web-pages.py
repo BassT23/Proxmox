@@ -17,13 +17,15 @@ assert 'data-page="scheduler"' in page
 assert 'href="/settings"' in page
 assert 'href="/api"' in page
 assert 'href="/scheduler"' in page
-assert page.count('class="nav-icon"') == 7
+assert page.count('class="nav-icon"') == 6
 assert 'class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"' in page
 assert '.dashboard-meta .page-nav a .nav-icon' in page
-assert 'href="#jobs" data-anchor="jobs"' in page
-assert '<span>Jobs</span>' in page
-assert '<span>API</span>' in page
-assert '<span>Logs</span>' not in page
+assert 'id="jobs"' in page
+primary_nav = page.split('<nav class="page-nav"', 1)[1].split('</nav>', 1)[0]
+assert 'href="#jobs" data-anchor="jobs"' not in primary_nav
+assert '<span>Jobs</span>' not in primary_nav
+assert '<span>API</span>' in primary_nav
+assert '<span>Logs</span>' not in primary_nav
 assert 'display:flex!important;align-items:center;gap:8px;min-width:0' in page
 assert 'id="logout-menu"' in page
 assert 'href="https://ko-fi.com/basst"' in page
@@ -31,6 +33,8 @@ assert 'target="_blank" rel="noopener noreferrer"' in page
 assert 'id="overview-page"' in page
 assert 'id="settings-page"' in page
 assert 'id="api-page"' in page
+assert 'id="api-development-banner"' in page
+assert 'API under development — endpoint names and semantics may change before release.' in page
 assert 'id="scheduler-page"' in page
 assert 'id="page-subtitle"' in page
 assert 'Automatic checks and updates using the existing Ultimate Updater safety rules.' in page
@@ -102,6 +106,11 @@ assert 'id="check-all"' in overview
 assert 'id="update-all"' in overview
 settings = page.split('id="settings-page"', 1)[1].split('id="api-page"', 1)[0]
 api = page.split('id="api-page"', 1)[1].split('id="scheduler-page"', 1)[0]
+api_banner = 'API under development — endpoint names and semantics may change before release.'
+assert api_banner in api
+assert api_banner not in overview
+assert api_banner not in settings
+assert api_banner not in page.split('id="scheduler-page"', 1)[1]
 assert 'id="config-form"' in settings
 assert 'class="management-form open"' in settings
 assert 'class="summary dashboard-kpis"' not in settings

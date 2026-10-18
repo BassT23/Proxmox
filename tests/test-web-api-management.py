@@ -77,8 +77,11 @@ with tempfile.TemporaryDirectory() as temporary:
         status, page = request_page(httpd, "/api")
         assert status == 200
         assert 'id="api-page"' in page
-        assert '<span>API</span>' in page
-        assert '<span>Logs</span>' not in page
+        assert 'API under development — endpoint names and semantics may change before release.' in page
+        primary_nav = page.split('<nav class="page-nav"', 1)[1].split('</nav>', 1)[0]
+        assert '<span>API</span>' in primary_nav
+        assert '<span>Jobs</span>' not in primary_nav
+        assert '<span>Logs</span>' not in primary_nav
 
         status, body = request(httpd, "GET", "/api/api-management")
         assert status == 401
