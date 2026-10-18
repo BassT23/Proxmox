@@ -56,6 +56,8 @@ cp "$ROOT_DIR/internal-ssh.sh" "$WORK_DIR/internal-ssh.sh"
 cp "$ROOT_DIR/target-runtime.sh" "$WORK_DIR/target-runtime.sh"
 awk '/^CHECK_VM \(\) \{/{copy=1} /^CHECK_VM_QEMU \(\) \{/{if(copy) exit} copy' \
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/check-vm.sh"
+awk '/^GUEST_INTERNET_PREFLIGHT_COMMAND\(\)/,/^# Wait for bootup/' \
+  "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/preflight-functions.sh"
 cat > "$WORK_DIR/internal-ssh.conf" <<'EOF'
 schema_version=1
 
@@ -72,9 +74,11 @@ set -euo pipefail
 LOCAL_FILES="$PWD"
 INTERNAL_SSH_CONFIG_FILE="$PWD/internal-ssh.conf"
 INITIAL_INVENTORY=true RDU=false VM=100
+CHECK_URL=example.invalid
 STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME=""
 GN='' BL='' CL=''
 LOG="$PWD/status.log"
+source "$PWD/preflight-functions.sh"
 source "$PWD/target-runtime.sh"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
 PRINT_UPDATE_TOTAL() { :; }

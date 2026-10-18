@@ -55,15 +55,19 @@ chmod 750 "$WORK_DIR/selector-harness.sh"
 # transport; hostnamectl is intentionally unavailable on this guest.
 awk '/^CHECK_VM \(\) \{/{copy=1} /^CHECK_VM_QEMU \(\) \{/{if(copy) exit} copy' \
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/check-vm.sh"
+awk '/^GUEST_INTERNET_PREFLIGHT_COMMAND\(\)/,/^# Wait for bootup/' \
+  "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/preflight-functions.sh"
 cat > "$WORK_DIR/ssh-harness.sh" <<'HARNESS'
 #!/bin/bash
 set -euo pipefail
 LOCAL_FILES="$PWD"
 INTERNAL_SSH_CONFIG_FILE="$PWD/internal-ssh.conf"
 INITIAL_INVENTORY=true RDU=false VM=100
+CHECK_URL=example.invalid
 STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME=""
 GN='' BL='' CL=''
 LOG="$PWD/ssh-result"
+source "$PWD/preflight-functions.sh"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
 PRINT_UPDATE_SPLIT() { :; }
 PRINT_UPDATE_TOTAL() { :; }
@@ -122,8 +126,10 @@ set -euo pipefail
 LOCAL_FILES="$PWD"
 INTERNAL_SSH_CONFIG_FILE="$PWD/internal-ssh.conf"
 INITIAL_INVENTORY=false RDU=false VM=100
+CHECK_URL=example.invalid
 STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME=""
 LOG="$PWD/disabled-result"
+source "$PWD/preflight-functions.sh"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
 INTERNAL_SSH_USE_IDENTITY() { :; }
 INTERNAL_SSH_RESOLVE_VM() { source "$PWD/internal-ssh.sh"; INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "$4"; }
@@ -165,8 +171,10 @@ set -euo pipefail
 LOCAL_FILES="$PWD"
 INTERNAL_SSH_CONFIG_FILE="$PWD/internal-ssh.conf"
 INITIAL_INVENTORY=false RDU=false VM=100
+CHECK_URL=example.invalid
 STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME=""
 LOG="$PWD/fallback-result"
+source "$PWD/preflight-functions.sh"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
 INTERNAL_SSH_USE_IDENTITY() { :; }
 INTERNAL_SSH_RESOLVE_VM() { source "$PWD/internal-ssh.sh"; INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "$4"; }
@@ -191,8 +199,10 @@ set -euo pipefail
 LOCAL_FILES="$PWD"
 INTERNAL_SSH_CONFIG_FILE="$PWD/internal-ssh.conf"
 INITIAL_INVENTORY=false RDU=false VM=100
+CHECK_URL=example.invalid
 STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME=""
 LOG="$PWD/windows-ssh-result"
+source "$PWD/preflight-functions.sh"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
 INTERNAL_SSH_USE_IDENTITY() { :; }
 INTERNAL_SSH_RESOLVE_VM() { source "$PWD/internal-ssh.sh"; INTERNAL_SSH_RESOLVE vm "$1" "$2" "$3" "$4"; }
@@ -222,11 +232,14 @@ chmod 750 "$WORK_DIR/windows-ssh-harness.sh"
 # check and must not run the Linux /bin/true probe.
 awk '/^CHECK_VM_QEMU \(\) \{/{copy=1} /^CHECK_VM_QEMU_WINDOWS \(\) \{/{if(copy) exit} copy' \
   "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/check-qemu.sh"
+awk '/^GUEST_INTERNET_PREFLIGHT_COMMAND\(\)/,/^# Wait for bootup/' \
+  "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/preflight-functions.sh"
 cat > "$WORK_DIR/qga-harness.sh" <<'HARNESS'
 #!/bin/bash
 set -euo pipefail
-VM=100 NAME=pfsense INITIAL_INVENTORY=true STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME="" CONFIG_FILE=/dev/null RDU=false
+VM=100 NAME=pfsense INITIAL_INVENTORY=true CHECK_URL=example.invalid STATUS_MODEL_NODE=test-node STATUS_MODEL_GUEST_NAME="" CONFIG_FILE=/dev/null RDU=false
 LOG="$PWD/qga-result"
+source "$PWD/preflight-functions.sh"
 SANITIZE_NUMBER() { printf '%s' "$1"; }
 PRINT_UPDATE_SPLIT() { :; }
 PRINT_UPDATE_TOTAL() { :; }

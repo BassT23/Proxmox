@@ -111,6 +111,8 @@ awk '
   /^CHECK_VM_QEMU_WINDOWS \(\) \{/ {if(copy) exit}
   copy
 ' "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/qga-function.sh"
+awk '/^GUEST_INTERNET_PREFLIGHT_COMMAND\(\)/,/^# Wait for bootup/' \
+  "$ROOT_DIR/check-updates.sh" > "$WORK_DIR/preflight-functions.sh"
 
 cat > "$WORK_DIR/qga-harness.sh" <<'HARNESS'
 #!/bin/bash
@@ -119,11 +121,13 @@ set -euo pipefail
 VM=120
 NAME=openclaw-debian
 INITIAL_INVENTORY=false
+CHECK_URL=example.invalid
 STATUS_MODEL_NODE=test-node
 STATUS_MODEL_GUEST_NAME=openclaw-debian
 REBOOT_REQUIRED=false
 GN='' BL='' CL='' OR='' RD=''
 LOG="$PWD/qga-result"
+source "$PWD/preflight-functions.sh"
 
 timeout() {
   shift

@@ -493,6 +493,7 @@ GUEST_INTERNET_PREFLIGHT_COMMAND() {
   printf '%s -q -c1 %s >/dev/null 2>&1' "$executable_q" "$url_q"
 }
 
+# shellcheck disable=SC2329  # invoked by GUEST_INTERNET_PREFLIGHT_RETRY
 GUEST_INTERNET_PREFLIGHT_PCT() {
   local command
   command=$(GUEST_INTERNET_PREFLIGHT_COMMAND) || return 1
@@ -500,6 +501,7 @@ GUEST_INTERNET_PREFLIGHT_PCT() {
     RUN_PCT_COMMAND "$1" sh -c "$command"
 }
 
+# shellcheck disable=SC2329  # invoked by GUEST_INTERNET_PREFLIGHT_RETRY
 GUEST_INTERNET_PREFLIGHT_SSH() {
   local command
   command=$(GUEST_INTERNET_PREFLIGHT_COMMAND) || return 1
@@ -507,11 +509,33 @@ GUEST_INTERNET_PREFLIGHT_SSH() {
     RUN_SSH_COMMAND "$1" "$2" "$3" "$command"
 }
 
+# shellcheck disable=SC2329  # invoked by GUEST_INTERNET_PREFLIGHT_RETRY
 GUEST_INTERNET_PREFLIGHT_QGA() {
   local command
   command=$(GUEST_INTERNET_PREFLIGHT_COMMAND) || return 1
   QEMU_GUEST_EXEC_READONLY "$1" --timeout "${UU_GUEST_PREFLIGHT_TIMEOUT:-5}" -- bash -c "$command"
   [[ "$QEMU_EXEC_TRANSPORT_RC" -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]
+}
+
+# A guest can be reachable while its network namespace, DNS, or route is still
+# settling.  Retry only the read-only connectivity probe, never the guest
+# lifecycle or package-count command.  Keep this deliberately fixed and
+# bounded so a transient probe failure cannot turn into an unbounded job wait.
+GUEST_INTERNET_PREFLIGHT_RETRY() {
+  local probe="${1:-}"
+  shift || true
+  [[ -n "$probe" ]] || return 1
+  declare -F "$probe" >/dev/null 2>&1 || return 1
+  declare -F GUEST_INTERNET_PREFLIGHT_COMMAND >/dev/null 2>&1 || return 1
+  # Missing/invalid local connectivity configuration is not transient and
+  # must not cause a second guest contact attempt.
+  GUEST_INTERNET_PREFLIGHT_COMMAND >/dev/null || return 1
+
+  if "$probe" "$@"; then
+    return 0
+  fi
+  sleep 1
+  "$probe" "$@"
 }
 
 # A host-only check may use the configured host connectivity probe.  Guest
@@ -1309,7 +1333,7 @@ CHECK_CONTAINER () {
     echo -e "${YL}Could not read hostname for LXC $CONTAINER; using ${NAME} as display name and continuing${CL}"
   fi
   NAME=$(printf '%s' "$NAME" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')
-  if ! GUEST_INTERNET_PREFLIGHT_PCT "$CONTAINER"; then
+  if ! GUEST_INTERNET_PREFLIGHT_RETRY GUEST_INTERNET_PREFLIGHT_PCT "$CONTAINER"; then
     GUEST_CONNECTIVITY_FAILURE LXC "$CONTAINER" "Internet connectivity check failed for LXC $CONTAINER" pct
     return $?
   fi
@@ -1805,7 +1829,7 @@ CHECK_VM () {
     CHECK_VM_QEMU
     return $?
   fi
-  if ! GUEST_INTERNET_PREFLIGHT_SSH "$IP" "$SSH_VM_PORT" "$USER"; then
+  if ! GUEST_INTERNET_PREFLIGHT_RETRY GUEST_INTERNET_PREFLIGHT_SSH "$IP" "$SSH_VM_PORT" "$USER"; then
     GUEST_CONNECTIVITY_FAILURE VM "$VM" "Internet connectivity check failed for VM $VM; package check skipped" ssh
     return $?
   fi
@@ -2122,7 +2146,7 @@ print(data.get("id") or "")
     return 1
   fi
   if [[ $QEMU_EXEC_TRANSPORT_RC -eq 0 && "$QEMU_EXEC_EXITCODE" -eq 0 ]]; then
-    if ! GUEST_INTERNET_PREFLIGHT_QGA "$VM"; then
+    if ! GUEST_INTERNET_PREFLIGHT_RETRY GUEST_INTERNET_PREFLIGHT_QGA "$VM"; then
       GUEST_CONNECTIVITY_FAILURE VM "$VM" "Internet connectivity check failed for VM $VM; package check skipped" qga
       return $?
     fi
