@@ -18,6 +18,16 @@ Added:
   and explicit Web UI confirmation.
 - Package freshness and package-status metadata for distinguishing document
   freshness, target observation, successful package checks, and update history.
+- Issue #378: additive API-v1 integration metadata now includes `os_display`,
+  managed-target filtering for `/api/v1/jobs`, and the read-only
+  `/api/v1/capabilities` endpoint for lifecycle and stopped-guest behavior;
+  API and schema versions remain `1`.
+- Issue #378: `/api/v1/status?include=power_state` optionally exposes the
+  current Proxmox `/cluster/resources` state with `source=proxmox` and
+  `observed_at`, securely maps VM/LXC/host targets, returns `null` for
+  External/Remote or invalid/ambiguous live data, never uses historical values
+  or changes persisted status, and leaves normal `/api/v1/status` polling
+  unchanged without the additional query.
 
 Improved:
 - API check-all identity and target-context handling now separates global
