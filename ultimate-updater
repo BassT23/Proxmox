@@ -823,32 +823,10 @@ CAPTURE_REMOTE_UPDATE_PENDING_BEFORE() {
   local target_id="$1" target_type="$2" target_node="$3"
   REMOTE_UPDATE_PENDING_TARGET="$target_id"
   REMOTE_UPDATE_PENDING_BEFORE=""
-  REMOTE_UPDATE_PENDING_BEFORE=$(python3 - "$STATUS_FILE" "$target_id" "$target_type" "$target_node" <<'PY'
-import json
-import sys
-
-status_file, target_id, target_type, target_node = sys.argv[1:]
-try:
-    with open(status_file, encoding="utf-8") as source:
-        payload = json.load(source)
-except (OSError, ValueError, TypeError):
-    raise SystemExit(1)
-if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
-    raise SystemExit(1)
-
-matches = [item for item in payload.get("targets", [])
-           if isinstance(item, dict) and str(item.get("id")) == target_id
-           and item.get("type") == target_type
-           and (target_type == "external" or item.get("node") == target_node)]
-if len(matches) != 1:
-    raise SystemExit(1)
-updates = matches[0].get("updates")
-available = updates.get("available") if isinstance(updates, dict) else None
-if type(available) is not int or available < 0:
-    raise SystemExit(1)
-print(available)
-PY
-  ) || REMOTE_UPDATE_PENDING_BEFORE=""
+  if declare -F STATUS_MODEL_CAPTURE_PACKAGE_BASELINE >/dev/null 2>&1; then
+    REMOTE_UPDATE_PENDING_BEFORE=$(STATUS_MODEL_CAPTURE_PACKAGE_BASELINE \
+      "$STATUS_FILE" "$target_id" "$target_type" "$target_node") || REMOTE_UPDATE_PENDING_BEFORE=""
+  fi
   return 0
 }
 

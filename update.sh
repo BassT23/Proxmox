@@ -100,27 +100,11 @@ CAPTURE_UPDATE_PENDING_BEFORE() {
     UPDATE_PENDING_BEFORE["$target"]="${UU_UPDATE_PENDING_BEFORE-}"
     return 0
   fi
-  count=$(python3 - "$status_file" "$target" <<'PY'
-import json
-import sys
-
-path, wanted = sys.argv[1:]
-try:
-    with open(path, encoding="utf-8") as source:
-        payload = json.load(source)
-except (OSError, ValueError, TypeError):
-    raise SystemExit(1)
-for item in payload.get("targets", []):
-    if isinstance(item, dict) and str(item.get("id")) == wanted:
-        updates = item.get("updates")
-        available = updates.get("available") if isinstance(updates, dict) else None
-        if isinstance(available, int) and not isinstance(available, bool) and available >= 0:
-            print(available)
-            raise SystemExit(0)
-        raise SystemExit(1)
-raise SystemExit(1)
-PY
-  ) || count=""
+  if declare -F STATUS_MODEL_CAPTURE_PACKAGE_BASELINE >/dev/null 2>&1; then
+    count=$(STATUS_MODEL_CAPTURE_PACKAGE_BASELINE "$status_file" "$target") || count=""
+  else
+    count=""
+  fi
   UPDATE_PENDING_BEFORE["$target"]="$count"
 }
 

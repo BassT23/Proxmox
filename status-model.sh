@@ -9,6 +9,101 @@ STATUS_MODEL_RECORD_FILE="${STATUS_MODEL_RECORD_FILE:-$LOCAL_FILES/.status-recor
 STATUS_MODEL_GENERATION_FILE="${STATUS_MODEL_GENERATION_FILE:-${STATUS_MODEL_RECORD_FILE}.generations}"
 STATUS_MODEL_NODE="${STATUS_MODEL_NODE:-${HOSTNAME:-}}"
 
+# Update baselines must come from a recent, successful package observation.
+# Keep this window aligned with the API package-freshness default while
+# allowing the already supported bounded API override to be used by local
+# callers that explicitly provide it.
+STATUS_MODEL_PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS=86400
+
+STATUS_MODEL_CAPTURE_PACKAGE_BASELINE() {
+  local status_file="$1" target_id="$2" target_type="${3:-}" target_node="${4:-}"
+  python3 - "$status_file" "$target_id" "$target_type" "$target_node" \
+    "${UU_API_PACKAGE_FRESHNESS_MAX_AGE_SECONDS:-$STATUS_MODEL_PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS}" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+
+status_file, target_id, target_type, target_node, configured_max_age = sys.argv[1:]
+try:
+    max_age = int(configured_max_age)
+except (TypeError, ValueError):
+    max_age = 86400
+if not 60 <= max_age <= 604800:
+    max_age = 86400
+
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+targets = payload.get("targets") if isinstance(payload, dict) else None
+if not isinstance(targets, list):
+    raise SystemExit(1)
+
+matches = []
+for item in targets:
+    if not isinstance(item, dict) or str(item.get("id")) != target_id:
+        continue
+    if target_type and item.get("type") != target_type:
+        continue
+    if target_type and target_type != "external" and item.get("node") != target_node:
+        continue
+    matches.append(item)
+if len(matches) != 1:
+    raise SystemExit(1)
+
+record = matches[0]
+updates = record.get("updates")
+available = updates.get("available") if isinstance(updates, dict) else None
+if type(available) is not int or available < 0:
+    raise SystemExit(1)
+if record.get("check_status") not in {"ok", "updates_available"}:
+    raise SystemExit(1)
+if record.get("reachable") is not True:
+    raise SystemExit(1)
+if record.get("package_data_invalidated") is True:
+    raise SystemExit(1)
+if record.get("package_mutation_in_progress") is True:
+    raise SystemExit(1)
+
+now = datetime.now(timezone.utc)
+timestamps = {}
+for field in ("last_check", "package_checked_at"):
+    value = record.get(field)
+    if not isinstance(value, str) or not value:
+        raise SystemExit(1)
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        raise SystemExit(1)
+    if stamp.tzinfo is None:
+        raise SystemExit(1)
+    age = (now - stamp.astimezone(timezone.utc)).total_seconds()
+    if age < -300 or age > max_age:
+        raise SystemExit(1)
+    timestamps[field] = stamp.astimezone(timezone.utc)
+
+# Legacy records have no explicit invalidation marker.  In that case a
+# non-neutral update result newer than the package observation makes the old
+# count unsafe to use as an update baseline.
+if "package_data_invalidated" not in record:
+    last_update = record.get("last_update")
+    if isinstance(last_update, dict):
+        update_status = str(last_update.get("status") or "").lower()
+        if update_status not in {"", "unknown", "pending"}:
+            update_value = last_update.get("timestamp")
+            try:
+                update_stamp = datetime.fromisoformat(str(update_value).replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                raise SystemExit(1)
+            if update_stamp.tzinfo is None or update_stamp.astimezone(timezone.utc) >= timestamps["package_checked_at"]:
+                raise SystemExit(1)
+
+print(available)
+PY
+}
+
 STATUS_MODEL_B64() {
   printf '%s' "${1:-}" | base64 | tr -d '\n'
 }

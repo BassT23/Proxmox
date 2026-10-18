@@ -157,19 +157,95 @@ fi
 [[ "$DPKG_REPAIR_ERROR" == DPKG_REPAIR_FAILED ]]
 [[ "$apt_calls" -eq 0 ]]
 
-# The controller-side capture is identity-bound and does not invent zero for
-# a missing, wrong-type, or wrong-node record.
-cat > "$WORK_DIR/controller-status.json" <<'JSON'
-{"schema_version":1,"targets":[
-  {"id":"928","type":"lxc","node":"Proxmox-Test-2","updates":{"available":0}},
-  {"id":"929","type":"vm","node":"Proxmox-Test-2","updates":{"available":4}}
+# The controller-side capture is identity- and freshness-bound. A current
+# package observation may provide zero, while an old or incomplete record
+# must not be converted into a synthetic no-op baseline.
+python3 - "$WORK_DIR/controller-status.json" "$WORK_DIR/controller-status-stale.json" <<'PY'
+import json
+import sys
+from datetime import datetime, timedelta, timezone
+
+now = datetime.now(timezone.utc)
+fresh = now.isoformat(timespec="microseconds").replace("+00:00", "Z")
+stale = (now - timedelta(days=2)).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+def record(identifier, kind, node, available, checked_at):
+    return {
+        "id": identifier, "type": kind, "node": node, "reachable": True,
+        "check_status": "ok", "updates": {"available": available},
+        "last_check": checked_at, "package_checked_at": checked_at,
+        "package_data_invalidated": False,
+        "package_mutation_in_progress": False,
+    }
+
+payload = {"schema_version": 1, "targets": [
+    record("928", "lxc", "Proxmox-Test-2", 0, fresh),
+    record("929", "vm", "Proxmox-Test-2", 4, fresh),
 ]}
-JSON
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(payload, output)
+stale_payload = {"schema_version": 1, "targets": [
+    record("928", "lxc", "Proxmox-Test-2", 0, stale),
+]}
+with open(sys.argv[2], "w", encoding="utf-8") as output:
+    json.dump(stale_payload, output)
+PY
+python3 - "$WORK_DIR/controller-status-newer-update.json" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+
+checked = (datetime.now(timezone.utc)).isoformat(timespec="microseconds").replace("+00:00", "Z")
+record = {
+    "id": "928", "type": "lxc", "node": "Proxmox-Test-2", "reachable": True,
+    "check_status": "ok", "updates": {"available": 0},
+    "last_check": checked, "package_checked_at": checked,
+    "last_update": {"status": "success", "timestamp": checked},
+}
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump({"schema_version": 1, "targets": [record]}, output)
+PY
 STATUS_FILE="$WORK_DIR/controller-status.json"
 source "$WORK_DIR/remote-capture.sh"
+LOCAL_FILES="$WORK_DIR"
+source "$ROOT_DIR/status-model.sh"
 CAPTURE_REMOTE_UPDATE_PENDING_BEFORE 928 lxc Proxmox-Test-2
 [[ "$REMOTE_UPDATE_PENDING_TARGET" == 928 ]]
 [[ "$REMOTE_UPDATE_PENDING_BEFORE" == 0 ]]
+CAPTURE_REMOTE_UPDATE_PENDING_BEFORE 929 vm Proxmox-Test-2
+[[ "$REMOTE_UPDATE_PENDING_BEFORE" == 4 ]]
+
+# A stale baseline is unavailable, not a valid zero baseline.
+STATUS_FILE="$WORK_DIR/controller-status-stale.json"
+CAPTURE_REMOTE_UPDATE_PENDING_BEFORE 928 lxc Proxmox-Test-2
+[[ -z "$REMOTE_UPDATE_PENDING_BEFORE" ]]
+
+# A legacy record with a newer non-neutral update result is also stale even
+# when both stored observation timestamps are otherwise recent.
+STATUS_FILE="$WORK_DIR/controller-status-newer-update.json"
+CAPTURE_REMOTE_UPDATE_PENDING_BEFORE 928 lxc Proxmox-Test-2
+[[ -z "$REMOTE_UPDATE_PENDING_BEFORE" ]]
+
+# The local capture uses the same guard and therefore cannot bypass it.
+declare -A UPDATE_PENDING_BEFORE=()
+STATUS_MODEL_FILE="$WORK_DIR/controller-status.json"
+source "$WORK_DIR/capture.sh"
+CAPTURE_UPDATE_PENDING_BEFORE 928
+[[ "${UPDATE_PENDING_BEFORE[928]}" == 0 ]]
+UPDATE_PENDING_BEFORE=()
+STATUS_MODEL_FILE="$WORK_DIR/controller-status-stale.json"
+CAPTURE_UPDATE_PENDING_BEFORE 928
+[[ -z "${UPDATE_PENDING_BEFORE[928]}" ]]
+
+# Missing timestamps remain unavailable even when the numeric count is zero.
+cat > "$WORK_DIR/controller-status-missing-timestamp.json" <<'JSON'
+{"schema_version":1,"targets":[{"id":"928","type":"lxc","node":"Proxmox-Test-2","reachable":true,"check_status":"ok","updates":{"available":0}}]}
+JSON
+STATUS_FILE="$WORK_DIR/controller-status-missing-timestamp.json"
+CAPTURE_REMOTE_UPDATE_PENDING_BEFORE 928 lxc Proxmox-Test-2
+[[ -z "$REMOTE_UPDATE_PENDING_BEFORE" ]]
+
+STATUS_FILE="$WORK_DIR/controller-status.json"
 CAPTURE_REMOTE_UPDATE_PENDING_BEFORE 928 vm Proxmox-Test-2
 [[ -z "$REMOTE_UPDATE_PENDING_BEFORE" ]]
 CAPTURE_REMOTE_UPDATE_PENDING_BEFORE 929 vm wrong-node
