@@ -36,8 +36,17 @@ Added:
   are deterministically sorted, and External DNF/YUM checks follow the same
   empty-list/null semantics; API and schema versions remain `1` and existing
   persistence, freshness, identity, and security semantics are unchanged.
+- Issue #378: the Web UI now provides a separate API management page with its
+  own `API` navigation entry, safe token metadata, one-time secret display,
+  authenticated CSRF-protected token revocation, and an overview of the
+  available API endpoints; API enable/disable remains CLI-only.
 
 Improved:
+- Issue #378: the separate Jobs navigation entry was removed while Jobs, Logs,
+  live output, and download functionality remain available through the
+  Overview; the API page displays the `API under development` banner with a
+  red background, black centered text, and a note that endpoint names and
+  semantics may change before release.
 - API check-all identity and target-context handling now separates global
   dispatch from single-target validation while retaining node and remote
   identity guards.
