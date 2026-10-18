@@ -47,23 +47,28 @@ class ApiFixture:
         self.runner = root / "job-runner.sh"
         self.config = root / "update.conf"
         self.update_script = root / "update.sh"
+        self.fixture_now = datetime.now(timezone.utc).replace(microsecond=0)
+        self.fixture_stamp = self.fixture_now.isoformat().replace("+00:00", "Z")
+        self.fixture_end_stamp = (self.fixture_now + timedelta(seconds=1)).isoformat().replace(
+            "+00:00", "Z"
+        )
         self.status.write_text(json.dumps({
             "schema_version": 1,
             "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "targets": [
                 {"id": "986", "name": "Windows <fixture>", "type": "vm", "node": "test-node",
                  "transport": "qga", "reachable": True, "os": "Windows Server 2025",
-                 "updater": "windows-update", "check_status": "ok", "last_check": "2026-10-17T10:00:00Z",
-                 "package_checked_at": "2026-10-17T10:00:00Z",
+                 "updater": "windows-update", "check_status": "ok", "last_check": self.fixture_stamp,
+                 "package_checked_at": self.fixture_stamp,
                  "package_data_invalidated": False,
                  "package_mutation_generation": 0,
                  "package_mutation_in_progress": False,
                  "updates": {"available": 0}, "normal_updates": None, "security_updates": None,
                  "security_split_supported": False, "reboot_required": False,
                  "last_update": {"status": "success", "result_code": 2, "processed": 5,
-                                 "timestamp": "2026-10-17T10:00:00Z",
+                                 "timestamp": self.fixture_stamp,
                                  "job_id": "ultimate-updater-update-986-fixture"},
-                 "windows_update": {"source": "Windows Update Agent", "queried_at": "2026-10-17T10:00:00Z",
+                 "windows_update": {"source": "Windows Update Agent", "queried_at": self.fixture_stamp,
                                     "history": [{"date": "2026-10-17", "kb": "KB1234567",
                                                  "title": "Title <escaped>", "operation": "Installation",
                                                  "result": "Succeeded", "result_code": 2, "hresult": "0x00000000"}]}},
@@ -83,7 +88,7 @@ class ApiFixture:
         self.update_script.chmod(0o750)
         self.jobs_output = (
             "ultimate-updater-check-986-fixture\t986\tcompleted\t"
-            "2026-10-17T10:00:00Z\t2026-10-17T10:00:01Z\t0\tcheck\t\tfalse\tfalse\n"
+            f"{self.fixture_stamp}\t{self.fixture_end_stamp}\t0\tcheck\t\tfalse\tfalse\n"
         )
         self.job_log = "safe fixture log\n"
         self.read_token = secrets.token_urlsafe(32)
@@ -241,7 +246,7 @@ with tempfile.TemporaryDirectory() as temporary:
         assert payload["targets"][0]["error"] is None
         assert payload["targets"][0]["skip_reason"] is None
         assert payload["targets"][0]["package_freshness"]["state"] == "current"
-        assert payload["targets"][0]["package_freshness"]["checked_at"] == "2026-10-17T10:00:00Z"
+        assert payload["targets"][0]["package_freshness"]["checked_at"] == fixture.fixture_stamp
         assert payload["targets"][1]["reachable"] is None
         assert payload["targets"][1]["error"] is None
         assert payload["targets"][1]["skip_reason"] == {
