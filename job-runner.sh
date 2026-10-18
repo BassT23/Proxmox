@@ -541,17 +541,29 @@ record = next((item for item in targets
 if record is None:
     raise SystemExit(0)
 
-if job_state == "completed" and exit_code == "0":
-    status = "success"
-elif job_state in {"completed_with_warnings", "skipped"}:
-    status = "skipped"
-else:
-    status = "failed"
 last_update = record.get("last_update")
 if not isinstance(last_update, dict):
     last_update = {}
 else:
     last_update = dict(last_update)
+effective_exit_code = int(exit_code)
+message = None
+if job_state == "completed" and exit_code == "0":
+    pending_before = last_update.get("pending_before")
+    if type(pending_before) is not int or pending_before < 0:
+        status = "failed"
+        effective_exit_code = 97 if "pending_before" in last_update else 96
+        code = "PENDING_BEFORE_INVALID" if "pending_before" in last_update else "PENDING_BEFORE_UNAVAILABLE"
+        message = f"{code}: pending_before baseline is not valid; update success cannot be proven"
+    elif pending_before == 0:
+        status = "skipped"
+        effective_exit_code = 10
+    else:
+        status = "success"
+elif job_state in {"completed_with_warnings", "skipped"}:
+    status = "skipped"
+else:
+    status = "failed"
 candidate_timestamp = finished or None
 current_timestamp = last_update.get("timestamp")
 if candidate_timestamp and current_timestamp:
@@ -570,8 +582,10 @@ if candidate_timestamp and current_timestamp:
 last_update.update({
     "status": status,
     "timestamp": candidate_timestamp,
-    "exit_code": int(exit_code),
+    "exit_code": effective_exit_code,
 })
+if message is not None:
+    last_update["message"] = message
 record["last_update"] = last_update
 directory = os.path.dirname(os.path.abspath(status_file)) or "."
 fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
@@ -589,6 +603,8 @@ except Exception:
     except FileNotFoundError:
         pass
     raise
+if message is not None:
+    raise SystemExit(effective_exit_code)
 PY
   local result=$?
   exec {status_lock_fd}>&-

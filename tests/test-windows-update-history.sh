@@ -122,7 +122,7 @@ assert history["history"][0]["hresult"] == -2145124329
 PY
 
 STATUS_MODEL_FILE="$WORK_DIR/status.json" bash -c \
-  'source "$1"; STATUS_MODEL_UPDATE_RESULT 155 success 0 2 true 5' _ "$ROOT_DIR/status-model.sh"
+  'source "$1"; STATUS_MODEL_UPDATE_RESULT 155 success 0 2 true 5 5' _ "$ROOT_DIR/status-model.sh"
 python3 - "$WORK_DIR/status.json" <<'PY'
 import json
 import sys

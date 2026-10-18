@@ -59,6 +59,11 @@ export HOSTNAME=test-node SSH_PORT=22 WILL_STOP=false
 source "$WORK_DIR/update-check.sh"
 # shellcheck disable=SC1090
 source "$STATUS_MODEL_SCRIPT"
+# UPDATE_CHECK is extracted from update.sh for this fixture, so provide the
+# same explicit baseline handoff as the full update path's result wrapper.
+RECORD_UPDATE_RESULT() {
+  STATUS_MODEL_UPDATE_RESULT "$1" "$2" "$3" "" "" "" 9
+}
 UPDATE_CHECK
 
 # The fake remote check above fails unless the command carries the partial

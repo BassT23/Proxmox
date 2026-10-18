@@ -22,7 +22,7 @@ PY
 
 # Checkpoint 1: external-apt's successful update result reaches status.json.
 LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
-  bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT ext01 success 0' \
+  bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT ext01 success 0 "" "" "" 2' \
   _ "$ROOT_DIR/status-model.sh"
 [[ "$(status_value)" == success ]]
 echo "EXTERNAL_AFTER_UPDATE_STATUS=$(status_value)"

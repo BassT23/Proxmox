@@ -76,7 +76,7 @@ grep -Fq '&nbsp;' "$WORK_DIR/captures/2.body"
 
 cat > "$WORK_DIR/status.json" <<'JSON'
 {"targets":[
-  {"id":"guest:986","type":"lxc","name":"mail-test","check_status":"updates_available","reachable":true,"updates":{"available":1},"last_update":{"status":"success","exit_code":0,"updated_packages":1}}
+  {"id":"guest:986","type":"lxc","name":"mail-test","check_status":"updates_available","reachable":true,"updates":{"available":1},"last_update":{"status":"success","exit_code":0,"updated_packages":1,"pending_before":1}}
 ]}
 JSON
 cat > "$WORK_DIR/update.conf" <<'EOF'

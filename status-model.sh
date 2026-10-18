@@ -1638,25 +1638,55 @@ if isinstance(existing_updates, dict):
     candidate = existing_updates.get("available")
     if isinstance(candidate, int) and not isinstance(candidate, bool):
         pending_before = candidate
-if pending_override:
+baseline_error = None
+effective_exit_code = int(exit_code)
+requires_baseline = update_status in {"success", "completed", "completed_with_warnings"}
+if requires_baseline:
+    # A result-time read of updates.available is not a baseline: a post-check
+    # may already have replaced it. Successful update states therefore need
+    # an explicit, validated pending_before supplied by the update path.
+    if not pending_override:
+        baseline_error = (
+            "PENDING_BEFORE_UNAVAILABLE",
+            96,
+            "pending_before baseline is missing; update success cannot be proven",
+        )
+    elif not pending_override.isdigit():
+        baseline_error = (
+            "PENDING_BEFORE_INVALID",
+            97,
+            "pending_before baseline is invalid; update success cannot be proven",
+        )
+    else:
+        pending_before = int(pending_override)
+elif pending_override:
     if not pending_override.isdigit():
         print("STATUS_MODEL_UPDATE_REJECTED_PENDING_COUNT", file=sys.stderr)
         raise SystemExit(95)
     pending_before = int(pending_override)
-effective_status = update_status
+effective_status = "failed" if baseline_error else update_status
+if baseline_error:
+    error_code, effective_exit_code, error_message = baseline_error
+    # Never expose the result-time count as if it were the missing baseline.
+    pending_before = None
+else:
+    error_code = ""
+    error_message = ""
 # A successful updater command with no pending packages is a valid no-op,
 # not an update success.  Keep the result explicit so job/API consumers do
 # not mistake a completed wrapper for a completed package mutation.
-if pending_override and effective_status in ("success", "completed") and pending_before == 0:
+if not baseline_error and pending_override and effective_status in ("success", "completed") and pending_before == 0:
     effective_status = "skipped"
-last_update = {"status": effective_status, "timestamp": timestamp, "exit_code": int(exit_code)}
+last_update = {"status": effective_status, "timestamp": timestamp, "exit_code": effective_exit_code}
 if pending_before is not None:
     last_update["pending_before"] = pending_before
-if result_code not in ("", "null"):
+if baseline_error:
+    last_update["message"] = f"{error_code}: {error_message}"
+elif result_code not in ("", "null"):
     last_update["result_code"] = int(result_code)
-if reboot_required in ("true", "false"):
+if not baseline_error and reboot_required in ("true", "false"):
     last_update["reboot_required"] = reboot_required == "true"
-if processed not in ("", "null"):
+if not baseline_error and processed not in ("", "null"):
     last_update["processed"] = int(processed)
 record["last_update"] = last_update
 payload["generated_at"] = timestamp
@@ -1677,9 +1707,18 @@ except Exception:
     except FileNotFoundError:
         pass
     raise
+if baseline_error:
+    print(f"{error_code}: {error_message}", file=sys.stderr)
+    raise SystemExit(effective_exit_code)
 PY
   local result=$?
   exec {status_lock_fd}>&-
+  if [[ "$result" == 96 || "$result" == 97 ]]; then
+    # Direct VM/QGA and legacy callers may intentionally ignore the function's
+    # return value. Keep the enclosing update fail-closed as well.
+    # shellcheck disable=SC2034 # consumed by the sourced update runner.
+    UPDATE_FAILURE=true
+  fi
   if [[ "$result" -eq 0 ]] && declare -p UPDATE_RESULT_RECORDED >/dev/null 2>&1; then
     local update_pending=""
     if declare -p UPDATE_PENDING_BEFORE >/dev/null 2>&1; then
@@ -2448,14 +2487,11 @@ def update_result(target):
     return result if isinstance(result, dict) else {}
 
 def update_result_has_evidence(target, result):
-    # Direct legacy renderer callers do not provide a run boundary.  Keep
-    # their established result interpretation; production update mail passes
-    # UPDATE_RUN_STARTED_AT and therefore takes the strict branch below.
-    if not run_scope_requested:
-        return True
     pending_before = result.get("pending_before")
     if isinstance(pending_before, bool) or not isinstance(pending_before, int):
-        pending_before = None
+        # A result without the update's explicit baseline is not evidence of
+        # a package mutation, even when a backend reports processed packages.
+        return False
     updated_packages = result.get("updated_packages")
     if isinstance(updated_packages, bool) or not isinstance(updated_packages, int):
         updated_packages = None
@@ -2463,9 +2499,6 @@ def update_result_has_evidence(target, result):
     if isinstance(processed, bool) or not isinstance(processed, int):
         processed = None
 
-    if pending_before is None:
-        return (updated_packages is not None and updated_packages > 0) or \
-               (processed is not None and processed > 0)
     if pending_before < 0:
         return False
     if pending_before == 0:

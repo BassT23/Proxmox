@@ -21,23 +21,23 @@ LOCAL_FILES="$WORK_DIR" bash -c 'source "$1"; STATUS_MODEL_RENDER_NOTIFICATION "
   _ "$ROOT_DIR/status-model.sh" "$WORK_DIR/status.json" > "$WORK_DIR/rendered.txt"
 
 grep -Fq 'Successfully updated' "$WORK_DIR/rendered.txt"
-[[ $(grep -Fc '   Successfully updated' "$WORK_DIR/rendered.txt") -eq 4 ]]
+[[ $(grep -Fc '   Successfully updated' "$WORK_DIR/rendered.txt") -eq 3 ]]
 grep -Fq '   Up to date' "$WORK_DIR/rendered.txt"
 grep -Fq '   Update failed' "$WORK_DIR/rendered.txt"
 grep -Fq 'Updated – reboot required' "$WORK_DIR/rendered.txt"
 grep -Fq 'ext01' "$WORK_DIR/rendered.txt"
 [[ $(grep -Fc 'Guests:' "$WORK_DIR/rendered.txt") -eq 1 ]]
 
-# Direct legacy renderer callers without a run boundary retain their historic
-# interpretation. Run-scoped mail uses the strict current-result checks.
-grep -A1 -F 'unknown-before' "$WORK_DIR/rendered.txt" | grep -Fq 'Successfully updated'
+# Missing baseline provenance is never treated as a successful mutation,
+# including for direct renderer callers without a run boundary.
+grep -A1 -F 'unknown-before' "$WORK_DIR/rendered.txt" | grep -Fq 'Result unavailable'
 
 # STATUS_MODEL_UPDATE_RESULT captures the pre-update count in the result.
 cat > "$WORK_DIR/write-status.json" <<'JSON'
 {"targets":[{"id":"ext01","type":"external","updates":{"available":5},"last_update":{"status":"unknown"}}]}
 JSON
 LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/write-status.json" \
-  bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT ext01 success 0' \
+  bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT ext01 success 0 "" "" "" 5' \
   _ "$ROOT_DIR/status-model.sh"
 python3 - "$WORK_DIR/write-status.json" <<'PY'
 import json

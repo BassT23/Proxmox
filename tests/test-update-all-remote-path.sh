@@ -30,14 +30,19 @@ import sys
 path = sys.argv[1]
 payload = json.load(open(path, encoding="utf-8"))
 for item in payload["targets"]:
-    item["last_update"] = {"status": "success", "timestamp": "2026-09-22T10:00:01Z", "exit_code": 0}
+    item["last_update"] = {
+        "status": "success",
+        "timestamp": "2026-09-22T10:00:01Z",
+        "exit_code": 0,
+        "pending_before": 0,
+    }
 json.dump(payload, open(path, "w", encoding="utf-8"))
 PY
 
 cat > "$WORK_DIR/remote-status.json" <<'JSON'
 {"schema_version":1,"targets":[
-  {"id":"host:node2","type":"host","node":"node2","name":"node2","os":"Proxmox","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"package_checked_at":"2026-09-22T10:00:05Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:05Z","exit_code":0}},
-  {"id":"200","type":"vm","node":"node2","name":"vm-200","check_status":"ok","reachable":true,"updates":{"available":0},"package_checked_at":"2026-09-22T10:00:06Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:06Z","exit_code":0}},
+  {"id":"host:node2","type":"host","node":"node2","name":"node2","os":"Proxmox","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"package_checked_at":"2026-09-22T10:00:05Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:05Z","exit_code":0,"pending_before":0}},
+  {"id":"200","type":"vm","node":"node2","name":"vm-200","check_status":"ok","reachable":true,"updates":{"available":0},"package_checked_at":"2026-09-22T10:00:06Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:06Z","exit_code":0,"pending_before":0}},
   {"id":"201","type":"lxc","node":"node2","name":"ct-201","check_status":"error","reachable":true,"updates":{"available":null},"last_update":{"status":"failed","timestamp":"2026-09-22T10:00:07Z","exit_code":42}},
   {"id":"250","type":"vm","node":"node2","name":"stale-vm-250","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-21T10:00:08Z","exit_code":0}},
   {"id":"251","type":"vm","node":"node2","name":"noninventory-vm-251","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:08Z","exit_code":0}},
@@ -100,6 +105,32 @@ source "$ROOT_DIR/status-model.sh"
 declare -a PACKAGE_MUTATION_TARGETS=()
 declare -A PACKAGE_MUTATION_KEYS=()
 UPDATE_HOST 10.0.0.2
+
+# The remote completion guard requires the exact controller operation ID in
+# every successful imported package result.  Read the ID reserved by the
+# exercised UPDATE_HOST path instead of weakening that guard with a fixture
+# constant.
+python3 - "$WORK_DIR/remote-status.json" "$WORK_DIR/local/status.json" <<'PY'
+import json
+import sys
+
+remote_path, controller_path = sys.argv[1:]
+with open(controller_path, encoding="utf-8") as handle:
+    controller = json.load(handle)
+operation_id = next(
+    target.get("package_mutation_operation_id")
+    for target in controller.get("targets", [])
+    if target.get("id") == "host:node2"
+)
+assert operation_id
+with open(remote_path, encoding="utf-8") as handle:
+    remote = json.load(handle)
+for target in remote.get("targets", []):
+    if target.get("id") in {"host:node2", "200"}:
+        target["package_mutation_operation_id"] = operation_id
+with open(remote_path, "w", encoding="utf-8") as handle:
+    json.dump(remote, handle)
+PY
 
 grep -Fxq apt-count.py "$WORK_DIR/scp.log"
 grep -Fxq rpm-count.py "$WORK_DIR/scp.log"

@@ -13,15 +13,15 @@ chmod 755 "$WORK_DIR/local/job-runner.sh" "$WORK_DIR/local/ultimate-updater"
 
 cat > "$WORK_DIR/local/status.json" <<'JSON'
 {"schema_version":1,"targets":[
-  {"id":"host:node1","type":"host","node":"node1","name":"node1","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:01Z","exit_code":0}},
-  {"id":"101","type":"vm","node":"node1","name":"vm-101","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:02Z","exit_code":0}},
-  {"id":"external-linux","type":"external","name":"external-linux","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:03Z","exit_code":0}}
+  {"id":"host:node1","type":"host","node":"node1","name":"node1","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:01Z","exit_code":0,"pending_before":0}},
+  {"id":"101","type":"vm","node":"node1","name":"vm-101","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:02Z","exit_code":0,"pending_before":0}},
+  {"id":"external-linux","type":"external","name":"external-linux","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:03Z","exit_code":0,"pending_before":0}}
 ]}
 JSON
 cat > "$WORK_DIR/remote-status.json" <<'JSON'
 {"schema_version":1,"targets":[
-  {"id":"host:node2","type":"host","node":"node2","name":"node2","os":"Proxmox","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"package_checked_at":"2026-09-22T10:00:05Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:05Z","exit_code":0}},
-  {"id":"200","type":"vm","node":"node2","name":"vm-200","check_status":"ok","reachable":true,"updates":{"available":0},"package_checked_at":"2026-09-22T10:00:06Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:06Z","exit_code":0}},
+  {"id":"host:node2","type":"host","node":"node2","name":"node2","os":"Proxmox","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"package_checked_at":"2026-09-22T10:00:05Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:05Z","exit_code":0,"pending_before":0}},
+  {"id":"200","type":"vm","node":"node2","name":"vm-200","check_status":"ok","reachable":true,"updates":{"available":0},"package_checked_at":"2026-09-22T10:00:06Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:06Z","exit_code":0,"pending_before":0}},
   {"id":"201","type":"lxc","node":"node2","name":"ct-201","check_status":"error","reachable":true,"updates":{"available":null},"last_update":{"status":"failed","timestamp":"2026-09-22T10:00:07Z","exit_code":42}}
 ]}
 JSON
@@ -47,6 +47,12 @@ else
 fi
 SSH
 chmod 755 "$WORK_DIR/bin/ssh"
+cat > "$WORK_DIR/bin/mail" <<'MAIL'
+#!/usr/bin/env bash
+cat >/dev/null
+MAIL
+chmod 755 "$WORK_DIR/bin/mail"
+export PATH="$WORK_DIR/bin:$PATH"
 cat > "$WORK_DIR/update-fails.sh" <<'EOF'
 #!/usr/bin/env bash
 exit 1

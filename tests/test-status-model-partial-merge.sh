@@ -54,7 +54,7 @@ printf '%s\n' '{broken-json' > "$WORK_DIR/status.json"
 if LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
   bash -c '
     source "$1"
-    STATUS_MODEL_UPDATE_RESULT 3 success 0
+    STATUS_MODEL_UPDATE_RESULT 3 success 0 "" "" "" 9
   ' _ "$ROOT_DIR/status-model.sh" 2>/dev/null; then
   echo 'invalid update state unexpectedly succeeded' >&2
   exit 1

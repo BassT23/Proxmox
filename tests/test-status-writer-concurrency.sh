@@ -31,8 +31,8 @@ write_status() {
   cat > "$file" <<'JSON'
 {"schema_version":1,"targets":[
   {"id":"ext01","type":"external","transport":"ssh","reachable":true,"updates":{"available":5},"last_update":{"status":"unknown","timestamp":null}},
-  {"id":"201","type":"lxc","node":"node2","reachable":true,"updates":{"available":1},"last_update":{"status":"unknown","timestamp":null}},
-  {"id":"202","type":"vm","node":"node2","reachable":true,"updates":{"available":1},"last_update":{"status":"unknown","timestamp":null}}
+  {"id":"201","type":"lxc","node":"node2","reachable":true,"updates":{"available":1},"last_update":{"status":"unknown","timestamp":null,"pending_before":1}},
+  {"id":"202","type":"vm","node":"node2","reachable":true,"updates":{"available":1},"last_update":{"status":"unknown","timestamp":null,"pending_before":1}}
 ]}
 JSON
 }
@@ -60,7 +60,7 @@ run_sync() {
 run_update_result() {
   local file="$1" status="${2:-success}" code="${3:-0}"
   LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$file" \
-    bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT ext01 "$2" "$3"' \
+    bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT ext01 "$2" "$3" "" "" "" 5' \
     _ "$SOURCE_ROOT/status-model.sh" "$status" "$code"
 }
 
@@ -99,7 +99,7 @@ rm -f -- "$WORK_DIR/ready" "$WORK_DIR/release"
 PYTHONPATH="$WORK_DIR" UU_TEST_PAUSE_DESTINATION="$WORK_DIR/status.json" \
   UU_TEST_READY="$WORK_DIR/ready" UU_TEST_RELEASE="$WORK_DIR/release" \
   LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
-  bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT ext01 success 0' \
+  bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT ext01 success 0 "" "" "" 5' \
   _ "$SOURCE_ROOT/status-model.sh" &
 update_pid=$!
 wait_ready

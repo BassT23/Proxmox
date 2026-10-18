@@ -18,18 +18,18 @@ cat > "$WORK_DIR/local/status.json" <<'JSON'
 JSON
 cat > "$WORK_DIR/update-snapshot.json" <<'JSON'
 {"schema_version":1,"targets":[
-  {"id":"host:node1","last_update":{"status":"success","timestamp":"2026-09-22T10:00:01Z","exit_code":0}},
-  {"id":"101","last_update":{"status":"success","timestamp":"2026-09-22T10:00:02Z","exit_code":0}},
-  {"id":"external-linux","last_update":{"status":"success","timestamp":"2026-09-22T10:00:03Z","exit_code":0}},
-  {"id":"stale-target","last_update":{"status":"success","timestamp":"2026-09-22T10:00:04Z","exit_code":0}}
+  {"id":"host:node1","last_update":{"status":"success","timestamp":"2026-09-22T10:00:01Z","exit_code":0,"pending_before":1}},
+  {"id":"101","last_update":{"status":"success","timestamp":"2026-09-22T10:00:02Z","exit_code":0,"pending_before":2}},
+  {"id":"external-linux","last_update":{"status":"success","timestamp":"2026-09-22T10:00:03Z","exit_code":0,"pending_before":0}},
+  {"id":"stale-target","last_update":{"status":"success","timestamp":"2026-09-22T10:00:04Z","exit_code":0,"pending_before":1}}
 ]}
 JSON
 cat > "$WORK_DIR/remote-work/status.json" <<'JSON'
 {"schema_version":1,"targets":[
-  {"id":"host:node2","type":"host","node":"node2","name":"node2","os":"Proxmox","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"package_checked_at":"2026-09-22T10:00:05Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:05Z","exit_code":0}},
-  {"id":"200","type":"vm","node":"node2","name":"vm-200","check_status":"ok","reachable":true,"updates":{"available":0},"package_checked_at":"2026-09-22T10:00:06Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:06Z","exit_code":0}},
+  {"id":"host:node2","type":"host","node":"node2","name":"node2","os":"Proxmox","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"package_checked_at":"2026-09-22T10:00:05Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:05Z","exit_code":0,"pending_before":1}},
+  {"id":"200","type":"vm","node":"node2","name":"vm-200","check_status":"ok","reachable":true,"updates":{"available":0},"package_checked_at":"2026-09-22T10:00:06Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:06Z","exit_code":0,"pending_before":1}},
   {"id":"201","type":"lxc","node":"node2","name":"ct-201","check_status":"error","reachable":true,"updates":{"available":null},"last_update":{"status":"failed","timestamp":"2026-09-22T10:00:07Z","exit_code":42}},
-  {"id":"999","type":"vm","node":"node3","name":"foreign","check_status":"ok","reachable":true,"updates":{"available":0},"package_checked_at":"2026-09-22T10:00:08Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:08Z","exit_code":0}}
+  {"id":"999","type":"vm","node":"node3","name":"foreign","check_status":"ok","reachable":true,"updates":{"available":0},"package_checked_at":"2026-09-22T10:00:08Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:08Z","exit_code":0,"pending_before":1}}
 ]}
 JSON
 printf '0\n' > "$WORK_DIR/remote-work/post-update-status.rc"
