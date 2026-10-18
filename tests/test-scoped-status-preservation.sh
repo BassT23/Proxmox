@@ -42,7 +42,7 @@ cat > "$WORK_DIR/status.json" <<'JSON'
     {"id":"node1","type":"host","check_status":"success"},
     {"id":"node2","type":"host","check_status":"success"},
     {"id":"100","type":"vm","check_status":"success","updates":2},
-    {"id":"155","type":"vm","check_status":"success","updates":4,
+    {"id":"155","type":"vm","check_status":"ok","updates":4,
      "last_update":{"status":"success","timestamp":"2026-10-10T10:00:00Z","exit_code":0}}
   ]
 }
@@ -57,7 +57,8 @@ STATUS_MODEL_RECORD_FILE="$PWD/status.records"
 STATUS_MODEL_SCRIPT="$PWD/status-model.sh"
 source "$STATUS_MODEL_SCRIPT"
 STATUS_MODEL_INIT
-STATUS_MODEL_RECORD 155 vm qga true 'Windows Server 2025' windows-update 0 false success '' '' node1 '' null null
+STATUS_MODEL_CAPTURE_TARGET_GENERATION 155
+STATUS_MODEL_RECORD 155 vm qga true 'Windows Server 2025' windows-update 0 false ok '' '' node1 '' null null "" now
 STATUS_MODEL_PARTIAL=true STATUS_MODEL_FINISH
 HARNESS
 cp "$ROOT_DIR/status-model.sh" "$WORK_DIR/status-model.sh"
@@ -73,7 +74,7 @@ assert set(targets) == {"node1", "node2", "100", "155"}
 assert targets["node1"]["check_status"] == "success"
 assert targets["node2"]["check_status"] == "success"
 assert targets["100"]["updates"] == 2
-assert targets["155"]["check_status"] == "success"
+assert targets["155"]["check_status"] == "ok"
 assert targets["155"]["updates"]["available"] == 0
 assert targets["155"]["last_update"]["exit_code"] == 0
 PY

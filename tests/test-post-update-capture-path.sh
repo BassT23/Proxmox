@@ -41,7 +41,8 @@ printf '%s\n' "$UU_REMOTE_DEFER_STATUS_FINISH" > "$WORK_DIR/defer-value"
 printf '%s\n' "$STATUS_MODEL_SCRIPT" > "$WORK_DIR/status-script"
 . "$STATUS_MODEL_SCRIPT"
 STATUS_MODEL_INIT
-STATUS_MODEL_RECORD 191 lxc pct true ubuntu ubuntu 0 false ok "" "" node3 Testing-2
+STATUS_MODEL_CAPTURE_TARGET_GENERATION 191
+STATUS_MODEL_RECORD 191 lxc pct true ubuntu ubuntu 0 false ok "" "" node3 Testing-2 null null "" now
 STATUS_MODEL_FINISH
 exit 0
 EOF

@@ -85,6 +85,9 @@ load_target() {
       return 46
     }
   fi
+  if declare -f STATUS_MODEL_CAPTURE_TARGET_GENERATION >/dev/null 2>&1; then
+    STATUS_MODEL_CAPTURE_TARGET_GENERATION "$target" || true
+  fi
 }
 
 remote_check() {
@@ -244,7 +247,7 @@ check_target() {
       local state=ok
       [[ "$updates" -gt 0 || "$reboot" == true ]] && state=updates_available
       STATUS_MODEL_UPSERT "$EXTERNAL_TARGET" external ssh true "$os_name" "$os_version" "$updater" \
-        "$updates" "$reboot" "$state" "" "" "$normal_updates" "$security_updates" "$security_split_supported"
+        "$updates" "$reboot" "$state" "" "" "$normal_updates" "$security_updates" "$security_split_supported" now
       printf '%s: %s, %s updates, reboot_required=%s\n' "$EXTERNAL_TARGET" "$os_name" "$updates" "$reboot"
       ;;
     unsupported|error)
@@ -349,7 +352,7 @@ REMOTE_UPDATE
 }
 
 update_target() {
-  local output rc code
+  local output rc code operation_id="${UU_PACKAGE_MUTATION_OPERATION_ID:-}"
   local -a safety_args=("$EXTERNAL_SAFETY_SCRIPT" check "$EXTERNAL_TARGET")
   if [[ "${UU_EXTERNAL_BACKUP_OVERRIDE:-false}" == true ]]; then
     safety_args+=(--override)
@@ -358,10 +361,23 @@ update_target() {
     printf 'External update blocked: backup safety component is unavailable.\n' >&2
     return 42
   }
+  [[ -n "$operation_id" ]] || operation_id=$(STATUS_MODEL_NEW_OPERATION_ID) || return 43
   STATUS_MODEL_TRACE_EVENT external_before_update "$EXTERNAL_TARGET" "" || true
   "${safety_args[@]}" || return $?
+  if declare -f STATUS_MODEL_INVALIDATE_PACKAGE_DATA >/dev/null 2>&1; then
+    if ! STATUS_MODEL_INVALIDATE_PACKAGE_DATA "$EXTERNAL_TARGET" external "" "$operation_id"; then
+      printf 'External update blocked: package freshness could not be invalidated.\n' >&2
+      return 43
+    fi
+  else
+    printf 'External update blocked: package freshness invalidation is unavailable.\n' >&2
+    return 43
+  fi
   output=$(remote_update 2>&1)
   rc=$?
+  if declare -f STATUS_MODEL_COMPLETE_PACKAGE_MUTATION >/dev/null 2>&1; then
+    STATUS_MODEL_COMPLETE_PACKAGE_MUTATION "$EXTERNAL_TARGET" external "" "$operation_id" || return 43
+  fi
   if [[ $rc -eq 0 ]]; then
     if [[ "$output" == *EXTERNAL_FILTERED* ]]; then
       STATUS_MODEL_TRACE_EVENT external_before_result_write "$EXTERNAL_TARGET" "" || true

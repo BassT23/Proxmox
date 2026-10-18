@@ -95,12 +95,78 @@ information. Consumers should use the per-target `last_check` together with
 `check_status` and `skip_reason`; the document-level freshness state describes
 the status document, not proof that every target was checked.
 
+`package_checked_at` is an internal status-model provenance field. It is set
+only after a supported package backend returned a valid update count for the
+correct target. Skips, failed checks, operating-system discovery, Windows
+Update History-only queries, and update jobs without a successful post-check do
+not refresh it. A successful post-update check may refresh it. Older status
+files may not contain the field; the API does not invent a timestamp from
+`last_check`, `generated_at`, `last_update.timestamp`, or Windows history.
+Legacy records without explicit package-check provenance are therefore
+`unknown`, except for an explicit neutral never-checked state, which is
+`not_checked`.
+
+The internal `package_data_invalidated` marker is set before a potentially
+package-changing update path begins and remains set after failed, interrupted,
+or incomplete updates. It is cleared only by a later validated package check.
+It is not exposed as an API control field. This also makes an update and a
+post-update check in the same second unambiguous: the valid post-check clears
+the marker rather than relying on timestamp ordering alone.
+
+Each target in `/api/v1/status` additionally contains:
+
+```json
+"package_freshness": {
+  "state": "current",
+  "checked_at": "2026-10-17T10:00:00Z",
+  "age_seconds": 3600
+}
+```
+
+`package_freshness.state` is independent of the document-level `state`:
+
+* `current` — valid package data exists and its proven check is within the
+  package freshness TTL.
+* `stale` — a proven package check exists, but it is older than the TTL or a
+  later update event invalidated its confirmation.
+* `not_checked` — no successful package check is known, and the latest state
+  is neutral or has never been checked.
+* `unknown` — timestamps, package data, or provenance are missing, invalid, or
+  contradictory.
+
+For document-level freshness, `stale` is `false` when `state` is `current`,
+`true` when `state` is `stale`, and explicitly `null` when `state` is
+`unknown`; `null` means that the document age could not be classified and is
+not equivalent to either fresh or stale.
+
+`checked_at` is the proven package-check time, not the status-file write time,
+the observation time, `last_update.timestamp`, or the Windows History query
+time. `age_seconds` is non-negative and is `null` when the timestamp is
+missing, invalid, naive, or outside the accepted future clock-skew tolerance.
+Missing package counts make the state `unknown` even when an old
+`checked_at` is retained. A neutral skip may leave an earlier valid package
+freshness state in place, but it never renews `checked_at`.
+
+The package freshness TTL defaults to 86400 seconds and is evaluated on every
+API request. It can be configured with
+`UU_API_PACKAGE_FRESHNESS_MAX_AGE_SECONDS`, bounded to 60–604800 seconds. The
+invalid, empty, non-numeric, or out-of-range values use the bounded default;
+they never create an unlimited TTL or stop the WebUI. The document freshness
+threshold remains independently controlled by
+`UU_STATUS_API_MAX_AGE_SECONDS`. Both `/api/v1/status` and
+`/api/v1/status-summary` use the same timezone-aware timestamp rules: missing,
+naive, invalid, and far-future values are `unknown`, and negative ages are
+never returned.
+
 `/api/v1/status-summary` exposes counts for total, reachable, unreachable,
 failed, unknown, available updates, and reboot requirements. Unknown values are
 not converted to zero. `state` is `current`, `stale`, or `unknown`; the
-timestamp and age are included where available. The default stale threshold is
-86400 seconds and can be bounded by the existing `UU_STATUS_API_MAX_AGE_SECONDS`
-setting (60–604800 seconds).
+timestamp and age are included where available. The additive
+`package_freshness` object contains `current`, `stale`, `not_checked`, and
+`unknown` counts, whose sum equals the number of targets. Its classification is
+the same one used for individual `/api/v1/status` targets. The summary's
+`age_seconds` describes only `generated_at`; document-level `state: "current"`
+does not mean that every target's package data is current.
 
 For example, a summary response has this shape (values are illustrative):
 
@@ -111,6 +177,7 @@ For example, a summary response has this shape (values are illustrative):
   "generated_at": "2026-10-17T10:00:00Z",
   "state": "current",
   "stale": false,
+  "age_seconds": 0,
   "summary": {
     "targets": 3,
     "reachable": 2,
@@ -118,6 +185,12 @@ For example, a summary response has this shape (values are illustrative):
     "failed": 0,
     "unknown_updates": 1,
     "unknown_reboot": 1
+  },
+  "package_freshness": {
+    "current": 2,
+    "stale": 0,
+    "not_checked": 1,
+    "unknown": 0
   },
   "updates_available": null,
   "reboot_required": null

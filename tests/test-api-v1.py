@@ -54,9 +54,14 @@ class ApiFixture:
                 {"id": "986", "name": "Windows <fixture>", "type": "vm", "node": "test-node",
                  "transport": "qga", "reachable": True, "os": "Windows Server 2025",
                  "updater": "windows-update", "check_status": "ok", "last_check": "2026-10-17T10:00:00Z",
+                 "package_checked_at": "2026-10-17T10:00:00Z",
+                 "package_data_invalidated": False,
+                 "package_mutation_generation": 0,
+                 "package_mutation_in_progress": False,
                  "updates": {"available": 0}, "normal_updates": None, "security_updates": None,
                  "security_split_supported": False, "reboot_required": False,
                  "last_update": {"status": "success", "result_code": 2, "processed": 5,
+                                 "timestamp": "2026-10-17T10:00:00Z",
                                  "job_id": "ultimate-updater-update-986-fixture"},
                  "windows_update": {"source": "Windows Update Agent", "queried_at": "2026-10-17T10:00:00Z",
                                     "history": [{"date": "2026-10-17", "kb": "KB1234567",
@@ -143,6 +148,89 @@ class ApiFixture:
         self.thread.join(timeout=3)
 
 
+# Pure classification cases exercise the adversarial paths without starting
+# another HTTP server or invoking a real package manager.
+FIXED_NOW = datetime(2026, 10, 17, 17, 0, 0, tzinfo=timezone.utc)
+
+
+def target_with_package(**overrides):
+    target = {
+        "check_status": "ok",
+        "reachable": True,
+        "package_checked_at": "2026-10-17T16:00:00Z",
+        "package_data_invalidated": False,
+        "package_mutation_generation": 0,
+        "package_mutation_in_progress": False,
+        "updates": {"available": 5},
+    }
+    target.update(overrides)
+    return target
+
+
+assert web.package_freshness(
+    target_with_package(check_status="error", last_check=None), now=FIXED_NOW
+)["state"] == "unknown"
+assert web.package_freshness(
+    target_with_package(check_status="offline", last_check="not-a-timestamp"), now=FIXED_NOW
+)["state"] == "unknown"
+assert web.package_freshness(
+    target_with_package(check_status="error", last_check="2026-10-17T16:00:00Z"), now=FIXED_NOW
+)["state"] == "unknown"
+assert web.package_freshness(
+    target_with_package(check_status="not_checked", reachable=False, skip_reason={"code": "STOPPED_READ_ONLY"}),
+    now=FIXED_NOW,
+)["state"] == "current"
+assert web.package_freshness(
+    target_with_package(
+        check_status="not_checked", reachable=False, updates={"available": None},
+        skip_reason={"code": "STOPPED_READ_ONLY"},
+    ),
+    now=FIXED_NOW,
+)["state"] == "unknown"
+
+# Legacy records without the explicit marker use the conservative same-second
+# rule; an explicitly successful post-check can still clear the marker in the
+# same second as an update.
+same_second_legacy = target_with_package(last_update={
+    "status": "success", "timestamp": "2026-10-17T16:00:00Z",
+})
+same_second_legacy.pop("package_data_invalidated")
+assert web.package_freshness(same_second_legacy, now=FIXED_NOW)["state"] == "stale"
+same_second_post_check = target_with_package(last_update={
+    "status": "success", "timestamp": "2026-10-17T16:00:00Z",
+})
+assert web.package_freshness(same_second_post_check, now=FIXED_NOW)["state"] == "current"
+assert web.package_freshness(
+    target_with_package(package_data_invalidated=True), now=FIXED_NOW
+)["state"] == "stale"
+for invalid_marker in ("true", "false", 0, 1, None, [], {}, "unexpected"):
+    assert web.package_freshness(
+        target_with_package(package_data_invalidated=invalid_marker), now=FIXED_NOW
+    )["state"] == "unknown"
+
+for seconds, expected in ((86399.9, "current"), (86400.0, "current"),
+                          (86400.1, "stale"), (86400.5, "stale"), (86401.0, "stale")):
+    stamp = (FIXED_NOW - timedelta(seconds=seconds)).isoformat().replace("+00:00", "Z")
+    assert web.package_freshness(
+        target_with_package(package_checked_at=stamp), now=FIXED_NOW
+    )["state"] == expected
+assert web.package_freshness(
+    target_with_package(package_checked_at="2999-01-01T00:00:00Z"), now=FIXED_NOW
+)["state"] == "unknown"
+assert web.package_freshness(
+    {"check_status": "ok", "updates": {"available": 0}}, now=FIXED_NOW
+)["state"] == "unknown"
+assert web.package_freshness(
+    {"check_status": "not_checked", "updates": {"available": None}}, now=FIXED_NOW
+)["state"] == "not_checked"
+for value, expected in (
+    (None, 86400), ("", 86400), ("nope", 86400), (-1, 86400), (0, 86400),
+    (59, 86400), (60, 60), (86400, 86400), (604800, 604800), (604801, 86400),
+    (10**12, 86400),
+):
+    assert web.bounded_package_freshness_max_age(value) == expected
+
+
 with tempfile.TemporaryDirectory() as temporary:
     fixture = ApiFixture(Path(temporary))
     try:
@@ -152,11 +240,16 @@ with tempfile.TemporaryDirectory() as temporary:
         assert payload["targets"][0]["windows_update"]["history"][0]["kb"] == "KB1234567"
         assert payload["targets"][0]["error"] is None
         assert payload["targets"][0]["skip_reason"] is None
+        assert payload["targets"][0]["package_freshness"]["state"] == "current"
+        assert payload["targets"][0]["package_freshness"]["checked_at"] == "2026-10-17T10:00:00Z"
         assert payload["targets"][1]["reachable"] is None
         assert payload["targets"][1]["error"] is None
         assert payload["targets"][1]["skip_reason"] == {
             "code": "STOPPED_READ_ONLY",
             "message": "LXC 100 is stopped; <fixture> remains escaped data",
+        }
+        assert payload["targets"][1]["package_freshness"] == {
+            "state": "not_checked", "checked_at": None, "age_seconds": None,
         }
 
         # Error projection is bounded and uses generic public descriptions;
@@ -198,7 +291,57 @@ with tempfile.TemporaryDirectory() as temporary:
         assert status == 200 and payload["summary"]["targets"] == 2
         assert payload["updates_available"] is None
         assert payload["summary"]["unknown_updates"] + payload["summary"]["unknown_reboot"] >= 1
+        assert payload["package_freshness"] == {
+            "current": 1, "stale": 0, "not_checked": 1, "unknown": 0,
+        }
+        status_states = {
+            item["package_freshness"]["state"] for item in
+            fixture.request("/api/v1/status", fixture.read_token)[1]["targets"]
+        }
+        assert status_states == {"current", "not_checked"}
         assert "986" not in json.dumps(payload)
+
+        # Missing package data cannot be reported as current merely because a
+        # historical successful timestamp remains in the record.
+        missing_package = json.loads(original_status)
+        missing_package["targets"][0]["updates"] = {"available": None}
+        fixture.status.write_text(json.dumps(missing_package), encoding="utf-8")
+        status, payload = fixture.request("/api/v1/status", fixture.read_token)
+        assert status == 200
+        assert payload["targets"][0]["package_freshness"]["state"] == "unknown"
+        fixture.status.write_text(original_status, encoding="utf-8")
+
+        # Invalid and far-future timestamps are unknown in both projections.
+        for stamp in ("2026-10-17T10:00:00", "2999-01-01T00:00:00Z"):
+            invalid_time = json.loads(original_status)
+            invalid_time["targets"][0]["package_checked_at"] = stamp
+            fixture.status.write_text(json.dumps(invalid_time), encoding="utf-8")
+            status, payload = fixture.request("/api/v1/status", fixture.read_token)
+            assert status == 200
+            assert payload["targets"][0]["package_freshness"]["state"] == "unknown"
+        fixture.status.write_text(original_status, encoding="utf-8")
+
+        old_package = json.loads(original_status)
+        old_package["targets"][0]["package_checked_at"] = "2026-10-15T10:00:00Z"
+        fixture.status.write_text(json.dumps(old_package), encoding="utf-8")
+        status, payload = fixture.request("/api/v1/status", fixture.read_token)
+        assert status == 200
+        assert payload["targets"][0]["package_freshness"]["state"] == "stale"
+
+        invalidated = json.loads(original_status)
+        invalidated["targets"][0]["package_data_invalidated"] = True
+        invalidated["targets"][0]["package_data_invalidated_at"] = "2026-10-17T11:00:00.123456Z"
+        invalidated["targets"][0]["last_update"] = {
+            "status": "success", "timestamp": "2026-10-17T11:00:00Z",
+        }
+        fixture.status.write_text(json.dumps(invalidated), encoding="utf-8")
+        status, payload = fixture.request("/api/v1/status", fixture.read_token)
+        assert status == 200
+        assert payload["targets"][0]["package_freshness"]["state"] == "stale"
+        status, summary = fixture.request("/api/v1/status-summary", fixture.read_token)
+        assert status == 200
+        assert summary["package_freshness"]["stale"] == 1
+        fixture.status.write_text(original_status, encoding="utf-8")
 
         status, payload = fixture.request("/api/v1/jobs", fixture.read_token)
         assert status == 200 and len(payload["jobs"]) == 1

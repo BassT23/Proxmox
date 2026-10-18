@@ -789,6 +789,7 @@ start_job() {
     "--setenv=LOCAL_FILES=$UU_LOCAL_FILES"
   )
   [[ -n "${UU_REMOTE_WORK_DIR:-}" ]] && systemd_env+=("--setenv=UU_REMOTE_WORK_DIR=$UU_REMOTE_WORK_DIR")
+  [[ -n "${UU_PACKAGE_MUTATION_OPERATION_ID:-}" ]] && systemd_env+=("--setenv=UU_PACKAGE_MUTATION_OPERATION_ID=$UU_PACKAGE_MUTATION_OPERATION_ID")
   [[ -n "${UU_TARGET_SELECTION_FILE:-}" ]] && systemd_env+=("--setenv=UU_TARGET_SELECTION_FILE=$UU_TARGET_SELECTION_FILE")
   [[ "$target" =~ ^[0-9]+$ ]] && systemd_env+=("--setenv=UU_POST_UPDATE_STATUS_CAPTURE=true")
   prepare_systemd_log_filters

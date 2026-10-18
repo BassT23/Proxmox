@@ -25,7 +25,8 @@ set -euo pipefail
 }
 source "$STATUS_MODEL_SCRIPT"
 STATUS_MODEL_INIT
-STATUS_MODEL_RECORD 100 vm qga true Debian apt 0 false ok "" "" node1 vm-100
+STATUS_MODEL_CAPTURE_TARGET_GENERATION 100
+STATUS_MODEL_RECORD 100 vm qga true Debian apt 0 false ok "" "" node1 vm-100 "" "" "" now
 STATUS_MODEL_FINISH
 printf 'VM 100 refreshed\n'
 CHECK

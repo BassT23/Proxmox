@@ -37,6 +37,13 @@ USE_INTERNAL_TARGET_SELECTION=false
 UPDATE_FAILURE=false
 mkdir -p "$TEMP_STATE_DIR"
 
+# The production lifecycle functions now require the mandatory invalidation
+# gate. This fixture supplies the approved no-op hooks without touching any
+# real status model or Proxmox command.
+REQUIRE_PACKAGE_DATA_INVALIDATION() { return 0; }
+MARK_PACKAGE_DATA_INVALIDATED() { return 0; }
+MARK_PACKAGE_DATA_MUTATION_COMPLETE() { return 0; }
+
 EVENTS="$PWD/events"
 : > "$EVENTS"
 rm -rf "$USER_SCRIPTS/100"

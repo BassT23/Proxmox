@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1091,SC2034 # Production functions and globals are sourced dynamically for this fixture.
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -8,7 +9,7 @@ mkdir -p "$WORK_DIR/local" "$WORK_DIR/jobs/remote" "$WORK_DIR/bin"
 cp "$ROOT_DIR/job-runner.sh" "$WORK_DIR/local/job-runner.sh"
 chmod 755 "$WORK_DIR/local/job-runner.sh"
 touch "$WORK_DIR/local/update.conf"
-printf '%s\n' '{"schema_version":1,"targets":[]}' > "$WORK_DIR/local/status.json"
+printf '%s\n' '{"schema_version":1,"targets":[{"id":"host:node2","type":"host","node":"node2","check_status":"ok","reachable":true,"updates":{"available":0}}]}' > "$WORK_DIR/local/status.json"
 
 cat > "$WORK_DIR/bin/ssh" <<'SSH'
 #!/usr/bin/env bash
@@ -55,6 +56,7 @@ ssh() {
 
 awk '/^UPDATE_HOST \(\) \{/{capture=1} capture{print} capture && /^# shellcheck disable=SC2015/{exit}' \
   "$ROOT_DIR/update.sh" | sed '$d' > "$WORK_DIR/update-host-function.sh"
+sed -n '/^MARK_PACKAGE_DATA_INVALIDATED() {/,/^INTERNAL_SSH_FILE=/p' "$ROOT_DIR/update.sh" | sed '$d' > "$WORK_DIR/mark-package-function.sh"
 
 # These globals are consumed by the extracted production function.
 export LOCAL_FILES="$WORK_DIR/local"
@@ -71,6 +73,10 @@ EFFECTIVE_HEADLESS() { return 0; }
 export UU_JOB_STATE_DIR UU_REMOTE_JOB_STATE_DIR UU_LOCAL_FILES="$LOCAL_FILES"
 # shellcheck source=/dev/null
 source "$WORK_DIR/update-host-function.sh"
+source "$WORK_DIR/mark-package-function.sh"
+source "$ROOT_DIR/status-model.sh"
+declare -a PACKAGE_MUTATION_TARGETS=()
+declare -A PACKAGE_MUTATION_KEYS=()
 
 REMOTE_UPDATE_STATUS_FIXTURE=0
 export REMOTE_UPDATE_STATUS_FIXTURE

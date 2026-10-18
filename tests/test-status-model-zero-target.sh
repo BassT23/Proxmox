@@ -33,7 +33,8 @@ LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
   STATUS_MODEL_RECORD_FILE="$WORK_DIR/success.records" STATUS_MODEL_PARTIAL=true bash -c '
     source "$1"
     STATUS_MODEL_INIT
-    STATUS_MODEL_RECORD b vm qga true debian apt 0 false ok "" "" node1 guest-b 0 0
+    STATUS_MODEL_CAPTURE_TARGET_GENERATION b
+    STATUS_MODEL_RECORD b vm qga true debian apt 0 false ok "" "" node1 guest-b 0 0 "" now
     STATUS_MODEL_FINISH
   ' _ "$ROOT_DIR/status-model.sh"
 

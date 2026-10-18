@@ -3755,29 +3755,142 @@ class AuthStore:
         self.sessions.pop(token, None)
 
 
-def build_status_summary(payload, max_age_seconds=86400, now=None):
+FRESHNESS_CLOCK_SKEW_SECONDS = 300
+PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS = 86400
+PACKAGE_FRESHNESS_MIN_MAX_AGE_SECONDS = 60
+PACKAGE_FRESHNESS_MAX_MAX_AGE_SECONDS = 604800
+def bounded_package_freshness_max_age(value):
+    """Return a bounded package-freshness TTL without raising on bad config."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS
+    if not PACKAGE_FRESHNESS_MIN_MAX_AGE_SECONDS <= parsed <= PACKAGE_FRESHNESS_MAX_MAX_AGE_SECONDS:
+        return PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS
+    return parsed
+
+
+def parse_aware_timestamp(value):
+    """Parse only explicit, timezone-aware ISO timestamps as UTC."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if stamp.tzinfo is None:
+        return None
+    return stamp.astimezone(timezone.utc)
+
+
+def timestamp_age_seconds(value, now=None):
+    """Return a non-negative age, or None for invalid/far-future timestamps."""
+    stamp = parse_aware_timestamp(value)
+    current = now if now is not None else datetime.now(timezone.utc)
+    if stamp is None or current.tzinfo is None:
+        return None
+    current = current.astimezone(timezone.utc)
+    age = (current - stamp).total_seconds()
+    if age < -FRESHNESS_CLOCK_SKEW_SECONDS:
+        return None
+    return max(0.0, age)
+
+
+def classify_timestamp(value, max_age_seconds, now=None):
+    age = timestamp_age_seconds(value, now=now)
+    if age is None:
+        return "unknown", None
+    return ("current" if age <= max_age_seconds else "stale"), int(age + 0.999999)
+
+
+def package_data_is_valid(target):
+    updates = target.get("updates") if isinstance(target, dict) else None
+    available = updates.get("available") if isinstance(updates, dict) else None
+    return type(available) is int and available >= 0
+
+
+def package_freshness(target, max_age_seconds=PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS, now=None):
+    """Classify proven package data independently from document freshness."""
+    if not isinstance(target, dict):
+        return {"state": "unknown", "checked_at": None, "age_seconds": None}
+
+    check_status = target.get("check_status")
+    checked_value = target.get("package_checked_at")
+    checked_stamp = parse_aware_timestamp(checked_value)
+    checked_age = timestamp_age_seconds(checked_value, now=now) if checked_stamp else None
+    if checked_value is not None and checked_stamp is None:
+        return {"state": "unknown", "checked_at": None, "age_seconds": None}
+
+    if checked_stamp is None:
+        state = "not_checked" if check_status in {None, "", "unknown", "not_checked", "skipped", "stopped", "history_only"} else "unknown"
+        return {"state": state, "checked_at": None, "age_seconds": None}
+
+    data_valid = package_data_is_valid(target)
+    if "package_data_invalidated" in target and type(target.get("package_data_invalidated")) is not bool:
+        return {"state": "unknown", "checked_at": None, "age_seconds": None}
+    if "package_mutation_generation" not in target:
+        return {"state": "unknown", "checked_at": None, "age_seconds": None}
+    if type(target.get("package_mutation_generation")) is not int or target.get("package_mutation_generation") < 0:
+        return {"state": "unknown", "checked_at": None, "age_seconds": None}
+    if "package_mutation_in_progress" in target and type(target.get("package_mutation_in_progress")) is not bool:
+        return {"state": "unknown", "checked_at": None, "age_seconds": None}
+    has_invalidation_marker = "package_data_invalidated" in target
+    invalidated = target.get("package_data_invalidated") is True
+    if target.get("package_mutation_in_progress") is True:
+        invalidated = True
+    provenance_unknown = False
+    neutral_check = check_status in {None, "", "not_checked", "skipped", "stopped"}
+    # A reachable=false observation is compatible with a retained neutral
+    # skip.  For an actual non-neutral check it is contradictory provenance.
+    if target.get("reachable") is not True and not neutral_check:
+        provenance_unknown = True
+
+    last_update = target.get("last_update")
+    if (not has_invalidation_marker and isinstance(last_update, dict) and
+            str(last_update.get("status") or "unknown").lower() not in {"", "unknown", "pending"}):
+        update_stamp = parse_aware_timestamp(last_update.get("timestamp"))
+        if update_stamp is None:
+            provenance_unknown = True
+        elif update_stamp >= checked_stamp:
+            invalidated = True
+
+    last_check = parse_aware_timestamp(target.get("last_check"))
+    if check_status in {"error", "offline"}:
+        if last_check is None:
+            provenance_unknown = True
+        elif last_check > checked_stamp:
+            invalidated = True
+        else:
+            # Equal timestamps have only second precision in legacy records;
+            # they cannot prove whether the error followed the package check.
+            provenance_unknown = True
+
+    if not data_valid or provenance_unknown:
+        state = "unknown"
+    elif invalidated:
+        state = "stale"
+    elif checked_age is None:
+        state = "unknown"
+    else:
+        state = "current" if checked_age <= max_age_seconds else "stale"
+    return {
+        "state": state,
+        "checked_at": checked_stamp.isoformat().replace("+00:00", "Z"),
+        "age_seconds": int(checked_age + 0.999999) if checked_age is not None else None,
+    }
+
+
+def build_status_summary(payload, max_age_seconds=86400, now=None, package_max_age_seconds=None):
     """Return bounded aggregate observability, never target inventory or control URLs."""
     if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
         raise ValueError("invalid status payload")
     targets = payload["targets"]
     if len(targets) > 10000 or any(not isinstance(item, dict) for item in targets):
         raise ValueError("invalid status target list")
-    stamp = payload.get("generated_at")
-    if not isinstance(stamp, str):
-        generated = None
-    else:
-        try:
-            generated = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-            if generated.tzinfo is None:
-                generated = None
-        except ValueError:
-            generated = None
+    if package_max_age_seconds is None:
+        package_max_age_seconds = PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS
     current = now if now is not None else datetime.now(timezone.utc)
-    if generated is not None:
-        age = (current - generated).total_seconds()
-        fresh = 0 <= age <= max_age_seconds
-    else:
-        fresh = False
+    document_state, document_age = classify_timestamp(payload.get("generated_at"), max_age_seconds, now=current)
 
     reachable = sum(item.get("reachable") is True for item in targets)
     unreachable = sum(item.get("reachable") is False for item in targets)
@@ -3786,6 +3899,7 @@ def build_status_summary(payload, max_age_seconds=86400, now=None):
     known_updates = 0
     unknown_reboot = 0
     required_reboot = 0
+    package_counts = {"current": 0, "stale": 0, "not_checked": 0, "unknown": 0}
     for item in targets:
         available = item.get("updates")
         available = available.get("available") if isinstance(available, dict) else None
@@ -3798,11 +3912,14 @@ def build_status_summary(payload, max_age_seconds=86400, now=None):
             required_reboot += 1
         elif reboot is not False:
             unknown_reboot += 1
+        package_state = package_freshness(item, package_max_age_seconds, now=current)["state"]
+        package_counts[package_state] += 1
 
     return {
         "schema_version": 1,
-        "state": "current" if fresh else "stale",
-        "generated_at": stamp if generated else None,
+        "state": document_state,
+        "generated_at": payload.get("generated_at") if isinstance(payload.get("generated_at"), str) else None,
+        "age_seconds": document_age,
         "targets": {
             "total": len(targets),
             "reachable": reachable,
@@ -3811,6 +3928,7 @@ def build_status_summary(payload, max_age_seconds=86400, now=None):
             "unknown_updates": unknown_updates,
             "unknown_reboot": unknown_reboot,
         },
+        "package_freshness": package_counts,
         "updates_available": known_updates if not unknown_updates else None,
         "reboot_required": required_reboot if not unknown_reboot else None,
     }
@@ -3905,7 +4023,11 @@ class StatusHandler(BaseHTTPRequestHandler):
                 raise ValueError("oversized status file")
             payload = json.loads(raw)
             summary = build_status_summary(
-                payload, max_age_seconds=self.server.status_api_max_age_seconds
+                payload,
+                max_age_seconds=self.server.status_api_max_age_seconds,
+                package_max_age_seconds=getattr(
+                    self.server, "package_freshness_max_age_seconds", PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS
+                ),
             )
         except FileNotFoundError:
             self.send_json(error_payload("STATUS_NOT_FOUND", "No status file is available yet."), HTTPStatus.NOT_FOUND)
@@ -4193,7 +4315,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         return {"code": code, "message": messages.get(code, messages["STATUS_ERROR"])}
 
     @classmethod
-    def _api_v1_target(cls, record):
+    def _api_v1_target(cls, record, package_max_age_seconds=PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS, now=None):
         if not isinstance(record, dict):
             return None
         updates = record.get("updates") if isinstance(record.get("updates"), dict) else {}
@@ -4222,6 +4344,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             "reboot_required": cls._api_v1_public_value(record.get("reboot_required"), "bool"),
             "last_update": cls._api_v1_last_update(record.get("last_update")),
             "skip_reason": skip_reason,
+            "package_freshness": package_freshness(record, package_max_age_seconds, now=now),
         }
         windows_update = cls._api_v1_windows_update(record.get("windows_update"))
         if windows_update is not None:
@@ -4244,17 +4367,11 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def _api_v1_status(self):
         payload = self._api_v1_status_file(self.server.status_file)
+        current = datetime.now(timezone.utc)
+        state, age = classify_timestamp(
+            payload.get("generated_at"), self.server.status_api_max_age_seconds, now=current
+        )
         generated_at = payload.get("generated_at") if isinstance(payload.get("generated_at"), str) else None
-        state = "unknown"
-        age = None
-        if generated_at:
-            try:
-                stamp = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
-                if stamp.tzinfo is not None:
-                    age = max(0.0, (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds())
-                    state = "current" if age <= self.server.status_api_max_age_seconds else "stale"
-            except ValueError:
-                pass
         return {
             "api_version": 1,
             "schema_version": 1,
@@ -4262,12 +4379,25 @@ class StatusHandler(BaseHTTPRequestHandler):
             "state": state,
             "stale": state == "stale" if state != "unknown" else None,
             "age_seconds": int(age) if age is not None else None,
-            "targets": [item for item in (self._api_v1_target(record) for record in payload["targets"]) if item],
+            "targets": [item for item in (
+                self._api_v1_target(
+                    record,
+                    getattr(self.server, "package_freshness_max_age_seconds", PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS),
+                    now=current,
+                )
+                for record in payload["targets"]
+            ) if item],
         }
 
     def _api_v1_status_summary(self):
         payload = self._api_v1_status_file(self.server.status_file)
-        summary = build_status_summary(payload, max_age_seconds=self.server.status_api_max_age_seconds)
+        summary = build_status_summary(
+            payload,
+            max_age_seconds=self.server.status_api_max_age_seconds,
+            package_max_age_seconds=getattr(
+                self.server, "package_freshness_max_age_seconds", PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS
+            ),
+        )
         counts = dict(summary["targets"])
         counts["targets"] = counts.pop("total")
         return {
@@ -4275,8 +4405,10 @@ class StatusHandler(BaseHTTPRequestHandler):
             "schema_version": 1,
             "generated_at": summary.get("generated_at"),
             "state": summary["state"],
-            "stale": summary["state"] != "current",
+            "stale": summary["state"] == "stale" if summary["state"] != "unknown" else None,
+            "age_seconds": summary.get("age_seconds"),
             "summary": counts,
+            "package_freshness": summary["package_freshness"],
             "updates_available": summary["updates_available"],
             "reboot_required": summary["reboot_required"],
         }
@@ -6815,6 +6947,23 @@ def main():
             raise ValueError
     except ValueError:
         raise SystemExit("UU_STATUS_API_MAX_AGE_SECONDS must be between 60 and 604800")
+    package_ttl_value = os.environ.get("UU_API_PACKAGE_FRESHNESS_MAX_AGE_SECONDS", "86400")
+    package_ttl = bounded_package_freshness_max_age(package_ttl_value)
+    try:
+        package_ttl_value_as_int = int(package_ttl_value)
+    except (TypeError, ValueError):
+        package_ttl_value_as_int = None
+    if package_ttl_value_as_int is None:
+        print(
+            "Invalid UU_API_PACKAGE_FRESHNESS_MAX_AGE_SECONDS; using the bounded default.",
+            file=sys.stderr,
+        )
+    elif package_ttl_value_as_int != package_ttl:
+        print(
+            "UU_API_PACKAGE_FRESHNESS_MAX_AGE_SECONDS is outside the allowed range; using the bounded default.",
+            file=sys.stderr,
+        )
+    server.package_freshness_max_age_seconds = package_ttl
     server.config_file, server.inventory_file = args.config_file, args.inventory_file
     server.target_selection_file = args.config_file.parent / "target-selection.json"
     server.internal_ssh_file = args.config_file.parent / "internal-ssh.conf"

@@ -12,10 +12,13 @@ import sys
 
 json.dump({"schema_version": 1, "targets": [{
     "id": "910", "type": "lxc", "check_status": "error",
+    "node": "node1", "package_mutation_generation": 0,
     "error": {"code": "CHECK_COMMAND_FAILED", "message": "old failure"},
+    "package_checked_at": "2026-10-17T11:00:00Z",
     "last_update": {"status": "unknown", "timestamp": None},
 }, {
-    "id": "keep", "type": "vm", "check_status": "ok", "error": None,
+    "id": "keep", "type": "vm", "node": "node1", "package_mutation_generation": 0,
+    "check_status": "ok", "error": None,
     "skip_reason": None,
 }]}, open(sys.argv[1], "w", encoding="utf-8"))
 PY
@@ -49,22 +52,23 @@ assert stopped["skip_reason"] == {
     "code": "STOPPED_READ_ONLY",
     "message": "LXC 910 is stopped; the check did not start it",
 }
+assert stopped["package_checked_at"] == "2026-10-17T11:00:00Z"
 assert targets["keep"]["check_status"] == "ok"
 PY
 
 run_record "$STATUS_FILE" "$WORK_DIR/paused.records" \
-  'STATUS_MODEL_RECORD 910 vm qga false "" "" null null not_checked PAUSED_READ_ONLY "VM 910 is paused; the check did not resume it" node1 vm-910'
+  'STATUS_MODEL_RECORD 911 vm qga false "" "" null null not_checked PAUSED_READ_ONLY "VM 911 is paused; the check did not resume it" node1 vm-911'
 python3 - "$STATUS_FILE" <<'PY'
 import json
 import sys
 
-target = next(item for item in json.load(open(sys.argv[1], encoding="utf-8"))["targets"] if item["id"] == "910")
+target = next(item for item in json.load(open(sys.argv[1], encoding="utf-8"))["targets"] if item["id"] == "911")
 assert target["error"] is None
 assert target["skip_reason"]["code"] == "PAUSED_READ_ONLY"
 PY
 
 run_record "$STATUS_FILE" "$WORK_DIR/success.records" \
-  'STATUS_MODEL_RECORD 910 lxc pct true Debian apt 0 false ok "" "" node1 lxc-910 0 0'
+  'STATUS_MODEL_RECORD 910 lxc pct true Debian apt 0 false ok "" "" node1 lxc-910 0 0 "" now'
 python3 - "$STATUS_FILE" <<'PY'
 import json
 import sys
@@ -73,6 +77,7 @@ target = next(item for item in json.load(open(sys.argv[1], encoding="utf-8"))["t
 assert target["check_status"] == "ok"
 assert target["error"] is None
 assert target["skip_reason"] is None
+assert target["package_checked_at"].endswith("Z")
 PY
 
 run_record "$STATUS_FILE" "$WORK_DIR/error.records" \
@@ -85,6 +90,7 @@ target = next(item for item in json.load(open(sys.argv[1], encoding="utf-8"))["t
 assert target["check_status"] == "error"
 assert target["error"]["code"] == "CHECK_COMMAND_FAILED"
 assert target["skip_reason"] is None
+assert target["package_checked_at"].endswith("Z")
 PY
 
 # A skip replaces a previous error and a later successful check removes it.
@@ -160,6 +166,7 @@ json.dump({"schema_version": 1, "targets": [{
     "error": None, "skip_reason": {"code": "STOPPED_READ_ONLY", "message": "stopped"},
     "node": "node1",
     "last_update": {"status": "success", "timestamp": "2026-10-17T11:00:00Z"},
+    "package_checked_at": "2026-10-17T10:30:00Z",
     "windows_update": {"source": "Windows Update Agent", "queried_at": "2026-10-17T11:00:00Z",
                         "history": [{"title": "old history"}]},
 }, {
@@ -198,6 +205,7 @@ assert target["transport"] == "pct"
 assert target["type"] == "lxc"
 assert target["node"] == "node1"
 assert target["last_update"] == before["910"]["last_update"]
+assert target["package_checked_at"] == before["910"]["package_checked_at"]
 assert target["windows_update"]["history"] == [{"title": "new history"}]
 PY
 
@@ -224,6 +232,7 @@ assert target["check_status"] == "error"
 assert target["error"] == {"code": "CHECK_COMMAND_FAILED", "message": "old error"}
 assert target["skip_reason"] is None
 assert target["last_check"] == "2026-10-17T12:00:00Z"
+assert target["package_checked_at"] == "2026-10-17T10:30:00Z"
 PY
 
 python3 - "$WORK_DIR/history-before.json" "$WORK_DIR/history-success.json" <<'PY'

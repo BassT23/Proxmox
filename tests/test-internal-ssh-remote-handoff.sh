@@ -29,8 +29,8 @@ cat > "$WORK_DIR/local/status.json" <<'JSON'
 JSON
 cat > "$WORK_DIR/remote-status.json" <<'JSON'
 {"schema_version":1,"targets":[
-  {"id":"host:node2","type":"host","node":"node2","name":"node2","os":"Proxmox","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"last_update":{"status":"success","timestamp":"2026-09-23T10:00:01Z","exit_code":0}},
-  {"id":"200","type":"vm","node":"node2","name":"vm-200","os":"Debian","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"last_update":{"status":"success","timestamp":"2026-09-23T10:00:02Z","exit_code":0}},
+  {"id":"host:node2","type":"host","node":"node2","name":"node2","os":"Proxmox","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"package_checked_at":"2026-09-23T10:00:01Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-23T10:00:01Z","exit_code":0}},
+  {"id":"200","type":"vm","node":"node2","name":"vm-200","os":"Debian","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"package_checked_at":"2026-09-23T10:00:02Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-23T10:00:02Z","exit_code":0}},
   {"id":"201","type":"lxc","node":"node2","name":"ct-201","os":"Debian","check_status":"error","reachable":true,"updates":{"available":null},"reboot_required":false,"last_update":{"status":"failed","timestamp":"2026-09-23T10:00:03Z","exit_code":42}},
   {"id":"999","type":"vm","node":"node3","name":"foreign","os":"Debian","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false}
 ]}

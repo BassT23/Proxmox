@@ -82,6 +82,10 @@ WINDOWS_UPDATE_ENABLED=true
 START_WAITING=false
 LOG="$PWD/update-result"
 mkdir -p "$TEMP_STATE_DIR"
+REQUIRE_PACKAGE_DATA_INVALIDATION() { return 0; }
+MARK_PACKAGE_DATA_INVALIDATED() { return 0; }
+MARK_PACKAGE_DATA_MUTATION_COMPLETE() { return 0; }
+AUTO_REBOOT_GUEST() { return 0; }
 qm() {
   case "$1" in
     config) printf 'ostype: l26\nname: linux\n' ;;

@@ -23,6 +23,9 @@ TARGET_SELECTION_RUNTIME_ERROR=false
 # exit-code handling remain centralized, but they are not update runs and must
 # never emit an update summary.
 NON_UPDATE_COMMAND=false
+declare -a PACKAGE_MUTATION_TARGETS=()
+declare -A PACKAGE_MUTATION_KEYS=()
+declare -A PACKAGE_MUTATION_OPERATIONS=()
 
 # Variable / Function
 LOCAL_FILES="${UU_LOCAL_FILES:-/etc/ultimate-updater}"
@@ -80,6 +83,11 @@ if [[ -f "$CLUSTER_TARGET_FILE" ]]; then
   # shellcheck disable=SC1090,SC1091
   . "$CLUSTER_TARGET_FILE"
 fi
+STATUS_MODEL_SCRIPT="${UU_STATUS_MODEL_SCRIPT:-$LOCAL_FILES/status-model.sh}"
+if [[ -f "$STATUS_MODEL_SCRIPT" ]]; then
+  # shellcheck disable=SC1090,SC1091
+  . "$STATUS_MODEL_SCRIPT"
+fi
 
 API_UPDATE_TARGET_IDENTITY_GUARD() {
   [[ "${UU_API_ACTION:-}" == update ]] || return 0
@@ -101,6 +109,105 @@ API_UPDATE_TARGET_IDENTITY_GUARD() {
     return 46
   fi
   cluster_target_api_identity_matches "$target" "$kind" "${UU_API_EXPECTED_TARGET_NODE:-}" "${UU_API_EXPECTED_TARGET_LOCAL:-remote}"
+}
+
+MARK_PACKAGE_DATA_INVALIDATED() {
+  local target_id="$1" target_type="${2:-}" target_node="${3:-}" operation_id="${4:-${UU_PACKAGE_MUTATION_OPERATION_ID:-}}" key
+  [[ -n "$target_id" && -n "$target_type" ]] || {
+    printf 'Package freshness invalidation requires a complete target identity.\n' >&2
+    return 46
+  }
+  if [[ "$target_type" != external && -z "$target_node" ]]; then
+    target_node="${UU_API_EXPECTED_TARGET_NODE:-${CLUSTER_TARGET_NODE:-${STATUS_MODEL_NODE:-$(hostname -s 2>/dev/null || hostname)}}}"
+  fi
+  if [[ "$target_type" == lxc || "$target_type" == vm ]]; then
+    # Numeric guest IDs are not an identity by themselves.  Direct CLI,
+    # WebUI, scheduler, and API update paths all need the current Proxmox
+    # inventory before the status-model mutation reservation is created.
+    declare -f cluster_target_resolve >/dev/null 2>&1 || {
+      printf 'Package freshness invalidation rejected: Proxmox identity resolver is unavailable.\n' >&2
+      return 46
+    }
+    { [[ -n "${UU_CLUSTER_RESOURCES_JSON:-}" ]] || command -v pvesh >/dev/null 2>&1; } || {
+      printf 'Package freshness invalidation rejected: current Proxmox inventory is unavailable.\n' >&2
+      return 46
+    }
+    cluster_target_resolve "$target_id" || {
+      printf 'Package freshness invalidation rejected: target identity is unavailable for %s.\n' "$target_id" >&2
+      return 46
+    }
+    [[ "$target_type" == lxc && "$CLUSTER_TARGET_KIND" == container ||
+      "$target_type" == vm && "$CLUSTER_TARGET_KIND" == vm ]] || {
+      printf 'Package freshness invalidation rejected: target type changed for %s.\n' "$target_id" >&2
+      return 46
+    }
+    if [[ -n "${UU_API_EXPECTED_TARGET_NODE:-}" &&
+      "${UU_API_EXPECTED_TARGET_NODE,,}" != "${CLUSTER_TARGET_NODE,,}" ]]; then
+      printf 'Package freshness invalidation rejected: target node changed for %s.\n' "$target_id" >&2
+      return 46
+    fi
+    if [[ "${UU_API_EXPECTED_TARGET_LOCAL:-remote}" == true ||
+      "${UU_API_EXPECTED_TARGET_LOCAL:-remote}" == false ]] &&
+      [[ "${UU_API_EXPECTED_TARGET_LOCAL}" != "$CLUSTER_TARGET_LOCAL" ]]; then
+      printf 'Package freshness invalidation rejected: target locality changed for %s.\n' "$target_id" >&2
+      return 46
+    fi
+    target_node="$CLUSTER_TARGET_NODE"
+  fi
+  key="$target_id|$target_type|$target_node"
+  [[ -n "${PACKAGE_MUTATION_KEYS[$key]+set}" ]] && return 0
+  declare -p PACKAGE_MUTATION_OPERATIONS >/dev/null 2>&1 || declare -gA PACKAGE_MUTATION_OPERATIONS=()
+  [[ -n "$operation_id" ]] || operation_id=$(STATUS_MODEL_NEW_OPERATION_ID) || return 1
+  declare -f STATUS_MODEL_INVALIDATE_PACKAGE_DATA >/dev/null 2>&1 || {
+    printf 'Package freshness invalidation is unavailable; update aborted.\n' >&2
+    return 1
+  }
+  if STATUS_MODEL_INVALIDATE_PACKAGE_DATA "$target_id" "$target_type" "$target_node" "$operation_id"; then
+    PACKAGE_MUTATION_KEYS["$key"]=1
+    PACKAGE_MUTATION_OPERATIONS["$key"]="$operation_id"
+    PACKAGE_MUTATION_TARGETS+=("$target_id|$target_type|$target_node")
+    return 0
+  fi
+  printf 'Package freshness for target %s (%s/%s) could not be invalidated; update aborted.\n' \
+    "$target_id" "$target_type" "$target_node" >&2
+  return 1
+}
+
+REQUIRE_PACKAGE_DATA_INVALIDATION() {
+  declare -f MARK_PACKAGE_DATA_INVALIDATED >/dev/null 2>&1 || {
+    printf 'Package freshness invalidation is unavailable; update aborted.\n' >&2
+    UPDATE_FAILURE=true
+    return 1
+  }
+  return 0
+}
+
+MARK_PACKAGE_DATA_MUTATION_COMPLETE() {
+  local target_id="$1" target_type="${2:-}" target_node="${3:-}" operation_id="${4:-${UU_PACKAGE_MUTATION_OPERATION_ID:-}}"
+  [[ -n "$target_id" && -n "$target_type" ]] || return 2
+  if [[ "$target_type" != external && -z "$target_node" ]]; then
+    target_node="${UU_API_EXPECTED_TARGET_NODE:-${CLUSTER_TARGET_NODE:-${STATUS_MODEL_NODE:-$(hostname -s 2>/dev/null || hostname)}}}"
+  fi
+  local key="$target_id|$target_type|$target_node"
+  declare -p PACKAGE_MUTATION_OPERATIONS >/dev/null 2>&1 || declare -gA PACKAGE_MUTATION_OPERATIONS=()
+  if [[ -z "$operation_id" && -n "${PACKAGE_MUTATION_OPERATIONS[$key]+set}" ]]; then
+    operation_id="${PACKAGE_MUTATION_OPERATIONS[$key]}"
+  fi
+  declare -f STATUS_MODEL_COMPLETE_PACKAGE_MUTATION >/dev/null 2>&1 || return 1
+  if STATUS_MODEL_COMPLETE_PACKAGE_MUTATION "$target_id" "$target_type" "$target_node" "$operation_id"; then
+    unset 'PACKAGE_MUTATION_OPERATIONS[$key]'
+    return 0
+  fi
+  return $?
+}
+
+# shellcheck disable=SC2329
+CLEAR_PACKAGE_MUTATION_RESERVATIONS() {
+  local entry target_id target_type target_node
+  for entry in "${PACKAGE_MUTATION_TARGETS[@]}"; do
+    IFS='|' read -r target_id target_type target_node <<< "$entry"
+    MARK_PACKAGE_DATA_MUTATION_COMPLETE "$target_id" "$target_type" "$target_node" || true
+  done
 }
 
 INTERNAL_SSH_FILE="${INTERNAL_SSH_FILE:-$LOCAL_FILES/internal-ssh.sh}"
@@ -340,9 +447,16 @@ ARGUMENTS () {
               return 46
             fi
             if [[ "$CLUSTER_TARGET_LOCAL" == false ]]; then
-              local remote_command
-              printf -v remote_command 'exec %q start %q %q' \
-                "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" "$ARGUMENT"
+              local remote_command remote_operation_id
+              remote_operation_id=$(STATUS_MODEL_NEW_OPERATION_ID) || return 1
+              if ! MARK_PACKAGE_DATA_INVALIDATED "$ARGUMENT" \
+                "$([[ "$CLUSTER_TARGET_KIND" == container ]] && printf lxc || printf vm)" \
+                "$CLUSTER_TARGET_NODE" "$remote_operation_id"; then
+                printf 'Package freshness for remote target %s could not be invalidated; update aborted.\n' "$ARGUMENT" >&2
+                return 1
+              fi
+              printf -v remote_command 'exec /usr/bin/env UU_PACKAGE_MUTATION_OPERATION_ID=%q %q start %q %q' \
+                "$remote_operation_id" "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" "$ARGUMENT"
               echo -e "ℹ ${OR:-} Target $ARGUMENT resolved to $CLUSTER_TARGET_NODE; starting remote update job${CL:-}\n"
               local remote_output remote_job_unit
               if ! remote_output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "${SSH_PORT:-22}" \
@@ -1745,15 +1859,21 @@ HOST_UPDATE_START () {
 UPDATE_HOST () {
   HOST=$1
   local remote_update_env="" remote_handoff_env=""
+  local remote_operation_id=""
   local remote_workspace="" remote_job_unit="" remote_state_dir=""
   local remote_started_at="" remote_finished_at="" remote_state=""
   local remote_finalize_command="" remote_handoff_rc=0
   local apt_count_file rpm_count_file package_count_file product_metadata_file source
+  REQUIRE_PACKAGE_DATA_INVALIDATION || return 1
   [[ "${UU_INTERNAL_SKIP_HOST_TARGET:-false}" == true ]] && remote_update_env="UU_INTERNAL_SKIP_HOST_TARGET=true "
   if [[ "${UU_API_ACTION:-}" == update ]]; then
     API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH "$HOST" host proxmox || return $?
   fi
   START_HOST=$(hostname -i | cut -d ' ' -f1)
+  if [[ "$HOST" != "$START_HOST" ]]; then
+    remote_operation_id=$(STATUS_MODEL_NEW_OPERATION_ID) || return 1
+  fi
+  MARK_PACKAGE_DATA_INVALIDATED "host:${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" host "${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" "$remote_operation_id" || return $?
   if [[ "$HOST" != "$START_HOST" ]]; then
     remote_workspace="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
     remote_job_unit="ultimate-updater-update-node-${HOST_NODE:-remote}-$$-$RANDOM"
@@ -1767,6 +1887,8 @@ UPDATE_HOST () {
     elif [[ "${UU_NONINTERACTIVE:-false}" == true ]]; then
       remote_update_env+='UU_NONINTERACTIVE=true '
     fi
+    printf -v operation_env 'UU_PACKAGE_MUTATION_OPERATION_ID=%q ' "$remote_operation_id"
+    remote_update_env+="$operation_env"
     ssh -q -p "$SSH_PORT" "$HOST" mkdir -p $LOCAL_FILES/temp
     ssh -q -p "$SSH_PORT" "$HOST" "mkdir -p $(printf '%q' "$remote_workspace") $(printf '%q' "$remote_state_dir")"
     ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf ]]; then cp -p $LOCAL_FILES/update.conf $LOCAL_FILES/update.conf.uu-backup; else rm -f $LOCAL_FILES/update.conf.uu-backup; fi"
@@ -1876,11 +1998,17 @@ UPDATE_HOST () {
     fi
     ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf.uu-backup ]]; then mv -f $LOCAL_FILES/update.conf.uu-backup $LOCAL_FILES/update.conf; else rm -f $LOCAL_FILES/update.conf; fi"
   fi
+  MARK_PACKAGE_DATA_MUTATION_COMPLETE "host:${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" host "${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" "$remote_operation_id" || UPDATE_FAILURE=true
   return "${REMOTE_UPDATE_STATUS:-0}"
 }
 
 # shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
+  REQUIRE_PACKAGE_DATA_INVALIDATION || return 1
+  MARK_PACKAGE_DATA_INVALIDATED "host:$(hostname -s 2>/dev/null || hostname)" host "$(hostname -s 2>/dev/null || hostname)" || {
+    UPDATE_FAILURE=true
+    return 1
+  }
   echo -e "${OR:-}--- PVE UPDATE ---${CL:-}" && pveupdate || true
   if EFFECTIVE_HEADLESS; then
     echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}" && \
@@ -1949,6 +2077,11 @@ CONTAINER_UPDATE_START () {
             continue
           fi
         fi
+        if ! REQUIRE_PACKAGE_DATA_INVALIDATION ||
+          ! MARK_PACKAGE_DATA_INVALIDATED "$CONTAINER" lxc; then
+          UPDATE_FAILURE=true
+          continue
+        fi
         # Start the container
         WILL_STOP="true"
         echo -e " ▶${GN:-} Starting LXC ${BL:-}$CONTAINER ${CL:-}"
@@ -1958,6 +2091,7 @@ CONTAINER_UPDATE_START () {
         if WAIT_FOR_BOOTUP_LXC; then
           SINGLE_TARGET_EXECUTED=true
           UPDATE_CONTAINER "$CONTAINER"
+          MARK_PACKAGE_DATA_MUTATION_COMPLETE "$CONTAINER" lxc || UPDATE_FAILURE=true
           CAPTURE_POST_UPDATE_STATUS "$CONTAINER" ccontainer
           CCONTAINER=""
         else
@@ -1976,6 +2110,7 @@ CONTAINER_UPDATE_START () {
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" == true ]]; then
         SINGLE_TARGET_EXECUTED=true
         UPDATE_CONTAINER "$CONTAINER"
+        MARK_PACKAGE_DATA_MUTATION_COMPLETE "$CONTAINER" lxc || UPDATE_FAILURE=true
         CAPTURE_POST_UPDATE_STATUS "$CONTAINER" ccontainer
         AUTO_REBOOT_GUEST lxc "$CONTAINER" false || UPDATE_FAILURE=true
         CCONTAINER=""
@@ -1998,6 +2133,8 @@ UPDATE_CONTAINER () {
   OS=$(pct config "$CONTAINER" | awk '/^ostype/' - | cut -d' ' -f2)
   NAME=$(pct exec "$CONTAINER" hostname)
   API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH "$CONTAINER" lxc "$OS" || return $?
+  REQUIRE_PACKAGE_DATA_INVALIDATION || return 1
+  MARK_PACKAGE_DATA_INVALIDATED "$CONTAINER" lxc || return $?
 #  if [[ "$OS" =~ centos ]]; then
 #    NAME=$(pct exec "$CONTAINER" hostnamectl | grep 'hostname' | tail -n +2 | rev |cut -c -11 | rev)
 #  else
@@ -2204,6 +2341,11 @@ VM_UPDATE_START () {
               continue
             fi
           fi
+          if ! REQUIRE_PACKAGE_DATA_INVALIDATION ||
+            ! MARK_PACKAGE_DATA_INVALIDATED "$VM" vm; then
+            UPDATE_FAILURE=true
+            continue
+          fi
           # Start the VM
           WILL_STOP="true"
           echo -e " ▶${GN:-} Starting VM${BL:-} $VM ${CL:-}"
@@ -2211,6 +2353,7 @@ VM_UPDATE_START () {
           START_WAITING="true"
           SINGLE_TARGET_EXECUTED=true
           UPDATE_VM "$VM"
+          MARK_PACKAGE_DATA_MUTATION_COMPLETE "$VM" vm || UPDATE_FAILURE=true
           CAPTURE_POST_UPDATE_STATUS "$VM" cvm
           CVM=""
           # Stop the VM
@@ -2226,6 +2369,7 @@ VM_UPDATE_START () {
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
         SINGLE_TARGET_EXECUTED=true
         UPDATE_VM "$VM"
+        MARK_PACKAGE_DATA_MUTATION_COMPLETE "$VM" vm || UPDATE_FAILURE=true
         CAPTURE_POST_UPDATE_STATUS "$VM" cvm
         AUTO_REBOOT_GUEST vm "$VM" false || UPDATE_FAILURE=true
         CVM=""
@@ -2270,6 +2414,8 @@ UPDATE_VM () {
     CVM=""
     return 0
   fi
+  REQUIRE_PACKAGE_DATA_INVALIDATION || return 1
+  MARK_PACKAGE_DATA_INVALIDATED "$VM" vm || return $?
   # Backup
   echo -e "💾${OR:-} Start Snapshot and/or Backup${CL:-}"
   if ! VM_BACKUP; then
@@ -2854,6 +3000,9 @@ fi
 # shellcheck disable=SC2329
 EXIT () {
   EXIT_CODE=$?
+  if declare -f CLEAR_PACKAGE_MUTATION_RESERVATIONS >/dev/null 2>&1; then
+    CLEAR_PACKAGE_MUTATION_RESERVATIONS
+  fi
   if [[ -f "$TEMP_STATE_DIR/exec_host" ]]; then
     EXEC_HOST=$(awk -F'"' '/^EXEC_HOST=/ {print $2}' "$TEMP_STATE_DIR/exec_host")
   fi

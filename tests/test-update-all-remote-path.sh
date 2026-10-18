@@ -18,6 +18,7 @@ touch "$WORK_DIR/local/update-extras.sh" "$WORK_DIR/local/update.conf"
 cat > "$WORK_DIR/local/status.json" <<'JSON'
 {"schema_version":1,"targets":[
   {"id":"host:node1","type":"host","node":"node1","name":"node1","check_status":"ok","reachable":true,"updates":{"available":0}},
+  {"id":"host:node2","type":"host","node":"node2","name":"node2","check_status":"ok","reachable":true,"updates":{"available":0}},
   {"id":"101","type":"vm","node":"node1","name":"vm-101","check_status":"ok","reachable":true,"updates":{"available":0}},
   {"id":"external-linux","type":"external","name":"external-linux","check_status":"ok","reachable":true,"updates":{"available":0}}
 ]}
@@ -35,8 +36,8 @@ PY
 
 cat > "$WORK_DIR/remote-status.json" <<'JSON'
 {"schema_version":1,"targets":[
-  {"id":"host:node2","type":"host","node":"node2","name":"node2","os":"Proxmox","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:05Z","exit_code":0}},
-  {"id":"200","type":"vm","node":"node2","name":"vm-200","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:06Z","exit_code":0}},
+  {"id":"host:node2","type":"host","node":"node2","name":"node2","os":"Proxmox","check_status":"ok","reachable":true,"updates":{"available":0},"reboot_required":false,"package_checked_at":"2026-09-22T10:00:05Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:05Z","exit_code":0}},
+  {"id":"200","type":"vm","node":"node2","name":"vm-200","check_status":"ok","reachable":true,"updates":{"available":0},"package_checked_at":"2026-09-22T10:00:06Z","package_data_invalidated":false,"package_mutation_generation":0,"package_mutation_in_progress":false,"last_update":{"status":"success","timestamp":"2026-09-22T10:00:06Z","exit_code":0}},
   {"id":"201","type":"lxc","node":"node2","name":"ct-201","check_status":"error","reachable":true,"updates":{"available":null},"last_update":{"status":"failed","timestamp":"2026-09-22T10:00:07Z","exit_code":42}},
   {"id":"250","type":"vm","node":"node2","name":"stale-vm-250","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-21T10:00:08Z","exit_code":0}},
   {"id":"251","type":"vm","node":"node2","name":"noninventory-vm-251","check_status":"ok","reachable":true,"updates":{"available":0},"last_update":{"status":"success","timestamp":"2026-09-22T10:00:08Z","exit_code":0}},
@@ -84,6 +85,7 @@ export REMOTE_STATUS="$WORK_DIR/remote-status.json"
 
 awk '/^UPDATE_HOST \(\) \{/{capture=1} capture{print} capture && /^# shellcheck disable=SC2015/{exit}' \
   "$ROOT_DIR/update.sh" | sed '$d' > "$WORK_DIR/update-host-function.sh"
+sed -n '/^MARK_PACKAGE_DATA_INVALIDATED() {/,/^INTERNAL_SSH_FILE=/p' "$ROOT_DIR/update.sh" | sed '$d' > "$WORK_DIR/mark-package-function.sh"
 LOCAL_FILES="$WORK_DIR/local"
 SCRIPT_DIR="$ROOT_DIR"
 SSH_PORT=22
@@ -93,6 +95,10 @@ UPDATE_FAILURE=false
 USE_INTERNAL_TARGET_SELECTION=false
 EFFECTIVE_HEADLESS() { return 0; }
 source "$WORK_DIR/update-host-function.sh"
+source "$WORK_DIR/mark-package-function.sh"
+source "$ROOT_DIR/status-model.sh"
+declare -a PACKAGE_MUTATION_TARGETS=()
+declare -A PACKAGE_MUTATION_KEYS=()
 UPDATE_HOST 10.0.0.2
 
 grep -Fxq apt-count.py "$WORK_DIR/scp.log"

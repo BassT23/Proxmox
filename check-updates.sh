@@ -1078,6 +1078,9 @@ CHECK_HOST_ITSELF () {
   STATUS_MODEL_GUEST_NAME=""
   REBOOT_REQUIRED=false
   local STATUS_HOST_NAME="${STATUS_MODEL_NODE:-$HOSTNAME}"
+  if declare -f STATUS_MODEL_CAPTURE_TARGET_GENERATION >/dev/null 2>&1; then
+    STATUS_MODEL_CAPTURE_TARGET_GENERATION "host:$STATUS_HOST_NAME" || true
+  fi
   # Counts come from the local structured package metadata.  Checks are
   # deliberately read-only; refreshing APT lists belongs to update actions.
   if ! READ_APT_UPDATE_COUNTS; then
@@ -1105,7 +1108,7 @@ CHECK_HOST_ITSELF () {
   # STATUS_MODEL_RECORD is positional: error code, error message, node,
   # display name, normal count, security count.  Keep the host name in both
   # identity positions so the split is not shifted during serialization.
-  STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true "${HOST_OS:-unknown}" apt "$HOST_UPDATES" "${REBOOT_REQUIRED:-false}" "$HOST_STATUS" "" "" "$STATUS_HOST_NAME" "$STATUS_HOST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
+  STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true "${HOST_OS:-unknown}" apt "$HOST_UPDATES" "${REBOOT_REQUIRED:-false}" "$HOST_STATUS" "" "" "$STATUS_HOST_NAME" "$STATUS_HOST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES" "" now
 }
 
 # Proxmox kernel packages can install a new bootable kernel without leaving
@@ -1245,6 +1248,9 @@ CHECK_CONTAINER () {
     CONTAINER=$1
   else
     CONTAINER=$(awk -F'"' '/^CONTAINER=/ {print $2}' $LOCAL_FILES/temp/var)
+  fi
+  if declare -f STATUS_MODEL_CAPTURE_TARGET_GENERATION >/dev/null 2>&1; then
+    STATUS_MODEL_CAPTURE_TARGET_GENERATION "$CONTAINER" || true
   fi
   local CONTAINER_UPDATES=0 CONTAINER_NORMAL_UPDATES=null CONTAINER_SECURITY_UPDATES=null
   local OS_VERSION="" OS_RELEASE="" OS_RELEASE_ID="" OS_RELEASE_PRETTY="" OS_DISPLAY=""
@@ -1402,7 +1408,7 @@ CHECK_CONTAINER () {
     fi
   fi
   [[ "$CONTAINER_UPDATES" -gt 0 ]] && CONTAINER_STATUS=updates_available
-  STATUS_MODEL_RECORD "$CONTAINER" lxc pct true "$OS_DISPLAY" "${OS,,}" "$CONTAINER_UPDATES" "$CONTAINER_REBOOT" "$CONTAINER_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$CONTAINER_NORMAL_UPDATES" "$CONTAINER_SECURITY_UPDATES"
+  STATUS_MODEL_RECORD "$CONTAINER" lxc pct true "$OS_DISPLAY" "${OS,,}" "$CONTAINER_UPDATES" "$CONTAINER_REBOOT" "$CONTAINER_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$CONTAINER_NORMAL_UPDATES" "$CONTAINER_SECURITY_UPDATES" "" now
 }
 
 # Single-target checks use the same lifecycle contract as check-all.  This is
@@ -1411,6 +1417,9 @@ CHECK_CONTAINER () {
 CHECK_SINGLE_CONTAINER () {
   local target="$1" status check_rc=0 lifecycle_failure=0 lifecycle_message
   CONTAINER="$target"
+  if declare -f STATUS_MODEL_CAPTURE_TARGET_GENERATION >/dev/null 2>&1; then
+    STATUS_MODEL_CAPTURE_TARGET_GENERATION "$target" || true
+  fi
   if declare -f API_CHECK_TARGET_IDENTITY_GUARD >/dev/null 2>&1 &&
     ! API_CHECK_TARGET_IDENTITY_GUARD "$target" lxc; then
     STATUS_MODEL_RECORD "$target" lxc pct false "" "" "null" "null" \
@@ -1537,6 +1546,9 @@ VM_CHECK_START () {
 # independently of the check result.
 CHECK_VM_LIFECYCLE () {
   local target="$1" status check_rc=0 lifecycle_failure=0 lifecycle_message=""
+  if declare -f STATUS_MODEL_CAPTURE_TARGET_GENERATION >/dev/null 2>&1; then
+    STATUS_MODEL_CAPTURE_TARGET_GENERATION "$target" || true
+  fi
   if [[ ! "$target" =~ ^[0-9]+$ ]]; then
     printf 'Cannot check VM: missing or invalid VMID\n' >&2
     return 2
@@ -1650,6 +1662,9 @@ CHECK_VM () {
   else
     VM=$(awk -F'"' '/^VM=/ {print $2}' $LOCAL_FILES/temp/var)
   fi
+  if declare -f STATUS_MODEL_CAPTURE_TARGET_GENERATION >/dev/null 2>&1; then
+    STATUS_MODEL_CAPTURE_TARGET_GENERATION "$VM" || true
+  fi
   STATUS_MODEL_GUEST_NAME=""
   if declare -f cluster_target_guest_name >/dev/null 2>&1; then
     STATUS_MODEL_GUEST_NAME=$(cluster_target_guest_name "$VM" 2>/dev/null || true)
@@ -1759,7 +1774,7 @@ CHECK_VM () {
       STATUS_MODEL_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
       STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pkg "$UPDATES" false "$STATUS_MODEL_STATUS" "" "" \
-        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+        "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
       return 0
     fi
     if [[ ${OS,,} =~ ubuntu|mint|kali|debian|devuan ]]; then
@@ -1870,23 +1885,23 @@ CHECK_VM () {
       SSH_MODEL_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
       SSH_MODEL_STATUS=ok
       [[ "$SSH_MODEL_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && SSH_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "$SSH_MODEL_UPDATES" "${REBOOT_REQUIRED:-false}" "$SSH_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apt "$SSH_MODEL_UPDATES" "${REBOOT_REQUIRED:-false}" "$SSH_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES" "" now
     elif [[ ${OS,,} =~ fedora ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" dnf "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
     elif [[ ${OS,,} =~ arch ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pacman "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" pacman "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
     elif [[ ${OS,,} =~ alpine ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apk "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" apk "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
     elif [[ ${OS,,} =~ centos ]]; then
       STATUS_MODEL_STATUS=ok
       [[ "${UPDATES:-0}" -gt 0 ]] && STATUS_MODEL_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+      STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" yum "${UPDATES:-0}" false "$STATUS_MODEL_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
     else
       STATUS_MODEL_RECORD "$VM" vm ssh true "$OS" "" "null" "null" unsupported UNSUPPORTED_OS "No supported updater detected"
     fi
@@ -2000,7 +2015,7 @@ print(data.get("id") or "")
     QEMU_PKG_STATUS=ok
     [[ "$UPDATES" -gt 0 ]] && QEMU_PKG_STATUS=updates_available
     STATUS_MODEL_RECORD "$VM" vm qga true "$OS_NAME" pkg "$UPDATES" false "$QEMU_PKG_STATUS" "" "" \
-      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+      "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
     return 0
   fi
   # Guest-specific handlers above may use the raw get-osinfo fields.
@@ -2079,7 +2094,7 @@ print(data.get("id") or "")
       QEMU_APT_UPDATES=$((SECURITY_APT_UPDATES + NORMAL_APT_UPDATES))
       QEMU_APT_STATUS=ok
       [[ "$QEMU_APT_UPDATES" -gt 0 || "$REBOOT_REQUIRED" == true ]] && QEMU_APT_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "$QEMU_APT_UPDATES" "$REBOOT_REQUIRED" "$QEMU_APT_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES"
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apt "$QEMU_APT_UPDATES" "$REBOOT_REQUIRED" "$QEMU_APT_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" "$NORMAL_APT_UPDATES" "$SECURITY_APT_UPDATES" "" now
     elif [[ "$OS" =~ Fedora ]]; then
       local rpm_count_command rpm_count_result
       if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
@@ -2106,7 +2121,7 @@ print(data.get("id") or "")
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_DNF_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_DNF_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "$UPDATES" false "$QEMU_DNF_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" dnf "$UPDATES" false "$QEMU_DNF_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
     elif [[ "$OS" =~ Arch ]]; then
       local package_count_command package_count_result
       if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND pacman); then
@@ -2133,7 +2148,7 @@ print(data.get("id") or "")
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_PACMAN_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_PACMAN_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "$UPDATES" false "$QEMU_PACMAN_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" pacman "$UPDATES" false "$QEMU_PACMAN_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
     elif [[ "$OS" =~ Alpine ]]; then
       local package_count_command package_count_result
       if ! package_count_command=$(PACKAGE_COUNT_REMOTE_COMMAND apk); then
@@ -2160,7 +2175,7 @@ print(data.get("id") or "")
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_APK_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_APK_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "$UPDATES" false "$QEMU_APK_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" apk "$UPDATES" false "$QEMU_APK_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
     elif [[ "$OS" =~ CentOS ]]; then
       local rpm_count_command rpm_count_result
       if ! rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND); then
@@ -2187,7 +2202,7 @@ print(data.get("id") or "")
       [[ "$UPDATES" -gt 0 ]] && PRINT_UPDATE_TOTAL "$UPDATES"
       QEMU_YUM_STATUS=ok
       [[ "$UPDATES" -gt 0 ]] && QEMU_YUM_STATUS=updates_available
-      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "$UPDATES" false "$QEMU_YUM_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+      STATUS_MODEL_RECORD "$VM" vm qga true "$OS" yum "$UPDATES" false "$QEMU_YUM_STATUS" "" "" "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
     else
       STATUS_MODEL_RECORD "$VM" vm qga true "$OS" "" "null" "null" unsupported UNSUPPORTED_OS "No supported updater detected"
     fi
@@ -2291,7 +2306,7 @@ CHECK_VM_QEMU_HAOS () {
 
   STATUS_MODEL_RECORD "$VM" vm qga true "$display_os" ha \
     "$updates" false "$status" "" "" \
-    "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null
+    "${STATUS_MODEL_NODE:-$HOSTNAME}" "$STATUS_MODEL_GUEST_NAME" null null "" now
 
   if [[ "$updates" -gt 0 ]]; then
     echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
@@ -2403,7 +2418,7 @@ PY
     ) || history_json=""
   fi
   STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "$updates" "$reboot" "$STATUS_MODEL_STATUS" "" "" \
-    "${STATUS_MODEL_NODE:-}" "${STATUS_MODEL_GUEST_NAME:-}" "null" "null" "$history_json"
+    "${STATUS_MODEL_NODE:-}" "${STATUS_MODEL_GUEST_NAME:-}" "null" "null" "$history_json" now
   if [[ "$updates" -gt 0 || "$reboot" == true ]]; then
     echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"
     PRINT_UPDATE_SPLIT Unknown Unknown

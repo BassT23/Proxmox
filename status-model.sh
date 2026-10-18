@@ -6,14 +6,125 @@
 
 STATUS_MODEL_FILE="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
 STATUS_MODEL_RECORD_FILE="${STATUS_MODEL_RECORD_FILE:-$LOCAL_FILES/.status-records.$$}"
+STATUS_MODEL_GENERATION_FILE="${STATUS_MODEL_GENERATION_FILE:-${STATUS_MODEL_RECORD_FILE}.generations}"
 STATUS_MODEL_NODE="${STATUS_MODEL_NODE:-${HOSTNAME:-}}"
 
 STATUS_MODEL_B64() {
   printf '%s' "${1:-}" | base64 | tr -d '\n'
 }
 
+STATUS_MODEL_NEW_OPERATION_ID() {
+  printf 'uu-op-%s-%s-%s\n' "$(date -u '+%Y%m%dT%H%M%S%N')" "${BASHPID:-$$}" "${RANDOM:-0}"
+}
+
 STATUS_MODEL_INIT() {
   : > "$STATUS_MODEL_RECORD_FILE" || return 1
+  # Capture the target mutation epoch before any check command runs. A check
+  # that started before an update must not clear that update's invalidation.
+  python3 - "$STATUS_MODEL_FILE" "$STATUS_MODEL_GENERATION_FILE" <<'PY'
+import json
+import sys
+
+status_file, generation_file = sys.argv[1:]
+generations = {}
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+    targets = payload.get("targets") if isinstance(payload, dict) else None
+    if isinstance(targets, list):
+        for target in targets:
+            if not isinstance(target, dict) or not target.get("id"):
+                continue
+            generation_present = "package_mutation_generation" in target
+            active_present = "package_mutation_in_progress" in target
+            generation = target.get("package_mutation_generation", 0)
+            active = target.get("package_mutation_in_progress", False)
+            if generation_present and (type(generation) is not int or generation < 0):
+                generation = None
+            if active_present and type(active) is not bool:
+                active = None
+            generations[str(target["id"])] = {
+                "generation": generation,
+                "active": active,
+                "operation_id": target.get("package_mutation_operation_id"),
+                "generation_present": generation_present,
+                "active_present": active_present,
+                "operation_present": "package_mutation_operation_id" in target,
+            }
+except (OSError, ValueError, TypeError):
+    generations = {}
+
+with open(generation_file, "w", encoding="utf-8") as output:
+    json.dump(generations, output, separators=(",", ":"))
+PY
+}
+
+STATUS_MODEL_CAPTURE_TARGET_GENERATION() {
+  local target_id="$1"
+  STATUS_MODEL_CHECK_GENERATION=""
+  STATUS_MODEL_CHECK_STARTED_DURING_MUTATION=""
+  STATUS_MODEL_CHECK_OPERATION_ID=""
+  if [[ -f "$STATUS_MODEL_GENERATION_FILE" || -f "$STATUS_MODEL_FILE" ]]; then
+    local generation_output=""
+    generation_output=$(python3 - "$STATUS_MODEL_GENERATION_FILE" "$STATUS_MODEL_FILE" "$target_id" <<'PY'
+import json
+import sys
+
+generation_path, status_path, target_id = sys.argv[1:]
+try:
+    import os
+    path = generation_path if generation_path and os.path.isfile(generation_path) else status_path
+    with open(path, encoding="utf-8") as source:
+        payload = json.load(source)
+    if path == status_path:
+        generations = {
+            str(item.get("id")): {
+                "generation": item.get("package_mutation_generation"),
+                "active": item.get("package_mutation_in_progress"),
+                "operation_id": item.get("package_mutation_operation_id"),
+                "generation_present": "package_mutation_generation" in item,
+                "active_present": "package_mutation_in_progress" in item,
+                "operation_present": "package_mutation_operation_id" in item,
+            }
+            for item in payload.get("targets", [])
+            if isinstance(item, dict) and item.get("id")
+        }
+    else:
+        generations = payload
+    entry = generations.get(target_id) if isinstance(generations, dict) else None
+    if isinstance(entry, dict):
+        generation = entry.get("generation", 0)
+        active = entry.get("active", False)
+        operation_id = entry.get("operation_id", "")
+        if entry.get("generation_present") is False:
+            generation = 0
+        if entry.get("active_present") is False:
+            active = False
+        if type(generation) is int and generation >= 0 and type(active) is bool:
+            print(generation, str(active).lower(), operation_id or "")
+    elif path != status_path:
+        # STATUS_MODEL_INIT creates a sidecar for every run.  A valid legacy
+        # status file may not contain this target yet; its first check starts
+        # in the initial, non-mutating epoch.  A malformed status file does
+        # not get this fallback and therefore remains fail-closed.
+        try:
+            with open(status_path, encoding="utf-8") as source:
+                status_payload = json.load(source)
+            status_targets = status_payload.get("targets") if isinstance(status_payload, dict) else None
+            if isinstance(status_targets, list):
+                print(0, "false", "")
+        except (FileNotFoundError, OSError, ValueError, TypeError):
+            if not os.path.exists(status_path):
+                print(0, "false", "")
+except (OSError, ValueError, TypeError):
+    pass
+PY
+    ) || generation_output=""
+    if [[ -n "$generation_output" ]]; then
+      read -r STATUS_MODEL_CHECK_GENERATION STATUS_MODEL_CHECK_STARTED_DURING_MUTATION STATUS_MODEL_CHECK_OPERATION_ID <<< "$generation_output" || true
+    fi
+  fi
+  export STATUS_MODEL_CHECK_GENERATION STATUS_MODEL_CHECK_STARTED_DURING_MUTATION STATUS_MODEL_CHECK_OPERATION_ID
 }
 
 STATUS_MODEL_HAS_FAILURES() {
@@ -82,12 +193,18 @@ if not str(record.get("os") or "").strip():
     print(f"POST_UPDATE_CAPTURE_OS_MISSING: target {target_id}", file=sys.stderr)
     raise SystemExit(91)
 updates = record.get("updates")
-if not isinstance(updates, dict) or "available" not in updates:
+if not isinstance(updates, dict) or type(updates.get("available")) is not int or updates.get("available") < 0:
     print(f"POST_UPDATE_CAPTURE_UPDATES_MISSING: target {target_id}", file=sys.stderr)
     raise SystemExit(92)
 if "reboot_required" not in record:
     print(f"POST_UPDATE_CAPTURE_REBOOT_STATUS_MISSING: target {target_id}", file=sys.stderr)
     raise SystemExit(93)
+if record.get("package_data_invalidated") is not False:
+    print(f"POST_UPDATE_CAPTURE_PACKAGE_DATA_NOT_VALIDATED: target {target_id}", file=sys.stderr)
+    raise SystemExit(94)
+if not isinstance(record.get("package_checked_at"), str) or not record.get("package_checked_at"):
+    print(f"POST_UPDATE_CAPTURE_PACKAGE_TIMESTAMP_MISSING: target {target_id}", file=sys.stderr)
+    raise SystemExit(95)
 raise SystemExit(0)
 PY
 }
@@ -100,8 +217,39 @@ STATUS_MODEL_RECORD() {
   local name="${13:-${STATUS_MODEL_GUEST_NAME:-}}"
   local normal_updates="${14:-null}" security_updates="${15:-null}"
   local windows_update="${16:-}"
+  local package_checked_at="${17:-}"
+  local package_data_invalidated="${18:-}"
+  local package_check_generation="${19:-${STATUS_MODEL_CHECK_GENERATION:-}}"
+  local package_check_started_during_mutation="${20:-${STATUS_MODEL_CHECK_STARTED_DURING_MUTATION:-}}"
+  local package_mutation_operation_id="${21:-${UU_PACKAGE_MUTATION_OPERATION_ID:-${STATUS_MODEL_CHECK_OPERATION_ID:-}}}"
+  local status_metadata=""
+  if [[ -n "$package_checked_at" || -n "$package_data_invalidated" ||
+    -n "$package_check_generation" || -n "$package_check_started_during_mutation" ||
+    -n "$package_mutation_operation_id" ]]; then
+    status_metadata=$(python3 - "$package_checked_at" "$package_data_invalidated" \
+      "$package_check_generation" "$package_check_started_during_mutation" \
+      "$package_mutation_operation_id" <<'PY'
+import json
+import sys
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+package_checked_at, package_data_invalidated, package_check_generation, started_during_mutation, operation_id = sys.argv[1:]
+metadata = {}
+if package_checked_at:
+    metadata["package_checked_at"] = package_checked_at
+if package_data_invalidated in ("true", "false"):
+    metadata["package_data_invalidated"] = package_data_invalidated == "true"
+if package_check_generation.isdigit():
+    metadata["package_check_generation"] = int(package_check_generation)
+if started_during_mutation in ("true", "false"):
+    metadata["package_check_started_during_mutation"] = started_during_mutation == "true"
+if operation_id:
+    metadata["package_mutation_operation_id"] = operation_id
+print(json.dumps(metadata, separators=(",", ":")))
+PY
+    ) || return 1
+  fi
+
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
     "$(STATUS_MODEL_B64 "$id")" \
     "$(STATUS_MODEL_B64 "$type")" \
     "$(STATUS_MODEL_B64 "$transport")" \
@@ -118,6 +266,10 @@ STATUS_MODEL_RECORD() {
     "$(STATUS_MODEL_B64 "$normal_updates")" \
     "$(STATUS_MODEL_B64 "$security_updates")" \
     "$(STATUS_MODEL_B64 "$windows_update")" >> "$STATUS_MODEL_RECORD_FILE"
+  if [[ -n "$status_metadata" ]]; then
+    printf '\t%s' "$(STATUS_MODEL_B64 "$status_metadata")" >> "$STATUS_MODEL_RECORD_FILE"
+  fi
+  printf '\n' >> "$STATUS_MODEL_RECORD_FILE"
 }
 
 STATUS_MODEL_IMPORT_FILE() {
@@ -200,6 +352,30 @@ with open(record_file, "a", encoding="utf-8") as records:
             fields.append(encode(json.dumps(windows_update, separators=(",", ":"))))
         if skip_reason is not None:
             fields.append(encode(json.dumps(skip_reason, separators=(",", ":"))))
+        metadata = {"source": "status_import"}
+        if isinstance(target.get("last_check"), str):
+            metadata["last_check"] = target["last_check"]
+        if isinstance(target.get("package_checked_at"), str):
+            metadata["package_checked_at"] = target["package_checked_at"]
+        if "package_data_invalidated" in target:
+            # Preserve presence and the raw value.  A remote value with the
+            # wrong JSON type is provenance failure, not an implicit false.
+            metadata["package_data_invalidated_present"] = True
+            metadata["package_data_invalidated"] = target["package_data_invalidated"]
+        if isinstance(target.get("package_data_invalidated_at"), str):
+            metadata["package_data_invalidated_at"] = target["package_data_invalidated_at"]
+        if "package_mutation_generation" in target:
+            metadata["package_check_generation_present"] = True
+        if type(target.get("package_mutation_generation")) is int and target["package_mutation_generation"] >= 0:
+            metadata["package_check_generation"] = target["package_mutation_generation"]
+        if "package_mutation_in_progress" in target:
+            metadata["package_check_started_during_mutation_present"] = True
+        if type(target.get("package_mutation_in_progress")) is bool:
+            metadata["package_check_started_during_mutation"] = target["package_mutation_in_progress"]
+        if "package_mutation_operation_id" in target:
+            metadata["package_mutation_operation_id_present"] = True
+            metadata["package_mutation_operation_id"] = target["package_mutation_operation_id"]
+        fields.append(encode(json.dumps(metadata, separators=(",", ":"))))
         records.write("\t".join(fields) + "\n")
 PY
 }
@@ -253,6 +429,15 @@ except (OSError, ValueError) as exc:
 def decode(value):
     return base64.b64decode(value.encode()).decode()
 
+def valid_timestamp(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return value if parsed.tzinfo is not None else None
+
 def is_newer_or_equal(candidate, current):
     if not isinstance(current, dict) or current.get("status") in (None, "unknown"):
         return True
@@ -267,10 +452,27 @@ def is_newer_or_equal(candidate, current):
         return True
     return candidate_dt >= current_dt
 
+def valid_generation(value):
+    return type(value) is int and value >= 0
+
+def valid_operation_id(value):
+    return isinstance(value, str) and bool(re.fullmatch(r"uu-op-[A-Za-z0-9T_.:-]{8,160}", value))
+
+def valid_package_result(status, reachable_value, updates_value, error_value, timestamp_value):
+    if status not in {"ok", "updates_available"}:
+        return False
+    if reachable_value != "true" or error_value:
+        return False
+    if not re.fullmatch(r"[0-9]+", updates_value or ""):
+        return False
+    if timestamp_value != "now" and valid_timestamp(timestamp_value) is None:
+        return False
+    return True
+
 with open(record_file, encoding="utf-8") as records:
     for line in records:
         fields = line.rstrip("\n").split("\t")
-        if len(fields) not in (12, 13, 14, 15, 16, 17, 18, 19):
+        if len(fields) not in (12, 13, 14, 15, 16, 17, 18, 19, 20):
             raise ValueError("invalid status record")
         (target_id, target_type, transport, reachable, os_name, updater,
          updates, reboot_required, check_status, error_code, error_message,
@@ -280,18 +482,40 @@ with open(record_file, encoding="utf-8") as records:
         security_split_supported = None
         windows_update = None
         imported_skip_reason = None
+        imported_last_check = None
+        imported_package_checked_at = None
+        imported_package_data_invalidated = None
+        imported_package_data_invalidated_present = False
+        imported_package_data_invalidated_at = None
+        imported_package_check_generation = None
+        imported_package_check_generation_present = False
+        imported_package_check_started_during_mutation = None
+        imported_package_check_started_during_mutation_present = False
+        imported_package_mutation_operation_id = None
+        imported_package_mutation_operation_id_present = False
+        imported_status_metadata = False
 
         def parse_json_field(value):
             if not value:
-                return None, None, None
+                return None, None, None, None
             try:
                 parsed = json.loads(value)
             except (TypeError, ValueError):
                 # Optional remote metadata must not make the complete target
                 # record unimportable.  Core status fields remain usable.
-                return None, None, None
+                return None, None, None, None
+            if (isinstance(parsed, dict) and parsed and
+                    not set(parsed) - {"source", "last_check", "package_checked_at",
+                                       "package_data_invalidated", "package_data_invalidated_at",
+                                       "package_data_invalidated_present",
+                                       "package_check_generation", "package_check_generation_present",
+                                       "package_check_started_during_mutation",
+                                       "package_check_started_during_mutation_present",
+                                       "package_mutation_operation_id",
+                                       "package_mutation_operation_id_present"}):
+                return None, None, None, parsed
             if isinstance(parsed, dict) and isinstance(parsed.get("history"), list):
-                return None, parsed, None
+                return None, parsed, None, None
             if (isinstance(parsed, dict) and
                     not set(parsed) - {"code", "message"} and
                     isinstance(parsed.get("code"), str) and parsed.get("code")):
@@ -299,8 +523,8 @@ with open(record_file, encoding="utf-8") as records:
                 message = parsed.get("message")
                 if len(code) <= 128 and (message is None or
                                          isinstance(message, str) and len(message) <= 2048):
-                    return None, None, {"code": code, "message": message}
-            return parsed, None, None
+                    return None, None, {"code": code, "message": message}, None
+            return parsed, None, None, None
 
         def nullable_int(value):
             if value in ("", "null"):
@@ -312,16 +536,34 @@ with open(record_file, encoding="utf-8") as records:
         def is_json_field(value):
             return value.lstrip().startswith(("{", "["))
 
-        # Optional fields have had two compatible layouts over time:
+        # Optional fields have had several compatible layouts over time:
         # name,last_update and name,normal_updates,security_updates,
-        # security_split_supported,last_update,windows_update.  Parse by
-        # shape, not by blindly converting every field to an integer, so old
-        # records remain importable when both JSON objects are present.
+        # security_split_supported,last_update,windows_update,skip_reason,
+        # plus source timestamp metadata. Parse by shape, not by blindly
+        # converting every field to an integer, so old records remain
+        # importable when both JSON objects are present.
         name = optional_fields[0] if optional_fields else ""
         cursor = 1
         split_fields = False
         if cursor < len(optional_fields) and is_json_field(optional_fields[cursor]):
-            imported_last_update, windows_update, imported_skip_reason = parse_json_field(optional_fields[cursor])
+            imported_last_update, windows_update, imported_skip_reason, metadata = parse_json_field(optional_fields[cursor])
+            if metadata:
+                imported_last_check = metadata.get("last_check")
+                imported_package_checked_at = metadata.get("package_checked_at")
+                imported_package_data_invalidated = metadata.get("package_data_invalidated")
+                imported_package_data_invalidated_present = metadata.get("package_data_invalidated_present") is True
+                imported_package_data_invalidated_at = metadata.get("package_data_invalidated_at")
+                imported_package_check_generation = metadata.get("package_check_generation")
+                imported_package_check_generation_present = metadata.get("package_check_generation_present") is True
+                imported_package_check_started_during_mutation = metadata.get("package_check_started_during_mutation")
+                imported_package_check_started_during_mutation_present = metadata.get(
+                    "package_check_started_during_mutation_present"
+                ) is True
+                imported_package_mutation_operation_id = metadata.get("package_mutation_operation_id")
+                imported_package_mutation_operation_id_present = metadata.get(
+                    "package_mutation_operation_id_present"
+                ) is True
+                imported_status_metadata = metadata.get("source") == "status_import"
             cursor += 1
         else:
             if cursor < len(optional_fields):
@@ -329,7 +571,24 @@ with open(record_file, encoding="utf-8") as records:
                 split_fields = True
                 cursor += 1
             if cursor < len(optional_fields) and is_json_field(optional_fields[cursor]):
-                imported_last_update, windows_update, imported_skip_reason = parse_json_field(optional_fields[cursor])
+                imported_last_update, windows_update, imported_skip_reason, metadata = parse_json_field(optional_fields[cursor])
+                if metadata:
+                    imported_last_check = metadata.get("last_check")
+                    imported_package_checked_at = metadata.get("package_checked_at")
+                    imported_package_data_invalidated = metadata.get("package_data_invalidated")
+                    imported_package_data_invalidated_present = metadata.get("package_data_invalidated_present") is True
+                    imported_package_data_invalidated_at = metadata.get("package_data_invalidated_at")
+                    imported_package_check_generation = metadata.get("package_check_generation")
+                    imported_package_check_generation_present = metadata.get("package_check_generation_present") is True
+                    imported_package_check_started_during_mutation = metadata.get("package_check_started_during_mutation")
+                    imported_package_check_started_during_mutation_present = metadata.get(
+                        "package_check_started_during_mutation_present"
+                    ) is True
+                    imported_package_mutation_operation_id = metadata.get("package_mutation_operation_id")
+                    imported_package_mutation_operation_id_present = metadata.get(
+                        "package_mutation_operation_id_present"
+                    ) is True
+                    imported_status_metadata = metadata.get("source") == "status_import"
                 cursor += 1
             elif cursor < len(optional_fields):
                 security_updates = nullable_int(optional_fields[cursor])
@@ -338,11 +597,28 @@ with open(record_file, encoding="utf-8") as records:
                 security_split_supported = optional_fields[cursor] == "true"
                 cursor += 1
             while cursor < len(optional_fields):
-                candidate_last, candidate_windows, candidate_skip = parse_json_field(optional_fields[cursor])
+                candidate_last, candidate_windows, candidate_skip, metadata = parse_json_field(optional_fields[cursor])
                 if candidate_windows is not None:
                     windows_update = candidate_windows
                 elif candidate_skip is not None:
                     imported_skip_reason = candidate_skip
+                elif metadata is not None:
+                    imported_last_check = metadata.get("last_check")
+                    imported_package_checked_at = metadata.get("package_checked_at")
+                    imported_package_data_invalidated = metadata.get("package_data_invalidated")
+                    imported_package_data_invalidated_present = metadata.get("package_data_invalidated_present") is True
+                    imported_package_data_invalidated_at = metadata.get("package_data_invalidated_at")
+                    imported_package_check_generation = metadata.get("package_check_generation")
+                    imported_package_check_generation_present = metadata.get("package_check_generation_present") is True
+                    imported_package_check_started_during_mutation = metadata.get("package_check_started_during_mutation")
+                    imported_package_check_started_during_mutation_present = metadata.get(
+                        "package_check_started_during_mutation_present"
+                    ) is True
+                    imported_package_mutation_operation_id = metadata.get("package_mutation_operation_id")
+                    imported_package_mutation_operation_id_present = metadata.get(
+                        "package_mutation_operation_id_present"
+                    ) is True
+                    imported_status_metadata = metadata.get("source") == "status_import"
                 elif imported_last_update is None:
                     imported_last_update = candidate_last
                 cursor += 1
@@ -369,6 +645,15 @@ with open(record_file, encoding="utf-8") as records:
             error = None
         record = targets.setdefault(target_id, {})
         existing_record = existing_targets.get(target_id, {})
+        if isinstance(existing_record, dict):
+            existing_type = existing_record.get("type")
+            existing_node = existing_record.get("node")
+            if existing_type and target_type and existing_type != target_type:
+                raise ValueError(f"target identity mismatch for {target_id}: type")
+            if existing_type == "external" and target_type == "external" and existing_node not in (None, ""):
+                raise ValueError(f"target identity mismatch for {target_id}: external node")
+            if existing_node and check_status != "history_only" and (not node or existing_node != node):
+                raise ValueError(f"target identity mismatch for {target_id}: node")
         record.update({
             "id": target_id,
             "type": target_type or None,
@@ -381,7 +666,12 @@ with open(record_file, encoding="utf-8") as records:
             **({"normal_updates": normal_updates} if split_fields else {}),
             **({"security_updates": security_updates} if split_fields else {}),
             "reboot_required": reboot,
-            "last_check": generated_at,
+            "last_check": (
+                valid_timestamp(imported_last_check)
+                if valid_timestamp(imported_last_check)
+                else existing_record.get("last_check") if imported_status_metadata and isinstance(existing_record, dict)
+                else None if imported_status_metadata else generated_at
+            ),
             "check_status": check_status or "not_checked",
             "error": error,
             "skip_reason": skip_reason,
@@ -391,15 +681,191 @@ with open(record_file, encoding="utf-8") as records:
                 updater == "apt" or security_updates is not None
             ),
         })
+        existing_package_checked_at = existing_record.get("package_checked_at") if isinstance(existing_record, dict) else None
+        if isinstance(existing_package_checked_at, str) and existing_package_checked_at:
+            record["package_checked_at"] = existing_package_checked_at
+        existing_invalidated = (
+            existing_record.get("package_data_invalidated") is True
+            if isinstance(existing_record, dict) else False
+        )
+        existing_invalidated_at = (
+            valid_timestamp(existing_record.get("package_data_invalidated_at"))
+            if isinstance(existing_record, dict) else None
+        )
+        existing_generation_present = (
+            isinstance(existing_record, dict) and
+            "package_mutation_generation" in existing_record
+        )
+        existing_generation = (
+            existing_record.get("package_mutation_generation")
+            if existing_generation_present else 0
+        )
+        existing_generation_valid = (
+            not existing_generation_present or valid_generation(existing_generation)
+        )
+        if not existing_generation_valid:
+            existing_generation = 0
+        existing_mutation_active_present = (
+            isinstance(existing_record, dict) and
+            "package_mutation_in_progress" in existing_record
+        )
+        existing_mutation_active_valid = (
+            not existing_mutation_active_present or
+            type(existing_record.get("package_mutation_in_progress")) is bool
+        )
+        existing_mutation_active = (
+            existing_record.get("package_mutation_in_progress") is True
+            if isinstance(existing_record, dict) else False
+        )
+        existing_operation_present = (
+            isinstance(existing_record, dict) and
+            "package_mutation_operation_id" in existing_record
+        )
+        existing_operation_id = (
+            existing_record.get("package_mutation_operation_id")
+            if existing_operation_present else None
+        )
+        existing_operation_valid = (
+            not existing_operation_present or valid_operation_id(existing_operation_id)
+        )
+        if isinstance(existing_record, dict) and "package_data_invalidated" in existing_record:
+            record["package_data_invalidated"] = existing_record.get("package_data_invalidated")
+        if isinstance(existing_record, dict) and valid_generation(existing_record.get("package_mutation_generation")):
+            record["package_mutation_generation"] = existing_record["package_mutation_generation"]
+        if isinstance(existing_record, dict) and type(existing_record.get("package_mutation_in_progress")) is bool:
+            record["package_mutation_in_progress"] = existing_record["package_mutation_in_progress"]
+        if isinstance(existing_record, dict) and "package_mutation_operation_id" in existing_record:
+            record["package_mutation_operation_id"] = existing_record["package_mutation_operation_id"]
+        if existing_invalidated_at and record.get("package_data_invalidated") is True:
+            record["package_data_invalidated_at"] = existing_invalidated_at
+        incoming_generation = imported_package_check_generation
+        incoming_started_during_mutation = imported_package_check_started_during_mutation
+        generation_matches = valid_generation(incoming_generation) and incoming_generation == existing_generation
+        incoming_operation_id = imported_package_mutation_operation_id
+        incoming_operation_valid = (
+            not imported_package_mutation_operation_id_present or
+            valid_operation_id(incoming_operation_id)
+        )
+        operation_matches = (
+            existing_operation_valid and incoming_operation_valid and
+            existing_operation_present and imported_package_mutation_operation_id_present and
+            existing_operation_id == incoming_operation_id
+        )
+        package_timestamp = None
+        if isinstance(imported_package_checked_at, str) and imported_package_checked_at:
+            package_timestamp = (
+                datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+                if imported_package_checked_at == "now" else valid_timestamp(imported_package_checked_at)
+            )
+        package_result_ok = valid_package_result(
+            check_status, reachable, updates, error_code or error_message, imported_package_checked_at
+        )
+        imported_provenance_valid = (
+            not imported_status_metadata or (
+                imported_package_data_invalidated_present and
+                type(imported_package_data_invalidated) is bool and
+                imported_package_check_generation_present and
+                valid_generation(incoming_generation) and
+                imported_package_check_started_during_mutation_present and
+                type(incoming_started_during_mutation) is bool and
+                incoming_operation_valid
+            )
+        )
+        # A remote worker has its own mutation generation.  It is not
+        # comparable to the controller generation.  A remote post-check can
+        # therefore complete a controller reservation only through the
+        # persisted operation ID, exact target identity (checked above), and
+        # an explicit inactive/validated source result.
+        remote_operation_completion = (
+            imported_status_metadata and package_result_ok and
+            existing_operation_present and operation_matches and
+            imported_package_check_generation_present and valid_generation(incoming_generation) and
+            imported_package_check_started_during_mutation_present and
+            incoming_started_during_mutation is False and
+            imported_package_data_invalidated_present and
+            imported_package_data_invalidated is False
+        )
+        # Controller and remote workers maintain independent generations.  A
+        # matching number is therefore only meaningful for a local check.  A
+        # remote result may clear an existing controller invalidation only
+        # through the exact, validated operation-completion path above.
+        if existing_invalidated:
+            invalidation_clear_allowed = (
+                remote_operation_completion if imported_status_metadata else generation_matches
+            )
+        else:
+            invalidation_clear_allowed = True
+        package_result_safe = (
+            check_status != "history_only" and package_result_ok and
+            incoming_started_during_mutation is not True and
+            (not existing_mutation_active or remote_operation_completion) and
+            existing_generation_valid and
+            existing_mutation_active_valid and
+            existing_operation_valid and
+            valid_generation(incoming_generation) and
+            imported_provenance_valid and
+            invalidation_clear_allowed
+        )
+        if package_result_ok and not package_result_safe and isinstance(existing_record, dict):
+            # A result from before/during a mutation is an observation, not a
+            # new package state. Preserve the previous package provenance.
+            for key in ("updates", "normal_updates", "security_updates", "package_checked_at",
+                        "package_mutation_generation", "package_mutation_in_progress",
+                        "package_mutation_operation_id", "package_data_invalidated", "package_data_invalidated_at"):
+                if key in existing_record:
+                    record[key] = copy.deepcopy(existing_record[key])
+        elif package_result_safe and package_timestamp is not None:
+            record["package_checked_at"] = package_timestamp
+            record["package_mutation_generation"] = (
+                existing_generation if remote_operation_completion else (
+                    incoming_generation if valid_generation(incoming_generation) else existing_generation
+                )
+            )
+            record["package_mutation_in_progress"] = False
+            record["package_data_invalidated"] = False
+            record.pop("package_data_invalidated_at", None)
+        elif check_status != "history_only" and isinstance(existing_record, dict):
+            # A neutral skip or a failed observation is not a package result.
+            # Preserve the last known package data instead of replacing it with
+            # null counts and a newer observation timestamp.
+            for key in ("updates", "normal_updates", "security_updates", "package_checked_at",
+                        "package_mutation_generation", "package_mutation_in_progress",
+                        "package_mutation_operation_id", "package_data_invalidated", "package_data_invalidated_at"):
+                if key in existing_record:
+                    record[key] = copy.deepcopy(existing_record[key])
+
+        if package_result_ok and not package_result_safe:
+            # A valid-looking count without a complete operation provenance
+            # is not safe to publish as fresh package data.  Keep historical
+            # fields, but make the current observation fail closed.
+            record["package_data_invalidated"] = True
+
+        if check_status != "history_only" and imported_status_metadata:
+            incoming_invalidated_at = valid_timestamp(imported_package_data_invalidated_at)
+            if imported_package_data_invalidated is True:
+                record["package_data_invalidated"] = True
+                if incoming_invalidated_at:
+                    record["package_data_invalidated_at"] = incoming_invalidated_at
+            elif imported_package_data_invalidated is False and not package_result_safe and existing_invalidated:
+                # A remote error, incomplete result, old result, or result
+                # captured during a mutation cannot clear local invalidation.
+                record["package_data_invalidated"] = True
+                if existing_invalidated_at:
+                    record["package_data_invalidated_at"] = existing_invalidated_at
         if check_status == "history_only" and isinstance(existing_record, dict):
             # A history refresh is read-only and must not replace the latest
             # check observation, update count, reboot flag, or error state.
             for key in ("name", "type", "transport", "reachable", "os", "os_version",
                         "updater", "updates", "normal_updates", "security_updates",
                         "reboot_required", "last_check", "check_status", "error", "skip_reason", "node",
-                        "security_split_supported"):
+                        "security_split_supported", "package_checked_at", "package_mutation_generation",
+                        "package_mutation_in_progress", "package_mutation_operation_id"):
                 if key in existing_record:
                     record[key] = existing_record[key]
+            if "package_data_invalidated" in existing_record:
+                record["package_data_invalidated"] = existing_record["package_data_invalidated"]
+            if "package_data_invalidated_at" in existing_record:
+                record["package_data_invalidated_at"] = existing_record["package_data_invalidated_at"]
         if target_type == "host":
             # Host identity comes from the cluster resolver, never from a
             # stale guest name carried by an older status record.
@@ -458,6 +924,9 @@ STATUS_MODEL_CLEANUP() {
   if [[ -n "${STATUS_MODEL_RECORD_FILE:-}" ]]; then
     rm -f -- "$STATUS_MODEL_RECORD_FILE"
   fi
+  if [[ -n "${STATUS_MODEL_GENERATION_FILE:-}" ]]; then
+    rm -f -- "$STATUS_MODEL_GENERATION_FILE"
+  fi
 }
 
 STATUS_MODEL_UPSERT() {
@@ -468,6 +937,9 @@ STATUS_MODEL_UPSERT() {
   local error_message="${12:-}"
   local normal_updates="${13:-null}" security_updates="${14:-null}"
   local security_split_supported="${15:-false}"
+  local package_checked_at="${16:-}"
+  local package_check_generation="${17:-${STATUS_MODEL_CHECK_GENERATION:-}}"
+  local package_check_started_during_mutation="${18:-${STATUS_MODEL_CHECK_STARTED_DURING_MUTATION:-}}"
 
   local status_lock_file="${status_file}.lock" status_lock_fd
   exec {status_lock_fd}>"$status_lock_file" || return 1
@@ -479,16 +951,19 @@ STATUS_MODEL_UPSERT() {
   python3 - "$status_file" "$target_id" "$target_type" "$transport" \
     "$reachable" "$os_name" "$os_version" "$updater" "$updates" \
     "$reboot_required" "$check_status" "$error_code" "$error_message" \
-    "$normal_updates" "$security_updates" "$security_split_supported" <<'PY'
+    "$normal_updates" "$security_updates" "$security_split_supported" "$package_checked_at" \
+    "$package_check_generation" "$package_check_started_during_mutation" <<'PY'
 import json
 import os
+import re
 import sys
 import tempfile
 from datetime import datetime, timezone
 
 (status_file, target_id, target_type, transport, reachable, os_name,
  os_version, updater, updates, reboot_required, check_status, error_code,
- error_message, normal_updates, security_updates, security_split_supported) = sys.argv[1:]
+ error_message, normal_updates, security_updates, security_split_supported,
+ package_checked_at, package_check_generation, package_check_started_during_mutation) = sys.argv[1:]
 
 try:
     with open(status_file, encoding="utf-8") as source:
@@ -510,6 +985,20 @@ record = next((item for item in targets if isinstance(item, dict) and item.get("
 if record is None:
     record = {"id": target_id}
     targets.append(record)
+elif record.get("type") and record.get("type") != target_type:
+    print(f"STATUS_MODEL_UPSERT_REJECTED_IDENTITY: {target_id}: type mismatch", file=sys.stderr)
+    raise SystemExit(46)
+elif target_type == "external" and record.get("node") not in (None, ""):
+    print(f"STATUS_MODEL_UPSERT_REJECTED_IDENTITY: {target_id}: external node mismatch", file=sys.stderr)
+    raise SystemExit(46)
+
+existing_package_state = {
+    key: record[key] for key in (
+        "updates", "normal_updates", "security_updates", "package_checked_at",
+        "package_mutation_generation", "package_mutation_in_progress",
+        "package_mutation_operation_id", "package_data_invalidated", "package_data_invalidated_at"
+    ) if key in record
+}
 
 def nullable_bool(value):
     return None if value in ("", "null") else value == "true"
@@ -548,6 +1037,65 @@ record.update({
     "security_split_supported": nullable_bool(security_split_supported),
 })
 record.setdefault("last_update", {"status": "unknown", "timestamp": None})
+
+def valid_generation(value):
+    return value.isdigit() and int(value) >= 0
+
+def valid_timestamp(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return value if parsed.tzinfo is not None else None
+
+def valid_package_result():
+    return (
+        check_status in {"ok", "updates_available"} and
+        reachable == "true" and
+        updates.isdigit() and int(updates) >= 0 and
+        not error_code and not error_message and
+        (package_checked_at == "now" or valid_timestamp(package_checked_at) is not None)
+    )
+
+current_generation_present = "package_mutation_generation" in record
+current_generation = record.get("package_mutation_generation", 0)
+current_generation_valid = (
+    not current_generation_present or (type(current_generation) is int and current_generation >= 0)
+)
+if not current_generation_valid:
+    current_generation = 0
+incoming_generation = int(package_check_generation) if valid_generation(package_check_generation) else None
+generation_matches = incoming_generation is not None and incoming_generation == current_generation
+mutation_active_present = "package_mutation_in_progress" in record
+mutation_active_valid = (
+    not mutation_active_present or type(record.get("package_mutation_in_progress")) is bool
+)
+mutation_active = record.get("package_mutation_in_progress") is True
+invalidated = record.get("package_data_invalidated") is True
+package_result_ok = valid_package_result()
+package_result_safe = (
+    package_result_ok and package_check_started_during_mutation != "true" and
+    not mutation_active and current_generation_valid and mutation_active_valid and
+    valid_generation(package_check_generation) and
+    (not invalidated or generation_matches)
+)
+if package_result_safe:
+    if package_checked_at == "now":
+        record["package_checked_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+    else:
+        record["package_checked_at"] = package_checked_at
+    record["package_mutation_generation"] = incoming_generation if incoming_generation is not None else current_generation
+    record["package_mutation_in_progress"] = False
+    record["package_data_invalidated"] = False
+    record.pop("package_data_invalidated_at", None)
+elif existing_package_state:
+    record.update(existing_package_state)
+if package_result_ok and not package_result_safe:
+    # A successful-looking result without a captured generation has no safe
+    # relationship to the target's mutation epoch.
+    record["package_data_invalidated"] = True
 
 directory = os.path.dirname(os.path.abspath(status_file)) or "."
 os.makedirs(directory, exist_ok=True)
@@ -749,6 +1297,214 @@ except Exception:
     except FileNotFoundError:
         pass
     raise
+PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
+}
+
+STATUS_MODEL_INVALIDATE_PACKAGE_DATA() {
+  local target_id="$1" target_type="$2" target_node="${3:-}" operation_id="${4:-}"
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  local status_lock_file="${status_file}.lock" status_lock_fd
+  [[ -n "$target_id" && -n "$target_type" ]] || return 2
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$status_file" "$target_id" "$target_type" "$target_node" "$operation_id" <<'PY'
+import json
+import os
+import re
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+status_file, target_id, target_type, target_node, operation_id = sys.argv[1:]
+status_exists = True
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except FileNotFoundError:
+    status_exists = False
+    payload = {"schema_version": 1, "generated_at": None, "targets": []}
+except (OSError, ValueError):
+    raise SystemExit(1)
+
+targets = payload.get("targets") if isinstance(payload, dict) else None
+if not isinstance(targets, list):
+    raise SystemExit(1)
+
+requested = str(target_id)
+id_matches = [item for item in targets
+              if isinstance(item, dict) and str(item.get("id")) == requested]
+if target_type != "external" and not target_node:
+    raise SystemExit(46)
+if operation_id and not re.fullmatch(r"uu-op-[A-Za-z0-9T_.:-]{8,160}", operation_id):
+    raise SystemExit(46)
+matches = [item for item in id_matches
+           if item.get("type") == target_type and
+           ((target_type == "external" and item.get("node") in (None, "")) or
+            (target_type != "external" and item.get("node") == target_node))]
+if not status_exists:
+    if targets:
+        raise SystemExit(46)
+    record = {
+        "id": requested,
+        "type": target_type,
+        "node": target_node or None,
+        "reachable": None,
+        "updates": {"available": None},
+        "check_status": "not_checked",
+        "error": None,
+        "skip_reason": None,
+        "last_update": {"status": "unknown", "timestamp": None},
+    }
+    targets.append(record)
+elif len(id_matches) != len(matches) or len(matches) != 1:
+    # Do not let an ID-only alias select an External, VM, LXC, or other node.
+    raise SystemExit(1)
+else:
+    record = matches[0]
+
+generation = record.get("package_mutation_generation", 0)
+if type(generation) is not int or generation < 0:
+    generation = 0
+record["package_mutation_generation"] = generation + 1
+record["package_mutation_in_progress"] = True
+if operation_id:
+    record["package_mutation_operation_id"] = operation_id
+else:
+    record.pop("package_mutation_operation_id", None)
+
+record["package_data_invalidated"] = True
+record["package_data_invalidated_at"] = (
+    datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+)
+
+directory = os.path.dirname(os.path.abspath(status_file)) or "."
+fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(payload, output, indent=2)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, status_file)
+except Exception:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
+}
+
+STATUS_MODEL_COMPLETE_PACKAGE_MUTATION() {
+  local target_id="$1" target_type="$2" target_node="${3:-}" operation_id="${4:-}"
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  local status_lock_file="${status_file}.lock" status_lock_fd
+  [[ -n "$target_id" && -n "$target_type" ]] || return 2
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -x "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$status_file" "$target_id" "$target_type" "$target_node" "$operation_id" <<'PY'
+import json
+import os
+import sys
+import tempfile
+
+status_file, target_id, target_type, target_node, operation_id = sys.argv[1:]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (FileNotFoundError, OSError, ValueError):
+    raise SystemExit(1)
+targets = payload.get("targets") if isinstance(payload, dict) else None
+if not isinstance(targets, list):
+    raise SystemExit(1)
+matches = [item for item in targets
+           if isinstance(item, dict) and str(item.get("id")) == target_id and
+           item.get("type") == target_type and
+           ((target_type == "external" and item.get("node") in (None, "")) or
+            (target_type != "external" and item.get("node") == target_node))]
+if len(matches) != 1:
+    raise SystemExit(46)
+current_operation_present = "package_mutation_operation_id" in matches[0]
+current_operation = matches[0].get("package_mutation_operation_id")
+if current_operation_present and current_operation != operation_id:
+    raise SystemExit(46)
+matches[0]["package_mutation_in_progress"] = False
+directory = os.path.dirname(os.path.abspath(status_file)) or "."
+fd, temporary = tempfile.mkstemp(prefix=".status.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(payload, output, indent=2)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, status_file)
+except Exception:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
+  local result=$?
+  exec {status_lock_fd}>&-
+  return "$result"
+}
+
+STATUS_MODEL_VALIDATE_PACKAGE_MUTATION_RESERVATION() {
+  local target_id="$1" target_type="$2" target_node="${3:-}" operation_id="$4"
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  local status_lock_file="${status_file}.lock" status_lock_fd
+  [[ -n "$target_id" && -n "$target_type" && -n "$operation_id" ]] || return 2
+  exec {status_lock_fd}>"$status_lock_file" || return 1
+  if ! flock -s "$status_lock_fd"; then
+    exec {status_lock_fd}>&-
+    return 1
+  fi
+  python3 - "$status_file" "$target_id" "$target_type" "$target_node" "$operation_id" <<'PY'
+import json
+import re
+import sys
+
+status_file, target_id, target_type, target_node, operation_id = sys.argv[1:]
+if not re.fullmatch(r"uu-op-[A-Za-z0-9T_.:-]{8,160}", operation_id):
+    raise SystemExit(46)
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (FileNotFoundError, OSError, ValueError):
+    raise SystemExit(1)
+targets = payload.get("targets") if isinstance(payload, dict) else None
+if not isinstance(targets, list):
+    raise SystemExit(1)
+matches = [item for item in targets
+           if isinstance(item, dict) and str(item.get("id")) == target_id
+           and item.get("type") == target_type
+           and ((target_type == "external" and item.get("node") in (None, "")) or
+                (target_type != "external" and item.get("node") == target_node))]
+if len(matches) != 1:
+    raise SystemExit(46)
+record = matches[0]
+generation = record.get("package_mutation_generation")
+if (type(generation) is not int or generation < 0 or
+        record.get("package_data_invalidated") is not True or
+        record.get("package_mutation_in_progress") is not True or
+        record.get("package_mutation_operation_id") != operation_id):
+    raise SystemExit(46)
+raise SystemExit(0)
 PY
   local result=$?
   exec {status_lock_fd}>&-

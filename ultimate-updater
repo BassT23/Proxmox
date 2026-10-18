@@ -790,6 +790,29 @@ remote_node_check() {
   remote_node_check_via_cluster_transport "$@"
 }
 
+REMOTE_UPDATE_CONTROLLER_INVALIDATE() {
+  local target_id="$1" target_type="$2" target_node="${3:-}" operation_id="${4:-}"
+  [[ -n "$target_id" && -n "$target_type" && -n "$target_node" ]] || {
+    printf 'Remote update controller reservation requires a complete target identity.\n' >&2
+    return 46
+  }
+  if [[ -z "$operation_id" ]]; then
+    operation_id=$(STATUS_MODEL_NEW_OPERATION_ID) || return 1
+  fi
+  [[ "$operation_id" =~ ^uu-op-[A-Za-z0-9T_.:-]{8,160}$ ]] || {
+    printf 'Remote update controller reservation has an invalid operation ID.\n' >&2
+    return 46
+  }
+  STATUS_MODEL_FILE="$STATUS_FILE" STATUS_MODEL_INVALIDATE_PACKAGE_DATA \
+    "$target_id" "$target_type" "$target_node" "$operation_id" || {
+      printf 'Controller package freshness for remote target %s (%s/%s) could not be invalidated; remote dispatch aborted.\n' \
+        "$target_id" "$target_type" "$target_node" >&2
+      return 1
+    }
+  REMOTE_UPDATE_OPERATION_ID="$operation_id"
+  return 0
+}
+
 run_node_check() {
   local node="$1" result
   cluster_node_resolve "$node" || { printf 'Unknown Proxmox node: %s\n' "$node" >&2; return 3; }
@@ -822,6 +845,34 @@ run_node_check() {
 
 remote_update_job() {
   local remote_target="$1" target="$2" node="$3" host="${REMOTE_NODE_HOST:-$4}"
+  local operation_id="${5:-${REMOTE_UPDATE_OPERATION_ID:-}}"
+  local status_target_id status_target_type
+  [[ "$operation_id" =~ ^uu-op-[A-Za-z0-9T_.:-]{8,160}$ ]] || {
+    printf 'Remote update dispatch requires a controller mutation reservation.\n' >&2
+    return 46
+  }
+  if [[ "$remote_target" == host ]]; then
+    status_target_id="host:$node"
+    status_target_type=host
+  else
+    status_target_id="$target"
+    status_target_type="${6:-${UU_API_EXPECTED_TARGET_KIND:-}}"
+    case "$status_target_type" in
+      container) status_target_type=lxc ;;
+      vm|lxc|host) : ;;
+      *)
+        printf 'Remote update dispatch requires an explicit guest target type.\n' >&2
+        return 46
+        ;;
+    esac
+  fi
+  if ! declare -f STATUS_MODEL_VALIDATE_PACKAGE_MUTATION_RESERVATION >/dev/null 2>&1 ||
+    ! STATUS_MODEL_FILE="$STATUS_FILE" STATUS_MODEL_VALIDATE_PACKAGE_MUTATION_RESERVATION \
+      "$status_target_id" "$status_target_type" "$node" "$operation_id"; then
+    printf 'Remote update dispatch has no active controller reservation for %s (%s/%s).\n' \
+      "$status_target_id" "$status_target_type" "$node" >&2
+    return 46
+  fi
   local port="${REMOTE_NODE_PORT:-$(configured_ssh_port)}"
   local legacy_profile="$LOCAL_FILES/VMs/$target"
   local user="${REMOTE_NODE_USER:-root}" output job_unit command remote_update_dir source scope_env='' context_env=''
@@ -914,6 +965,11 @@ remote_update_job() {
   elif [[ "${UU_NONINTERACTIVE:-false}" == true ]]; then
     context_env='UU_NONINTERACTIVE=true '
   fi
+  if [[ -n "$operation_id" ]]; then
+    local operation_env
+    printf -v operation_env 'UU_PACKAGE_MUTATION_OPERATION_ID=%q ' "$operation_id"
+    context_env+="$operation_env"
+  fi
   printf -v command 'exec /usr/bin/env %s%s%sUU_LOCAL_FILES=%q UU_REMOTE_WORK_DIR=%q UU_TARGET_SELECTION_FILE=%q %q start %q %q' \
     "$scope_env" "$interactive_env" "$context_env" "$remote_update_dir" "$remote_update_dir" "$remote_update_dir/target-selection.json" "$remote_update_dir/job-runner.sh" \
     "$remote_update_dir/update.sh" "$remote_target"
@@ -932,6 +988,7 @@ remote_update_job() {
 }
 
 remote_node_update() {
+  [[ -n "${3:-}" ]] && REMOTE_UPDATE_OPERATION_ID="$3"
   remote_update_job host "node-$1" "$1" "$2"
 }
 
@@ -958,7 +1015,8 @@ run_node_update() {
       printf 'Could not resolve the existing UU SSH transport for node %s.\n' "$RESOLVED_NODE" >&2
       return 1
     fi
-    remote_node_update "$RESOLVED_NODE" "$RESOLVED_NODE_HOST"
+    REMOTE_UPDATE_CONTROLLER_INVALIDATE "host:$RESOLVED_NODE" host "$RESOLVED_NODE" || return $?
+    remote_node_update "$RESOLVED_NODE" "$RESOLVED_NODE_HOST" "$REMOTE_UPDATE_OPERATION_ID"
   fi
 }
 
@@ -1178,8 +1236,9 @@ PY
 }
 
 remote_target_update() {
-  local target="$1" node="$2" host="$3"
-  remote_update_job "$target" "$target" "$node" "$host"
+  local target="$1" node="$2" host="$3" operation_id="${4:-${REMOTE_UPDATE_OPERATION_ID:-}}" target_type="${5:-}"
+  REMOTE_UPDATE_OPERATION_ID="$operation_id"
+  remote_update_job "$target" "$target" "$node" "$host" "$operation_id" "$target_type"
 }
 
 run_external_checks() {
@@ -1486,7 +1545,18 @@ run_update() {
     external_backup_gate "$target" "$override" || return $?
   fi
   if [[ "$RESOLVED_TARGET_LOCAL" == false ]]; then
-    remote_target_update "$target" "$RESOLVED_TARGET_NODE" "$RESOLVED_TARGET_HOST"
+    if ! resolve_remote_node_transport "$RESOLVED_TARGET_NODE" "$RESOLVED_TARGET_HOST"; then
+      printf 'Could not resolve the existing UU SSH transport for node %s.\n' "$RESOLVED_TARGET_NODE" >&2
+      return 1
+    fi
+    local status_target_type
+    case "$kind" in
+      container) status_target_type=lxc ;;
+      vm) status_target_type=vm ;;
+      *) printf 'Remote target type is not supported for update dispatch: %s\n' "$kind" >&2; return 46 ;;
+    esac
+    REMOTE_UPDATE_CONTROLLER_INVALIDATE "$target" "$status_target_type" "$RESOLVED_TARGET_NODE" || return $?
+    remote_target_update "$target" "$RESOLVED_TARGET_NODE" "$RESOLVED_TARGET_HOST" "$REMOTE_UPDATE_OPERATION_ID" "$status_target_type"
     return $?
   fi
   case "$kind" in
