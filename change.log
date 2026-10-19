@@ -57,6 +57,9 @@ Improved:
 - Issue #379: remote reconciliation uses an asynchronous single-flight
   reconciler with existing locks, bounded retry handling, idempotency, and
   identity, generation, and operations-ID gates.
+- Issue #379: update baselines are checked for freshness, target identity,
+  reachability, invalidation, and active mutations before repair and update;
+  the identity-bound baseline continues to be handed to remote workers.
 - Issue #378: the separate Jobs navigation entry was removed while Jobs, Logs,
   live output, and download functionality remain available through the
   Overview; the API page displays the `API under development` banner with a
@@ -83,6 +86,8 @@ Fixed:
   or invalid. Missing baselines produce `failed`,
   `PENDING_BEFORE_UNAVAILABLE`, and exit code 96; invalid baselines produce
   `failed`, `PENDING_BEFORE_INVALID`, and exit code 97.
+- Issue #379: stale update baselines are rejected fail-closed instead of being
+  reused for a false update result.
 - Issue #379: `pending_before=0` remains a `skipped` no-op with exit code 10;
   a valid baseline with actual package mutation may produce `success`/`completed`,
   while capture/preservation failures remain `completed_with_warnings`.
@@ -111,6 +116,10 @@ Security/Safety:
   identity, generation, operations-ID, provenance, and active-mutation gates;
   no status query can clear a mutation invalidation without a validated
   terminal result.
+- Issue #379: the authorized test-cluster validation confirmed repair-only /
+  no-op handling and a real remote package update, including automatic
+  reconciliation and `status_refresh=done`; repair-only runs remain distinct
+  from update success.
 - Capability and unsupported paths remain fail-closed before mutation,
   snapshots, or guest lifecycle actions.
 - Connectivity retry repeats only bounded, read-only connectivity probes.
