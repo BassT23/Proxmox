@@ -19,6 +19,25 @@ Run [`tests/e2e/test-lab-audit.sh`](tests/e2e/test-lab-audit.sh) on
 - CT930 and several older guests are currently `UNKNOWN_DO_NOT_TOUCH` until
   their purpose or connectivity is re-established.
 
+## Repository-owned source verification
+
+Run `bash scripts/verify.sh` for the bounded, repository-owned source-test
+entrypoint. It compiles the native Web UI source, checks the core shell
+entrypoints with `bash -n`, runs all repository Python source tests, and runs
+only an explicit allowlist of non-destructive shell fixtures. Missing required
+fixtures fail the verifier instead of being silently skipped.
+
+The verifier sets `PYTHONDONTWRITEBYTECODE=1` and does not invoke host-control,
+guest-control, package-manager, deployment, or network commands itself. The
+selected fixtures use local mocks and loopback-only test servers where needed;
+live-cluster and end-to-end lab tests remain outside this entrypoint. The
+existing complete local suite remains the broader regression gate.
+
+This entrypoint is an Ultimate Updater adaptation of the source-only testing
+proposal and implementation direction from X1/X1pheR in Issue #375 and PR
+#376. Reach, deployment, release, artifact, and downstream workflow logic is
+not included.
+
 ## Current lab facts
 
 The 2026-09-26 audit found 29 stopped 9xx guests across the three-node
