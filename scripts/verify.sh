@@ -33,6 +33,7 @@ done
 # destructive integration fixtures are deliberately not selected here.
 shell_tests=(
   tests/test-source-verify-entrypoint.sh
+  tests/test-native-staged-source.sh
   tests/test-installer-archive-layout.sh
   tests/test-installer-bootstrap.sh
   tests/test-installer-header-exit.sh

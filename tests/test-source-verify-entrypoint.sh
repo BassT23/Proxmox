@@ -15,6 +15,7 @@ grep -Fq 'Issue #375 / PR #376' "$ENTRYPOINT"
 grep -Fq 'X1/X1pheR' "$ENTRYPOINT"
 
 for file in \
+  tests/test-native-staged-source.sh \
   tests/test-installer-archive-layout.sh \
   tests/test-installer-bootstrap.sh \
   tests/test-http-download-safety.sh \

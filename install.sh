@@ -42,6 +42,7 @@ ARCHIVE_COMMIT=""
 ARCHIVE_TAG=""
 ARCHIVE_VERSION=""
 ARCHIVE_BETA=""
+STAGED_SOURCE_ACTIVE=false
 
 INITIALIZE_TARGET_SELECTION_STATE() {
   local configured_selection
@@ -101,6 +102,93 @@ DOWNLOAD_INSTALLER() {
   else
     bash "$destination"
   fi
+}
+
+STAGED_SOURCE_REQUESTED() {
+  [[ -n "${UU_STAGED_SOURCE_DIR:-}${UU_STAGED_SOURCE_COMMIT:-}${UU_STAGED_SOURCE_TAG:-}" ]]
+}
+
+PREPARE_STAGED_SOURCE_INPUT() {
+  local source="${UU_STAGED_SOURCE_DIR:-}"
+  local commit="${UU_STAGED_SOURCE_COMMIT:-}"
+  local tag="${UU_STAGED_SOURCE_TAG:-}"
+  local resolved temp_resolved identity uid mode required
+  local -a required_files=(
+    update.sh product-metadata.sh README.md VMs/example welcome-screen.sh
+    update-extras.sh check-updates.sh qga-guest-exec.sh tag-filter.sh
+    target-selection.sh target-inventory.sh targets.conf status-model.sh
+    windows-update.sh target-runtime.sh apt-count.py apt-count.sh
+    rpm-count.py package-count.sh internal-ssh.sh config-merge.sh
+    web-ui-port.sh ultimate-updater job-runner.sh web-ui/server.py
+    ultimate-updater-web.service update.conf
+  )
+
+  STAGED_SOURCE_ACTIVE=false
+  if ! STAGED_SOURCE_REQUESTED; then
+    return 0
+  fi
+
+  if [[ "$BRANCH" != master || "$source" != /* ||
+    ! "$commit" =~ ^[0-9A-Fa-f]{40}$ ||
+    ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9][A-Za-z0-9._-]*)?$ ||
+    -z "$source" || -z "$commit" || -z "$tag" || ! -d "$source" || -L "$source" ]]; then
+    echo "Staged source identity or directory is invalid; no installed files were changed." >&2
+    return 78
+  fi
+
+  resolved=$(realpath -e -- "$source" 2>/dev/null) || {
+    echo "Staged source directory could not be canonicalized; no installed files were changed." >&2
+    return 78
+  }
+  [[ "$resolved" == "$source" ]] || {
+    echo "Staged source directory must be an absolute canonical path; no installed files were changed." >&2
+    return 78
+  }
+  temp_resolved=$(realpath -m -- "$TEMP_FOLDER" 2>/dev/null) || {
+    echo "Native temporary directory could not be canonicalized; no installed files were changed." >&2
+    return 78
+  }
+  if [[ "$resolved" == "$temp_resolved" || "$resolved" == "$temp_resolved/"* ]]; then
+    echo "Staged source must be outside the native temporary directory; no installed files were changed." >&2
+    return 78
+  fi
+
+  identity=$(stat -c '%u %a' -- "$resolved" 2>/dev/null) || {
+    echo "Staged source trust metadata could not be read; no installed files were changed." >&2
+    return 78
+  }
+  read -r uid mode <<< "$identity"
+  if [[ "$uid" != "$EUID" ]] || (( (8#$mode & 8#077) != 0 )); then
+    echo "Staged source must be private and owned by the invoking identity; no installed files were changed." >&2
+    return 78
+  fi
+  if [[ -n "$(find -P "$resolved" -type l -print -quit 2>/dev/null)" ]]; then
+    echo "Staged source must not contain symlinks; no installed files were changed." >&2
+    return 78
+  fi
+
+  for required in "${required_files[@]}"; do
+    if [[ ! -f "$resolved/$required" || -L "$resolved/$required" ]]; then
+      echo "Staged source is incomplete (missing or unsafe: $required); no installed files were changed." >&2
+      return 78
+    fi
+  done
+  for required in exit scripts.d/000; do
+    if [[ ! -d "$resolved/$required" || -L "$resolved/$required" ]] ||
+      ! find "$resolved/$required" -maxdepth 1 -type f -print -quit 2>/dev/null | grep -q .; then
+      echo "Staged source is incomplete (missing required payload directory: $required); no installed files were changed." >&2
+      return 78
+    fi
+  done
+
+  TEMP_FILES="$resolved"
+  ARCHIVE_COMMIT="${commit,,}"
+  ARCHIVE_TAG="$tag"
+  READ_PAYLOAD_METADATA || {
+    echo "Staged source metadata is invalid; no installed files were changed." >&2
+    return 78
+  }
+  STAGED_SOURCE_ACTIVE=true
 }
 
 DOWNLOAD_ARCHIVE() {
@@ -533,9 +621,14 @@ ${OR:-}Is it OK for you, or want to backup your files first?${CL:-}\n"
 }
 
 INSTALL () {
+  PREPARE_STAGED_SOURCE_INPUT || return $?
   echo -e "\nℹ ${GN:-} Installing The Ultimate Updater${CL:-}\n"
   if [ -f "/usr/local/sbin/update" ]; then
     echo -e "${OR:-}The Ultimate Updater is already installed.${CL:-}"
+    if [[ "$STAGED_SOURCE_ACTIVE" == true ]]; then
+      UPDATE
+      return $?
+    fi
     read -p "Should I update for you? Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
       DOWNLOAD_INSTALLER "$SERVER_URL/install.sh" update
@@ -547,13 +640,15 @@ INSTALL () {
     mkdir -p $LOCAL_FILES/exit
     mkdir -p $LOCAL_FILES/VMs
     mkdir -p $LOCAL_FILES/scripts.d/000
-    # Download latest release
-    if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-      DOWNLOAD_ARCHIVE || exit 1
-      tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || exit 1
-      rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
-      SET_TEMP_FILES || exit 1
-      READ_PAYLOAD_METADATA || exit 1
+    if [[ "$STAGED_SOURCE_ACTIVE" != true ]]; then
+      # Download latest release
+      if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
+        DOWNLOAD_ARCHIVE || exit 1
+        tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || exit 1
+        rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
+        SET_TEMP_FILES || exit 1
+        READ_PAYLOAD_METADATA || exit 1
+    fi
     # Copy files
     cp "$TEMP_FILES"/update.sh $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
@@ -707,20 +802,23 @@ UPDATE () {
   # update.conf is handled separately by MERGE_UPDATE_CONFIG below.
   local upgrade_noninteractive="${UU_NONINTERACTIVE:-false}"
   export UU_NONINTERACTIVE=true
+  PREPARE_STAGED_SOURCE_INPUT || return $?
   INFORMATION
   OLD_FILESYSTEM_CHECK
   if [ -f "/usr/local/sbin/update" ]; then
     # Update
     echo -e "\nℹ ${GN:-} Updating Ultimate Updater...${CL:-}\n"
-    # Cleaning
-    rm -rf "$TEMP_FOLDER" || true
-    # Download files
-    if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
-    DOWNLOAD_ARCHIVE || return 1
-    tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || return 1
-    rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
-    SET_TEMP_FILES || return 1
-    READ_PAYLOAD_METADATA || return 1
+    if [[ "$STAGED_SOURCE_ACTIVE" != true ]]; then
+      # Cleaning
+      rm -rf "$TEMP_FOLDER" || true
+      # Download files
+      if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
+      DOWNLOAD_ARCHIVE || return 1
+      tar -zxf "$TEMP_FOLDER/ultimate-updater.tar.gz" -C "$TEMP_FOLDER" || return 1
+      rm -f -- "$TEMP_FOLDER/ultimate-updater.tar.gz"
+      SET_TEMP_FILES || return 1
+      READ_PAYLOAD_METADATA || return 1
+    fi
     installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
     target_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$TEMP_FILES/update.sh" 2>/dev/null || true)
     installed_major=''
@@ -1055,6 +1153,10 @@ UPDATE () {
     fi
   else
     # Install, because no installation found
+    if [[ "$STAGED_SOURCE_ACTIVE" == true ]]; then
+      INSTALL
+      return $?
+    fi
     echo -e "⚠${RD:-} The Ultimate Updater is not installed.\n\n${OR:-}Would you like to install it?${CL:-}"
     read -p "Type [Y/y] or Enter for yes - anything else will exit: " -r
     if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
