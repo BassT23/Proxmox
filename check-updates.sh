@@ -1783,8 +1783,8 @@ CHECK_VM_LIFECYCLE () {
 
 # VM Check
 CHECK_VM () {
-  local IP USER SSH_VM_PORT SSH_START_DELAY_TIME ssh_profile_configured=false ssh_error ostype
-  local qga_os_info resolved_guest_name
+  local IP USER SSH_VM_PORT SSH_START_DELAY_TIME ssh_profile_configured=false ssh_error ostype ssh_probe_rc=0
+  local resolved_guest_name
   REBOOT_REQUIRED=false
   CHECK_SSH_FALLBACK_ERROR=""
   if [[ "$RDU" != true ]]; then
@@ -1824,13 +1824,6 @@ CHECK_VM () {
   fi
   NAME=$(qm config "$VM" | grep 'name:' | sed 's/name:\s*//')
   ostype=$(qm config "$VM" | awk '$1 == "ostype:" {print $2; exit}')
-  # Windows has no native SSH update/check implementation here.  Respect the
-  # explicit Proxmox guest type before probing SSH, so Windows always uses the
-  # native QGA/Windows Update Agent path.
-  if [[ "$ostype" =~ ^win ]]; then
-    CHECK_VM_QEMU
-    return $?
-  fi
   # A stored Internal SSH entry may be deliberately disabled.  That state
   # means "do not use SSH", not "the VM check failed": continue with the
   # normal QGA path instead.
@@ -1838,13 +1831,21 @@ CHECK_VM () {
     CHECK_VM_QEMU
     return $?
   fi
-  IP="${INTERNAL_SSH_HOST:-$IP}"; USER="${INTERNAL_SSH_USER:-$USER}"; SSH_VM_PORT="${INTERNAL_SSH_PORT:-$SSH_VM_PORT}"
+  IP="${INTERNAL_SSH_HOST:-${IP:-}}"; USER="${INTERNAL_SSH_USER:-${USER:-root}}"; SSH_VM_PORT="${INTERNAL_SSH_PORT:-${SSH_VM_PORT:-22}}"
   INTERNAL_SSH_USE_IDENTITY
   if [[ -z "$IP" || -z "$USER" || -z "$SSH_VM_PORT" ]]; then
     CHECK_VM_QEMU
     return
   fi
-  if ! ssh_error=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "true" 2>&1); then
+  if [[ "$ostype" =~ ^win ]]; then
+    # Windows OpenSSH normally exposes PowerShell/cmd rather than a POSIX
+    # shell; use a read-only PowerShell exit probe instead of assuming `true`.
+    ssh_error=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" \
+      powershell.exe -NoLogo -NoProfile -NonInteractive -Command exit 2>&1) || ssh_probe_rc=$?
+  else
+    ssh_error=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "true" 2>&1) || ssh_probe_rc=$?
+  fi
+  if [[ "$ssh_probe_rc" -ne 0 ]]; then
     ssh_error=$(printf '%s' "$ssh_error" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | cut -c1-300)
     # SSH_TRANSPORT remains the classification for the first failed leg;
     # the QGA fallback below decides whether the overall check can recover.
@@ -1852,13 +1853,20 @@ CHECK_VM () {
     CHECK_VM_QEMU
     return
   fi
-  # SSH is preferred for supported Linux/FreeBSD paths. Windows has no
-  # native SSH updater here, so identify it through the read-only QGA metadata
-  # and use the existing Windows Update Agent/COM path instead.
-  qga_os_info=$(timeout 10 qm guest cmd "$VM" get-osinfo 2>/dev/null || true)
-  if [[ "${qga_os_info,,}" =~ windows ]]; then
-    CHECK_VM_QEMU
-    return $?
+  # Windows uses the same SSH-first selection as every other VM.  The
+  # Windows Update Agent commands are PowerShell commands, so no Linux guest
+  # command is needed on this path.  QGA remains the fallback selected above
+  # when the bounded SSH probe was not usable.
+  if [[ "$ostype" =~ ^win ]]; then
+    WINDOWS_CHECK_TRANSPORT=ssh
+    WINDOWS_CHECK_SSH_HOST="$IP"
+    WINDOWS_CHECK_SSH_PORT="$SSH_VM_PORT"
+    WINDOWS_CHECK_SSH_USER="$USER"
+    WINDOWS_CHECK_OS_NAME="Windows"
+    CHECK_VM_QEMU_WINDOWS
+    local windows_check_rc=$?
+    unset WINDOWS_CHECK_TRANSPORT WINDOWS_CHECK_SSH_HOST WINDOWS_CHECK_SSH_PORT WINDOWS_CHECK_SSH_USER WINDOWS_CHECK_OS_NAME
+    return "$windows_check_rc"
   fi
   if ! GUEST_INTERNET_PREFLIGHT_RETRY GUEST_INTERNET_PREFLIGHT_SSH "$IP" "$SSH_VM_PORT" "$USER"; then
     GUEST_CONNECTIVITY_FAILURE VM "$VM" "Internet connectivity check failed for VM $VM; package check skipped" ssh
@@ -1866,7 +1874,6 @@ CHECK_VM () {
   fi
   OS_BASE=$(qm config "$VM" | grep ostype || true)
   if [[ "$OS_BASE" =~ l2 ]]; then
-    KERNEL=$(qm guest cmd "$VM" get-osinfo 2>/dev/null | grep kernel-version || true)
     OS=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" hostnamectl 2>/dev/null | grep System || true)
     # FreeBSD/pfSense does not provide hostnamectl.  Detect it through the
     # SSH guest instead of treating a reachable, explicitly configured SSH
@@ -1874,7 +1881,7 @@ CHECK_VM () {
     # the deliberate unsupported path in CHECK_VM_QEMU.
     SSH_UNAME=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "uname -s" 2>/dev/null || true)
     SSH_UNAME_VERSION=$(RUN_SSH_COMMAND "$IP" "$SSH_VM_PORT" "$USER" "uname -v" 2>/dev/null || true)
-    if [[ "$SSH_UNAME" == FreeBSD || "$KERNEL" =~ FreeBSD ]]; then
+    if [[ "$SSH_UNAME" == FreeBSD || "$SSH_UNAME_VERSION" =~ FreeBSD ]]; then
       if [[ "$SSH_UNAME_VERSION" =~ [Pp][Ff][Ss]ense ]]; then
         OS=pfSense
       else
@@ -2449,38 +2456,68 @@ CHECK_VM_QEMU_HAOS () {
 
 CHECK_VM_QEMU_WINDOWS () {
   local result marker check_status updates reboot message windows_os reachable=true error_code=WINDOWS_UPDATE_CHECK
+  local windows_transport="${WINDOWS_CHECK_TRANSPORT:-qga}"
   local history_b64 history_json="" history_only="${UU_WINDOWS_HISTORY_ONLY:-false}"
-  windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"pretty-name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
-  if [[ -z "$windows_os" ]]; then
-    windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
+
+  WINDOWS_CHECK_EXEC_READONLY() {
+    if [[ "$windows_transport" != ssh ]]; then
+      QEMU_GUEST_EXEC_READONLY "$@"
+      return
+    fi
+    local output rc=0
+    shift
+    while (($# > 0)) && [[ "$1" != -- ]]; do shift; done
+    [[ "${1:-}" == -- ]] && shift
+    output=$(UU_SSH_COMMAND_TIMEOUT=120 RUN_SSH_COMMAND \
+      "$WINDOWS_CHECK_SSH_HOST" "$WINDOWS_CHECK_SSH_PORT" "$WINDOWS_CHECK_SSH_USER" "$@" 2>&1) || rc=$?
+    QEMU_EXEC_STDOUT="$output"
+    QEMU_EXEC_STDERR=""
+    QEMU_EXEC_OUTPUT="$output"
+    QEMU_EXEC_EXITCODE="$rc"
+    QEMU_EXEC_TRANSPORT_RC=0
+    QEMU_EXEC_ERROR_CLASS=SSH_GUEST_EXEC
+    if [[ "$rc" == 124 || "$rc" == 255 ]]; then
+      QEMU_EXEC_TRANSPORT_RC=1
+      QEMU_EXEC_EXITCODE=0
+      [[ "$rc" == 124 ]] && QEMU_EXEC_ERROR_CLASS=SSH_TIMEOUT || QEMU_EXEC_ERROR_CLASS=SSH_CONNECTION_FAILED
+    fi
+  }
+
+  if [[ -n "${WINDOWS_CHECK_OS_NAME:-}" ]]; then
+    windows_os="$WINDOWS_CHECK_OS_NAME"
+  else
+    windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"pretty-name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
+    if [[ -z "$windows_os" ]]; then
+      windows_os=$(printf '%s\n' "$OS" | sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
+    fi
   fi
   windows_os="${windows_os:-Windows}"
   if ! declare -f WINDOWS_POWERSHELL_ENCODE >/dev/null 2>&1; then
-    STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_HELPER_MISSING "Windows update helper is not installed"
+    STATUS_MODEL_RECORD "$VM" vm "$windows_transport" true "$windows_os" windows-update "null" "null" error WINDOWS_HELPER_MISSING "Windows update helper is not installed"
     return 1
   fi
   if [[ "$history_only" == true ]]; then
-    QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE history 20)"
+    WINDOWS_CHECK_EXEC_READONLY "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE history 20)"
   else
-    QEMU_GUEST_EXEC_READONLY "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE check)"
+    WINDOWS_CHECK_EXEC_READONLY "$VM" --timeout 120 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$(WINDOWS_POWERSHELL_ENCODE check)"
   fi
   if [[ $QEMU_EXEC_TRANSPORT_RC -ne 0 ]]; then
     reachable=false
-    error_code=QGA_TRANSPORT
+    [[ "$windows_transport" == ssh ]] && error_code=SSH_TRANSPORT || error_code=QGA_TRANSPORT
     local qga_message="${QEMU_EXEC_OUTPUT}"
     [[ -n "${CHECK_SSH_FALLBACK_ERROR:-}" ]] && qga_message="${CHECK_SSH_FALLBACK_ERROR}; QGA: ${qga_message}"
-    STATUS_MODEL_RECORD "$VM" vm qga "$reachable" "$windows_os" windows-update "null" "null" error "$error_code" "$qga_message"
+    STATUS_MODEL_RECORD "$VM" vm "$windows_transport" "$reachable" "$windows_os" windows-update "null" "null" error "$error_code" "$qga_message"
     return 1
   fi
   if [[ "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
     error_code=GUEST_COMMAND_FAILED
-    STATUS_MODEL_RECORD "$VM" vm qga "$reachable" "$windows_os" windows-update "null" "null" error "$error_code" "${QEMU_EXEC_OUTPUT}"
+    STATUS_MODEL_RECORD "$VM" vm "$windows_transport" "$reachable" "$windows_os" windows-update "null" "null" error "$error_code" "${QEMU_EXEC_OUTPUT}"
     return 1
   fi
   if [[ "$history_only" == true ]]; then
     history_b64=$(printf '%s\n' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n 's/^UU_WINDOWS|history|//p' | tail -n 1)
     if [[ -z "$history_b64" ]]; then
-      STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_HISTORY_UNAVAILABLE "Windows Update Agent history was not returned"
+      STATUS_MODEL_RECORD "$VM" vm "$windows_transport" true "$windows_os" windows-update "null" "null" error WINDOWS_HISTORY_UNAVAILABLE "Windows Update Agent history was not returned"
       return 1
     fi
     history_json=$(python3 - "$history_b64" <<'PY'
@@ -2507,17 +2544,17 @@ except (ValueError, UnicodeError, json.JSONDecodeError, KeyError):
 PY
     ) || history_json=""
     if [[ -z "$history_json" ]]; then
-      STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_HISTORY_INVALID "Windows Update Agent history was invalid"
+      STATUS_MODEL_RECORD "$VM" vm "$windows_transport" true "$windows_os" windows-update "null" "null" error WINDOWS_HISTORY_INVALID "Windows Update Agent history was invalid"
       return 1
     fi
-    STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" history_only "" "" \
+    STATUS_MODEL_RECORD "$VM" vm "$windows_transport" true "$windows_os" windows-update "null" "null" history_only "" "" \
       "${STATUS_MODEL_NODE:-}" "${STATUS_MODEL_GUEST_NAME:-}" "null" "null" "$history_json"
     return 0
   fi
   result=$(printf '%s' "$QEMU_EXEC_STDOUT" | tr -d '\r' | sed -n '/^UU_WINDOWS|/p' | tail -n 1)
   IFS='|' read -r marker check_status updates reboot message <<< "$result"
   if [[ "$marker" != UU_WINDOWS || "$check_status" != ok || ! "$updates" =~ ^[0-9]+$ || ("$reboot" != true && "$reboot" != false) ]]; then
-    STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "null" "null" error WINDOWS_UPDATE_CHECK "Invalid Windows Update response: $result"
+    STATUS_MODEL_RECORD "$VM" vm "$windows_transport" true "$windows_os" windows-update "null" "null" error WINDOWS_UPDATE_CHECK "Invalid Windows Update response: $result"
     return 1
   fi
   STATUS_MODEL_STATUS=ok
@@ -2548,7 +2585,7 @@ except (ValueError, UnicodeError, json.JSONDecodeError, KeyError):
 PY
     ) || history_json=""
   fi
-  STATUS_MODEL_RECORD "$VM" vm qga true "$windows_os" windows-update "$updates" "$reboot" "$STATUS_MODEL_STATUS" "" "" \
+  STATUS_MODEL_RECORD "$VM" vm "$windows_transport" true "$windows_os" windows-update "$updates" "$reboot" "$STATUS_MODEL_STATUS" "" "" \
     "${STATUS_MODEL_NODE:-}" "${STATUS_MODEL_GUEST_NAME:-}" "null" "null" "$history_json" now
   if [[ "$updates" -gt 0 || "$reboot" == true ]]; then
     echo -e "${GN}VM ${BL}$VM${CL} : ${GN}$NAME${CL}"

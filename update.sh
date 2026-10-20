@@ -2812,21 +2812,6 @@ UPDATE_VM () {
     CVM=""
     return
   fi
-  # Windows updates are supported through the native QGA/COM path only.
-  # Do not attempt a partial SSH implementation even when SSH is configured.
-  if VM_IS_WINDOWS "$VM"; then
-    UPDATE_VM_QEMU
-    local qemu_rc=$?
-    if [[ "$qemu_rc" -eq 0 ]]; then
-      UPDATE_RESULT_RECORDED=true
-      UPDATE_RESULT_TARGET="$VM"
-      if [[ "${UPDATE_PENDING_BEFORE[$VM]-}" == 0 ]]; then
-        UPDATE_WARNING=true
-      fi
-    fi
-    CVM=""
-    return "$qemu_rc"
-  fi
   # Resolve Internal SSH independently of the legacy VM profile.  The WebUI
   # configuration is the preferred source, while legacy VM files remain a
   # compatible fallback for guests without an Internal SSH entry.
@@ -2872,7 +2857,7 @@ UPDATE_VM () {
       UPDATE_VM_QEMU
       return $?
     fi
-    IP="${INTERNAL_SSH_HOST:-$IP}"; USER="${INTERNAL_SSH_USER:-$USER}"; SSH_VM_PORT="${INTERNAL_SSH_PORT:-$SSH_VM_PORT}"; INTERNAL_SSH_USE_IDENTITY
+    IP="${INTERNAL_SSH_HOST:-${IP:-}}"; USER="${INTERNAL_SSH_USER:-${USER:-root}}"; SSH_VM_PORT="${INTERNAL_SSH_PORT:-${SSH_VM_PORT:-22}}"; INTERNAL_SSH_USE_IDENTITY
     if [[ "$START_WAITING" == true ]]; then
       echo -e "⏳${OR:-} Wait for bootup${CL:-}"
       echo -e "ℹ ${OR:-} $SSH_START_DELAY_TIME seconds is set for sleep between tryouts in SSH-VM config file${CL:-}\n"
@@ -2890,20 +2875,26 @@ UPDATE_VM () {
       START_WAITING=false
       UPDATE_VM_QEMU
     else
-      # Run SSH Update. Windows has no native SSH updater in this project;
-      # keep SSH preferred for Unix guests but use the proven QGA/COM path
-      # when read-only guest metadata identifies Windows.
+      # Run the selected VM transport for the complete operation.  Windows
+      # uses its existing PowerShell/WUA commands through OpenSSH; QGA is only
+      # selected above when the bounded SSH probe was unavailable.
       SSH_CONNECTION="true"
-      local qga_os_info
-      qga_os_info=$(timeout 10 qm guest cmd "$VM" get-osinfo 2>/dev/null || true)
-      if [[ "${qga_os_info,,}" =~ windows ]]; then
-        UPDATE_VM_QEMU
-        return $?
+      if VM_IS_WINDOWS "$VM"; then
+        UPDATE_VM_SSH_WINDOWS
+        local windows_rc=$?
+        if [[ "$windows_rc" -eq 0 ]]; then
+          UPDATE_RESULT_RECORDED=true
+          UPDATE_RESULT_TARGET="$VM"
+          [[ "${UPDATE_PENDING_BEFORE[$VM]-}" == 0 ]] && UPDATE_WARNING=true
+        fi
+        CVM=""
+        return "$windows_rc"
       fi
-      KERNEL=$(printf '%s\n' "$qga_os_info" | grep kernel-version || true)
+      SSH_UNAME=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" uname -s 2>/dev/null || true)
+      SSH_UNAME_VERSION=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" uname -v 2>/dev/null || true)
       OS=$(ssh -q -p "$SSH_VM_PORT" "$USER"@"$IP" hostnamectl 2>/dev/null | grep System || true)
       # Free-BSD
-      if [[ $KERNEL =~ FreeBSD && $FREEBSD_UPDATES == true ]]; then
+      if [[ ("$SSH_UNAME" == FreeBSD || "$SSH_UNAME_VERSION" =~ FreeBSD) && $FREEBSD_UPDATES == true ]]; then
         echo -e "${OR:-}--- PKG UPDATE ---${CL:-}"
         RUN_UPDATE_COMMAND ssh -tt -q -p "$SSH_VM_PORT" "$USER"@"$IP" pkg update || { ERROR_CODE=$?; ID=$VM; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
         if [[ $ERROR_CODE != "" ]]; then return; fi
@@ -2916,7 +2907,7 @@ UPDATE_VM () {
         echo
         RECORD_UPDATE_RESULT "$VM" success 0 || return 1
         return
-      elif [[ "$KERNEL" =~ FreeBSD ]]; then
+      elif [[ "$SSH_UNAME" == FreeBSD || "$SSH_UNAME_VERSION" =~ FreeBSD ]]; then
         echo -e "${OR:-} Free BSD skipped by user${CL:-}\n"
         RECORD_UPDATE_RESULT "$VM" skipped 0 || return 1
         return
@@ -3009,6 +3000,20 @@ UPDATE_VM () {
   else
     UPDATE_VM_QEMU
   fi
+}
+
+# Reuse the same Windows PowerShell/WUA lifecycle for both transports.  The
+# transport is selected before mutation and is not changed if a selected SSH
+# command later fails.
+UPDATE_VM_SSH_WINDOWS () {
+  WINDOWS_UPDATE_TRANSPORT=ssh
+  WINDOWS_UPDATE_SSH_HOST="$IP"
+  WINDOWS_UPDATE_SSH_PORT="$SSH_VM_PORT"
+  WINDOWS_UPDATE_SSH_USER="$USER"
+  UPDATE_VM_QEMU_WINDOWS
+  local windows_rc=$?
+  unset WINDOWS_UPDATE_TRANSPORT WINDOWS_UPDATE_SSH_HOST WINDOWS_UPDATE_SSH_PORT WINDOWS_UPDATE_SSH_USER
+  return "$windows_rc"
 }
 
 # QEMU
@@ -3129,6 +3134,36 @@ UPDATE_VM_QEMU_WINDOWS () {
   local encoded result marker update_status processed reboot message preflight_status preflight_reason
   local job_id start_state start_job status_phase status_result status_message status_result_code deadline
   local status_read_retries=0
+  local windows_transport="${WINDOWS_UPDATE_TRANSPORT:-qga}"
+
+  WINDOWS_UPDATE_EXEC() {
+    local mode="$1" output rc=0
+    shift
+    if [[ "$windows_transport" != ssh ]]; then
+      if [[ "$mode" == readonly ]]; then
+        QEMU_GUEST_EXEC_READONLY "$@"
+      else
+        QEMU_GUEST_EXEC "$@"
+      fi
+      return
+    fi
+    shift
+    while (($# > 0)) && [[ "$1" != -- ]]; do shift; done
+    [[ "${1:-}" == -- ]] && shift
+    output=$(UU_SSH_COMMAND_TIMEOUT=30 RUN_SSH_COMMAND \
+      "$WINDOWS_UPDATE_SSH_HOST" "$WINDOWS_UPDATE_SSH_PORT" "$WINDOWS_UPDATE_SSH_USER" "$@" 2>&1) || rc=$?
+    QEMU_EXEC_STDOUT="$output"
+    QEMU_EXEC_STDERR=""
+    QEMU_EXEC_OUTPUT="$output"
+    QEMU_EXEC_EXITCODE="$rc"
+    QEMU_EXEC_TRANSPORT_RC=0
+    QEMU_EXEC_ERROR_CLASS=SSH_GUEST_EXEC
+    if [[ "$rc" == 124 || "$rc" == 255 ]]; then
+      QEMU_EXEC_TRANSPORT_RC=1
+      QEMU_EXEC_EXITCODE=0
+      [[ "$rc" == 124 ]] && QEMU_EXEC_ERROR_CLASS=SSH_TIMEOUT || QEMU_EXEC_ERROR_CLASS=SSH_CONNECTION_FAILED
+    fi
+  }
 
   if ! declare -f WINDOWS_POWERSHELL_ENCODE >/dev/null 2>&1; then
     ERROR_CODE=1
@@ -3153,7 +3188,7 @@ UPDATE_VM_QEMU_WINDOWS () {
     ERROR
     return
   fi
-  QEMU_GUEST_EXEC_READONLY "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+  WINDOWS_UPDATE_EXEC readonly "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
   if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
     ERROR_CODE=${QEMU_EXEC_EXITCODE:-1}
     ID=$VM
@@ -3185,7 +3220,7 @@ UPDATE_VM_QEMU_WINDOWS () {
   fi
 
   echo -e "${OR:-}--- WINDOWS UPDATE ---${CL:-}"
-  QEMU_GUEST_EXEC "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+  WINDOWS_UPDATE_EXEC mutating "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
   if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
     ERROR_CODE=${QEMU_EXEC_EXITCODE:-1}
     ID=$VM
@@ -3210,7 +3245,7 @@ UPDATE_VM_QEMU_WINDOWS () {
   fi
   fi
 
-  # Only short status reads use QGA now.  A transport timeout leaves the
+  # Only short status reads use the selected transport.  A transport timeout leaves the
   # guest job and its durable state untouched; never issue taskkill or start
   # another mutating command as a reaction to it.
   deadline=$((SECONDS + ${UU_WINDOWS_UPDATE_STATUS_TIMEOUT:-900}))
@@ -3220,9 +3255,9 @@ UPDATE_VM_QEMU_WINDOWS () {
       declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1 && STATUS_MODEL_UPDATE_RESULT "$VM" failed "$ERROR_CODE" || true
       ERROR; return
     fi
-    QEMU_GUEST_EXEC_READONLY "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
+    WINDOWS_UPDATE_EXEC readonly "$VM" --timeout 30 -- powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "$encoded"
     if [[ "$QEMU_EXEC_TRANSPORT_RC" -ne 0 || "$QEMU_EXEC_EXITCODE" -ne 0 ]]; then
-      if [[ "$QEMU_EXEC_ERROR_CLASS" == QGA_TRANSIENT && "$status_read_retries" -lt 2 ]]; then
+      if [[ "$windows_transport" == qga && "$QEMU_EXEC_ERROR_CLASS" == QGA_TRANSIENT && "$status_read_retries" -lt 2 ]]; then
         status_read_retries=$((status_read_retries + 1))
         sleep "$status_read_retries"
         continue

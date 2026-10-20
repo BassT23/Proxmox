@@ -2,9 +2,13 @@
 
 [← Back to supported systems](supported-systems.md) · [Checks and updates](checks-and-updates.md)
 
-Windows support uses the Proxmox QEMU Guest Agent (QGA) and the Windows Update
-Agent COM API. The tested path does not require an SSH server, WinRM,
-PSWindowsUpdate, winget, or an additional Ultimate Updater agent in Windows.
+Windows support uses the Windows Update Agent COM API through the preferred
+key-based VM SSH transport when a valid SSH profile is configured and the
+bounded read-only SSH probe succeeds. The same PowerShell commands are sent
+through OpenSSH; the path does not require Linux commands in Windows, WinRM,
+PSWindowsUpdate, winget, or an additional Ultimate Updater agent. If SSH is
+not configured or is unavailable before the operation starts, the existing
+QEMU Guest Agent (QGA) path is used as the fallback.
 
 ## Validation status
 
@@ -35,8 +39,10 @@ Proxmox/QGA transport times out.
 
 ## Requirements
 
-- A Proxmox VM with QEMU Guest Agent enabled.
-- The QGA Windows package installed and its service running automatically.
+- A Proxmox VM with either a working key-based SSH/OpenSSH profile or QEMU
+  Guest Agent enabled.
+- For the QGA fallback, the QGA Windows package must be installed and its
+  service running automatically.
 - Windows PowerShell and the built-in Windows Update Agent.
 - Working access to Microsoft Update or the configured WSUS source.
 - Enough free space on the Windows system volume for servicing and update
@@ -177,6 +183,9 @@ does not download, install, or reboot.
 
 ## Troubleshooting
 
+- **SSH not ready:** verify the key-based Internal SSH profile, OpenSSH server,
+  PowerShell availability, and the VM boot state. The updater then uses QGA
+  only if it was available before the update operation began.
 - **QGA not ready:** verify the Proxmox option, the Windows QGA service, and
   the VM boot state.
 - **Guest execution failure:** test `cmd.exe` and PowerShell separately and
