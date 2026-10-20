@@ -43,7 +43,7 @@ HTTPS is required; proxy headers do not enable an HTTP fallback. Responses use
 All responses are JSON and contain `api_version: 1` and `schema_version: 1`
 where a response object is returned.
 
-* `GET /api/v1/status-summary` — bounded aggregate status.
+* `GET /api/v1/status-summary` — authenticated, read-only bounded aggregate status.
 * `GET /api/v1/status` — public target status records.
 * `GET /api/v1/jobs` — bounded cached job metadata. An optional
   `?target=<managed-target>` filter is applied before the visible job limit.
@@ -240,15 +240,23 @@ threshold remains independently controlled by
 naive, invalid, and far-future values are `unknown`, and negative ages are
 never returned.
 
-`/api/v1/status-summary` exposes counts for total, reachable, unreachable,
-failed, unknown, available updates, and reboot requirements. Unknown values are
-not converted to zero. `state` is `current`, `stale`, or `unknown`; the
+`/api/v1/status-summary` exposes only aggregate data: total targets, reachable,
+unreachable, successfully checked (`checked`), failed, and unknown targets.
+It also reports how many update and reboot values are unknown. Unknown values
+are not converted to zero. `state` is `current`, `stale`, or `unknown`; the
 timestamp and age are included where available. The additive
 `package_freshness` object contains `current`, `stale`, `not_checked`, and
 `unknown` counts, whose sum equals the number of targets. Its classification is
 the same one used for individual `/api/v1/status` targets. The summary's
 `age_seconds` describes only `generated_at`; document-level `state: "current"`
 does not mean that every target's package data is current.
+
+`updates_available` and `reboot_required` are aggregate values only when the
+status document is current, non-empty, and every target has a successful,
+reachable observation with a valid corresponding value. They are `null` for a
+stale or unknown document, an empty inventory, or any incomplete/ambiguous
+target result. A stale response is never presented as current: consumers must
+honor `state` and `stale` before using any aggregate.
 
 For example, a summary response has this shape (values are illustrative):
 
@@ -264,6 +272,8 @@ For example, a summary response has this shape (values are illustrative):
     "targets": 3,
     "reachable": 2,
     "unreachable": 1,
+    "checked": 2,
+    "unknown": 1,
     "failed": 0,
     "unknown_updates": 1,
     "unknown_reboot": 1
@@ -279,9 +289,12 @@ For example, a summary response has this shape (values are illustrative):
 }
 ```
 
-The response is derived from the persisted status file. It does not imply
-that any update was installed by Ultimate Updater; installation provenance is
-available only from the corresponding persisted Ultimate Updater job metadata.
+The response is derived exclusively from the persisted `status.json` status
+model. It does not query Proxmox, guests, SSH, QGA, package managers, jobs, or
+lifecycle state, and it never starts a check, update, reconciliation, or other
+mutation. It does not imply that any update was installed by Ultimate Updater;
+installation provenance is available only from the corresponding persisted
+Ultimate Updater job metadata.
 
 An update result with `last_update.status: "skipped"` or `"unsupported"` is a
 neutral no-op/capability result, not a successful package mutation. An update
@@ -353,8 +366,19 @@ A status consumer should normally poll every 2–5 minutes. Poll jobs every
 API does not create a background polling task.
 
 The older `/api/status-summary` endpoint remains available for compatibility
-and uses the same hashed-token and HTTPS boundary; new integrations should use
-`/api/v1/status-summary`.
+and uses the same hashed-token, HTTPS, status-file, freshness, and no-action
+boundary. New integrations should use `/api/v1/status-summary`, whose
+response additionally identifies `api_version: 1`; the compatibility alias
+retains its legacy response envelope while exposing the same aggregate
+semantics.
+
+The versioned summary is the adapted read-only status-summary design from
+[Issue #361](https://github.com/BassT23/Proxmox/issues/361) and
+[PR #362](https://github.com/BassT23/Proxmox/pull/362) by X1pheR. It reuses
+Ultimate Updater's existing API-v1 bearer-token authentication and `read`
+permission; it does not introduce a second credential mechanism. Browser
+cookies and WebUI sessions do not authorize it, and `logs` or action-only
+tokens do not imply `read`.
 
 ## API-2 scoped actions
 

@@ -105,6 +105,11 @@ with tempfile.TemporaryDirectory() as temporary:
         }]
         assert secret not in json.dumps(body)
         assert "hash" not in json.dumps(body)
+        status, page = request_page(httpd, "/api")
+        assert status == 200
+        assert "Status summary is read-only" in page
+        assert "requires an API token with <code>read</code>" in page
+        assert "starts no checks, updates, jobs, or guest actions" in page
 
         csrf_headers = {**auth_headers, "X-CSRF-Token": session["csrf"]}
         status, body = request(

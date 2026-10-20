@@ -1475,7 +1475,7 @@ scheduler_markup = scheduler_markup.replace(
     f'<fieldset class="schedule-days"><legend>Days of week</legend><div class="day-toggles">{day_toggle_markup}</div></fieldset><fieldset class="schedule-days schedule-month-days"><legend>Days of month</legend><div class="day-toggles">{month_day_toggle_markup}</div><span class="hint schedule-day-hint">Optional. When selected, month days take precedence over weekdays.</span></fieldset>',
 )
 PAGE = re.sub(r'<section id="scheduler-page" class="page-section" hidden>.*?</section></section>', scheduler_markup, PAGE, count=1, flags=re.S)
-api_markup = '''<section id="api-page" class="page-section" hidden><div class="section-title"><div><h2>API</h2><span class="hint">Manage integration API access without exposing token secrets.</span></div></div><section class="management-grid api-grid"><section class="management-panel"><div class="section-title"><div><h2>API status</h2><span class="hint">Read-only status for API v1 and the current endpoint.</span></div><span id="api-status-state" class="pill neutral">Loading…</span></div><div class="detail-grid api-status-details"><div><span>API v1</span><strong id="api-status-enabled">Unknown</strong></div><div><span>HTTPS required</span><strong id="api-status-https">Yes</strong></div><div><span>Endpoint</span><strong id="api-status-endpoint">Unknown</strong></div></div><p id="api-status-message" class="management-message" role="status"></p></section><section class="management-panel"><div class="section-title"><div><h2>Token management</h2><span class="hint">Only metadata is listed. A new secret is shown once after creation.</span></div></div><form id="api-token-form" class="management-form open"><label>Name<input name="name" maxlength="80" required autocomplete="off"></label><fieldset id="api-token-permissions" class="api-permissions"><legend>Permissions</legend><label><input type="checkbox" name="permission" value="read" checked> read</label><label><input type="checkbox" name="permission" value="logs"> logs (requires read)</label><label><input type="checkbox" name="permission" value="check"> check</label><label><input type="checkbox" name="permission" value="update"> update</label><label><input type="checkbox" name="permission" value="reboot"> reboot</label><label><input type="checkbox" name="permission" value="cancel"> cancel</label></fieldset><label>Expiry (optional ISO-8601 with timezone)<input name="expires_at" maxlength="64" placeholder="2027-01-01T00:00:00Z" autocomplete="off"></label><div class="form-actions"><button class="primary" type="submit">Create token</button></div></form><div id="api-token-secret" class="api-token-secret" hidden><strong>Token secret — store it now</strong><code id="api-token-secret-value"></code><p>This secret is shown only once and cannot be displayed again.</p></div><div id="api-token-message" class="management-message" role="status"></div><div id="api-token-list" class="api-token-list"><p class="empty">Loading token metadata…</p></div></section><section class="management-panel api-permissions-panel"><div class="section-title"><div><h2>Permissions</h2><span class="hint">Existing API permission rules remain unchanged.</span></div></div><ul><li><code>read</code> — read API data</li><li><code>logs</code> — read job logs; requires <code>read</code></li><li><code>check</code> — start checks</li><li><code>update</code> — start updates</li><li><code>reboot</code> — request reboots</li><li><code>cancel</code> — cancel jobs</li></ul></section><section class="management-panel api-endpoints-panel"><div class="section-title"><div><h2>API v1 endpoints</h2><span class="hint">See <a href="https://github.com/BassT23/Proxmox/blob/develop/docs/api-v1.md" target="_blank" rel="noopener noreferrer">docs/api-v1.md</a> for the full contract.</span></div></div><ul><li><code>/api/v1/status-summary</code></li><li><code>/api/v1/status</code></li><li><code>/api/v1/jobs</code></li><li><code>/api/v1/jobs/{id}</code></li><li><code>/api/v1/jobs/{id}/log</code></li><li><code>/api/v1/updater-version</code></li><li><code>/api/v1/capabilities</code></li></ul></section></section></section>'''
+api_markup = '''<section id="api-page" class="page-section" hidden><div class="section-title"><div><h2>API</h2><span class="hint">Manage integration API access without exposing token secrets.</span></div></div><section class="management-grid api-grid"><section class="management-panel"><div class="section-title"><div><h2>API status</h2><span class="hint">Read-only status for API v1 and the current endpoint.</span></div><span id="api-status-state" class="pill neutral">Loading…</span></div><div class="detail-grid api-status-details"><div><span>API v1</span><strong id="api-status-enabled">Unknown</strong></div><div><span>HTTPS required</span><strong id="api-status-https">Yes</strong></div><div><span>Endpoint</span><strong id="api-status-endpoint">Unknown</strong></div></div><p id="api-status-message" class="management-message" role="status"></p></section><section class="management-panel"><div class="section-title"><div><h2>Token management</h2><span class="hint">Only metadata is listed. A new secret is shown once after creation.</span></div></div><form id="api-token-form" class="management-form open"><label>Name<input name="name" maxlength="80" required autocomplete="off"></label><fieldset id="api-token-permissions" class="api-permissions"><legend>Permissions</legend><label><input type="checkbox" name="permission" value="read" checked> read</label><label><input type="checkbox" name="permission" value="logs"> logs (requires read)</label><label><input type="checkbox" name="permission" value="check"> check</label><label><input type="checkbox" name="permission" value="update"> update</label><label><input type="checkbox" name="permission" value="reboot"> reboot</label><label><input type="checkbox" name="permission" value="cancel"> cancel</label></fieldset><label>Expiry (optional ISO-8601 with timezone)<input name="expires_at" maxlength="64" placeholder="2027-01-01T00:00:00Z" autocomplete="off"></label><div class="form-actions"><button class="primary" type="submit">Create token</button></div></form><div id="api-token-secret" class="api-token-secret" hidden><strong>Token secret — store it now</strong><code id="api-token-secret-value"></code><p>This secret is shown only once and cannot be displayed again.</p></div><div id="api-token-message" class="management-message" role="status"></div><div id="api-token-list" class="api-token-list"><p class="empty">Loading token metadata…</p></div></section><section class="management-panel api-permissions-panel"><div class="section-title"><div><h2>Permissions</h2><span class="hint">Existing API permission rules remain unchanged.</span></div></div><ul><li><code>read</code> — read API data</li><li><code>logs</code> — read job logs; requires <code>read</code></li><li><code>check</code> — start checks</li><li><code>update</code> — start updates</li><li><code>reboot</code> — request reboots</li><li><code>cancel</code> — cancel jobs</li></ul></section><section class="management-panel api-endpoints-panel"><div class="section-title"><div><h2>API v1 endpoints</h2><span class="hint">See <a href="https://github.com/BassT23/Proxmox/blob/develop/docs/api-v1.md" target="_blank" rel="noopener noreferrer">docs/api-v1.md</a> for the full contract.</span></div></div><p class="hint">Status summary is read-only and requires an API token with <code>read</code>; it starts no checks, updates, jobs, or guest actions.</p><ul><li><code>/api/v1/status-summary</code></li><li><code>/api/v1/status</code></li><li><code>/api/v1/jobs</code></li><li><code>/api/v1/jobs/{id}</code></li><li><code>/api/v1/jobs/{id}/log</code></li><li><code>/api/v1/updater-version</code></li><li><code>/api/v1/capabilities</code></li></ul></section></section></section>'''
 api_markup = api_markup.replace(
     '<section id="api-page" class="page-section" hidden><div class="section-title"><div><h2>API</h2><span class="hint">Manage integration API access without exposing token secrets.</span></div></div>',
     '<section id="api-page" class="page-section" hidden><div class="section-title"><div><h2>API</h2><span class="hint">Manage integration API access without exposing token secrets.</span></div></div><div id="api-development-banner" class="management-message api-development-banner" role="note">API under development — endpoint names and semantics may change before release.</div>',
@@ -3989,7 +3989,12 @@ def package_freshness(target, max_age_seconds=PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_
         return {"state": "unknown", "checked_at": None, "age_seconds": None}
 
     if checked_stamp is None:
-        state = "not_checked" if check_status in {None, "", "unknown", "not_checked", "skipped", "stopped", "history_only"} else "unknown"
+        neutral_status = (
+            check_status is None
+            or (isinstance(check_status, str)
+                and check_status in {"", "unknown", "not_checked", "skipped", "stopped", "history_only"})
+        )
+        state = "not_checked" if neutral_status else "unknown"
         return {"state": state, "checked_at": None, "age_seconds": None}
 
     data_valid = package_data_is_valid(target)
@@ -4006,7 +4011,11 @@ def package_freshness(target, max_age_seconds=PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_
     if target.get("package_mutation_in_progress") is True:
         invalidated = True
     provenance_unknown = False
-    neutral_check = check_status in {None, "", "not_checked", "skipped", "stopped"}
+    neutral_check = (
+        check_status is None
+        or (isinstance(check_status, str)
+            and check_status in {"", "not_checked", "skipped", "stopped"})
+    )
     # A reachable=false observation is compatible with a retained neutral
     # skip.  For an actual non-neutral check it is contradictory provenance.
     if target.get("reachable") is not True and not neutral_check:
@@ -4022,7 +4031,7 @@ def package_freshness(target, max_age_seconds=PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_
             invalidated = True
 
     last_check = parse_aware_timestamp(target.get("last_check"))
-    if check_status in {"error", "offline"}:
+    if isinstance(check_status, str) and check_status in {"error", "offline"}:
         if last_check is None:
             provenance_unknown = True
         elif last_check > checked_stamp:
@@ -4047,21 +4056,43 @@ def package_freshness(target, max_age_seconds=PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_
     }
 
 
+class StatusSummaryDataError(ValueError):
+    """The persisted status document cannot safely be summarized."""
+
+
 def build_status_summary(payload, max_age_seconds=86400, now=None, package_max_age_seconds=None):
     """Return bounded aggregate observability, never target inventory or control URLs."""
-    if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
-        raise ValueError("invalid status payload")
+    if (not isinstance(payload, dict) or type(payload.get("schema_version")) is not int
+            or payload.get("schema_version") != 1 or not isinstance(payload.get("targets"), list)):
+        raise StatusSummaryDataError("invalid status payload")
     targets = payload["targets"]
     if len(targets) > 10000 or any(not isinstance(item, dict) for item in targets):
-        raise ValueError("invalid status target list")
+        raise StatusSummaryDataError("invalid status target list")
     if package_max_age_seconds is None:
         package_max_age_seconds = PACKAGE_FRESHNESS_DEFAULT_MAX_AGE_SECONDS
     current = now if now is not None else datetime.now(timezone.utc)
     document_state, document_age = classify_timestamp(payload.get("generated_at"), max_age_seconds, now=current)
 
+    successful_statuses = {"ok", "updates_available"}
+    failed_statuses = {"error", "offline"}
     reachable = sum(item.get("reachable") is True for item in targets)
     unreachable = sum(item.get("reachable") is False for item in targets)
-    failed = sum(item.get("check_status") in ("error", "offline") for item in targets)
+    successfully_checked = sum(
+        item.get("reachable") is True and isinstance(item.get("check_status"), str)
+        and item.get("check_status") in successful_statuses
+        for item in targets
+    )
+    failed = sum(
+        isinstance(item.get("check_status"), str)
+        and item.get("check_status") in failed_statuses
+        for item in targets
+    )
+    unknown = sum(
+        item.get("reachable") not in (True, False)
+        or not isinstance(item.get("check_status"), str)
+        or item.get("check_status") not in successful_statuses | failed_statuses
+        for item in targets
+    )
     unknown_updates = 0
     known_updates = 0
     unknown_reboot = 0
@@ -4070,14 +4101,20 @@ def build_status_summary(payload, max_age_seconds=86400, now=None, package_max_a
     for item in targets:
         available = item.get("updates")
         available = available.get("available") if isinstance(available, dict) else None
-        if type(available) is int and available >= 0:
+        observation_known = (
+            item.get("reachable") is True and isinstance(item.get("check_status"), str)
+            and item.get("check_status") in successful_statuses
+        )
+        if observation_known and type(available) is int and available >= 0:
             known_updates += available
         else:
             unknown_updates += 1
         reboot = item.get("reboot_required")
-        if reboot is True:
+        if observation_known and reboot is True:
             required_reboot += 1
-        elif reboot is not False:
+        elif observation_known and reboot is False:
+            pass
+        else:
             unknown_reboot += 1
         package_state = package_freshness(item, package_max_age_seconds, now=current)["state"]
         package_counts[package_state] += 1
@@ -4091,13 +4128,19 @@ def build_status_summary(payload, max_age_seconds=86400, now=None, package_max_a
             "total": len(targets),
             "reachable": reachable,
             "unreachable": unreachable,
+            "checked": successfully_checked,
+            "unknown": unknown,
             "failed": failed,
             "unknown_updates": unknown_updates,
             "unknown_reboot": unknown_reboot,
         },
         "package_freshness": package_counts,
-        "updates_available": known_updates if not unknown_updates else None,
-        "reboot_required": required_reboot if not unknown_reboot else None,
+        "updates_available": (
+            known_updates if document_state == "current" and targets and not unknown_updates else None
+        ),
+        "reboot_required": (
+            required_reboot if document_state == "current" and targets and not unknown_reboot else None
+        ),
     }
 
 
@@ -4183,10 +4226,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         return identity
 
     def handle_status_summary(self):
-        # The unversioned WebUI summary is a normal polling path as well.
-        # Reconciliation remains asynchronous and single-flight; this call
-        # does not start a job or perform any guest/lifecycle action.
-        self.schedule_remote_reconciliation()
+        # This compatibility endpoint is a pure projection of status.json.
+        # It must not start reconciliation, a job, or any guest/lifecycle
+        # action merely because a monitor polls it.
         try:
             with self.server.status_file.open("rb") as source:
                 raw = source.read(4 * 1024 * 1024 + 1)
@@ -4821,10 +4863,14 @@ class StatusHandler(BaseHTTPRequestHandler):
         }
 
     def _api_v1_status_summary(self):
-        # Keep the summary endpoint consistent with the target-level status
-        # endpoint: polling must eventually converge a completed remote job.
-        self.schedule_remote_reconciliation()
-        payload = self._api_v1_status_file(self.server.status_file)
+        # The summary is intentionally a pure status-model projection.  The
+        # target-level status route retains its existing reconciliation
+        # behavior; this aggregate endpoint never starts a job or remote
+        # handoff while being polled.
+        try:
+            payload = self._api_v1_status_file(self.server.status_file)
+        except ValueError as error:
+            raise StatusSummaryDataError("invalid status payload") from error
         summary = build_status_summary(
             payload,
             max_age_seconds=self.server.status_api_max_age_seconds,
@@ -5087,6 +5133,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             if str(error) == "invalid status include":
                 self.send_json(error_payload("INVALID_STATUS_INCLUDE", "The status include parameter is invalid."), HTTPStatus.BAD_REQUEST)
+            elif isinstance(error, StatusSummaryDataError):
+                self.send_json(error_payload("STATUS_INVALID", "The status file is invalid."), HTTPStatus.UNPROCESSABLE_ENTITY)
             elif str(error) in {"invalid target filter", "target must be specified once", "invalid job query"}:
                 self.send_json(error_payload("INVALID_TARGET_FILTER", "The target filter is invalid."), HTTPStatus.BAD_REQUEST)
             else:

@@ -119,8 +119,8 @@ UU_JOB_STATE_DIR="$WORK_DIR/jobs" UU_REMOTE_JOB_STATE_DIR="$WORK_DIR/jobs/remote
   ultimate-updater-update-986-retry >/dev/null
 [[ $(wc -l < "$WORK_DIR/import.log") -eq 2 ]]
 
-# API v1 status, API v1 summary, and the unversioned WebUI summary all invoke
-# the same single-flight scheduler; the fixture does not start any worker.
+# API v1 status retains the existing reconciliation trigger.  The two summary
+# endpoints are pure status.json projections and must not start a worker.
 python3 - "$ROOT_DIR" <<'PY'
 import importlib.util
 import json
@@ -156,7 +156,7 @@ with tempfile.TemporaryDirectory() as temporary:
     handler._api_v1_status()
     handler._api_v1_status_summary()
     handler.handle_status_summary()
-    assert calls == ["schedule", "schedule", "schedule"], calls
+    assert calls == ["schedule"], calls
     assert len(responses) == 1, responses
 
 print("remote reconciliation auto-trigger tests: PASS")
