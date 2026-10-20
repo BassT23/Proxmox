@@ -48,6 +48,7 @@ shell_tests=(
   tests/test-product-version-identity.sh
   tests/test-mail-renderer.sh
   tests/test-apprise-notifications.sh
+  tests/test-scheduled-success-heartbeat.sh
   tests/test-check-only-finalization.sh
   tests/test-post-update-refresh.sh
   tests/test-update-summary-pending-before.sh

@@ -24,11 +24,17 @@ run_context() {
   SYSTEMD_ARGS_FILE="$args_file" \
     UU_JOB_STATE_DIR="$WORK_DIR/jobs-$source" \
     UU_JOB_SOURCE="$source" UU_SCHEDULED_CHECK=true UU_NONINTERACTIVE=true \
+    UU_HEARTBEAT_URL_FILE="$WORK_DIR/heartbeat-url" \
+    UU_HEARTBEAT_TOKEN_FILE="$WORK_DIR/heartbeat-token" \
+    UU_HEARTBEAT_STATE_FILE="$WORK_DIR/heartbeat-state" \
     PATH="$WORK_DIR/bin:$PATH" \
     bash "$WORK_DIR/job-runner.sh" start-check all-systems "$WORK_DIR/check-cli" all >/dev/null
   grep -Fq -- "--setenv=UU_JOB_SOURCE=$expected_source" "$args_file"
   grep -Fq -- '--setenv=UU_SCHEDULED_CHECK=true' "$args_file"
   grep -Fq -- '--setenv=UU_NONINTERACTIVE=true' "$args_file"
+  grep -Fq -- "--setenv=UU_HEARTBEAT_URL_FILE=$WORK_DIR/heartbeat-url" "$args_file"
+  grep -Fq -- "--setenv=UU_HEARTBEAT_TOKEN_FILE=$WORK_DIR/heartbeat-token" "$args_file"
+  grep -Fq -- "--setenv=UU_HEARTBEAT_STATE_FILE=$WORK_DIR/heartbeat-state" "$args_file"
 }
 
 run_context initial-inventory initial-inventory

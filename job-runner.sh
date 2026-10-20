@@ -29,7 +29,8 @@ SYSTEMD_LOG_FILTER_ARGS=()
 append_apprise_runtime_env() {
   local -n options="$1"
   local key value
-  for key in UU_APPRISE_URLS_FILE UU_APPRISE_STATE_FILE UU_APPRISE_HELPER UU_APPRISE_PYTHON; do
+  for key in UU_APPRISE_URLS_FILE UU_APPRISE_STATE_FILE UU_APPRISE_HELPER UU_APPRISE_PYTHON \
+    UU_HEARTBEAT_URL_FILE UU_HEARTBEAT_TOKEN_FILE UU_HEARTBEAT_STATE_FILE; do
     value="${!key-}"
     [[ -n "$value" ]] || continue
     [[ "$value" == /* ]] || {

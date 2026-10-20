@@ -2286,6 +2286,261 @@ STATUS_MODEL_SEND_APPRISE() {
     "$python_bin" "$helper" "$kind" "$status_file" "$state" "$run_started_at"
 }
 
+# A scheduled success heartbeat is deliberately separate from Apprise.  It is
+# an opt-in, file-configured signal for the completed read-only inventory run;
+# it never becomes part of the functional check result.
+STATUS_MODEL_SCHEDULED_HEARTBEAT_CONTEXT() {
+  [[ "${UU_CHECK_JOB_EXECUTION:-false}" == true ]] || return 1
+  [[ "${UU_SCHEDULED_CHECK:-false}" == true ]] || return 1
+  [[ "${UU_JOB_SOURCE:-}" == initial-inventory ]] || return 1
+  [[ "${UU_GLOBAL_CHECK:-false}" == true ]] || return 1
+  [[ "${UU_SINGLE_TARGET:-false}" != true ]] || return 1
+  [[ "${UU_SINGLE_TARGET_CHECK:-false}" != true ]] || return 1
+  [[ "${UU_REMOTE_NODE_HANDOFF:-false}" != true ]] || return 1
+}
+
+# Validate the complete current inventory before a success signal is eligible.
+# This intentionally fails closed: a missing timestamp, target, count, or
+# successful status is not sufficient evidence for a heartbeat.
+STATUS_MODEL_SCHEDULED_HEARTBEAT_ELIGIBLE() {
+  local check_result="${1:-1}" external_result="${2:-1}"
+  local status_file="${3:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
+  local notification_result="${4:-1}" run_started_at="${5:-}"
+
+  STATUS_MODEL_SCHEDULED_HEARTBEAT_CONTEXT || return 1
+  [[ "$check_result" == 0 && "$external_result" == 0 && "$notification_result" == 0 ]] || return 1
+  [[ ! -e "${status_file}.zero-target" ]] || return 1
+  [[ -n "$run_started_at" && -f "$status_file" && ! -L "$status_file" ]] || return 1
+
+  python3 - "$status_file" "$run_started_at" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+
+status_file, started_at = sys.argv[1:]
+
+def timestamp(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+started = timestamp(started_at)
+if started is None:
+    raise SystemExit(1)
+
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+    raise SystemExit(1)
+generated = timestamp(payload.get("generated_at"))
+targets = payload.get("targets")
+if generated is None or generated < started or not isinstance(targets, list) or not targets:
+    raise SystemExit(1)
+
+seen = set()
+allowed_types = {"host", "lxc", "vm", "external"}
+for target in targets:
+    if not isinstance(target, dict):
+        raise SystemExit(1)
+    target_id = target.get("id")
+    target_type = target.get("type")
+    if not isinstance(target_id, str) or not target_id or target_id in seen:
+        raise SystemExit(1)
+    if target_type not in allowed_types:
+        raise SystemExit(1)
+    seen.add(target_id)
+    if target_type != "external" and not isinstance(target.get("node"), str):
+        raise SystemExit(1)
+    if target_type == "external" and target.get("node") not in (None, ""):
+        raise SystemExit(1)
+    if target.get("reachable") is not True:
+        raise SystemExit(1)
+    if target.get("check_status") not in {"ok", "updates_available"}:
+        raise SystemExit(1)
+    if target.get("error") not in (None, {}):
+        raise SystemExit(1)
+    if target.get("skip_reason") not in (None, {}):
+        raise SystemExit(1)
+    if target.get("reboot_required") is True:
+        raise SystemExit(1)
+    if target.get("package_data_invalidated") is True:
+        raise SystemExit(1)
+    if target.get("package_mutation_in_progress") is True:
+        raise SystemExit(1)
+    if target.get("package_check_started_during_mutation") is True:
+        raise SystemExit(1)
+    last_check = timestamp(target.get("last_check"))
+    if last_check is None or last_check < started:
+        raise SystemExit(1)
+    updates = target.get("updates")
+    available = updates.get("available") if isinstance(updates, dict) else None
+    if type(available) is not int or available < 0:
+        raise SystemExit(1)
+raise SystemExit(0)
+PY
+}
+
+STATUS_MODEL_HEARTBEAT_PROTECTED_FILE() {
+  local path="${1:-}" mode owner file_type parent parent_mode parent_owner
+  [[ "$path" == /* && -f "$path" && ! -L "$path" ]] || return 1
+  IFS=: read -r mode owner file_type < <(stat -c '%a:%u:%F' -- "$path" 2>/dev/null) || return 1
+  [[ "$mode" == 600 || "$mode" == 0600 ]] || return 1
+  [[ "$owner" == "$EUID" && "$file_type" == regular* ]] || return 1
+  parent=${path%/*}
+  [[ -n "$parent" && -d "$parent" && ! -L "$parent" ]] || return 1
+  IFS=: read -r parent_mode parent_owner < <(stat -c '%a:%u' -- "$parent" 2>/dev/null) || return 1
+  [[ "$parent_owner" == "$EUID" || "$parent_owner" == 0 ]] || return 1
+  (( 8#$parent_mode & 022 )) && return 1
+  return 0
+}
+
+STATUS_MODEL_HEARTBEAT_READ_PROTECTED() {
+  local path="${1:-}"
+  python3 - "$path" "$EUID" <<'PY'
+import os
+import stat
+import sys
+
+path, expected_uid = sys.argv[1:]
+try:
+    expected_uid = int(expected_uid)
+    parent = os.path.dirname(path) or "/"
+    parent_stat = os.lstat(parent)
+    if (not stat.S_ISDIR(parent_stat.st_mode) or stat.S_ISLNK(parent_stat.st_mode) or
+            parent_stat.st_mode & 0o022 or parent_stat.st_uid not in {0, expected_uid}):
+        raise ValueError
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        metadata = os.fstat(descriptor)
+        if (not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600 or
+                metadata.st_uid != expected_uid or metadata.st_size > 8192):
+            raise ValueError
+        with os.fdopen(descriptor, encoding="utf-8", closefd=False) as source:
+            value = source.read(8193)
+    finally:
+        os.close(descriptor)
+    if len(value) > 8192:
+        raise ValueError
+    sys.stdout.write(value)
+except (OSError, UnicodeError, TypeError, ValueError, IndexError):
+    raise SystemExit(1)
+PY
+}
+
+STATUS_MODEL_SEND_SUCCESS_HEARTBEAT() {
+  local run_id="${1:-}"
+  local url_file="${UU_HEARTBEAT_URL_FILE:-/etc/ultimate-updater/scheduled-heartbeat-url}"
+  local token_file="${UU_HEARTBEAT_TOKEN_FILE:-/etc/ultimate-updater/scheduled-heartbeat-token}"
+  local state_file="${UU_HEARTBEAT_STATE_FILE:-/var/lib/ultimate-updater/scheduled-heartbeat.state}"
+  local url token state_parent lock_file state_tmp
+
+  STATUS_MODEL_SCHEDULED_HEARTBEAT_CONTEXT || return 0
+  [[ "$run_id" =~ ^[A-Za-z0-9._:-]{1,256}$ ]] || return 69
+  [[ "$url_file" == /* && "$token_file" == /* && "$state_file" == /* ]] || return 69
+  # No URL file means the feature is disabled and must not create state or
+  # perform any network action.
+  [[ -e "$url_file" || -L "$url_file" ]] || return 0
+  url=$(STATUS_MODEL_HEARTBEAT_READ_PROTECTED "$url_file") || {
+    printf 'Scheduled success heartbeat configuration is invalid.\n' >&2
+    return 69
+  }
+  token=$(STATUS_MODEL_HEARTBEAT_READ_PROTECTED "$token_file") || {
+    printf 'Scheduled success heartbeat token configuration is invalid.\n' >&2
+    return 69
+  }
+  [[ "$url" == http://* || "$url" == https://* ]] || {
+    printf 'Scheduled success heartbeat endpoint is invalid.\n' >&2
+    return 69
+  }
+  [[ -n "$token" && "$token" != *$'\r'* && "$token" != *$'\n'* &&
+    "$url" != *' '* && "$url" != *$'\t'* &&
+    "$url" != *$'\r'* && "$url" != *$'\n'* && "$url" != *'@'* &&
+    "$url" != *'#'* ]] || {
+    printf 'Scheduled success heartbeat endpoint or token is invalid.\n' >&2
+    return 69
+  }
+  if ! python3 - "$url" <<'PY'
+from urllib.parse import urlsplit
+import sys
+
+try:
+    value = sys.argv[1]
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError
+    if parsed.username or parsed.password or parsed.fragment or parsed.query:
+        raise ValueError
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError
+    parsed.port
+except (IndexError, TypeError, ValueError):
+    raise SystemExit(1)
+PY
+  then
+    printf 'Scheduled success heartbeat endpoint is invalid.\n' >&2
+    return 69
+  fi
+
+  state_parent=${state_file%/*}
+  if [[ ! -e "$state_parent" ]]; then
+    ( umask 077; mkdir -p -- "$state_parent" ) || return 69
+  fi
+  [[ -d "$state_parent" && ! -L "$state_parent" ]] || return 69
+  lock_file="$state_file.lock"
+  [[ ! -L "$lock_file" ]] || return 69
+  exec {STATUS_MODEL_HEARTBEAT_LOCK_FD}>"$lock_file" || return 69
+  chmod 600 -- "$lock_file" 2>/dev/null || {
+    eval "exec ${STATUS_MODEL_HEARTBEAT_LOCK_FD}>&-"
+    return 69
+  }
+  STATUS_MODEL_HEARTBEAT_PROTECTED_FILE "$lock_file" || {
+    eval "exec ${STATUS_MODEL_HEARTBEAT_LOCK_FD}>&-"
+    return 69
+  }
+  flock -x "$STATUS_MODEL_HEARTBEAT_LOCK_FD" || {
+    eval "exec ${STATUS_MODEL_HEARTBEAT_LOCK_FD}>&-"
+    return 69
+  }
+  if [[ -L "$state_file" ]]; then
+    eval "exec ${STATUS_MODEL_HEARTBEAT_LOCK_FD}>&-"
+    return 69
+  fi
+  if [[ -e "$state_file" ]] && ! STATUS_MODEL_HEARTBEAT_PROTECTED_FILE "$state_file"; then
+    eval "exec ${STATUS_MODEL_HEARTBEAT_LOCK_FD}>&-"
+    return 69
+  fi
+  if [[ -f "$state_file" ]] && grep -Fqx -- "$run_id" "$state_file" 2>/dev/null; then
+    eval "exec ${STATUS_MODEL_HEARTBEAT_LOCK_FD}>&-"
+    return 0
+  fi
+  state_tmp="${state_file}.tmp.$$"
+  ( umask 077; printf '%s\n' "$run_id" >"$state_tmp" && chmod 600 -- "$state_tmp" && mv -f -- "$state_tmp" "$state_file" ) || {
+    rm -f -- "$state_tmp"
+    eval "exec ${STATUS_MODEL_HEARTBEAT_LOCK_FD}>&-"
+    return 69
+  }
+  if ! printf 'Authorization: Bearer %s\n' "$token" |
+    curl --fail --silent --proto '=http,https' --max-redirs 0 \
+      --connect-timeout 5 --max-time 20 --request POST --header @- "$url" \
+      >/dev/null 2>/dev/null; then
+    printf 'Scheduled success heartbeat delivery failed; check result is unchanged.\n' >&2
+    eval "exec ${STATUS_MODEL_HEARTBEAT_LOCK_FD}>&-"
+    return 69
+  fi
+  eval "exec ${STATUS_MODEL_HEARTBEAT_LOCK_FD}>&-"
+  return 0
+}
+
 # Render and optionally send one notification from the unified status model.
 # The first output line is an internal decision marker; callers remove it
 # before writing the human-readable mail body.
@@ -2294,6 +2549,7 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
   local email_user email_sender email_no_updates email_only_security email_daily_check email_single_runs
   local email_allowed=true
+  local email_rc=0 apprise_rc=0 email_required=false apprise_required=false
 
   email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
   email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
@@ -2342,14 +2598,16 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   case "$state" in
     updates|issues)
       if [[ "$email_security_allowed" == true ]]; then
+        email_required=true
         printf '%s\n' "$body" |
-          STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || true
+          STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || email_rc=$?
       fi
       ;;
     current)
       if [[ "$email_no_updates" == true ]]; then
+        email_required=true
         printf '%s\n' "No updates found during search" |
-          STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater" "$email_sender" "$email_user" || true
+          STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater" "$email_sender" "$email_user" || email_rc=$?
       fi
       ;;
     empty)
@@ -2359,7 +2617,19 @@ STATUS_MODEL_SEND_NOTIFICATION() {
       return 1
       ;;
   esac
-  STATUS_MODEL_SEND_APPRISE "$status_file" check "$state" "$body" || true
+  if [[ "${UU_REMOTE_NODE_HANDOFF:-false}" != true &&
+    ( -e "${UU_APPRISE_URLS_FILE:-/etc/ultimate-updater/apprise-urls}" ||
+      -L "${UU_APPRISE_URLS_FILE:-/etc/ultimate-updater/apprise-urls}" ) ]]; then
+    apprise_required=true
+  fi
+  STATUS_MODEL_SEND_APPRISE "$status_file" check "$state" "$body" || apprise_rc=$?
+  if STATUS_MODEL_SCHEDULED_HEARTBEAT_CONTEXT &&
+    { [[ "$email_required" == true && "$email_rc" -ne 0 ]] ||
+      [[ "$apprise_required" == true && "$apprise_rc" -ne 0 ]]; }; then
+    printf 'Scheduled notification delivery failed; success heartbeat withheld.\n' >&2
+    return 69
+  fi
+  return 0
 }
 
 # Send an update summary only after the caller has completed its post-update

@@ -24,6 +24,7 @@ for file in \
   tests/test-status-writer-concurrency.sh; do
   grep -Fq "$file" "$ENTRYPOINT"
 done
+grep -Fq 'tests/test-scheduled-success-heartbeat.sh' "$ENTRYPOINT"
 
 # The verifier itself must not dispatch host, guest, package, or network tools.
 # Child fixtures may define local command mocks; that is why the check targets

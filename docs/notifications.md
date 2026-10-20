@@ -35,6 +35,12 @@ Optional provider-neutral Apprise delivery is documented in
 uses a protected local URL file, and never changes the result of a check or
 update.
 
+The separate optional scheduled success heartbeat is documented in
+[Scheduler](scheduler.md). It is file-only, applies only after a complete
+read-only `initial-inventory` check, and is sent once by the authoritative
+controller path after the combined email/Apprise decision. A heartbeat
+delivery failure never changes the underlying check result.
+
 Notification bodies are rendered from the existing plain-text status model and
 converted to escaped HTML immediately before delivery. This preserves line
 breaks and indentation in clients such as Outlook while keeping notification
