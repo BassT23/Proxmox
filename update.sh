@@ -567,10 +567,23 @@ DOWNLOAD_SHELL_FILE() {
   printf '%s\n' "$temporary"
 }
 
+# Opt-in protection for externally managed Updater source distributions.
+# This blocks source replacement only; package/guest updates, read-only checks,
+# status queries, and uninstall remain available.
+CHECK_EXTERNAL_RELEASE_PIN() {
+  local pin="/etc/ultimate-updater/.source-release-pin"
+  if [[ -e "$pin" || -L "$pin" ]]; then
+    printf '%s\n' \
+      'Externally managed Updater source is pinned; use the external verified release procedure instead.' >&2
+    return 78
+  fi
+  return 0
+}
+
 RUN_DOWNLOADED_INSTALLER() {
-  local installer_path rc command
+  local installer_path rc command source_url
   local -a environment=()
-  installer_path=$(DOWNLOAD_SHELL_FILE "$1") || return 1
+  source_url=$1
   shift
   while [[ $# -gt 0 && "$1" == *=* ]]; do
     environment+=("$1")
@@ -578,6 +591,10 @@ RUN_DOWNLOADED_INSTALLER() {
   done
   command=${1:-}
   shift || true
+  if [[ "$command" != uninstall ]]; then
+    CHECK_EXTERNAL_RELEASE_PIN || return $?
+  fi
+  installer_path=$(DOWNLOAD_SHELL_FILE "$source_url") || return 1
   env "${environment[@]}" bash "$installer_path" "$command" "$@"
   rc=$?
   rm -f -- "$installer_path"
@@ -874,6 +891,7 @@ USAGE () {
 # Version Check / Update Message in Header
 RUN_BRANCH_UPDATE () {
   local target_branch=$1 installer cache_buster
+  CHECK_EXTERNAL_RELEASE_PIN || return $?
   cache_buster=$(date +%s)
 
   if ! installer=$(DOWNLOAD_SHELL_FILE "https://raw.githubusercontent.com/BassT23/Proxmox/refs/heads/$target_branch/install.sh?uu_cache=$cache_buster"); then
@@ -969,6 +987,7 @@ SAME_INSTALLED_TARGET_IDENTITY() {
 UPDATE () {
   SELF_UPDATE_RUN=true
   local installed_version target_version target_commit installed_commit target_beta cache_buster
+  CHECK_EXTERNAL_RELEASE_PIN || return $?
   cache_buster=$(date +%s)
   installed_version=$(awk -F'"' '/^VERSION=/ {print $2; exit}' "$LOCAL_FILES/update.sh" 2>/dev/null || true)
   if ! target_version=$(FETCH_REMOTE_VERSION "$BRANCH" update.sh); then

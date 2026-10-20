@@ -40,6 +40,7 @@ shell_tests=(
   tests/test-installer-terminal-ux.sh
   tests/test-installer-scheduled-cron.sh
   tests/test-http-download-safety.sh
+  tests/test-external-release-pin.sh
   tests/test-branch-selection.sh
   tests/test-config-merge.sh
   tests/test-initial-inventory-readonly.sh

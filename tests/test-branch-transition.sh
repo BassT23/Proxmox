@@ -14,6 +14,10 @@ awk '/^SAME_INSTALLED_TARGET_IDENTITY\(\)/{capture=1} capture {if (/^PRINT_BRANC
   "$ROOT_DIR/update.sh" > "$WORK_DIR/update-gate.sh"
 # shellcheck disable=SC1091
 source "$WORK_DIR/update-gate.sh"
+# UPDATE() now fails closed before any self-update metadata fetch when the
+# externally managed source pin is active; this isolated unit fixture keeps
+# the marker absent without sourcing the complete runtime.
+CHECK_EXTERNAL_RELEASE_PIN() { return 0; }
 
 assert_installer_required() {
   local name=$1 expected=$2
