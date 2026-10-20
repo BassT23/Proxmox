@@ -147,6 +147,12 @@ DEFAULT_PROXMOX_CUSTOM_CERT = Path("/etc/pve/local/pveproxy-ssl.pem")
 DEFAULT_PROXMOX_CUSTOM_KEY = Path("/etc/pve/local/pveproxy-ssl.key")
 WEB_UI_PUBLIC_ORIGIN_ENV = "WEB_UI_PUBLIC_ORIGIN"
 WEB_UI_TRUSTED_PROXY_CIDRS_ENV = "WEB_UI_TRUSTED_PROXY_CIDRS"
+WEB_UI_TRUSTED_AUTH_ENABLED_ENV = "WEB_UI_TRUSTED_AUTH_ENABLED"
+WEB_UI_TRUSTED_AUTH_IDENTITY_HEADER_ENV = "WEB_UI_TRUSTED_AUTH_IDENTITY_HEADER"
+WEB_UI_TRUSTED_AUTH_IDENTITIES_ENV = "WEB_UI_TRUSTED_AUTH_IDENTITIES"
+WEB_UI_TRUSTED_AUTH_ASSERTION_FILE_ENV = "WEB_UI_TRUSTED_AUTH_ASSERTION_FILE"
+WEB_UI_TRUSTED_AUTH_DEFAULT_IDENTITY_HEADER = "Remote-User"
+WEB_UI_TRUSTED_AUTH_ASSERTION_HEADER = "X-UU-Gateway-Assertion"
 TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 JOB_RE = re.compile(r"^ultimate-updater-(?:update|check|reboot)-[A-Za-z0-9_.-]+$")
 API_JOB_RE = JOB_RE
@@ -173,6 +179,19 @@ API_TARGET_ID_RE = re.compile(r"^(?:(?:host|guest):)?[A-Za-z0-9][A-Za-z0-9_.-]*$
 
 class ProxyConfigurationError(ValueError):
     """Raised when the opt-in reverse-proxy origin configuration is unsafe."""
+
+
+class TrustedProxyAuthError(ProxyConfigurationError):
+    """Raised when the opt-in trusted-proxy authentication is unsafe."""
+
+
+PROXY_IDENTITY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@:-]{0,127}$")
+PROXY_HEADER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,63}$")
+PROXY_ASSERTION_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{43,512}$")
+PROXY_RESERVED_HEADERS = frozenset({
+    "authorization", "cookie", "host", "origin", "forwarded", "x-forwarded-for",
+    "x-forwarded-host", "x-forwarded-proto", "x-csrf-token",
+})
 
 
 def _valid_origin_hostname(hostname):
@@ -280,6 +299,82 @@ def load_proxy_configuration():
             f"{WEB_UI_PUBLIC_ORIGIN_ENV} requires {WEB_UI_TRUSTED_PROXY_CIDRS_ENV}"
         )
     return public_origin, trusted_proxies
+
+
+def _parse_strict_bool(value, name):
+    normalized = "" if value is None else str(value).strip().lower()
+    if normalized in {"", "false", "no", "off", "0"}:
+        return False
+    if normalized in {"true", "yes", "on", "1"}:
+        return True
+    raise TrustedProxyAuthError(f"{name} must be true or false")
+
+
+def _read_gateway_assertion(path):
+    """Read one protected gateway assertion without following a symlink."""
+    if not isinstance(path, Path) or not path.is_absolute():
+        raise TrustedProxyAuthError("trusted proxy assertion path must be absolute")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+        try:
+            metadata = os.fstat(descriptor)
+            if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
+                    or stat.S_IMODE(metadata.st_mode) != 0o600
+                    or metadata.st_size > 513):
+                raise TrustedProxyAuthError("trusted proxy assertion file is not protected")
+            raw = os.read(descriptor, 1024)
+        finally:
+            os.close(descriptor)
+    except (OSError, TrustedProxyAuthError) as error:
+        if isinstance(error, TrustedProxyAuthError):
+            raise
+        raise TrustedProxyAuthError("trusted proxy assertion file is unavailable") from error
+    if raw.endswith(b"\n"):
+        raw = raw[:-1]
+    try:
+        value = raw.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise TrustedProxyAuthError("trusted proxy assertion is invalid") from error
+    if (not PROXY_ASSERTION_RE.fullmatch(value) or len(set(value)) < 16):
+        raise TrustedProxyAuthError("trusted proxy assertion is invalid")
+    return value
+
+
+def load_trusted_proxy_auth_configuration(trusted_proxies):
+    """Load disabled-by-default gateway authentication configuration."""
+    enabled = _parse_strict_bool(os.environ.get(WEB_UI_TRUSTED_AUTH_ENABLED_ENV),
+                                 WEB_UI_TRUSTED_AUTH_ENABLED_ENV)
+    if not enabled:
+        return {"enabled": False}
+    if not trusted_proxies:
+        raise TrustedProxyAuthError(
+            f"{WEB_UI_TRUSTED_AUTH_ENABLED_ENV} requires {WEB_UI_TRUSTED_PROXY_CIDRS_ENV}"
+        )
+    identity_header = os.environ.get(
+        WEB_UI_TRUSTED_AUTH_IDENTITY_HEADER_ENV,
+        WEB_UI_TRUSTED_AUTH_DEFAULT_IDENTITY_HEADER,
+    ).strip()
+    if (not PROXY_HEADER_RE.fullmatch(identity_header)
+            or identity_header.lower() in PROXY_RESERVED_HEADERS):
+        raise TrustedProxyAuthError("trusted proxy identity header is invalid")
+    raw_identities = os.environ.get(WEB_UI_TRUSTED_AUTH_IDENTITIES_ENV, "")
+    identities = raw_identities.split(",") if raw_identities else []
+    if (not identities or any(not PROXY_IDENTITY_RE.fullmatch(item) for item in identities)
+            or len(set(identities)) != len(identities)):
+        raise TrustedProxyAuthError("trusted proxy identity allowlist is invalid")
+    assertion_value = os.environ.get(WEB_UI_TRUSTED_AUTH_ASSERTION_FILE_ENV, "").strip()
+    assertion_file = Path(assertion_value)
+    if not assertion_value or not assertion_file.is_absolute() or assertion_file.is_symlink():
+        raise TrustedProxyAuthError("trusted proxy assertion path is invalid")
+    _read_gateway_assertion(assertion_file)
+    return {
+        "enabled": True,
+        "identity_header": identity_header,
+        "identities": frozenset(identities),
+        "assertion_file": assertion_file,
+        "assertion_header": WEB_UI_TRUSTED_AUTH_ASSERTION_HEADER,
+    }
 
 
 def scheduler_unit_name(schedule_id):
@@ -3901,6 +3996,19 @@ class AuthStore:
                                 "expires": time.time() + self.SESSION_SECONDS}
         return {"ok": True, "token": token, "csrf": csrf, "user": result["user"]}
 
+    def trusted_proxy_session(self, identity):
+        """Create a short-lived WebUI session for an already authenticated gateway identity."""
+        token = secrets.token_urlsafe(32)
+        csrf = secrets.token_urlsafe(32)
+        self.sessions[token] = {
+            "user": identity,
+            "csrf": csrf,
+            "expires": time.time() + self.SESSION_SECONDS,
+            "auth_method": "trusted-proxy",
+            "proxy_identity": identity,
+        }
+        return {"ok": True, "token": token, "csrf": csrf, "user": identity}
+
     def session(self, token):
         item = self.sessions.get(token)
         if not item:
@@ -3908,7 +4016,7 @@ class AuthStore:
         if item["expires"] <= time.time():
             self.sessions.pop(token, None)
             return None
-        if self.backend == "proxmox":
+        if self.backend == "proxmox" and item.get("auth_method") != "trusted-proxy":
             try:
                 if not self.proxmox.authorized(item["user"]):
                     self.sessions.pop(token, None)
@@ -4148,11 +4256,98 @@ class StatusHandler(BaseHTTPRequestHandler):
     server_version = "UltimateUpdaterUI/1"
     protocol_version = "HTTP/1.1"
 
+    def _request_cookie(self, name):
+        prefix = f"{name}="
+        return next((part.strip()[len(prefix):] for part in self.headers.get("Cookie", "").split(";")
+                     if part.strip().startswith(prefix)), "")
+
+    def _proxy_header_values(self, name):
+        values = self.headers.get_all(name)
+        return values if isinstance(values, list) else ([] if values is None else [values])
+
+    def _trusted_proxy_identity(self):
+        """Validate the gateway proof on every request using only the TCP peer."""
+        config = getattr(self.server, "trusted_proxy_auth", None)
+        if not isinstance(config, dict) or not config.get("enabled"):
+            return None
+        identity_header = config["identity_header"]
+        assertion_header = config["assertion_header"]
+        identity_values = self._proxy_header_values(identity_header)
+        assertion_values = self._proxy_header_values(assertion_header)
+        if not identity_values and not assertion_values:
+            return None
+        try:
+            peer = ipaddress.ip_address(self.client_address[0])
+        except (IndexError, ValueError):
+            self._trusted_proxy_error = "trusted proxy peer is invalid"
+            return None
+        if not any(peer in network for network in getattr(self.server, "trusted_proxy_networks", ())):
+            self._trusted_proxy_error = "trusted proxy peer is not allowed"
+            return None
+        if len(identity_values) != 1 or len(assertion_values) != 1:
+            self._trusted_proxy_error = "trusted proxy credentials are ambiguous"
+            return None
+        identity = identity_values[0]
+        assertion = assertion_values[0]
+        if not isinstance(identity, str) or not PROXY_IDENTITY_RE.fullmatch(identity):
+            self._trusted_proxy_error = "trusted proxy identity is invalid"
+            return None
+        if identity not in config["identities"]:
+            self._trusted_proxy_error = "trusted proxy identity is not allowed"
+            return None
+        if not isinstance(assertion, str) or not PROXY_ASSERTION_RE.fullmatch(assertion):
+            self._trusted_proxy_error = "trusted proxy assertion is invalid"
+            return None
+        try:
+            expected = _read_gateway_assertion(config["assertion_file"])
+        except TrustedProxyAuthError:
+            self._trusted_proxy_error = "trusted proxy assertion is unavailable"
+            return None
+        if not hmac.compare_digest(assertion, expected):
+            self._trusted_proxy_error = "trusted proxy assertion is invalid"
+            return None
+        self._trusted_proxy_error = None
+        return identity
+
     def current_session(self):
-        cookie = self.headers.get("Cookie", "")
-        token = next((part.strip().split("=", 1)[1] for part in cookie.split(";")
-                      if part.strip().startswith("UU_SESSION=")), "")
-        return self.server.auth.session(token) if token else None
+        if hasattr(self, "_current_session"):
+            return self._current_session
+        token = self._request_cookie("UU_SESSION")
+        try:
+            session = self.server.auth.session(token) if token else None
+        except AuthorizationUnavailableError:
+            raise
+        proxy_identity = self._trusted_proxy_identity()
+        if proxy_identity is not None:
+            if session:
+                if (session.get("auth_method") != "trusted-proxy"
+                        or not hmac.compare_digest(str(session.get("proxy_identity", "")), proxy_identity)):
+                    if token:
+                        self.server.auth.logout(token)
+                    self._current_session = None
+                    return None
+                self._current_session = session
+                return session
+            created = self.server.auth.trusted_proxy_session(proxy_identity)
+            self._response_cookies = getattr(self, "_response_cookies", [])
+            secure = "; Secure" if self.request_is_secure() else ""
+            self._response_cookies.append(
+                f"UU_SESSION={created['token']}; Path=/; Max-Age={AuthStore.SESSION_SECONDS}; HttpOnly; SameSite=Lax{secure}"
+            )
+            self._current_session = self.server.auth.session(created["token"])
+            return self._current_session
+        if getattr(self, "_trusted_proxy_error", None):
+            if session and session.get("auth_method") == "trusted-proxy" and token:
+                self.server.auth.logout(token)
+            self._current_session = None
+            return None
+        if session and session.get("auth_method") == "trusted-proxy":
+            if token:
+                self.server.auth.logout(token)
+            self._current_session = None
+            return None
+        self._current_session = session
+        return session
 
     def authorization_unavailable(self):
         self.send_json(error_payload(
@@ -4165,13 +4360,17 @@ class StatusHandler(BaseHTTPRequestHandler):
         return False
 
     def authenticated(self):
-        if not self.server.auth.configured:
-            return self.auth_error("Web authentication is not configured.", HTTPStatus.SERVICE_UNAVAILABLE)
         try:
             session = self.current_session()
         except AuthorizationUnavailableError:
             return self.authorization_unavailable()
-        return bool(session) or self.auth_error()
+        if session:
+            return True
+        if getattr(self, "_trusted_proxy_error", None):
+            return self.auth_error("Trusted proxy authentication was rejected.")
+        if not self.server.auth.configured:
+            return self.auth_error("Web authentication is not configured.", HTTPStatus.SERVICE_UNAVAILABLE)
+        return self.auth_error()
 
     def status_api_authorized(self):
         """Keep the original unversioned endpoint on the same token boundary."""
@@ -4384,10 +4583,10 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def logout_allowed(self):
         """Validate logout without re-running remote Proxmox RBAC checks."""
-        cookie = self.headers.get("Cookie", "")
-        token = next((part.strip().split("=", 1)[1] for part in cookie.split(";")
-                      if part.strip().startswith("UU_SESSION=")), "")
+        token = self._request_cookie("UU_SESSION")
         session = self.server.auth.sessions.get(token) if token else None
+        if session and session.get("auth_method") == "trusted-proxy":
+            session = self.current_session()
         if not session or session["expires"] <= time.time():
             self.auth_error()
             return None
@@ -4404,6 +4603,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for cookie in getattr(self, "_response_cookies", []):
+            self.send_header("Set-Cookie", cookie)
+        self._response_cookies = []
         self.end_headers()
         self.wfile.write(body)
 
@@ -4428,6 +4630,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for cookie in getattr(self, "_response_cookies", []):
+            self.send_header("Set-Cookie", cookie)
+        self._response_cookies = []
         for cookie in cookies:
             self.send_header("Set-Cookie", cookie)
         self.end_headers()
@@ -6785,7 +6990,9 @@ class StatusHandler(BaseHTTPRequestHandler):
             except AuthorizationUnavailableError:
                 self.authorization_unavailable()
                 return
-            if not self.server.auth.configured:
+            if getattr(self, "_trusted_proxy_error", None):
+                self.auth_error("Trusted proxy authentication was rejected.")
+            elif not session and not self.server.auth.configured:
                 self.send_json(error_payload("AUTH_NOT_CONFIGURED", "Run the local web-auth setup before using the UI."), HTTPStatus.SERVICE_UNAVAILABLE)
             elif not session:
                 self.send_json(error_payload("AUTH_REQUIRED", "Authentication required."), HTTPStatus.UNAUTHORIZED)
@@ -7617,6 +7824,7 @@ def main():
         raise SystemExit(78)
     try:
         public_origin, trusted_proxy_networks = load_proxy_configuration()
+        trusted_proxy_auth = load_trusted_proxy_auth_configuration(trusted_proxy_networks)
     except ProxyConfigurationError as error:
         print(f"WebUI reverse-proxy configuration error: {error}", flush=True)
         raise SystemExit(78)
@@ -7624,6 +7832,7 @@ def main():
     server.tls_enabled = tls_context is not None
     server.public_origin = public_origin
     server.trusted_proxy_networks = trusted_proxy_networks
+    server.trusted_proxy_auth = trusted_proxy_auth
     if tls_context is not None:
         server.socket = tls_context.wrap_socket(server.socket, server_side=True)
     server.status_file, server.cli = args.status_file, args.cli

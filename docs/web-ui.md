@@ -70,6 +70,55 @@ Forwarded headers are never trusted from arbitrary public client requests.
 CSRF tokens, sessions, authentication, and WebAuthn validation remain
 required; proxy configuration is not a security bypass.
 
+### Trusted reverse-proxy authentication (explicit opt-in)
+
+Issue #359 and PR #363 by X1pheR proposed a trusted forward-auth mode. The
+Ultimate Updater implementation is adapted to the current develop session,
+CSRF, Origin, TFA, and safety boundaries. It is disabled by default and does
+not replace Proxmox, PAM, or internal login. It is a local operator allowlist,
+not an OIDC provider or a release/provenance mechanism.
+
+Enable it only when the Web UI backend is reachable exclusively through the
+configured proxy source networks. The existing `WEB_UI_TRUSTED_PROXY_CIDRS`
+setting is the source allowlist, and the following additional settings are
+required in `/etc/ultimate-updater/web-ui.conf`:
+
+```text
+WEB_UI_TRUSTED_AUTH_ENABLED="true"
+WEB_UI_TRUSTED_AUTH_IDENTITY_HEADER="Remote-User"
+WEB_UI_TRUSTED_AUTH_IDENTITIES="uu-operator@example.invalid"
+WEB_UI_TRUSTED_AUTH_ASSERTION_FILE="/etc/ultimate-updater/gateway-assertion"
+```
+
+The identity header is accepted only once, must match the configured exact
+allowlist, and is evaluated only when the actual TCP peer is inside
+`WEB_UI_TRUSTED_PROXY_CIDRS`. `X-Forwarded-For` and every other forwarded
+client-address header are ignored for trust decisions. A CIDR alone is never
+enough: every request also needs exactly one fixed
+`X-UU-Gateway-Assertion` header whose value matches the assertion file.
+
+The assertion file must be an absolute regular non-symlink file owned by the
+Web UI service user with mode `0600`. It must contain one ASCII assertion of at
+least 43 characters and sufficient character diversity. Generate and install
+it out of band; never put the value in Git, a command line, status data, API
+responses, logs, or this Web UI. Invalid, missing, duplicated, or insecure
+proof fails closed. The comparison is constant-time and the file metadata and
+contents are revalidated on every request.
+
+Successful gateway authentication creates the same short-lived,
+CSRF-protected Web UI session used by the native UI, and that session is bound
+to the currently revalidated allowlisted proxy identity. Identity changes,
+logout, expiry, missing proof, direct backend access, and malformed headers do
+not reuse the session. Native login recovery remains available, while the
+disabled default path is unchanged. No Web UI form exposes or edits the
+gateway assertion.
+
+The proxy must strip caller-supplied identity/assertion headers and inject its
+own values over a protected connection. Shared-NAT deployments must not
+enable this mode unless the backend can independently distinguish the trusted
+proxy. This feature adds no guest, Proxmox, package, update, snapshot,
+lifecycle, or deployment action.
+
 ## Main areas
 
 - **Dashboard:** nodes, LXC/VM guests, external targets, reachability, update
