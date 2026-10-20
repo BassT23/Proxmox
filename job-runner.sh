@@ -26,6 +26,20 @@ REMOTE_JOB_STATE_DIR="${UU_REMOTE_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}
 RUNNER_PATH=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 SYSTEMD_LOG_FILTER_ARGS=()
 
+append_apprise_runtime_env() {
+  local -n options="$1"
+  local key value
+  for key in UU_APPRISE_URLS_FILE UU_APPRISE_STATE_FILE UU_APPRISE_HELPER UU_APPRISE_PYTHON; do
+    value="${!key-}"
+    [[ -n "$value" ]] || continue
+    [[ "$value" == /* ]] || {
+      printf 'Apprise runtime paths must be absolute.\n' >&2
+      return 78
+    }
+    options+=("--setenv=$key=$value")
+  done
+}
+
 # Remote job handback must use the same node-specific SSH policy as the
 # forward update path.  Keep the helper optional for legacy installations
 # that do not ship internal-ssh.sh.
@@ -760,6 +774,7 @@ start_job() {
   local conflict conflict_target conflict_unit interactive=false socket_path
   local identity_key identity_var identity_value
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
+  append_apprise_runtime_env systemd_env || return 78
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_target "$target" || { printf 'Unsupported target: %s\n' "$target" >&2; return 2; }
   command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start update jobs.\n' >&2; return 5; }
@@ -853,6 +868,7 @@ start_global_job() {
   local update_script="$1" unit timestamp target=all-systems
   local socket_path interactive=false
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR")
+  append_apprise_runtime_env systemd_env || return 78
   [[ -x "$update_script" ]] || { printf 'Update script is not executable: %s\n' "$update_script" >&2; return 1; }
   valid_global_target "$target" || return 2
   command -v systemd-run >/dev/null 2>&1 || { printf 'systemd-run is required to start update jobs.\n' >&2; return 5; }
@@ -1139,6 +1155,7 @@ start_check_job() {
   local target="$1" cli="$2" mode="$3" unit timestamp
   local identity_key identity_var identity_value
   local -a systemd_env=("--setenv=UU_JOB_STATE_DIR=$JOB_STATE_DIR" "--setenv=UU_JOB_TYPE=check")
+  append_apprise_runtime_env systemd_env || return 78
   [[ -x "$cli" ]] || { printf 'CLI is not executable: %s\n' "$cli" >&2; return 1; }
   valid_target "$target" || { printf 'Unsupported check target: %s\n' "$target" >&2; return 2; }
   [[ "$mode" == target || "$mode" == node || "$mode" == all ]] || return 2

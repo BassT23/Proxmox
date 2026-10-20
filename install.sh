@@ -671,6 +671,9 @@ INSTALL () {
     cp "$TEMP_FILES"/targets.conf $LOCAL_FILES/targets.conf
     cp "$TEMP_FILES"/status-model.sh $LOCAL_FILES/status-model.sh
     chmod 750 $LOCAL_FILES/status-model.sh
+    if [[ -f "$TEMP_FILES/notification-apprise.py" ]]; then
+      install -m 0750 "$TEMP_FILES/notification-apprise.py" "$LOCAL_FILES/notification-apprise.py"
+    fi
     chmod 750 $LOCAL_FILES/target-selection.sh
     cp "$TEMP_FILES"/windows-update.sh $LOCAL_FILES/windows-update.sh
     chmod 750 $LOCAL_FILES/windows-update.sh
@@ -910,6 +913,10 @@ UPDATE () {
     if [[ -f "$TEMP_FILES"/status-model.sh ]]; then
       mv "$TEMP_FILES"/status-model.sh $LOCAL_FILES/status-model.sh
       chmod 750 $LOCAL_FILES/status-model.sh
+    fi
+    if [[ -f "$TEMP_FILES/notification-apprise.py" ]]; then
+      mv "$TEMP_FILES/notification-apprise.py" "$LOCAL_FILES/notification-apprise.py"
+      chmod 0750 "$LOCAL_FILES/notification-apprise.py"
     fi
     if [[ -f "$TEMP_FILES"/windows-update.sh ]]; then
       mv "$TEMP_FILES"/windows-update.sh $LOCAL_FILES/windows-update.sh

@@ -30,6 +30,11 @@ the configured mail transport independently. Use `DEBUG=true` temporarily
 when additional technical diagnostics are needed; do not leave secrets in
 logs or bug reports.
 
+Optional provider-neutral Apprise delivery is documented in
+[Apprise notifications](apprise-notifications.md). It is disabled by default,
+uses a protected local URL file, and never changes the result of a check or
+update.
+
 Notification bodies are rendered from the existing plain-text status model and
 converted to escaped HTML immediately before delivery. This preserves line
 breaks and indentation in clients such as Outlook while keeping notification

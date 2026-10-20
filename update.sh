@@ -2230,6 +2230,9 @@ UPDATE_HOST () {
       [[ -f "$source" ]] || continue
       scp "$source" "$HOST:$LOCAL_FILES/$(basename -- "$source")"
     done
+    if [[ -f "$LOCAL_FILES/notification-apprise.py" ]]; then
+      scp "$LOCAL_FILES/notification-apprise.py" "$HOST:$LOCAL_FILES/notification-apprise.py"
+    fi
     if [[ -f "$LOCAL_FILES/check-output" ]]; then
       scp "$LOCAL_FILES/check-output" "$HOST:$LOCAL_FILES/check-output"
     fi
@@ -3442,11 +3445,23 @@ EXIT () {
     exit
   # Update Finish
   elif [[ "$EXIT_CODE" == "$warning_rc" ]]; then
+    if [[ "${SELF_UPDATE_RUN:-false}" != true &&
+      "${UU_DEFER_UPDATE_MAIL:-false}" != true ]] &&
+      declare -f STATUS_MODEL_SEND_APPRISE_UPDATE_NOTIFICATION >/dev/null 2>&1; then
+      STATUS_MODEL_SEND_APPRISE_UPDATE_NOTIFICATION "$LOCAL_FILES/status.json" \
+        "${UPDATE_RUN_STARTED_AT:-}" || true
+    fi
     if [[ "$RICM" != true ]]; then
       echo -e "${OR:-}⚠ Finished with warnings; no confirmed package mutation was recorded.${CL:-}\n"
       CLEAN_LOGFILE
     fi
   elif [[ "$EXIT_CODE" == 0 ]]; then
+    if [[ "${SELF_UPDATE_RUN:-false}" != true &&
+      "${UU_DEFER_UPDATE_MAIL:-false}" != true ]] &&
+      declare -f STATUS_MODEL_SEND_APPRISE_UPDATE_NOTIFICATION >/dev/null 2>&1; then
+      STATUS_MODEL_SEND_APPRISE_UPDATE_NOTIFICATION "$LOCAL_FILES/status.json" \
+        "${UPDATE_RUN_STARTED_AT:-}" || true
+    fi
     if [[ "$RICM" != true ]]; then
       if [[ -f $ERROR_LOG_FILE && -s $ERROR_LOG_FILE ]]; then
         echo -e "${OR:-}❌ Finished, with errors.${CL:-}\n"
@@ -3479,6 +3494,12 @@ EXIT () {
     fi
   else
   # Update Error
+    if [[ "${SELF_UPDATE_RUN:-false}" != true &&
+      "${UU_DEFER_UPDATE_MAIL:-false}" != true ]] &&
+      declare -f STATUS_MODEL_SEND_APPRISE_UPDATE_NOTIFICATION >/dev/null 2>&1; then
+      STATUS_MODEL_SEND_APPRISE_UPDATE_NOTIFICATION "$LOCAL_FILES/status.json" \
+        "${UPDATE_RUN_STARTED_AT:-}" || true
+    fi
     if [[ "$RICM" != true ]]; then
       echo -e "${RD:-}⚠  Error during update --- Exit Code: $EXIT_CODE${CL:-}\n"
       "$LOCAL_FILES/exit/error.sh"

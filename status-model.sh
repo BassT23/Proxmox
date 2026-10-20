@@ -2253,6 +2253,39 @@ print("</body></html>")
     "$recipient"
 }
 
+# Deliver the already-rendered notification through the optional provider-
+# neutral Apprise helper.  A configured remote handoff is authoritative on the
+# controller; suppress worker delivery so one event cannot be sent twice.
+# Provider configuration is discovered by the helper and is never placed in
+# argv, logs, status.json, or API responses.
+STATUS_MODEL_SEND_APPRISE() {
+  local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
+  local kind="${2:-check}" state="${3:-empty}" body="${4:-}" run_started_at="${5:-}"
+  local urls_file="${UU_APPRISE_URLS_FILE:-/etc/ultimate-updater/apprise-urls}"
+  local helper="${UU_APPRISE_HELPER:-${LOCAL_FILES:-/etc/ultimate-updater}/notification-apprise.py}"
+  local python_bin="${UU_APPRISE_PYTHON:-python3}"
+
+  [[ "${UU_REMOTE_NODE_HANDOFF:-false}" != true ]] || return 0
+  [[ -e "$urls_file" || -L "$urls_file" ]] || return 0
+  [[ "$helper" == /* && -f "$helper" ]] || {
+    printf 'Apprise notification helper unavailable.\n' >&2
+    return 69
+  }
+  if [[ "$python_bin" == /* ]]; then
+    [[ -x "$python_bin" ]] || {
+      printf 'Apprise notification interpreter unavailable.\n' >&2
+      return 69
+    }
+  else
+    command -v "$python_bin" >/dev/null 2>&1 || {
+      printf 'Apprise notification interpreter unavailable.\n' >&2
+      return 69
+    }
+  fi
+  printf '%s\n' "$body" |
+    "$python_bin" "$helper" "$kind" "$status_file" "$state" "$run_started_at"
+}
+
 # Render and optionally send one notification from the unified status model.
 # The first output line is an internal decision marker; callers remove it
 # before writing the human-readable mail body.
@@ -2260,6 +2293,7 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   local status_file="${1:-${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}}"
   local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
   local email_user email_sender email_no_updates email_only_security email_daily_check email_single_runs
+  local email_allowed=true
 
   email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
   email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
@@ -2280,13 +2314,13 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   # Keep it before the single-target policy so a scheduled selected-target
   # check is governed by EMAIL_DAILY_CHECK rather than the manual-run switch.
   if [[ ( "${UU_JOB_SOURCE:-}" == scheduler || "${UU_SCHEDULED_CHECK:-false}" == true ) && "$email_daily_check" != true ]]; then
-    return 0
+    email_allowed=false
   fi
 
   local render_target="" render_kind=""
   if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
     if [[ "${UU_JOB_SOURCE:-}" != scheduler && "${UU_SCHEDULED_CHECK:-false}" != true ]]; then
-      [[ "$email_single_runs" == true ]] || return 0
+      [[ "$email_single_runs" == true ]] || email_allowed=false
     fi
     render_target="${UU_SINGLE_TARGET_ID:-}"
     render_kind="${UU_SINGLE_TARGET_KIND:-target}"
@@ -2298,16 +2332,19 @@ STATUS_MODEL_SEND_NOTIFICATION() {
   state=${state#STATE=}
   body=${notification#*$'\n'}
 
-  if [[ "$email_only_security" == true ]]; then
-    if ! STATUS_MODEL_HAS_SECURITY_UPDATES "$status_file" "$render_target" "$render_kind"; then
-      return 0
-    fi
+  local email_security_allowed=true
+  if [[ "$email_only_security" == true ]] &&
+    ! STATUS_MODEL_HAS_SECURITY_UPDATES "$status_file" "$render_target" "$render_kind"; then
+    email_security_allowed=false
   fi
+  [[ "$email_allowed" == true ]] || email_security_allowed=false
 
   case "$state" in
     updates|issues)
-      printf '%s\n' "$body" |
-        STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || true
+      if [[ "$email_security_allowed" == true ]]; then
+        printf '%s\n' "$body" |
+          STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || true
+      fi
       ;;
     current)
       if [[ "$email_no_updates" == true ]]; then
@@ -2322,6 +2359,7 @@ STATUS_MODEL_SEND_NOTIFICATION() {
       return 1
       ;;
   esac
+  STATUS_MODEL_SEND_APPRISE "$status_file" check "$state" "$body" || true
 }
 
 # Send an update summary only after the caller has completed its post-update
@@ -2332,6 +2370,7 @@ STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
   local config_file="${2:-${LOCAL_FILES:-/etc/ultimate-updater}/update.conf}"
   local run_started_at="${3:-}"
   local email_user email_sender email_only_error email_single_runs notification state body
+  local email_allowed=true
 
   email_user=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' "$config_file" 2>/dev/null)
   email_sender=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' "$config_file" 2>/dev/null)
@@ -2345,7 +2384,7 @@ STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
 
   local render_target="" render_kind=""
   if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
-    [[ "$email_single_runs" == true ]] || return 0
+    [[ "$email_single_runs" == true ]] || email_allowed=false
     render_target="${UU_SINGLE_TARGET_ID:-}"
     render_kind="${UU_SINGLE_TARGET_KIND:-target}"
   fi
@@ -2355,9 +2394,31 @@ STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
   state=${state#STATE=}
   body=${notification#*$'\n'}
 
-  [[ "$email_only_error" == true && "$state" != issues ]] && return 0
-  printf '%s\n' "$body" |
-    STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || true
+  if [[ "$email_allowed" == true && ( "$email_only_error" != true || "$state" == issues ) ]]; then
+    printf '%s\n' "$body" |
+      STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || true
+  fi
+  STATUS_MODEL_SEND_APPRISE "$status_file" update "$state" "$body" "$run_started_at" || true
+}
+
+# Direct update.sh runs do not pass through job-runner's deferred mail path.
+# Keep their Apprise delivery on the same renderer and run-scope rules without
+# changing the existing email decision.
+STATUS_MODEL_SEND_APPRISE_UPDATE_NOTIFICATION() {
+  local status_file="${1:-${STATUS_MODEL_FILE:-${LOCAL_FILES:-/etc/ultimate-updater}/status.json}}"
+  local run_started_at="${2:-}"
+  local render_target="" render_kind="" notification state body
+
+  if [[ "${UU_SINGLE_TARGET:-false}" == true ]]; then
+    render_target="${UU_SINGLE_TARGET_ID:-}"
+    render_kind="${UU_SINGLE_TARGET_KIND:-target}"
+  fi
+  notification=$(STATUS_MODEL_RENDER_NOTIFICATION "$status_file" update \
+    "$render_target" "$render_kind" "$run_started_at") || return 1
+  state=${notification%%$'\n'*}
+  state=${state#STATE=}
+  body=${notification#*$'\n'}
+  STATUS_MODEL_SEND_APPRISE "$status_file" update "$state" "$body" "$run_started_at"
 }
 
 # Expand only the documented sender placeholder. Config is never evaluated as
