@@ -7815,7 +7815,8 @@ def main():
         except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as error:
             print(f"Scheduler migration failed: {error}", flush=True)
             raise SystemExit(1)
-        print(f"Scheduler units checked; {len(changed)} updated.", flush=True)
+        if changed:
+            print(f"Scheduler units checked; {len(changed)} updated.", flush=True)
         return
     try:
         tls_context, tls_source, tls_cert, tls_fallback_reason = build_tls_context()

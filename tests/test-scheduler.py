@@ -2,9 +2,12 @@
 """Regression coverage for scheduler schema, selection, and timer units."""
 
 import importlib.util
+import io
 import json
 import tempfile
+from contextlib import redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 
 root = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("ultimate_updater_web", root / "web-ui" / "server.py")
@@ -108,6 +111,31 @@ with tempfile.TemporaryDirectory() as directory:
     assert old_service in changed
     assert "Environment=UU_JOB_SOURCE=initial-inventory" in old_service.read_text(encoding="utf-8")
     assert server.scheduler_migrate_units(path, Path(directory), Path("/usr/local/sbin/ultimate-updater")) == []
+
+
+def run_scheduler_migration_for_output(changed):
+    original_parse_args = server.parse_args
+    original_migrate = server.scheduler_migrate_units
+    output = io.StringIO()
+    server.parse_args = lambda: SimpleNamespace(
+        migrate_scheduler=True,
+        scheduler_file=Path("/tmp/schedules.json"),
+        scheduler_unit_dir=Path("/tmp/units"),
+        cli=Path("/usr/local/sbin/ultimate-updater"),
+        port=8765,
+    )
+    server.scheduler_migrate_units = lambda *args, **kwargs: changed
+    try:
+        with redirect_stdout(output):
+            server.main()
+    finally:
+        server.parse_args = original_parse_args
+        server.scheduler_migrate_units = original_migrate
+    return output.getvalue()
+
+
+assert run_scheduler_migration_for_output([]) == ""
+assert run_scheduler_migration_for_output([Path("/tmp/updated.service")]) == "Scheduler units checked; 1 updated.\n"
 
 source = (root / "web-ui" / "server.py").read_text(encoding="utf-8")
 assert server.scheduler_execution_env(base)["UU_JOB_SOURCE"] == "initial-inventory"
