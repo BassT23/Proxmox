@@ -4,6 +4,12 @@ Changelog:
 **Unreleased**
 
 Added:
+- Dashboard action areas now explain Check, Update, and Bulk selection more
+  clearly, separating node actions from bulk selection without repeating
+  `BULK` in each guest row.
+- WebUI HTTP/1.1 keep-alive requests now reset per-request authentication
+  state, preventing stale session state from causing false `401` logouts
+  during `/api/jobs` polling.
 - Web UI theme support with Modern and Classic visual styles; the selected
   theme is a browser-local preference and defaults to Modern.
 - Proxmox Web UI login support for TOTP, single-use recovery keys, and

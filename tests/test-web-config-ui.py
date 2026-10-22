@@ -219,8 +219,12 @@ assert "const sortNodes=items=>[...items].sort" in page
 assert "nodes=sortNodes(ts.filter(isProxmoxNode))" in page
 assert "externalGroup(external)" in page
 assert "target-selection-header" in page
-assert ">Check</span><span>Update</span><span>Actions</span>" in page
+assert "Bulk action selection" in page
+assert "Choose which targets are used by Check all and Update all." in page
 assert "target-selection-label" in page
+assert "node-selection-controls" in page
+assert "target-selection-controls::before" not in page
+assert ".node-group .group-actions { flex-wrap:nowrap; overflow-x:auto;" in page
 assert "✓ Only · ✕ Exclude · empty = no explicit rule" in page
 assert "targetSelectionConfirmed=copyTargetSelection(targetSelection)" in page
 assert "targetSelectionRevision" in page
