@@ -13,6 +13,7 @@ CHECK_PREFIX="ultimate-updater-check-"
 REBOOT_PREFIX="ultimate-updater-reboot-"
 CHECK_WARNING_RC="${UU_CHECK_WARNING_RC:-10}"
 UPDATE_WARNING_RC="${UU_UPDATE_WARNING_RC:-10}"
+UPDATE_UNSUPPORTED_RC="${UU_UPDATE_UNSUPPORTED_RC:-21}"
 MAX_COMPLETED_JOBS="${UU_MAX_COMPLETED_JOBS:-50}"
 CHECK_SCRIPT="${UU_CHECK_SCRIPT:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/check-updates.sh}"
 CHECK_CLI="${UU_CHECK_CLI:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/ultimate-updater}"
@@ -922,9 +923,83 @@ start_global_job() {
     "$target" "$unit" "$unit"
 }
 
+explicitly_unsupported_target_result() {
+  local target="$1" started_at="$2"
+  python3 - "${STATUS_MODEL_FILE:-}" "$target" "$started_at" <<'PY'
+import json
+import sys
+from datetime import datetime
+
+status_file, target, started_at = sys.argv[1:]
+if not status_file:
+    raise SystemExit(1)
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+try:
+    started = datetime.fromisoformat(started_at.replace("Z", "+00:00")) if started_at else None
+except (TypeError, ValueError):
+    started = None
+identities = {str(target), f"guest:{target}", f"lxc:{target}", f"vm:{target}"}
+for item in payload.get("targets", []) if isinstance(payload, dict) else []:
+    if not isinstance(item, dict) or str(item.get("id")) not in identities:
+        continue
+    result = item.get("last_update")
+    if not isinstance(result, dict) or result.get("status") != "unsupported":
+        continue
+    if started is not None:
+        try:
+            timestamp = datetime.fromisoformat(str(result.get("timestamp")).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        if timestamp < started:
+            continue
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+explicitly_unsupported_global_result() {
+  local started_at="$1"
+  python3 - "${STATUS_MODEL_FILE:-}" "$started_at" <<'PY'
+import json
+import sys
+from datetime import datetime
+
+status_file, started_at = sys.argv[1:]
+if not status_file:
+    raise SystemExit(1)
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+    started = datetime.fromisoformat(started_at.replace("Z", "+00:00")) if started_at else None
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+results = []
+for item in payload.get("targets", []) if isinstance(payload, dict) else []:
+    if not isinstance(item, dict):
+        continue
+    result = item.get("last_update")
+    if not isinstance(result, dict) or not result.get("timestamp"):
+        continue
+    try:
+        timestamp = datetime.fromisoformat(str(result["timestamp"]).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        continue
+    if started is not None and timestamp < started:
+        continue
+    results.append(result.get("status"))
+raise SystemExit(0 if results and all(status == "unsupported" for status in results) else 1)
+PY
+}
+
 run_job() {
   local unit="$1" target="$2" update_script="$3" file started exit_code lock_file
-  local post_check_rc=0 post_check_message="" captured_status_file captured_status_rc unresolved_file unresolved_job terminal_state
+  local post_check_rc=0 post_check_message="" captured_status_file captured_status_rc unresolved_file unresolved_job terminal_state job_exit_code
   valid_target "$target" || return 2
   file=$(state_file "$unit")
   started=$(state_value "$file" started_at)
@@ -947,6 +1022,7 @@ run_job() {
     UU_DEFER_UPDATE_MAIL=true "$update_script" "$target" </dev/null
   fi
   exit_code=$?
+  job_exit_code="$exit_code"
   unresolved_file=$(windows_unresolved_file)
   if [[ -f "$unresolved_file" && "$exit_code" -ne 0 ]]; then
     unresolved_job=$(state_value "$unresolved_file" job_id 2>/dev/null || printf '')
@@ -1027,11 +1103,21 @@ run_job() {
     post_check_message="update skipped; no confirmed package mutation was recorded"
     printf 'Update job skipped; no confirmed package mutation was recorded.\n' >&2
     send_update_notification "$STATUS_MODEL_FILE" "$started"
+  elif [[ "$exit_code" -eq "$UPDATE_UNSUPPORTED_RC" ]] &&
+    explicitly_unsupported_target_result "$target" "$started"; then
+    # A target-level unsupported result is a neutral policy outcome.  Only
+    # classify it here when the status model proves that exact result for this
+    # current job; transport, auth, baseline, and package failures stay failed.
+    terminal_state="skipped"
+    job_exit_code="$UPDATE_WARNING_RC"
+    post_check_message="update skipped; target is unsupported"
+    printf 'Update job skipped; target is unsupported.\n' >&2
+    send_update_notification "$STATUS_MODEL_FILE" "$started"
   else
     send_update_notification "$STATUS_MODEL_FILE" "$started"
   fi
-  if [[ "$exit_code" -eq 0 || "$exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
-    write_state "$unit" "$target" "$terminal_state" "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
+  if [[ "$job_exit_code" -eq 0 || "$job_exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
+    write_state "$unit" "$target" "$terminal_state" "$started" "$(now)" "$job_exit_code" "$post_check_message" || return 1
   else
     write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
   fi
@@ -1039,12 +1125,12 @@ run_job() {
     rm -rf -- "$UU_REMOTE_WORK_DIR"
   fi
   cleanup_interactive_runtime "$unit" || true
-  return "$exit_code"
+  return "$job_exit_code"
 }
 
 run_global_job() {
   local unit="$1" update_script="$2" target=all-systems file started exit_code lock_file
-  local post_check_rc=0 preserve_rc=0 post_check_message="" update_result_snapshot="" pre_update_snapshot="" terminal_state
+  local post_check_rc=0 preserve_rc=0 post_check_message="" update_result_snapshot="" pre_update_snapshot="" terminal_state job_exit_code
   valid_unit "$unit" || return 2
   valid_global_target "$target" || return 2
   file=$(state_file "$unit")
@@ -1073,6 +1159,7 @@ run_global_job() {
   fi
   UU_DEFER_UPDATE_MAIL=true "$update_script"
   exit_code=$?
+  job_exit_code="$exit_code"
   trace_external_event after_global_dispatch "$exit_code"
   if cancel_requested "$unit"; then
     [[ -z "$pre_update_snapshot" ]] || rm -f -- "$pre_update_snapshot"
@@ -1138,18 +1225,26 @@ run_global_job() {
     printf 'Update job skipped; no confirmed package mutation was recorded.\n' >&2
     trace_external_event before_update_notification
     send_update_notification "$STATUS_MODEL_FILE" "$started"
+  elif [[ "$exit_code" -eq "$UPDATE_UNSUPPORTED_RC" ]] &&
+    explicitly_unsupported_global_result "$started"; then
+    terminal_state="skipped"
+    job_exit_code="$UPDATE_WARNING_RC"
+    post_check_message="update skipped; all current target results are unsupported"
+    printf 'Update job skipped; all current target results are unsupported.\n' >&2
+    trace_external_event before_update_notification
+    send_update_notification "$STATUS_MODEL_FILE" "$started"
   else
     trace_external_event before_update_notification
     send_update_notification "$STATUS_MODEL_FILE" "$started"
   fi
   [[ -z "$pre_update_snapshot" ]] || rm -f -- "$pre_update_snapshot"
   cleanup_interactive_runtime "$unit" || true
-  if [[ "$exit_code" -eq 0 || "$exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
-    write_state "$unit" "$target" "$terminal_state" "$started" "$(now)" "$exit_code" "$post_check_message" || return 1
+  if [[ "$job_exit_code" -eq 0 || "$job_exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
+    write_state "$unit" "$target" "$terminal_state" "$started" "$(now)" "$job_exit_code" "$post_check_message" || return 1
   else
     write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
   fi
-  return "$exit_code"
+  return "$job_exit_code"
 }
 
 start_check_job() {

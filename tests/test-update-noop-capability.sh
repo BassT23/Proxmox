@@ -124,6 +124,125 @@ fi
 grep -Fxq 'state=skipped' "$WORK_DIR/jobs/ultimate-updater-update-all-systems-skipped.state"
 grep -Fxq 'exit_code=10' "$WORK_DIR/jobs/ultimate-updater-update-all-systems-skipped.state"
 
+# An explicit unsupported target is also a neutral job result, even when the
+# child updater returns its target-level code instead of normalizing it first.
+cat > "$WORK_DIR/status-unsupported.json" <<'JSON'
+{"schema_version":1,"targets":[{"id":"108","type":"vm","check_status":"unsupported","last_update":{"status":"unsupported","timestamp":"2026-10-25T12:00:00Z","exit_code":21}}]}
+JSON
+cat > "$WORK_DIR/update-unsupported.sh" <<'UPDATE'
+#!/usr/bin/env bash
+exit 21
+UPDATE
+chmod 750 "$WORK_DIR/update-unsupported.sh"
+cat > "$WORK_DIR/jobs/ultimate-updater-update-108-unsupported.state" <<'STATE'
+schema_version=1
+unit=ultimate-updater-update-108-unsupported
+target=108
+state=running
+started_at=2026-10-25T00:00:00Z
+finished_at=
+exit_code=
+type=update
+message=
+source=
+STATE
+if UU_JOB_STATE_DIR="$WORK_DIR/jobs" UU_LOCAL_FILES="$WORK_DIR" \
+    UU_STATUS_MODEL_FILE="$WORK_DIR/status-unsupported.json" \
+    "$ROOT_DIR/job-runner.sh" run ultimate-updater-update-108-unsupported 108 \
+    "$WORK_DIR/update-unsupported.sh" >/dev/null 2>&1; then
+  unsupported_rc=0
+else
+  unsupported_rc=$?
+fi
+[[ "$unsupported_rc" -eq 10 ]]
+grep -Fxq 'state=skipped' "$WORK_DIR/jobs/ultimate-updater-update-108-unsupported.state"
+grep -Fxq 'exit_code=10' "$WORK_DIR/jobs/ultimate-updater-update-108-unsupported.state"
+
+cat > "$WORK_DIR/status-unsupported-115.json" <<'JSON'
+{"schema_version":1,"targets":[{"id":"115","type":"unknown","check_status":"unsupported","last_update":{"status":"unsupported","timestamp":"2026-10-25T12:00:00Z","exit_code":21}}]}
+JSON
+cat > "$WORK_DIR/jobs/ultimate-updater-update-115-unsupported.state" <<'STATE'
+schema_version=1
+unit=ultimate-updater-update-115-unsupported
+target=115
+state=running
+started_at=2026-10-25T00:00:00Z
+finished_at=
+exit_code=
+type=update
+message=
+source=
+STATE
+if UU_JOB_STATE_DIR="$WORK_DIR/jobs" UU_LOCAL_FILES="$WORK_DIR" \
+    UU_STATUS_MODEL_FILE="$WORK_DIR/status-unsupported-115.json" \
+    "$ROOT_DIR/job-runner.sh" run ultimate-updater-update-115-unsupported 115 \
+    "$WORK_DIR/update-unsupported.sh" >/dev/null 2>&1; then
+  unsupported_115_rc=0
+else
+  unsupported_115_rc=$?
+fi
+[[ "$unsupported_115_rc" -eq 10 ]]
+grep -Fxq 'state=skipped' "$WORK_DIR/jobs/ultimate-updater-update-115-unsupported.state"
+grep -Fxq 'exit_code=10' "$WORK_DIR/jobs/ultimate-updater-update-115-unsupported.state"
+
+cat > "$WORK_DIR/jobs/ultimate-updater-update-all-unsupported.state" <<'STATE'
+schema_version=1
+unit=ultimate-updater-update-all-unsupported
+target=all-systems
+state=running
+started_at=2026-10-25T00:00:00Z
+finished_at=
+exit_code=
+type=update
+message=
+source=
+STATE
+if UU_JOB_STATE_DIR="$WORK_DIR/jobs" UU_LOCAL_FILES="$WORK_DIR" \
+    UU_STATUS_MODEL_FILE="$WORK_DIR/status-unsupported.json" \
+    "$ROOT_DIR/job-runner.sh" run-global ultimate-updater-update-all-unsupported \
+    "$WORK_DIR/update-unsupported.sh" >/dev/null 2>&1; then
+  global_unsupported_rc=0
+else
+  global_unsupported_rc=$?
+fi
+[[ "$global_unsupported_rc" -eq 10 ]]
+grep -Fxq 'state=skipped' "$WORK_DIR/jobs/ultimate-updater-update-all-unsupported.state"
+grep -Fxq 'exit_code=10' "$WORK_DIR/jobs/ultimate-updater-update-all-unsupported.state"
+
+# Exit 21 without an explicit current unsupported result remains a technical
+# failure and must not be converted into a neutral job state.
+cat > "$WORK_DIR/update-unsupported-failure.sh" <<'UPDATE'
+#!/usr/bin/env bash
+exit 21
+UPDATE
+chmod 750 "$WORK_DIR/update-unsupported-failure.sh"
+cat > "$WORK_DIR/status-failed.json" <<'JSON'
+{"schema_version":1,"targets":[{"id":"108","type":"vm","check_status":"error","last_update":{"status":"failed","timestamp":"2026-10-25T12:00:00Z","exit_code":21}}]}
+JSON
+cat > "$WORK_DIR/jobs/ultimate-updater-update-108-failure.state" <<'STATE'
+schema_version=1
+unit=ultimate-updater-update-108-failure
+target=108
+state=running
+started_at=2026-10-25T00:00:00Z
+finished_at=
+exit_code=
+type=update
+message=
+source=
+STATE
+if UU_JOB_STATE_DIR="$WORK_DIR/jobs" UU_LOCAL_FILES="$WORK_DIR" \
+    UU_STATUS_MODEL_FILE="$WORK_DIR/status-failed.json" \
+    "$ROOT_DIR/job-runner.sh" run ultimate-updater-update-108-failure 108 \
+    "$WORK_DIR/update-unsupported-failure.sh" >/dev/null 2>&1; then
+  echo 'technical exit 21 was incorrectly skipped' >&2
+  exit 1
+else
+  technical_rc=$?
+fi
+[[ "$technical_rc" -eq 21 ]]
+grep -Fxq 'state=failed' "$WORK_DIR/jobs/ultimate-updater-update-108-failure.state"
+
 # A failed guest post-capture is a warning terminal state, not completed.
 mkdir -p "$WORK_DIR/jobs"
 cat > "$WORK_DIR/update.sh" <<'UPDATE'

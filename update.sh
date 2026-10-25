@@ -108,6 +108,92 @@ CAPTURE_UPDATE_PENDING_BEFORE() {
   UPDATE_PENDING_BEFORE["$target"]="$count"
 }
 
+# A stopped guest has deliberately not been package-checked by the normal
+# read-only inventory.  Once the update lifecycle has passed its safety gates,
+# the guest is running and reachable, so obtain a fresh package observation
+# before any repair or package-manager mutation.  The observation is written
+# to an isolated run directory; the authoritative status model remains
+# invalidated until the normal post-update capture completes.
+CAPTURE_STARTED_GUEST_UPDATE_PENDING_BEFORE() {
+  local target="$1" kind="$2" target_node="${3:-}"
+  local source_files="$LOCAL_FILES" run_dir check_rc=0 baseline check_command
+  local status_file record_file generation_file diagnostics_file
+  [[ -n "$target" && ( "$kind" == lxc || "$kind" == vm ) ]] || return 1
+  [[ -n "$target_node" ]] ||
+    target_node="${UU_API_EXPECTED_TARGET_NODE:-${CLUSTER_TARGET_NODE:-${STATUS_MODEL_NODE:-$(hostname -s 2>/dev/null || hostname)}}}"
+  [[ -x "$CHECK_SCRIPT" ]] || return 1
+  mkdir -p -- "$TEMP_STATE_DIR" || return 1
+  run_dir=$(mktemp -d "$TEMP_STATE_DIR/update-baseline.XXXXXX") || return 1
+  status_file="$run_dir/status.json"
+  record_file="$run_dir/status.records"
+  generation_file="$run_dir/status.generations"
+  diagnostics_file="$run_dir/status.diagnostics"
+  check_command=ccontainer
+  [[ "$kind" == vm ]] && check_command=cvm
+
+  # The check script writes only into LOCAL_FILES/temp and the supplied status
+  # artifacts.  Keep its production helpers read-only and copy only the VM
+  # profile needed to resolve the selected guest transport.
+  mkdir -p -- "$run_dir/temp" "$run_dir/VMs" || {
+    rm -rf -- "$run_dir"
+    return 1
+  }
+  if [[ "$kind" == vm && -f "$source_files/VMs/$target" ]]; then
+    cp -- "$source_files/VMs/$target" "$run_dir/VMs/$target" || {
+      rm -rf -- "$run_dir"
+      return 1
+    }
+  fi
+  printf '%s\n' '{"schema_version":1,"generated_at":null,"targets":[]}' > "$status_file" || {
+    rm -rf -- "$run_dir"
+    return 1
+  }
+
+  LOCAL_FILES="$run_dir" CONFIG_FILE="$CONFIG_FILE" \
+  STATUS_MODEL_SCRIPT="$STATUS_MODEL_SCRIPT" STATUS_MODEL_FILE="$status_file" \
+  STATUS_MODEL_RECORD_FILE="$record_file" STATUS_MODEL_GENERATION_FILE="$generation_file" \
+  STATUS_MODEL_DIAGNOSTICS_FILE="$diagnostics_file" STATUS_MODEL_NODE="$target_node" \
+  TARGET_RUNTIME_FILE="${TARGET_RUNTIME_FILE:-$source_files/target-runtime.sh}" \
+  CLUSTER_TARGET_FILE="${CLUSTER_TARGET_FILE:-$source_files/cluster-target.sh}" \
+  INTERNAL_SSH_FILE="${INTERNAL_SSH_FILE:-$source_files/internal-ssh.sh}" \
+  QGA_EXEC_SCRIPT="${QGA_EXEC_SCRIPT:-$source_files/qga-guest-exec.sh}" \
+  WINDOWS_UPDATE_FILE="${WINDOWS_UPDATE_FILE:-$source_files/windows-update.sh}" \
+  TAG_FILTER_FILE="$source_files/tag-filter.sh" \
+  APT_COUNT_SCRIPT="${APT_COUNT_SCRIPT:-$source_files/apt-count.py}" \
+  APT_COUNT_SHELL_SCRIPT="${APT_COUNT_SHELL_SCRIPT:-$source_files/apt-count.sh}" \
+  RPM_COUNT_SCRIPT="${RPM_COUNT_SCRIPT:-$source_files/rpm-count.py}" \
+  PACKAGE_COUNT_SCRIPT="${PACKAGE_COUNT_SCRIPT:-$source_files/package-count.sh}" \
+  STATUS_MODEL_PARTIAL=true UU_EXPLICIT_TARGET_CHECK=true UU_SINGLE_TARGET_CHECK=true \
+  UU_CHECK_JOB_EXECUTION=true UU_JOB_SOURCE=update-baseline UU_DEFER_NOTIFICATION=true \
+  TAG_OUTPUT=false "$CHECK_SCRIPT" "$check_command" "$target" \
+    >"$run_dir/check-output" 2>"$run_dir/check-error" || check_rc=$?
+
+  if [[ "$check_rc" -ne 0 ]] || [[ ! -s "$status_file" ]] ||
+    ! baseline=$(STATUS_MODEL_CAPTURE_PACKAGE_BASELINE "$status_file" "$target" "$kind" "$target_node"); then
+    rm -rf -- "$run_dir"
+    return 1
+  fi
+  if [[ ! "$baseline" =~ ^[0-9]+$ ]]; then
+    rm -rf -- "$run_dir"
+    return 1
+  fi
+  UPDATE_PENDING_BEFORE["$target"]="$baseline"
+  rm -rf -- "$run_dir"
+  return 0
+}
+
+RESTORE_STOPPED_LXC() {
+  local target="$1"
+  RUN_PROXMOX_COMMAND pct shutdown "$target" || return 1
+  [[ "$(timeout 10 pct status "$target" 2>/dev/null)" == "status: stopped" ]]
+}
+
+RESTORE_STOPPED_VM() {
+  local target="$1"
+  RUN_PROXMOX_COMMAND qm shutdown "$target" || return 1
+  [[ "$(timeout 10 qm status "$target" 2>/dev/null)" == "status: stopped" ]]
+}
+
 # All update result writes go through this wrapper.  It keeps the old
 # STATUS_MODEL_UPDATE_RESULT contract while making writer failures visible and
 # marking no-op/capability paths as warnings instead of successes.
@@ -2421,7 +2507,17 @@ CONTAINER_UPDATE_START () {
 #        sleep "$LXC_START_DELAY"
         if WAIT_FOR_BOOTUP_LXC; then
           SINGLE_TARGET_EXECUTED=true
-          UPDATE_CONTAINER "$CONTAINER"
+          if declare -F CAPTURE_STARTED_GUEST_UPDATE_PENDING_BEFORE >/dev/null 2>&1 &&
+            ! CAPTURE_STARTED_GUEST_UPDATE_PENDING_BEFORE "$CONTAINER" lxc; then
+            ERROR_CODE=96
+            ID=$CONTAINER
+            NAME="LXC $CONTAINER"
+            ERROR_MSG="PENDING_BEFORE_UNAVAILABLE: fresh package baseline could not be collected after starting LXC $CONTAINER"
+            RECORD_UPDATE_RESULT "$CONTAINER" failed 96 || true
+            ERROR
+          else
+            UPDATE_CONTAINER "$CONTAINER"
+          fi
           MARK_PACKAGE_DATA_MUTATION_COMPLETE "$CONTAINER" lxc || UPDATE_FAILURE=true
           CAPTURE_POST_UPDATE_STATUS "$CONTAINER" ccontainer
           CCONTAINER=""
@@ -2434,7 +2530,18 @@ CONTAINER_UPDATE_START () {
         fi
         # Stop the container
         echo -e "⏹ ${GN:-} Shutting down LXC ${BL:-}$CONTAINER ${CL:-}\n\n"
-        RUN_PROXMOX_COMMAND pct shutdown "$CONTAINER" &
+        if declare -F RESTORE_STOPPED_LXC >/dev/null 2>&1; then
+          if ! RESTORE_STOPPED_LXC "$CONTAINER"; then
+            UPDATE_FAILURE=true
+            ERROR_CODE=1
+            ID=$CONTAINER
+            NAME="LXC $CONTAINER"
+            ERROR_MSG="LXC $CONTAINER did not return to stopped state after update"
+            ERROR
+          fi
+        else
+          RUN_PROXMOX_COMMAND pct shutdown "$CONTAINER" &
+        fi
         WILL_STOP="false"
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" != true ]]; then
         echo -e "⏩${BL:-} Skipped LXC $CONTAINER because stopped containers are disabled${CL:-}\n\n"
@@ -2711,13 +2818,34 @@ VM_UPDATE_START () {
           RUN_PROXMOX_COMMAND qm start "$VM"
           START_WAITING="true"
           SINGLE_TARGET_EXECUTED=true
-          UPDATE_VM "$VM"
+          if declare -F CAPTURE_STARTED_GUEST_UPDATE_PENDING_BEFORE >/dev/null 2>&1 &&
+            ! CAPTURE_STARTED_GUEST_UPDATE_PENDING_BEFORE "$VM" vm; then
+            ERROR_CODE=96
+            ID=$VM
+            NAME="VM $VM"
+            ERROR_MSG="PENDING_BEFORE_UNAVAILABLE: fresh package baseline could not be collected after starting VM $VM"
+            RECORD_UPDATE_RESULT "$VM" failed 96 || true
+            ERROR
+          else
+            UPDATE_VM "$VM"
+          fi
           MARK_PACKAGE_DATA_MUTATION_COMPLETE "$VM" vm || UPDATE_FAILURE=true
           CAPTURE_POST_UPDATE_STATUS "$VM" cvm
           CVM=""
           # Stop the VM
           echo -e "⏹ ${GN:-} Shutting down VM${BL:-} $VM ${CL:-}\n\n"
-          RUN_PROXMOX_COMMAND qm shutdown "$VM" &
+          if declare -F RESTORE_STOPPED_VM >/dev/null 2>&1; then
+            if ! RESTORE_STOPPED_VM "$VM"; then
+              UPDATE_FAILURE=true
+              ERROR_CODE=1
+              ID=$VM
+              NAME="VM $VM"
+              ERROR_MSG="VM $VM did not return to stopped state after update"
+              ERROR
+            fi
+          else
+            RUN_PROXMOX_COMMAND qm shutdown "$VM" &
+          fi
           WILL_STOP="false"
           START_WAITING="false"
         else
