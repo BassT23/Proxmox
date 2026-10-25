@@ -1889,7 +1889,7 @@ list_jobs() {
   [[ -d "$JOB_STATE_DIR" ]] || return 0
   refresh_running_jobs
   cleanup_completed_jobs || true
-  local file unit target state started finished exit_code owner_node owner_host port interactive socket_available socket_path refresh_ref
+  local file unit target state started finished exit_code owner_node owner_host port interactive socket_available socket_path refresh_ref refresh_state cached_file remote_state
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
     unit=$(state_value "$file" unit)
@@ -1916,6 +1916,21 @@ list_jobs() {
     owner_host=$(state_value "$file" owner_host)
     port=$(state_value "$file" port)
     [[ -n "$unit" && -n "$target" && -n "$owner_node" && -n "$owner_host" && -n "$port" ]] || continue
+    refresh_state=$(state_value "$file" status_refresh 2>/dev/null || printf '')
+    if [[ "$refresh_state" == "done" ]]; then
+      # A completed handback is already authoritative. Do not reconnect to
+      # the worker merely to rediscover a terminal state; the cached line is
+      # sufficient for normal status/job polling and avoids stale historical
+      # references turning into new SSH work.
+      cached_file=$(remote_cache_file "$unit")
+      if remote_state=$(remote_cached_state_line "$unit" "$cached_file"); then
+        printf '%s\n' "$remote_state"
+      else
+        printf '%s\t%s\tremote_unavailable\t%s\t\t\t%s\n' \
+          "$unit" "$target" "$(state_value "$file" registered_at)" "$owner_node"
+      fi
+      continue
+    fi
     remote_state=$(remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port")
     printf '%s\n' "$remote_state"
     IFS=$'\t' read -r _ remote_target remote_status _ remote_finished remote_exit _ <<< "$remote_state"
@@ -1983,6 +1998,7 @@ reconcile_remote_all() {
   flock -n 9 || return 0
   shopt -s nullglob
   for file in "$REMOTE_REF_DIR"/*.ref; do
+    [[ "$(state_value "$file" status_refresh 2>/dev/null || printf '')" == pending ]] || continue
     unit=$(state_value "$file" unit)
     [[ -n "$unit" ]] || continue
     reconcile_remote_job "$unit" >/dev/null 2>&1 || true
@@ -1990,9 +2006,11 @@ reconcile_remote_all() {
 }
 
 reconcile_remote_job() {
-  local unit="$1" ref_line target owner_node owner_host port remote_state refresh_ref
+  local unit="$1" ref_line target owner_node owner_host port remote_state refresh_ref refresh_state
   ref_line=$(remote_ref_line "$unit") || return 1
   IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
+  refresh_state=$(state_value "$(remote_ref_file "$unit")" status_refresh 2>/dev/null || printf '')
+  [[ "$refresh_state" == "done" ]] && return 0
   remote_state=$(remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port") || return 1
   printf '%s\n' "$remote_state"
   local remote_target remote_status remote_finished remote_exit

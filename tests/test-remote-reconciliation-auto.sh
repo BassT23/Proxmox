@@ -39,11 +39,13 @@ chmod 750 "$WORK_DIR/check.sh"
 cat > "$WORK_DIR/bin/ssh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf '%s\n' "${!#}" >> "$SSH_LOG"
 [[ "${SSH_DOWN:-false}" != true ]] || exit 1
 bash -c "${!#}"
 EOF
 chmod 750 "$WORK_DIR/bin/ssh"
 export PATH="$WORK_DIR/bin:$PATH"
+export SSH_LOG="$WORK_DIR/ssh.log"
 
 make_remote_job() {
   local unit="$1" state="$2" exit_code="$3"
@@ -99,6 +101,23 @@ test ! -e "$REMOTE_DIR/ultimate-updater-update-986-auto"
 # A second normal status read is idempotent and must not import twice.
 run_status
 [[ $(wc -l < "$WORK_DIR/import.log") -eq 1 ]]
+
+# Completed references are terminal and must be served from their cached
+# state. Normal status polling must not reconnect to the worker for them.
+rm -f "$WORK_DIR/jobs/remote/ultimate-updater-update-986-auto.cache"
+: > "$SSH_LOG"
+run_status
+[[ ! -s "$SSH_LOG" ]]
+
+# The explicit reconciler is idempotent for a completed reference and must
+# not reopen its old remote workspace either.
+: > "$SSH_LOG"
+UU_JOB_STATE_DIR="$WORK_DIR/jobs" UU_REMOTE_JOB_STATE_DIR="$WORK_DIR/jobs/remote" \
+  UU_LOCAL_FILES="$WORK_DIR" UU_CHECK_CLI="$WORK_DIR/check.sh" \
+  UU_STATUS_MODEL_FILE="$WORK_DIR/status.json" UU_STATUS_MODEL_SCRIPT="$WORK_DIR/status-model.sh" \
+  IMPORT_LOG="$WORK_DIR/import.log" SSH_LOG="$SSH_LOG" \
+  "$ROOT_DIR/job-runner.sh" reconcile-remote ultimate-updater-update-986-auto >/dev/null
+[[ ! -s "$SSH_LOG" ]]
 
 # A running remote job remains pending and does not trigger a capture import.
 make_remote_job ultimate-updater-update-986-running running ''
