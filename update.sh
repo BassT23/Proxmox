@@ -503,7 +503,7 @@ APT_COMMAND() {
 # retry. dpkg --audit is read-only and only a non-empty successful result is
 # considered proof of an interrupted package configuration. Every transport
 # performs the same audit -> one repair -> audit sequence after its existing
-# safety gate and before the first APT command for that target.
+# safety gate and before the first package-mutating APT command for that target.
 DPKG_REPAIR_TIMEOUT="${UU_DPKG_REPAIR_TIMEOUT:-120}"
 if [[ ! "$DPKG_REPAIR_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
   DPKG_REPAIR_TIMEOUT=120
@@ -2661,14 +2661,6 @@ UPDATE_CONTAINER () {
   # Run update
   # shellcheck disable=SC2015
   if [[ "${OS,,}" =~ ubuntu|debian|devuan ]]; then
-    if ! DPKG_REPAIR_PREPARE "lxc:$CONTAINER" "LXC $CONTAINER" DPKG_REPAIR_RUN_LXC "$CONTAINER"; then
-      SAFETY_FAILURE=true
-      ERROR_CODE=1
-      ID=$CONTAINER
-      ERROR_MSG="${DPKG_REPAIR_ERROR:-DPKG_REPAIR_FAILED}"
-      ERROR
-      return 1
-    fi
     echo -e "${OR:-}--- APT UPDATE ---${CL:-}"
     # Check APT in Container for Unifi before update
     if pct exec "$CONTAINER" -- bash -c "grep -rnw /etc/apt -e unifi >/dev/null 2>&1"; then
@@ -2679,6 +2671,36 @@ UPDATE_CONTAINER () {
       RUN_UPDATE_COMMAND pct exec "$CONTAINER" -- bash -c "$(APT_FRONTEND_PREFIX)apt-get update" || { ERROR_CODE=$?; ID=$CONTAINER; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
     fi
     if [[ $ERROR_CODE != "" ]]; then return; fi
+
+    # apt-count reads the package lists and does not refresh them itself.  A
+    # stopped guest can therefore legitimately have a zero pre-update count
+    # while the first apt-get update discovers real upgrades.  Refresh the
+    # index before the authoritative baseline check so pending_before describes
+    # the same repository view that the following mutation will use.
+    if ! declare -F CAPTURE_STARTED_GUEST_UPDATE_PENDING_BEFORE >/dev/null 2>&1 ||
+      ! CAPTURE_STARTED_GUEST_UPDATE_PENDING_BEFORE "$CONTAINER" lxc \
+        "${CLUSTER_TARGET_NODE:-${STATUS_MODEL_NODE:-}}"; then
+      # Do not let the pre-refresh controller handoff masquerade as the
+      # authoritative baseline when the fresh observation failed.
+      UPDATE_PENDING_BEFORE["$CONTAINER"]=""
+      UU_UPDATE_PENDING_BEFORE_TARGET="$CONTAINER"
+      UU_UPDATE_PENDING_BEFORE=""
+      ERROR_CODE=96
+      ID=$CONTAINER
+      NAME="LXC $CONTAINER"
+      ERROR_MSG="PENDING_BEFORE_UNAVAILABLE: fresh package baseline could not be collected after apt index refresh for LXC $CONTAINER"
+      RECORD_UPDATE_RESULT "$CONTAINER" failed 96 || true
+      ERROR
+      return 96
+    fi
+    if ! DPKG_REPAIR_PREPARE "lxc:$CONTAINER" "LXC $CONTAINER" DPKG_REPAIR_RUN_LXC "$CONTAINER"; then
+      SAFETY_FAILURE=true
+      ERROR_CODE=1
+      ID=$CONTAINER
+      ERROR_MSG="${DPKG_REPAIR_ERROR:-DPKG_REPAIR_FAILED}"
+      ERROR
+      return 1
+    fi
     # Check END
     if EFFECTIVE_HEADLESS; then
       echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}"
