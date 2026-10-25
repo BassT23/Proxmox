@@ -33,10 +33,24 @@ else
   # keeps its separate, longer SSH and pct-exec timeouts in target-runtime.sh.
   # shellcheck disable=SC2317,SC2329
   RUN_SSH_COMMAND() { local host="$1" port="$2" user="$3"; shift 3; timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "$user@$host" "$@"; }
+  REFRESH_APT_PACKAGE_LISTS() {
+    local refresh_output refresh_rc
+    refresh_output=$(RUN_LOCAL_COMMAND timeout "${UU_CHECK_APT_UPDATE_TIMEOUT:-120}" \
+      env DEBIAN_FRONTEND=noninteractive apt-get update -y 2>&1)
+    refresh_rc=$?
+    if [[ "$refresh_rc" -ne 0 ]]; then
+      SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null
+      [[ "${DEBUG:-false}" == true && -n "$refresh_output" ]] && printf '%s\n' "$refresh_output"
+      return "$refresh_rc"
+    fi
+    [[ "${DEBUG:-false}" == true && -n "$refresh_output" ]] && printf '%s\n' "$refresh_output"
+    return 0
+  }
   READ_APT_UPDATE_COUNTS() {
     local script="${APT_COUNT_SHELL_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.sh}"
     local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
     local result
+    REFRESH_APT_PACKAGE_LISTS || return 1
     if [[ ! -f "$script" ]]; then
       result=$(UU_PACKAGE_DETAILS=1 python3 "$python_script") || {
         SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
@@ -95,15 +109,17 @@ except Exception:
     local shell_script="${APT_COUNT_SHELL_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.sh}"
     local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
     local shell_encoded python_encoded
+    local refresh_command='DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1'
     if [[ ! -f "$shell_script" ]]; then
       python_encoded=$(base64 -w0 "$python_script") || return 1
-      printf 'UU_PACKAGE_DETAILS=1 python3 -c %q' "import base64;exec(base64.b64decode('$python_encoded'))"
+      printf '%s && UU_PACKAGE_DETAILS=1 python3 -c %q' \
+        "$refresh_command" "import base64;exec(base64.b64decode('$python_encoded'))"
       return 0
     fi
     shell_encoded=$(base64 -w0 "$shell_script") || return 1
     python_encoded=$(base64 -w0 "$python_script") || return 1
-    printf 'printf %%s %q | base64 -d | UU_PACKAGE_DETAILS=1 APT_COUNT_PYTHON_B64=%q sh -s' \
-      "$shell_encoded" "$python_encoded"
+    printf '%s && printf %%s %q | base64 -d | UU_PACKAGE_DETAILS=1 APT_COUNT_PYTHON_B64=%q sh -s' \
+      "$refresh_command" "$shell_encoded" "$python_encoded"
   }
   PARSE_RPM_UPDATE_COUNTS() {
     local result="$1" marker status total normal security known details

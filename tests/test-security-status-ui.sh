@@ -63,6 +63,8 @@ chmod +x "$WORK_DIR/apt-count.py"
 LOCAL_FILES="$WORK_DIR"
 APT_COUNT_SCRIPT="$WORK_DIR/apt-count.py"
 source "$ROOT_DIR/target-runtime.sh"
+# This parser-focused fixture must not invoke a real package manager.
+REFRESH_APT_PACKAGE_LISTS() { :; }
 READ_APT_UPDATE_COUNTS
 [[ "$APT_COUNTS_TOTAL" == 3 ]]
 [[ "$NORMAL_APT_UPDATES" == 1 ]]
@@ -75,6 +77,7 @@ EOF
 chmod +x "$WORK_DIR/apt-count-invalid.py"
 APT_COUNT_SCRIPT="$WORK_DIR/apt-count-invalid.py"
 source "$ROOT_DIR/target-runtime.sh"
+REFRESH_APT_PACKAGE_LISTS() { :; }
 if READ_APT_UPDATE_COUNTS; then
   echo 'invalid APT metadata was accepted' >&2
   exit 1

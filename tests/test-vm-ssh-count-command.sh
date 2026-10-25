@@ -22,6 +22,15 @@ cat > "$WORK_DIR/apt-count.sh" <<'SH'
 printf 'APT_COUNTS|3|1|2|true\n'
 SH
 chmod +x "$WORK_DIR/apt-count.sh"
+mkdir "$WORK_DIR/fake-bin"
+cat > "$WORK_DIR/fake-bin/apt-get" <<'SH'
+#!/usr/bin/env bash
+[[ "${1:-}" == update ]]
+printf 'refresh\n' >> "$APT_REFRESH_LOG"
+SH
+chmod +x "$WORK_DIR/fake-bin/apt-get"
+export PATH="$WORK_DIR/fake-bin:$PATH"
+export APT_REFRESH_LOG="$WORK_DIR/apt-refresh.log"
 
 LOCAL_FILES="$WORK_DIR" \
 APT_COUNT_SCRIPT="$WORK_DIR/apt-count.py" \
@@ -56,6 +65,7 @@ run_bad_wrapper() {
 }
 
 run_good "$WORK_DIR/apt.command" 'APT_COUNTS|3|1|2|true'
+[[ -s "$WORK_DIR/apt-refresh.log" ]]
 run_good "$WORK_DIR/rpm.command" 'UU_RPM_COUNTS|ok|4|null|null|false'
 run_good "$WORK_DIR/pkg.command" 'UU_PACKAGE_COUNTS|ok|pkg|5|null|null|false'
 run_good "$WORK_DIR/pacman.command" 'UU_PACKAGE_COUNTS|ok|pacman|5|null|null|false'

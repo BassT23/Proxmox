@@ -48,8 +48,9 @@ FAKE_APT
 cat > "$WORK_DIR/fake-bin/apt-get" <<'FAKE_APT_GET'
 #!/bin/bash
 if [[ "${1:-}" == update ]]; then
-  : > "${MUTATION_MARKER:?}"
-  exit 99
+  printf 'refresh\n' >> "${APT_REFRESH_LOG:?}"
+  [[ "${APT_REFRESH_FAIL:-false}" == true ]] && exit 99
+  exit 0
 fi
 if [[ "${APT_MODE:-updates}" == error ]]; then exit 7; fi
 if [[ "${APT_MODE:-updates}" == updates ]]; then
@@ -81,8 +82,8 @@ FAKE_DNF
 chmod 755 "$WORK_DIR/fake-bin/dnf"
 touch "$WORK_DIR/identity"
 
-awk '/<<.*REMOTE_CHECK/{check=1; next} /<<.*REMOTE_UPDATE/{check=0} check && /apt-get update/{found=1} END{exit(found ? 1 : 0)}' \
-  "$ROOT_DIR/external-apt.sh"
+grep -Fq 'UU_APT_COUNT_COMMAND' "$ROOT_DIR/external-apt.sh"
+grep -Fq 'apt-get update -y >/dev/null 2>&1' "$ROOT_DIR/target-runtime.sh"
 awk '/update_apt\(\)/{update=1} update && /apt-get update/{found=1} END{exit(found ? 0 : 1)}' \
   "$ROOT_DIR/external-helper.sh"
 
@@ -108,6 +109,11 @@ transport=ssh
 user=root
 port=22
 identity_file=$WORK_DIR/identity
+[refresh-fail]
+host=refresh-fail-target
+transport=ssh
+user=root
+port=22
 [nonroot]
 host=nonroot-target
 transport=ssh
@@ -121,12 +127,13 @@ port=22
 CONFIG
 
 run_check() {
-  local target=$1 mode=$2 expected_rc=$3 expected_state=$4 rpm_mode=${5:-updates}
+  local target=$1 mode=$2 expected_rc=$3 expected_state=$4 rpm_mode=${5:-updates} refresh_fail=${6:-false}
   local status_file="$WORK_DIR/$target-status.json"
   local remote_os_release="$WORK_DIR/debian-os-release"
   [[ "$target" == dnf ]] && remote_os_release="$WORK_DIR/fedora-os-release"
   printf '{"%s":{"generation":0,"active":false,"operation_id":""}}\n' "$target" > "$WORK_DIR/$target-generation.json"
-  APT_MODE="$mode" RPM_MODE="$rpm_mode" MUTATION_MARKER="$WORK_DIR/mutation" \
+  APT_MODE="$mode" RPM_MODE="$rpm_mode" APT_REFRESH_FAIL="$refresh_fail" \
+    APT_REFRESH_LOG="$WORK_DIR/$target-refresh.log" MUTATION_MARKER="$WORK_DIR/mutation" \
     UU_REBOOT_REQUIRED_FILE="$WORK_DIR/no-reboot-required" \
     UU_REBOOT_REQUIRED_PACKAGES_FILE="$WORK_DIR/no-reboot-required.pkgs" \
     REMOTE_CONFIG="$WORK_DIR/external.conf" \
@@ -157,6 +164,7 @@ EXCLUDE=""
 CONFIG
 
 run_check updates updates 0 updates_available
+[[ -s "$WORK_DIR/updates-refresh.log" ]]
 python3 - "$WORK_DIR/updates-status.json" <<'PY'
 import json
 import sys
@@ -180,6 +188,15 @@ assert target["security_split_supported"] is True
 assert target["packages"] == []
 PY
 run_check error error 1 error
+run_check refresh-fail updates 1 error updates true
+python3 - "$WORK_DIR/refresh-fail-status.json" <<'PY'
+import json
+import sys
+
+target = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]
+assert target["updates"]["available"] is None
+assert target["error"]["code"] == "APT_CHECK_FAILED"
+PY
 run_check timeout updates 1 offline
 [[ ! -e "$WORK_DIR/mutation" ]]
 grep -Fq -- "-i $WORK_DIR/identity" "$WORK_DIR/timeout-ssh.args"

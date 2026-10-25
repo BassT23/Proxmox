@@ -5,6 +5,13 @@ ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
+mkdir "$WORK_DIR/fake-bin"
+cat > "$WORK_DIR/fake-bin/apt-get" <<'SH'
+#!/usr/bin/env bash
+[[ "${1:-}" == update ]]
+SH
+chmod 755 "$WORK_DIR/fake-bin/apt-get"
+
 bash -n "$ROOT_DIR/external-helper.sh" "$ROOT_DIR/external-bootstrap.sh"
 shellcheck "$ROOT_DIR/external-helper.sh" "$ROOT_DIR/external-bootstrap.sh"
 
@@ -13,7 +20,7 @@ version=$("$ROOT_DIR/external-helper.sh" version)
 
 printf '%s\n' '#!/usr/bin/env python3' 'print("APT_COUNTS|7|5|2|true")' > "$WORK_DIR/apt-count.py"
 chmod 755 "$WORK_DIR/apt-count.py"
-[[ "$(UU_APT_COUNT_SCRIPT="$WORK_DIR/apt-count.py" "$ROOT_DIR/external-helper.sh" status)" == 'APT_COUNTS|7|5|2|true' ]]
+[[ "$(PATH="$WORK_DIR/fake-bin:$PATH" UU_APT_COUNT_SCRIPT="$WORK_DIR/apt-count.py" "$ROOT_DIR/external-helper.sh" status)" == 'APT_COUNTS|7|5|2|true' ]]
 
 if [ "$(id -u)" -ne 0 ]; then
   if "$ROOT_DIR/external-helper.sh" update >/dev/null 2>&1; then

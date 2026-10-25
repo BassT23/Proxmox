@@ -159,9 +159,9 @@ if ! command -v "$updater" >/dev/null 2>&1; then
   exit 24
 fi
 if [ "$updater" = apt ]; then
-  # The check is deliberately read-only.  It uses the package metadata
-  # already cached on the external system; refreshing package metadata belongs
-  # exclusively to the update path below.
+  # Refresh only the package lists before the structured read-only count.  The
+  # generated count command suppresses this command's output so the result
+  # protocol remains machine-readable.
   apt_counts=$(bash -c "$UU_APT_COUNT_COMMAND") || {
     printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|structured APT metadata query failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
     exit 25

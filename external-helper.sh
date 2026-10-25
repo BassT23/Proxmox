@@ -74,6 +74,7 @@ detect_os() {
 }
 
 apt_status() {
+  DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 || return $?
   if [ -r "$APT_COUNT_SHELL_SCRIPT" ]; then
     APT_COUNT_PYTHON_SCRIPT="$APT_COUNT_SCRIPT" sh "$APT_COUNT_SHELL_SCRIPT"
   elif [ -r "$APT_COUNT_SCRIPT" ]; then
