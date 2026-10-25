@@ -14,6 +14,11 @@ printf 'refresh\n' >> "$APT_REFRESH_LOG"
 exit "${APT_REFRESH_RC:-0}"
 SH
 chmod 755 "$WORK_DIR/fake-bin/apt-get"
+cat > "$WORK_DIR/fake-bin/id" <<'SH'
+#!/usr/bin/env bash
+[[ "${1:-}" == -u ]] && printf '0\n' || /usr/bin/id "$@"
+SH
+chmod 755 "$WORK_DIR/fake-bin/id"
 
 cat > "$WORK_DIR/apt-count.py" <<'PY'
 import os

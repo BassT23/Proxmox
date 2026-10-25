@@ -9,6 +9,10 @@ cat > "$WORK_DIR/apt-count.py" <<'PY'
 import os
 import sys
 
+if os.environ.get("APT_COUNT_LOG"):
+    with open(os.environ["APT_COUNT_LOG"], "a", encoding="utf-8") as log:
+        log.write("count\n")
+
 if os.environ.get("APT_MODE") == "error":
     print("APT_COUNTS|unknown|unknown|unknown|false")
     sys.exit(2)
@@ -62,6 +66,21 @@ cat > "$WORK_DIR/fake-bin/id" <<'FAKE_ID'
 #!/bin/bash
 if [[ "${1:-}" == -u ]]; then printf '0\n'; else /usr/bin/id "$@"; fi
 FAKE_ID
+cat > "$WORK_DIR/fake-bin/sudo" <<'FAKE_SUDO'
+#!/bin/bash
+printf 'sudo:%s\n' "$*" >> "${SUDO_LOG:?}"
+[[ "${SUDO_REFRESH_FAIL:-false}" != true ]] || exit 1
+[[ "${1:-}" == -n ]] && shift
+exec "$@"
+FAKE_SUDO
+cat > "$WORK_DIR/fake-bin/stat" <<'FAKE_STAT'
+#!/bin/bash
+if [[ "${1:-}" == -c && "${2:-}" == '%u %a' ]]; then
+  printf '0 755\n'
+else
+  exec /usr/bin/stat "$@"
+fi
+FAKE_STAT
 chmod 755 "$WORK_DIR/fake-bin"/*
 cat > "$WORK_DIR/debian-os-release" <<'OS_RELEASE'
 ID=debian
@@ -127,13 +146,16 @@ port=22
 CONFIG
 
 run_check() {
-  local target=$1 mode=$2 expected_rc=$3 expected_state=$4 rpm_mode=${5:-updates} refresh_fail=${6:-false}
+  local target=$1 mode=$2 expected_rc=$3 expected_state=$4 rpm_mode=${5:-updates} refresh_fail=${6:-false} sudo_fail=${7:-false}
   local status_file="$WORK_DIR/$target-status.json"
   local remote_os_release="$WORK_DIR/debian-os-release"
   [[ "$target" == dnf ]] && remote_os_release="$WORK_DIR/fedora-os-release"
   printf '{"%s":{"generation":0,"active":false,"operation_id":""}}\n' "$target" > "$WORK_DIR/$target-generation.json"
-  APT_MODE="$mode" RPM_MODE="$rpm_mode" APT_REFRESH_FAIL="$refresh_fail" \
+  APT_MODE="$mode" RPM_MODE="$rpm_mode" APT_REFRESH_FAIL="$refresh_fail" SUDO_REFRESH_FAIL="$sudo_fail" \
     APT_REFRESH_LOG="$WORK_DIR/$target-refresh.log" MUTATION_MARKER="$WORK_DIR/mutation" \
+    APT_COUNT_LOG="$WORK_DIR/$target-count.log" \
+    HELPER_REFRESH_LOG="$WORK_DIR/$target-helper-refresh.log" \
+    HELPER_LOG="$WORK_DIR/$target-helper.log" SUDO_LOG="$WORK_DIR/$target-sudo.log" \
     UU_REBOOT_REQUIRED_FILE="$WORK_DIR/no-reboot-required" \
     UU_REBOOT_REQUIRED_PACKAGES_FILE="$WORK_DIR/no-reboot-required.pkgs" \
     REMOTE_CONFIG="$WORK_DIR/external.conf" \
@@ -144,11 +166,13 @@ run_check() {
     STATUS_MODEL_FILE="$status_file" STATUS_MODEL_RECORD_FILE="$WORK_DIR/$target-records" \
     STATUS_MODEL_GENERATION_FILE="$WORK_DIR/$target-generation.json" \
     RPM_COUNT_SCRIPT="$WORK_DIR/rpm-count.py" \
+    EXTERNAL_HELPER_PATH="$WORK_DIR/helper" \
     REMOTE_OS_RELEASE="$remote_os_release" \
     SSH_ARGS_LOG="$WORK_DIR/$target-ssh.args" UU_SSH_COMMAND_TIMEOUT=1 "$ROOT_DIR/external-apt.sh" check "$target" > "$WORK_DIR/$target.out" 2>&1 || rc=$?
   rc=${rc:-0}
   if [[ "$rc" -ne "$expected_rc" ]]; then
     cat "$WORK_DIR/$target.out" >&2
+    cat "$WORK_DIR/$target-sudo.log" "$WORK_DIR/$target-helper.log" 2>/dev/null >&2 || true
   fi
   [[ "$rc" -eq "$expected_rc" ]]
   grep -Fq '"check_status": "'"$expected_state"'"' "$status_file"
@@ -162,6 +186,21 @@ EXCLUDE_UPDATE_CHECK=""
 ONLY=""
 EXCLUDE=""
 CONFIG
+
+cat > "$WORK_DIR/helper" <<'HELPER'
+#!/bin/bash
+printf 'helper:%s\n' "$*" >> "${HELPER_LOG:?}"
+case "${1:-}" in
+  version) printf 'ultimate-updater-external 1\n' ;;
+  apt-refresh)
+    printf 'refresh\n' >> "${HELPER_REFRESH_LOG:?}"
+    [[ "${HELPER_REFRESH_FAIL:-false}" == true ]] && exit 99
+    exit 0
+    ;;
+  *) exit 64 ;;
+esac
+HELPER
+chmod 755 "$WORK_DIR/helper"
 
 run_check updates updates 0 updates_available
 [[ -s "$WORK_DIR/updates-refresh.log" ]]
@@ -201,15 +240,30 @@ run_check timeout updates 1 offline
 [[ ! -e "$WORK_DIR/mutation" ]]
 grep -Fq -- "-i $WORK_DIR/identity" "$WORK_DIR/timeout-ssh.args"
 
-# A normal external check must not require passwordless sudo.  The fake
-# remote user is deliberately non-root while its read-only apt simulation
-# remains available.
+# A non-root External check uses only the fixed helper refresh action.  The
+# count command itself must not run apt-get update a second time.
 cat > "$WORK_DIR/fake-bin/id" <<'FAKE_NONROOT_ID'
 #!/bin/bash
 if [[ "${1:-}" == -u ]]; then printf '1000\n'; else /usr/bin/id "$@"; fi
 FAKE_NONROOT_ID
 chmod 755 "$WORK_DIR/fake-bin/id"
 run_check nonroot updates 0 updates_available
+[[ ! -s "$WORK_DIR/nonroot-refresh.log" ]]
+[[ -s "$WORK_DIR/nonroot-helper-refresh.log" ]]
+
+# Without the authorized helper refresh, the check fails closed before the
+# structured count and never reports a cached or synthetic zero.
+: > "$WORK_DIR/nonroot-count.log"
+run_check nonroot updates 1 error updates false true
+python3 - "$WORK_DIR/nonroot-status.json" <<'PY'
+import json
+import sys
+
+target = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]
+assert target["updates"]["available"] is None, target
+assert target["error"]["code"] == "APT_REFRESH_PRIVILEGE_REQUIRED", target
+assert not open(sys.argv[1].replace("-status.json", "-count.log"), encoding="utf-8").read(), target
+PY
 
 cat > "$WORK_DIR/external.conf" <<'CONFIG'
 schema_version="1"

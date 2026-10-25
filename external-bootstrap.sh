@@ -122,7 +122,8 @@ if [ ! -e "$CONFIG_PATH" ]; then
   temporary_config=""
 fi
 
-printf '%s ALL=(root) NOPASSWD: %s update, %s config-write\n' "$target_user" "$HELPER_PATH" "$HELPER_PATH" > "$temporary_sudoers"
+printf '%s ALL=(root) NOPASSWD: %s apt-refresh, %s update, %s config-write\n' \
+  "$target_user" "$HELPER_PATH" "$HELPER_PATH" "$HELPER_PATH" > "$temporary_sudoers"
 chmod 0440 "$temporary_sudoers"
 visudo -cf "$temporary_sudoers" >/dev/null
 install -o root -g root -m 0440 "$temporary_sudoers" "$SUDOERS_PATH"

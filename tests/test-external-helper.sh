@@ -10,7 +10,12 @@ cat > "$WORK_DIR/fake-bin/apt-get" <<'SH'
 #!/usr/bin/env bash
 [[ "${1:-}" == update ]]
 SH
+cat > "$WORK_DIR/fake-bin/id" <<'SH'
+#!/usr/bin/env bash
+[[ "${1:-}" == -u ]] && printf '0\n' || /usr/bin/id "$@"
+SH
 chmod 755 "$WORK_DIR/fake-bin/apt-get"
+chmod 755 "$WORK_DIR/fake-bin/id"
 
 bash -n "$ROOT_DIR/external-helper.sh" "$ROOT_DIR/external-bootstrap.sh"
 shellcheck "$ROOT_DIR/external-helper.sh" "$ROOT_DIR/external-bootstrap.sh"
@@ -21,6 +26,7 @@ version=$("$ROOT_DIR/external-helper.sh" version)
 printf '%s\n' '#!/usr/bin/env python3' 'print("APT_COUNTS|7|5|2|true")' > "$WORK_DIR/apt-count.py"
 chmod 755 "$WORK_DIR/apt-count.py"
 [[ "$(PATH="$WORK_DIR/fake-bin:$PATH" UU_APT_COUNT_SCRIPT="$WORK_DIR/apt-count.py" "$ROOT_DIR/external-helper.sh" status)" == 'APT_COUNTS|7|5|2|true' ]]
+PATH="$WORK_DIR/fake-bin:$PATH" "$ROOT_DIR/external-helper.sh" apt-refresh >/dev/null
 
 if [ "$(id -u)" -ne 0 ]; then
   if "$ROOT_DIR/external-helper.sh" update >/dev/null 2>&1; then
@@ -36,6 +42,7 @@ if "$ROOT_DIR/external-helper.sh" shell >/dev/null 2>&1; then
   echo 'external helper unexpectedly accepted arbitrary action' >&2
   exit 1
 fi
+grep -Fq 'apt-refresh' "$ROOT_DIR/external-bootstrap.sh"
 
 if grep -Eq '(^|[[:space:]])(eval|source)([[:space:]]|$)' "$ROOT_DIR/external-helper.sh"; then
   echo 'external helper contains unsafe source/eval' >&2

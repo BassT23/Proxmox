@@ -91,11 +91,12 @@ load_target() {
 }
 
 remote_check() {
-  local apt_count_command rpm_count_command
+  local apt_count_command apt_count_command_no_refresh rpm_count_command
   apt_count_command=$(APT_COUNT_REMOTE_COMMAND) || return 1
+  apt_count_command_no_refresh=$(UU_APT_COUNT_SKIP_REFRESH=true APT_COUNT_REMOTE_COMMAND) || return 1
   rpm_count_command=$(RPM_COUNT_REMOTE_COMMAND) || return 1
   RUN_SSH_IDENTITY_FILE="$EXTERNAL_IDENTITY_FILE" RUN_SSH_COMMAND "$EXTERNAL_HOST" "$EXTERNAL_PORT" "$EXTERNAL_USER" \
-    "UU_EXTERNAL_TARGET_NAME=$EXTERNAL_TARGET UU_APT_COUNT_COMMAND=$(printf '%q' "$apt_count_command") UU_RPM_COUNT_COMMAND=$(printf '%q' "$rpm_count_command") bash -s" <<'REMOTE_CHECK'
+    "UU_EXTERNAL_TARGET_NAME=$EXTERNAL_TARGET UU_EXTERNAL_HELPER_PATH=$(printf '%q' "$EXTERNAL_HELPER_PATH") UU_EXTERNAL_HELPER_VERSION=$(printf '%q' "$EXTERNAL_HELPER_VERSION") UU_APT_COUNT_COMMAND=$(printf '%q' "$apt_count_command") UU_APT_COUNT_COMMAND_NO_REFRESH=$(printf '%q' "$apt_count_command_no_refresh") UU_RPM_COUNT_COMMAND=$(printf '%q' "$rpm_count_command") bash -s" <<'REMOTE_CHECK'
 set -u
 config=/etc/ultimate-updater/external.conf
 config_value() {
@@ -159,13 +160,40 @@ if ! command -v "$updater" >/dev/null 2>&1; then
   exit 24
 fi
 if [ "$updater" = apt ]; then
-  # Refresh only the package lists before the structured read-only count.  The
-  # generated count command suppresses this command's output so the result
-  # protocol remains machine-readable.
-  apt_counts=$(bash -c "$UU_APT_COUNT_COMMAND") || {
-    printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|structured APT metadata query failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+  # APT metadata refresh is privileged because it writes /var/lib/apt/lists.
+  # Root uses the normal command. A non-root External user must use the
+  # root-owned, fixed-action helper installed by external-bootstrap; never
+  # fall back to unrestricted sudo or stale cached counts.
+  helper="${UU_EXTERNAL_HELPER_PATH:-/usr/local/sbin/ultimate-updater-external}"
+  if [ "$(id -u)" -eq 0 ]; then
+    apt_counts=$(bash -c "$UU_APT_COUNT_COMMAND") || {
+      printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|structured APT metadata query failed\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+      exit 25
+    }
+  else
+    if ! command -v sudo >/dev/null 2>&1 || [ ! -f "$helper" ] || [ -L "$helper" ] ||
+      [ "$(stat -c '%u %a' "$helper" 2>/dev/null || true)" != '0 755' ]; then
+      printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_REFRESH_PRIVILEGE_REQUIRED|non-root External user has no verified APT refresh helper\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+      exit 28
+    fi
+    helper_version=$($helper version 2>/dev/null || true)
+    if [ "$helper_version" != "ultimate-updater-external ${UU_EXTERNAL_HELPER_VERSION:-1}" ]; then
+      printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_REFRESH_PRIVILEGE_REQUIRED|External APT refresh helper is unavailable\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+      exit 28
+    fi
+    if ! sudo -n "$helper" apt-refresh >/dev/null 2>&1; then
+      printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_REFRESH_PRIVILEGE_REQUIRED|External APT refresh privilege was not granted\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+      exit 28
+    fi
+    apt_counts=$(bash -c "$UU_APT_COUNT_COMMAND_NO_REFRESH") || {
+      printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|structured APT metadata query failed after refresh\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
+      exit 25
+    }
+  fi
+  if [ -z "$apt_counts" ]; then
+    printf 'UU_RESULT|error|%s|%s|null|null|apt|APT_CHECK_FAILED|structured APT metadata query returned no result\n' "${PRETTY_NAME:-unknown}" "${VERSION_ID:-}"
     exit 25
-  }
+  fi
   IFS='|' read -r apt_marker apt_total apt_normal apt_security apt_known apt_packages _ <<EOF
 $apt_counts
 EOF

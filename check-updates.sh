@@ -108,8 +108,16 @@ except Exception:
   APT_COUNT_REMOTE_COMMAND() {
     local shell_script="${APT_COUNT_SHELL_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.sh}"
     local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
-    local shell_encoded python_encoded
-    local refresh_command='DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1'
+    local shell_encoded python_encoded refresh_command
+    if [[ "${UU_APT_COUNT_SKIP_REFRESH:-false}" == true ]]; then
+      refresh_command=':'
+    else
+      # APT metadata refresh needs write access to /var/lib/apt/lists.  Keep
+      # non-root SSH users fail-closed unless their existing non-interactive
+      # sudo policy explicitly permits apt-get update.
+      # shellcheck disable=SC2016  # intentionally defer expansion to the remote shell
+      refresh_command='if [ "$(id -u)" -eq 0 ]; then DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1; elif command -v sudo >/dev/null 2>&1; then sudo -n apt-get update -y >/dev/null 2>&1; else exit 126; fi'
+    fi
     if [[ ! -f "$shell_script" ]]; then
       python_encoded=$(base64 -w0 "$python_script") || return 1
       printf '%s && UU_PACKAGE_DETAILS=1 python3 -c %q' \
@@ -1154,8 +1162,9 @@ CHECK_HOST_ITSELF () {
   if declare -f STATUS_MODEL_CAPTURE_TARGET_GENERATION >/dev/null 2>&1; then
     STATUS_MODEL_CAPTURE_TARGET_GENERATION "host:$STATUS_HOST_NAME" || true
   fi
-  # Counts come from the local structured package metadata.  Checks are
-  # deliberately read-only; refreshing APT lists belongs to update actions.
+  # Counts come from a read-only structured query after refreshing only the
+  # local APT package lists.  No package installation or lifecycle action is
+  # performed by a check.
   if ! READ_APT_UPDATE_COUNTS; then
     STATUS_MODEL_RECORD "host:$STATUS_HOST_NAME" host local true "" apt "null" "null" error APT_COUNT_UNAVAILABLE \
       "Could not determine APT update counts from package metadata" "$STATUS_HOST_NAME" "$STATUS_HOST_NAME"

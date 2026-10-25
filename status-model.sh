@@ -990,6 +990,26 @@ with open(record_file, encoding="utf-8") as records:
             # fields, but make the current observation fail closed.
             record["package_data_invalidated"] = True
 
+        # APT refresh/privilege failures must not leave a previous numeric
+        # count looking like the result of this check.  Preserve mutation
+        # reservations and identity metadata, but clear only the package
+        # observation that could not be refreshed.
+        clear_package_data_on_error = error_code in {
+            "APT_CHECK_FAILED", "APT_REFRESH_PRIVILEGE_REQUIRED", "APT_COUNT_UNAVAILABLE",
+        }
+        if clear_package_data_on_error and check_status != "history_only":
+            record["updates"] = {"available": None}
+            if "normal_updates" in record or split_fields:
+                record["normal_updates"] = None
+            if "security_updates" in record or split_fields:
+                record["security_updates"] = None
+            record["packages"] = None
+            record.pop("package_checked_at", None)
+            record["package_data_invalidated"] = True
+            record["package_data_invalidated_at"] = datetime.now(timezone.utc).isoformat(
+                timespec="microseconds"
+            ).replace("+00:00", "Z")
+
         if check_status != "history_only" and imported_status_metadata:
             incoming_invalidated_at = valid_timestamp(imported_package_data_invalidated_at)
             if imported_package_data_invalidated is True:
@@ -1268,6 +1288,21 @@ if package_result_safe:
     record["packages"] = normalize_packages(package_details, int(updates)) if package_details is not None else None
 elif existing_package_state:
     record.update(existing_package_state)
+
+# APT refresh/privilege failures must not leave a previous numeric count
+# looking like the result of this check. Preserve mutation reservations and
+# identity metadata, but clear only the package observation that failed to
+# refresh.
+if error_code in {"APT_CHECK_FAILED", "APT_REFRESH_PRIVILEGE_REQUIRED", "APT_COUNT_UNAVAILABLE"}:
+    record["updates"] = {"available": None}
+    record["normal_updates"] = None
+    record["security_updates"] = None
+    record["packages"] = None
+    record.pop("package_checked_at", None)
+    record["package_data_invalidated"] = True
+    record["package_data_invalidated_at"] = datetime.now(timezone.utc).isoformat(
+        timespec="microseconds"
+    ).replace("+00:00", "Z")
 if package_result_ok and not package_result_safe:
     # A successful-looking result without a captured generation has no safe
     # relationship to the target's mutation epoch.

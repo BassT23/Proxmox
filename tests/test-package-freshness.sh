@@ -54,6 +54,23 @@ assert target["package_checked_at"] == "2026-10-17T10:00:00Z"
 assert target["error"]["code"] == "CHECK_COMMAND_FAILED"
 PY
 
+# APT count/refresh failures from VM SSH and QGA must not preserve a stale
+# numeric package observation.  Generic command failures retain their
+# historical data for the existing status semantics above.
+run_record "$WORK_DIR/status.json" "$WORK_DIR/apt-count-failure.records" \
+  'STATUS_MODEL_RECORD 910 lxc pct true Debian apt null null error APT_COUNT_UNAVAILABLE "APT refresh unavailable" node1 lxc-910'
+python3 - "$WORK_DIR/status.json" <<'PY'
+import json
+import sys
+
+target = next(item for item in json.load(open(sys.argv[1], encoding="utf-8"))['targets'] if item['id'] == '910')
+assert target['updates'] == {'available': None}
+assert target['packages'] is None
+assert 'package_checked_at' not in target
+assert target['package_data_invalidated'] is True
+assert target['error']['code'] == 'APT_COUNT_UNAVAILABLE'
+PY
+
 run_record "$WORK_DIR/status.json" "$WORK_DIR/success.records" \
   'STATUS_MODEL_RECORD 910 lxc pct true Debian apt 0 false ok "" "" node1 lxc-910 0 0 "" now'
 python3 - "$WORK_DIR/status.json" <<'PY'

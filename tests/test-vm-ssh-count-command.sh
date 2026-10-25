@@ -26,9 +26,21 @@ mkdir "$WORK_DIR/fake-bin"
 cat > "$WORK_DIR/fake-bin/apt-get" <<'SH'
 #!/usr/bin/env bash
 [[ "${1:-}" == update ]]
+[[ "${APT_REFRESH_FAIL:-false}" != true ]] || exit 42
 printf 'refresh\n' >> "$APT_REFRESH_LOG"
 SH
 chmod +x "$WORK_DIR/fake-bin/apt-get"
+cat > "$WORK_DIR/fake-bin/id" <<'SH'
+#!/usr/bin/env bash
+[[ "${1:-}" == -u ]] && printf '%s\n' "${FAKE_UID:-0}" || /usr/bin/id "$@"
+SH
+cat > "$WORK_DIR/fake-bin/sudo" <<'SH'
+#!/usr/bin/env bash
+[[ "${SUDO_FAIL:-false}" != true ]] || exit 1
+[[ "${1:-}" == -n ]] && shift
+exec "$@"
+SH
+chmod +x "$WORK_DIR/fake-bin/id" "$WORK_DIR/fake-bin/sudo"
 export PATH="$WORK_DIR/fake-bin:$PATH"
 export APT_REFRESH_LOG="$WORK_DIR/apt-refresh.log"
 
@@ -66,6 +78,17 @@ run_bad_wrapper() {
 
 run_good "$WORK_DIR/apt.command" 'APT_COUNTS|3|1|2|true'
 [[ -s "$WORK_DIR/apt-refresh.log" ]]
+
+# A non-root VM SSH profile may use only its existing non-interactive sudo
+# privilege for the metadata refresh.  The count itself remains unprivileged.
+: > "$WORK_DIR/apt-refresh.log"
+FAKE_UID=1000 SUDO_FAIL=false run_good "$WORK_DIR/apt.command" 'APT_COUNTS|3|1|2|true'
+[[ -s "$WORK_DIR/apt-refresh.log" ]]
+if FAKE_UID=1000 SUDO_FAIL=true APT_REFRESH_FAIL=false \
+  bash -c "$(<"$WORK_DIR/apt.command")" >/dev/null 2>&1; then
+  echo 'non-root VM SSH refresh unexpectedly succeeded without sudo' >&2
+  exit 1
+fi
 run_good "$WORK_DIR/rpm.command" 'UU_RPM_COUNTS|ok|4|null|null|false'
 run_good "$WORK_DIR/pkg.command" 'UU_PACKAGE_COUNTS|ok|pkg|5|null|null|false'
 run_good "$WORK_DIR/pacman.command" 'UU_PACKAGE_COUNTS|ok|pacman|5|null|null|false'

@@ -12,7 +12,7 @@ APT_COUNT_SCRIPT=${UU_APT_COUNT_SCRIPT:-/usr/local/lib/ultimate-updater/apt-coun
 APT_COUNT_SHELL_SCRIPT=${UU_APT_COUNT_SHELL_SCRIPT:-/usr/local/lib/ultimate-updater/apt-count.sh}
 
 usage() {
-  printf 'Usage: %s version | status | config-read | config-write | update\n' "$0" >&2
+  printf 'Usage: %s version | status | apt-refresh | config-read | config-write | update\n' "$0" >&2
 }
 
 validate_config() {
@@ -85,6 +85,14 @@ apt_status() {
   fi
 }
 
+apt_refresh() {
+  [ "$(id -u)" -eq 0 ] || {
+    printf 'external-helper: apt refresh requires root\n' >&2
+    return 70
+  }
+  DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1
+}
+
 dnf_status() {
   set +e
   /usr/bin/dnf -q check-update
@@ -133,6 +141,15 @@ case "$action" in
       *) printf 'external-helper: unsupported operating system\n' >&2; exit 21 ;;
     esac
     exit 0
+    ;;
+  apt-refresh)
+    [ "$#" -eq 1 ] || { usage; exit 64; }
+    detect_os
+    case "$UU_OS_ID" in
+      *debian*|*ubuntu*|*raspbian*) apt_refresh ;;
+      *) printf 'external-helper: APT refresh requested for a non-APT operating system\n' >&2; exit 21 ;;
+    esac
+    exit $?
     ;;
   config-read)
     config_read

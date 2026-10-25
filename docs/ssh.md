@@ -37,6 +37,14 @@ profiles, not External targets, and are not copied into `targets.conf`.
 They remain supported for local and remote VM paths in a Proxmox cluster, so an
 existing working SSH profile does not need to be entered again in the Web UI.
 
+For an APT-based VM SSH check, the configured user must be root or must already
+have non-interactive `sudo -n apt-get update` permission. The check never asks
+for a password and never changes sudo policy. If the metadata refresh cannot be
+performed with that existing privilege, the check fails closed with unknown
+counts; it does not use stale APT lists or synthesize zero updates. QGA remains
+the existing fallback when SSH itself is not selected, but it is not used to
+hide an error after an SSH transport has already been selected.
+
 ## External systems
 
 External SSH systems use `/etc/ultimate-updater/targets.conf` and a dedicated
