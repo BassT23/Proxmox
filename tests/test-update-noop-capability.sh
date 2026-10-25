@@ -73,6 +73,14 @@ cat > "$WORK_DIR/update-skipped.sh" <<'UPDATE'
 exit 10
 UPDATE
 chmod 750 "$WORK_DIR/update-skipped.sh"
+cat > "$WORK_DIR/status-skipped.json" <<'JSON'
+{"schema_version":1,"targets":[
+  {"id":"115","type":"lxc","check_status":"ok","reachable":true,
+   "updates":{"available":0},"package_data_invalidated":false,
+   "package_mutation_in_progress":false,
+   "last_update":{"status":"skipped","timestamp":"2026-10-18T00:00:01Z","exit_code":0,"pending_before":0}}
+]}
+JSON
 cat > "$WORK_DIR/jobs/ultimate-updater-update-115-skipped.state" <<'STATE'
 schema_version=1
 unit=ultimate-updater-update-115-skipped
@@ -85,7 +93,8 @@ type=update
 message=
 source=
 STATE
-if UU_JOB_STATE_DIR="$WORK_DIR/jobs" \
+if UU_JOB_STATE_DIR="$WORK_DIR/jobs" UU_LOCAL_FILES="$WORK_DIR" \
+    UU_STATUS_MODEL_FILE="$WORK_DIR/status-skipped.json" \
     "$ROOT_DIR/job-runner.sh" run ultimate-updater-update-115-skipped 115 \
     "$WORK_DIR/update-skipped.sh" >/dev/null 2>&1; then
   skipped_rc=0
@@ -113,7 +122,8 @@ type=update
 message=
 source=
 STATE
-if UU_JOB_STATE_DIR="$WORK_DIR/jobs" \
+if UU_JOB_STATE_DIR="$WORK_DIR/jobs" UU_LOCAL_FILES="$WORK_DIR" \
+    UU_STATUS_MODEL_FILE="$WORK_DIR/status-skipped.json" \
     "$ROOT_DIR/job-runner.sh" run-global ultimate-updater-update-all-systems-skipped \
     "$WORK_DIR/update-skipped.sh" >/dev/null 2>&1; then
   global_skipped_rc=0

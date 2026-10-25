@@ -564,20 +564,51 @@ else:
     last_update = dict(last_update)
 effective_exit_code = int(exit_code)
 message = None
+pending_before = last_update.get("pending_before")
+valid_pending = type(pending_before) is int and pending_before >= 0
+current_status = str(last_update.get("status") or "").lower()
+positive_result = valid_pending and pending_before > 0 and current_status in {
+    "success", "completed", "completed_with_warnings"
+}
+existing_exit_code = last_update.get("exit_code")
+if type(existing_exit_code) is not int or isinstance(existing_exit_code, bool):
+    existing_exit_code = 1
+
+def fail_closed_baseline():
+    global status, effective_exit_code, message
+    status = "failed"
+    effective_exit_code = 97 if "pending_before" in last_update else 96
+    code = "PENDING_BEFORE_INVALID" if "pending_before" in last_update else "PENDING_BEFORE_UNAVAILABLE"
+    message = f"{code}: pending_before baseline is not valid; update success cannot be proven"
+
 if job_state == "completed" and exit_code == "0":
-    pending_before = last_update.get("pending_before")
-    if type(pending_before) is not int or pending_before < 0:
-        status = "failed"
-        effective_exit_code = 97 if "pending_before" in last_update else 96
-        code = "PENDING_BEFORE_INVALID" if "pending_before" in last_update else "PENDING_BEFORE_UNAVAILABLE"
-        message = f"{code}: pending_before baseline is not valid; update success cannot be proven"
+    if not valid_pending:
+        fail_closed_baseline()
     elif pending_before == 0:
         status = "skipped"
         effective_exit_code = 10
     else:
         status = "success"
 elif job_state in {"completed_with_warnings", "skipped"}:
-    status = "skipped"
+    # A positive worker result must remain visible when the process-level
+    # state only records a warning or an old neutral exit.  Do not let the
+    # controller turn a real mutation into a no-op during handback.
+    if positive_result:
+        status = "completed_with_warnings"
+        effective_exit_code = 0
+    elif current_status == "unsupported":
+        # Unsupported is a target result, not a technical update failure.
+        # Preserve its reason/status while the enclosing job remains neutral.
+        status = "unsupported"
+        effective_exit_code = existing_exit_code
+    elif valid_pending and pending_before == 0:
+        status = "skipped"
+        effective_exit_code = 10
+    elif current_status in {"failed", "interrupted"}:
+        status = current_status
+        effective_exit_code = existing_exit_code
+    else:
+        fail_closed_baseline()
 else:
     status = "failed"
 candidate_timestamp = finished or None
@@ -866,6 +897,136 @@ start_job() {
     "$target" "$unit" "$unit"
 }
 
+# Classify the result written by the current update process instead of
+# treating exit 10 as proof of a no-op.  Exit 10 is only safe to project as
+# skipped when the same run left an explicit current target result.  A positive
+# baseline with a terminal package state is a real mutation result; an
+# incomplete package state is deliberately kept separate so a failed handoff
+# cannot become either success or no-op.
+classify_current_update_result() {
+  local target="$1" started="$2"
+  python3 - "$STATUS_MODEL_FILE" "$target" "$started" <<'PY'
+import json
+import sys
+from datetime import datetime
+
+status_file, target_id, started_value = sys.argv[1:]
+
+def stamp(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, TypeError):
+    print("incomplete")
+    raise SystemExit(0)
+
+started_at = stamp(started_value)
+targets = payload.get("targets") if isinstance(payload, dict) else None
+record = next((item for item in targets or []
+               if isinstance(item, dict) and str(item.get("id")) == target_id), None)
+result = record.get("last_update") if isinstance(record, dict) else None
+result_stamp = stamp(result.get("timestamp")) if isinstance(result, dict) else None
+if started_at is None or result_stamp is None or result_stamp < started_at:
+    print("incomplete")
+    raise SystemExit(0)
+
+status = str(result.get("status") or "").lower()
+pending = result.get("pending_before")
+valid_pending = isinstance(pending, int) and not isinstance(pending, bool)
+if status == "unsupported":
+    print("unsupported")
+elif status == "skipped" and valid_pending and pending == 0:
+    print("noop")
+elif status in {"success", "completed", "completed_with_warnings"} and valid_pending and pending > 0:
+    if status == "completed_with_warnings":
+        print("positive_unconfirmed")
+    elif record.get("package_data_invalidated") is False and \
+         record.get("package_mutation_in_progress") is False:
+        print("positive_confirmed")
+    else:
+        print("positive_unconfirmed")
+else:
+    print("incomplete")
+PY
+}
+
+# The global runner has no single target id.  Only current result records are
+# considered, and any current technical failure keeps the aggregate
+# fail-closed.  A positive mutation must therefore outrank a neutral no-op,
+# while an incomplete aggregate can never be rendered as skipped.
+classify_current_global_update_result() {
+  local started="$1"
+  python3 - "$STATUS_MODEL_FILE" "$started" <<'PY'
+import json
+import sys
+from datetime import datetime
+
+status_file, started_value = sys.argv[1:]
+
+def stamp(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, TypeError):
+    print("incomplete")
+    raise SystemExit(0)
+
+started_at = stamp(started_value)
+if started_at is None or not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
+    print("incomplete")
+    raise SystemExit(0)
+
+results = []
+for record in payload["targets"]:
+    if not isinstance(record, dict):
+        continue
+    result = record.get("last_update")
+    result_stamp = stamp(result.get("timestamp")) if isinstance(result, dict) else None
+    if result_stamp is None or result_stamp < started_at:
+        continue
+    status = str(result.get("status") or "").lower()
+    pending = result.get("pending_before")
+    valid_pending = isinstance(pending, int) and not isinstance(pending, bool)
+    if status == "unsupported":
+        results.append("unsupported")
+    elif status == "skipped" and valid_pending and pending == 0:
+        results.append("noop")
+    elif status in {"success", "completed", "completed_with_warnings"} and valid_pending and pending > 0:
+        if status == "completed_with_warnings":
+            results.append("positive_unconfirmed")
+        elif record.get("package_data_invalidated") is False and \
+             record.get("package_mutation_in_progress") is False:
+            results.append("positive_confirmed")
+        else:
+            results.append("positive_unconfirmed")
+    else:
+        results.append("incomplete")
+
+if not results or "incomplete" in results:
+    print("incomplete")
+elif "positive_confirmed" in results:
+    print("positive_confirmed")
+elif "positive_unconfirmed" in results:
+    print("positive_unconfirmed")
+else:
+    print("noop")
+PY
+}
+
 start_global_job() {
   local update_script="$1" unit timestamp target=all-systems
   local socket_path interactive=false
@@ -999,7 +1160,7 @@ PY
 
 run_job() {
   local unit="$1" target="$2" update_script="$3" file started exit_code lock_file
-  local post_check_rc=0 post_check_message="" captured_status_file captured_status_rc unresolved_file unresolved_job terminal_state job_exit_code
+  local post_check_rc=0 post_check_message="" captured_status_file captured_status_rc unresolved_file unresolved_job terminal_state job_exit_code local_result_class
   valid_target "$target" || return 2
   file=$(state_file "$unit")
   started=$(state_value "$file" started_at)
@@ -1095,14 +1256,57 @@ run_job() {
     fi
     send_update_notification "$STATUS_MODEL_FILE" "$started"
   elif [[ "$exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
-    # Exit 10 is the neutral update result used for no-op, skipped, and
-    # unsupported targets.  It must not be presented as a completed update or
-    # as completed_with_warnings: that state is reserved for a real mutation
-    # whose post-update capture could not be confirmed.
-    terminal_state="skipped"
-    post_check_message="update skipped; no confirmed package mutation was recorded"
-    printf 'Update job skipped; no confirmed package mutation was recorded.\n' >&2
-    send_update_notification "$STATUS_MODEL_FILE" "$started"
+    captured_status_file="${UU_REMOTE_WORK_DIR:-${UU_LOCAL_FILES:-/etc/ultimate-updater}/temp}/post-update-status.rc"
+    captured_status_rc=""
+    if [[ -f "$captured_status_file" ]]; then
+      captured_status_rc=$(cat "$captured_status_file" 2>/dev/null || printf '')
+      [[ "$captured_status_rc" =~ ^[0-9]+$ ]] || captured_status_rc=""
+    fi
+    local_result_class=$(classify_current_update_result "$target" "$started" 2>/dev/null || printf 'incomplete')
+    case "$local_result_class" in
+      positive_confirmed)
+        job_exit_code=0
+        if [[ "$captured_status_rc" == 0 ]]; then
+          terminal_state="completed"
+          post_check_message="post-update target status captured before lifecycle restore rc=0"
+          printf 'Post-update status captured before lifecycle restore for %s.\n' "$target"
+        else
+          terminal_state="completed_with_warnings"
+          post_check_message="positive package mutation recorded but post-update status capture was not confirmed"
+          printf 'Update completed with warnings; positive package mutation was recorded but post-update status capture was not confirmed.\n' >&2
+        fi
+        send_update_notification "$STATUS_MODEL_FILE" "$started"
+        ;;
+      positive_unconfirmed)
+        job_exit_code=0
+        terminal_state="completed_with_warnings"
+        post_check_message="positive package mutation recorded but terminal package handback is incomplete"
+        printf 'Update completed with warnings; terminal package handback is incomplete.\n' >&2
+        send_update_notification "$STATUS_MODEL_FILE" "$started"
+        ;;
+      noop)
+        terminal_state="skipped"
+        post_check_message="update skipped; no package mutation was required"
+        printf 'Update job skipped; no package mutation was required.\n' >&2
+        send_update_notification "$STATUS_MODEL_FILE" "$started"
+        ;;
+      unsupported)
+        terminal_state="skipped"
+        post_check_message="update skipped; target is unsupported"
+        printf 'Update job skipped; target is unsupported.\n' >&2
+        send_update_notification "$STATUS_MODEL_FILE" "$started"
+        ;;
+      *)
+        # An exit-10 process without an explicit current result is not a
+        # neutral outcome.  Do not turn a missing worker handback into either
+        # success or no-op.
+        job_exit_code=1
+        terminal_state="failed"
+        post_check_message="update result unavailable; refusing to classify the run as skipped"
+        printf 'Update job failed; terminal package result was unavailable.\n' >&2
+        send_update_notification "$STATUS_MODEL_FILE" "$started"
+        ;;
+    esac
   elif [[ "$exit_code" -eq "$UPDATE_UNSUPPORTED_RC" ]] &&
     explicitly_unsupported_target_result "$target" "$started"; then
     # A target-level unsupported result is a neutral policy outcome.  Only
@@ -1119,7 +1323,7 @@ run_job() {
   if [[ "$job_exit_code" -eq 0 || "$job_exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
     write_state "$unit" "$target" "$terminal_state" "$started" "$(now)" "$job_exit_code" "$post_check_message" || return 1
   else
-    write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
+    write_state "$unit" "$target" failed "$started" "$(now)" "$job_exit_code" "$post_check_message" || return 1
   fi
   if [[ -n "${UU_REMOTE_WORK_DIR:-}" && ( ! "$target" =~ ^[0-9]+$ || ! -f "$UU_REMOTE_WORK_DIR/post-update-status.rc" ) ]]; then
     rm -rf -- "$UU_REMOTE_WORK_DIR"
@@ -1130,7 +1334,7 @@ run_job() {
 
 run_global_job() {
   local unit="$1" update_script="$2" target=all-systems file started exit_code lock_file
-  local post_check_rc=0 preserve_rc=0 post_check_message="" update_result_snapshot="" pre_update_snapshot="" terminal_state job_exit_code
+  local post_check_rc=0 preserve_rc=0 post_check_message="" update_result_snapshot="" pre_update_snapshot="" terminal_state job_exit_code local_result_class
   valid_unit "$unit" || return 2
   valid_global_target "$target" || return 2
   file=$(state_file "$unit")
@@ -1217,14 +1421,36 @@ run_global_job() {
     trace_external_event before_update_notification
     send_update_notification "$STATUS_MODEL_FILE" "$started"
   elif [[ "$exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
-    # Keep the aggregate job neutral when every update path reports no
-    # confirmed mutation.  completed_with_warnings is reserved for an update
-    # that ran and completed but lost its post-update capture.
-    terminal_state="skipped"
-    post_check_message="update skipped; no confirmed package mutation was recorded"
-    printf 'Update job skipped; no confirmed package mutation was recorded.\n' >&2
-    trace_external_event before_update_notification
-    send_update_notification "$STATUS_MODEL_FILE" "$started"
+    local_result_class=$(classify_current_global_update_result "$started" 2>/dev/null || printf 'incomplete')
+    case "$local_result_class" in
+      positive_confirmed|positive_unconfirmed)
+        # The aggregate returned the neutral code even though at least one
+        # current target proves a positive mutation.  Keep the aggregate out
+        # of skipped; a full post-update refresh will be performed by the
+        # normal successful path only when the updater itself returns zero.
+        job_exit_code=0
+        terminal_state="completed_with_warnings"
+        post_check_message="positive package mutation recorded; aggregate result requires post-update verification"
+        printf 'Update completed with warnings; positive package mutation was recorded.\n' >&2
+        trace_external_event before_update_notification
+        send_update_notification "$STATUS_MODEL_FILE" "$started"
+        ;;
+      noop|unsupported)
+        terminal_state="skipped"
+        post_check_message="update skipped; no package mutation was required"
+        printf 'Update job skipped; no package mutation was required.\n' >&2
+        trace_external_event before_update_notification
+        send_update_notification "$STATUS_MODEL_FILE" "$started"
+        ;;
+      *)
+        job_exit_code=1
+        terminal_state="failed"
+        post_check_message="update result unavailable; refusing to classify the aggregate as skipped"
+        printf 'Update job failed; terminal package result was unavailable.\n' >&2
+        trace_external_event before_update_notification
+        send_update_notification "$STATUS_MODEL_FILE" "$started"
+        ;;
+    esac
   elif [[ "$exit_code" -eq "$UPDATE_UNSUPPORTED_RC" ]] &&
     explicitly_unsupported_global_result "$started"; then
     terminal_state="skipped"
@@ -1242,7 +1468,7 @@ run_global_job() {
   if [[ "$job_exit_code" -eq 0 || "$job_exit_code" -eq "$UPDATE_WARNING_RC" ]]; then
     write_state "$unit" "$target" "$terminal_state" "$started" "$(now)" "$job_exit_code" "$post_check_message" || return 1
   else
-    write_state "$unit" "$target" failed "$started" "$(now)" "$exit_code" || return 1
+    write_state "$unit" "$target" failed "$started" "$(now)" "$job_exit_code" "$post_check_message" || return 1
   fi
   return "$job_exit_code"
 }
@@ -1663,7 +1889,7 @@ list_jobs() {
   [[ -d "$JOB_STATE_DIR" ]] || return 0
   refresh_running_jobs
   cleanup_completed_jobs || true
-  local file unit target state started finished exit_code owner_node owner_host port interactive socket_available socket_path
+  local file unit target state started finished exit_code owner_node owner_host port interactive socket_available socket_path refresh_ref
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
     unit=$(state_value "$file" unit)
@@ -1696,7 +1922,14 @@ list_jobs() {
     if [[ "$remote_status" == completed || "$remote_status" == completed_with_warnings || "$remote_status" == skipped || "$remote_status" == failed || "$remote_status" == interrupted ]]; then
       refresh_remote_target_status "$unit" "$owner_node" "$remote_target"
     fi
-    sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true
+    # Never project the controller's old last_update merely because the
+    # remote job reached a terminal process state.  The current worker status
+    # artifact must have been imported successfully first; otherwise the
+    # controller remains fail-closed and the reference stays retryable.
+    refresh_ref=$(remote_ref_file "$unit")
+    if [[ "$(state_value "$refresh_ref" status_refresh)" == "done" ]]; then
+      sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true
+    fi
   done
 }
 
@@ -1757,7 +1990,7 @@ reconcile_remote_all() {
 }
 
 reconcile_remote_job() {
-  local unit="$1" ref_line target owner_node owner_host port remote_state
+  local unit="$1" ref_line target owner_node owner_host port remote_state refresh_ref
   ref_line=$(remote_ref_line "$unit") || return 1
   IFS=$'\t' read -r unit target owner_node owner_host port <<< "$ref_line"
   remote_state=$(remote_state_line "$unit" "$target" "$owner_node" "$owner_host" "$port") || return 1
@@ -1767,7 +2000,10 @@ reconcile_remote_job() {
   if [[ "$remote_status" == completed || "$remote_status" == completed_with_warnings || "$remote_status" == skipped ||
     "$remote_status" == failed || "$remote_status" == interrupted ]]; then
     refresh_remote_target_status "$unit" "$owner_node" "$remote_target"
-    sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true
+    refresh_ref=$(remote_ref_file "$unit")
+    if [[ "$(state_value "$refresh_ref" status_refresh)" == "done" ]]; then
+      sync_remote_last_update "$remote_target" "$remote_status" "$remote_finished" "$remote_exit" || true
+    fi
   fi
 }
 

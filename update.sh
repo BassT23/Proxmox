@@ -178,6 +178,12 @@ CAPTURE_STARTED_GUEST_UPDATE_PENDING_BEFORE() {
     return 1
   fi
   UPDATE_PENDING_BEFORE["$target"]="$baseline"
+  # The controller may have handed the worker an older observation (for
+  # example zero while a stopped guest was not checked).  Once the guest has
+  # passed the lifecycle gates, the fresh observation is authoritative for
+  # this update process and must also replace the inherited scalar handoff.
+  UU_UPDATE_PENDING_BEFORE_TARGET="$target"
+  UU_UPDATE_PENDING_BEFORE="$baseline"
   rm -rf -- "$run_dir"
   return 0
 }
@@ -3508,7 +3514,12 @@ UPDATE_FINAL_RC() {
   fi
   if [[ "${REMOTE_TARGET_DISPATCHED:-false}" != true &&
     "${UPDATE_RESULT_RECORDED:-false}" != true ]]; then
-    UPDATE_WARNING=true
+    # A missing result is not a neutral no-op.  Returning exit 10 here lets a
+    # remote job runner mistake an incomplete handoff for skipped work.  Keep
+    # the result fail-closed unless an explicit target result was recorded.
+    UPDATE_FAILURE=true
+    printf 'Update result was not recorded; refusing to classify the run as a no-op.\n' >&2
+    return 1
   fi
   if [[ "${UPDATE_WARNING:-false}" == true ]]; then
     return "$warning_rc"

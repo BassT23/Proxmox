@@ -15,8 +15,7 @@ source "$WORK_DIR/update-final-rc.sh"
 SAFETY_FAILURE=false
 # shellcheck disable=SC2034
 UPDATE_FAILURE=false
-# This fixture exercises failure aggregation after a result has been recorded;
-# a full update with no result is now deliberately a warning, not success.
+# This fixture exercises failure aggregation after a result has been recorded.
 # shellcheck disable=SC2034
 UPDATE_RESULT_RECORDED=true
 # shellcheck disable=SC2034
@@ -33,6 +32,19 @@ if UPDATE_FINAL_RC 17; then
   echo 'non-zero command result was lost by final update aggregation' >&2
   exit 1
 fi
+
+# A missing result is fail-closed and must not be converted into the neutral
+# exit-10 no-op code consumed by the job runner.
+UPDATE_FAILURE=false
+# shellcheck disable=SC2034 # consumed by UPDATE_FINAL_RC from the sourced runner.
+UPDATE_RESULT_RECORDED=false
+# shellcheck disable=SC2034 # consumed by UPDATE_FINAL_RC from the sourced runner.
+UPDATE_WARNING=false
+if UPDATE_FINAL_RC 0; then
+  echo 'missing update result was incorrectly treated as a no-op' >&2
+  exit 1
+fi
+[[ "$UPDATE_FAILURE" == true ]]
 
 awk '/^ERROR \(\) \{/{copy=1} copy{print} copy && /^}/{exit}' \
   "$ROOT_DIR/update.sh" > "$WORK_DIR/error.sh"

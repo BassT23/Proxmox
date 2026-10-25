@@ -55,6 +55,8 @@ export BASELINE CHECK_RC CHECK_LOG
 UPDATE_FAILURE=false
 UPDATE_WARNING=false
 UPDATE_RESULT_RECORDED=false
+UU_UPDATE_PENDING_BEFORE_TARGET=106
+UU_UPDATE_PENDING_BEFORE=0
 SINGLE_UPDATE=true
 ONLY=106
 EXCLUDED=""
@@ -122,6 +124,8 @@ if [[ "$KIND" == lxc ]]; then
   UPDATE_CONTAINER() {
     printf 'mutation lxc baseline=%s\n' "${UPDATE_PENDING_BEFORE[106]-}" >> "$EVENTS"
     [[ "${UPDATE_PENDING_BEFORE[106]-}" == "$BASELINE" ]]
+    [[ "${UU_UPDATE_PENDING_BEFORE_TARGET:-}" == 106 ]]
+    [[ "${UU_UPDATE_PENDING_BEFORE:-}" == "$BASELINE" ]]
   }
   source "$SOURCE_DIR/container-start.sh"
   CONTAINERS=106
@@ -133,6 +137,8 @@ else
   UPDATE_VM() {
     printf 'mutation vm baseline=%s\n' "${UPDATE_PENDING_BEFORE[106]-}" >> "$EVENTS"
     [[ "${UPDATE_PENDING_BEFORE[106]-}" == "$BASELINE" ]]
+    [[ "${UU_UPDATE_PENDING_BEFORE_TARGET:-}" == 106 ]]
+    [[ "${UU_UPDATE_PENDING_BEFORE:-}" == "$BASELINE" ]]
   }
   source "$SOURCE_DIR/vm-start.sh"
   VMS=106

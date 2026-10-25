@@ -65,7 +65,7 @@ EOF
       "$([[ "$state" == running ]] && printf '' || printf '2026-10-18T15:02:00Z')"
     printf 'exit_code=%s\ntype=update\nmessage=fixture\nsource=remote\ninteractive=false\n' "$exit_code"
   } > "$WORK_DIR/jobs/remote/$unit.state"
-  printf '%s\n' '{"schema_version":1,"generated_at":"2026-10-18T15:02:00Z","targets":[{"id":"986","type":"lxc","node":"test-node2","name":"fixture","check_status":"ok","reachable":true,"updates":{"available":0},"package_data_invalidated":false,"package_mutation_generation":3,"package_mutation_in_progress":false,"package_mutation_operation_id":"uu-op-fixture","package_checked_at":"2026-10-18T15:02:00Z","packages":[],"last_update":{"status":"success","timestamp":"2026-10-18T15:02:00Z","exit_code":0}}]}' > "$REMOTE_DIR/$unit/status.json"
+  printf '%s\n' '{"schema_version":1,"generated_at":"2026-10-18T15:02:00Z","targets":[{"id":"986","type":"lxc","node":"test-node2","name":"fixture","check_status":"ok","reachable":true,"updates":{"available":0},"package_data_invalidated":false,"package_mutation_generation":3,"package_mutation_in_progress":false,"package_mutation_operation_id":"uu-op-fixture","package_checked_at":"2026-10-18T15:02:00Z","packages":[],"last_update":{"status":"success","timestamp":"2026-10-18T15:02:00Z","exit_code":0,"pending_before":6}}]}' > "$REMOTE_DIR/$unit/status.json"
 }
 
 run_status() {
@@ -86,6 +86,13 @@ run_status
 grep -Fxq 'status_refresh=done' "$WORK_DIR/jobs/remote/ultimate-updater-update-986-auto.ref"
 grep -Fq '"package_data_invalidated":false' "$WORK_DIR/status-output"
 grep -Fq '"package_mutation_in_progress":false' "$WORK_DIR/status-output"
+python3 - "$WORK_DIR/status-output" <<'PY'
+import json
+import sys
+
+record = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]
+assert record["last_update"]["pending_before"] == 6
+PY
 [[ $(wc -l < "$WORK_DIR/import.log") -eq 1 ]]
 test ! -e "$REMOTE_DIR/ultimate-updater-update-986-auto"
 
