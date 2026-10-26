@@ -25,4 +25,18 @@ assert server.update_start_failure_message(
 assert server.update_start_failure_message(result(9), "The update job could not be started.") == \
     "The update job could not be started. (exit code 9)."
 
+assert server.update_start_failure_message(
+    result(41, stderr="Blocked external targets: oci-vps\nReason: no verified recent backup."),
+    "The full update job could not be started.",
+) == (
+    "Full update blocked: selected External targets require a recent verified backup. "
+    "Verify their backups or exclude them from this update."
+)
+assert server.update_start_failure_message(
+    result(41, stderr="Untrusted diagnostic with a private path /root/token"),
+    "The full update job could not be started.",
+) == "The full update job could not be started. (exit code 41)."
+
+assert "update_start_failure_message" in server.StatusHandler.action_update_all.__code__.co_names
+
 print("web update-start error tests: PASS")

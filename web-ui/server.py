@@ -2265,6 +2265,10 @@ def update_start_failure_message(result, generic_message):
     diagnostic = "\n".join(
         str(value or "") for value in (getattr(result, "stdout", ""), getattr(result, "stderr", ""))
     )
+    if (getattr(result, "returncode", None) == 41
+            and "Reason: no verified recent backup." in diagnostic):
+        return ("Full update blocked: selected External targets require a recent verified backup. "
+                "Verify their backups or exclude them from this update.")
     if "Interactive job bridge is not available" in diagnostic:
         return "Interactive job setup failed."
     if "Could not prepare remote update workspace" in diagnostic:
@@ -7584,7 +7588,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("JOB_ALREADY_RUNNING", "A full update is already running."), HTTPStatus.CONFLICT)
             return
         if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
-            self.send_json(error_payload("UPDATE_START_FAILED", "The full update job could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            self.send_json(error_payload("UPDATE_START_FAILED", update_start_failure_message(
+                result, "The full update job could not be started.")), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         self.send_json({"job": job_match.group(1), "target": "all-systems", "state": "running", "message": "Full update job started."}, HTTPStatus.ACCEPTED)
 
