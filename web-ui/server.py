@@ -2260,11 +2260,15 @@ def error_payload(code, message):
     return {"error": {"code": code, "message": message}}
 
 
-def update_start_failure_message(result, generic_message):
+def update_start_failure_message(result, generic_message, operation=None):
     """Return a useful update-start error without exposing command details."""
     diagnostic = "\n".join(
         str(value or "") for value in (getattr(result, "stdout", ""), getattr(result, "stderr", ""))
     )
+    if (operation == "update-all" and getattr(result, "returncode", None) == 41
+            and any(line.strip() == "Reason: no verified recent backup." for line in diagnostic.splitlines())):
+        return ("Full update blocked: selected External targets require a recent verified backup. "
+                "Verify their backups or exclude them from this update.")
     if "Interactive job bridge is not available" in diagnostic:
         return "Interactive job setup failed."
     if "Could not prepare remote update workspace" in diagnostic:
@@ -7565,7 +7569,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
             self.send_json(error_payload(
                 "CHECK_START_FAILED",
-                update_start_failure_message(result, "The full check could not be started."),
+                update_start_failure_message(result, "The full check could not be started.", "check-all"),
             ), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         self.send_json({"state": "running", "job": job_match.group(1), "type": "check", "target": "all-systems",
@@ -7584,7 +7588,10 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_json(error_payload("JOB_ALREADY_RUNNING", "A full update is already running."), HTTPStatus.CONFLICT)
             return
         if result.returncode or not job_match or not JOB_RE.fullmatch(job_match.group(1)):
-            self.send_json(error_payload("UPDATE_START_FAILED", "The full update job could not be started."), HTTPStatus.UNPROCESSABLE_ENTITY)
+            self.send_json(error_payload(
+                "UPDATE_START_FAILED",
+                update_start_failure_message(result, "The full update job could not be started.", "update-all"),
+            ), HTTPStatus.UNPROCESSABLE_ENTITY)
             return
         self.send_json({"job": job_match.group(1), "target": "all-systems", "state": "running", "message": "Full update job started."}, HTTPStatus.ACCEPTED)
 
