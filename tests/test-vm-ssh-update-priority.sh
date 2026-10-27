@@ -21,6 +21,7 @@ LOG="$PWD/result"
 guest_id_matches() { return 1; }
 TARGET_SELECTION_ALLOWS() { return 0; }
 UPDATE_VM() { printf 'update:%s\n' "$1" | tee -a "$LOG"; }
+RECORD_INTENTIONAL_SKIP() { :; }
 RUN_PROXMOX_COMMAND() { :; }
 CAPTURE_POST_UPDATE_STATUS() { :; }
 qm() {

@@ -36,6 +36,14 @@ EOF
     PATH="$WORK_DIR/bin:$PATH" UU_UPDATE_SCOPE=host \
     "$ROOT_DIR/job-runner.sh" start "$WORK_DIR/update.sh" host >/dev/null
   grep -Fq -- '--setenv=UU_UPDATE_SCOPE=host' "$WORK_DIR/systemd-run.args"
+  grep -Fq -- '--property=SuccessExitStatus=10' "$WORK_DIR/systemd-run.args"
+  UU_SCOPE_CAPTURE="$WORK_DIR/check-systemd-run.args" UU_JOB_STATE_DIR="$WORK_DIR/jobs" \
+    PATH="$WORK_DIR/bin:$PATH" \
+    "$ROOT_DIR/job-runner.sh" start-check 230 "$WORK_DIR/check.sh" target >/dev/null
+  if grep -Fq -- '--property=SuccessExitStatus=10' "$WORK_DIR/check-systemd-run.args"; then
+    echo 'check unit inherited update-only SuccessExitStatus=10' >&2
+    exit 1
+  fi
 fi
 
 echo 'node update host-only scope tests: PASS'

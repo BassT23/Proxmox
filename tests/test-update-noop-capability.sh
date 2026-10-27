@@ -109,6 +109,131 @@ if grep -Fxq 'state=completed_with_warnings' "$WORK_DIR/jobs/ultimate-updater-up
   exit 1
 fi
 
+# An explicit transport skip is a current terminal result even without a
+# package baseline. It carries a stable reason and remains neutral in the
+# target runner.
+cat > "$WORK_DIR/status-no-transport.json" <<'JSON'
+{"schema_version":1,"targets":[{"id":"fixture-vm","type":"vm","check_status":"ok","last_update":{"status":"unknown"}}]}
+JSON
+LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status-no-transport.json" \
+  bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT fixture-vm skipped 10 "" "" "" "" NO_SUPPORTED_TRANSPORT "No usable QGA or SSH transport is configured."' \
+  _ "$ROOT_DIR/status-model.sh"
+python3 - "$WORK_DIR/status-no-transport.json" <<'PY'
+import json
+import sys
+
+result = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]["last_update"]
+assert result["status"] == "skipped"
+assert result["exit_code"] == 10
+assert result["skip_reason"] == {
+    "code": "NO_SUPPORTED_TRANSPORT",
+    "message": "No usable QGA or SSH transport is configured.",
+}
+assert "pending_before" not in result
+PY
+cat > "$WORK_DIR/update-no-transport.sh" <<'UPDATE'
+#!/usr/bin/env bash
+exit 10
+UPDATE
+chmod 750 "$WORK_DIR/update-no-transport.sh"
+cat > "$WORK_DIR/jobs/ultimate-updater-update-fixture-vm-no-transport.state" <<'STATE'
+schema_version=1
+unit=ultimate-updater-update-fixture-vm-no-transport
+target=fixture-vm
+state=running
+started_at=2026-10-25T00:00:00Z
+finished_at=
+exit_code=
+type=update
+message=
+source=
+STATE
+if UU_JOB_STATE_DIR="$WORK_DIR/jobs" UU_LOCAL_FILES="$WORK_DIR" \
+    UU_STATUS_MODEL_FILE="$WORK_DIR/status-no-transport.json" \
+    "$ROOT_DIR/job-runner.sh" run ultimate-updater-update-fixture-vm-no-transport fixture-vm \
+    "$WORK_DIR/update-no-transport.sh" >/dev/null 2>&1; then
+  transport_skip_rc=0
+else
+  transport_skip_rc=$?
+fi
+[[ "$transport_skip_rc" -eq 10 ]]
+grep -Fxq 'state=skipped' "$WORK_DIR/jobs/ultimate-updater-update-fixture-vm-no-transport.state"
+grep -Fxq 'exit_code=10' "$WORK_DIR/jobs/ultimate-updater-update-fixture-vm-no-transport.state"
+if grep -Fq 'no update lifecycle was started' "$WORK_DIR/jobs/ultimate-updater-update-fixture-vm-no-transport.state"; then
+  echo 'transport skip retained the old lifecycle failure message' >&2
+  exit 1
+fi
+
+# The old no-confirmed-mutation sentence is reserved for genuine warning
+# output, never for a neutral exit-10 result.
+awk '/^UPDATE_MAIL_BODY\(\) \{/{copy=1} copy{print} copy && /^}/{exit}' \
+  "$ROOT_DIR/update.sh" > "$WORK_DIR/update-mail-body.sh"
+: > "$WORK_DIR/update.log"
+: > "$WORK_DIR/errors.log"
+neutral_mail=$(LOG_FILE="$WORK_DIR/update.log" ERROR_LOG_FILE="$WORK_DIR/errors.log" \
+  SINGLE_UPDATE=true EXIT_CODE=10 UPDATE_WARNING_REAL=false HOSTNAME=fixture \
+  ID=fixture-vm NAME=fixture VM=fixture-vm bash -c 'source "$1"; UPDATE_MAIL_BODY' _ "$WORK_DIR/update-mail-body.sh")
+grep -Fq 'Update skipped; no package mutation was required.' <<< "$neutral_mail"
+if grep -Fq 'completed with warnings' <<< "$neutral_mail"; then
+  echo 'neutral exit 10 was rendered as a warning' >&2
+  exit 1
+fi
+warning_mail=$(LOG_FILE="$WORK_DIR/update.log" ERROR_LOG_FILE="$WORK_DIR/errors.log" \
+  SINGLE_UPDATE=true EXIT_CODE=10 UPDATE_WARNING_REAL=true HOSTNAME=fixture \
+  ID=fixture-vm NAME=fixture VM=fixture-vm bash -c 'source "$1"; UPDATE_MAIL_BODY' _ "$WORK_DIR/update-mail-body.sh")
+grep -Fq 'Update completed with warnings' <<< "$warning_mail"
+
+# Exercise the real VM inventory/update selection function with a VM that has
+# neither QGA nor an enabled Internal SSH profile. No lifecycle command may
+# be reached, and an explicit target must not fall through to the old generic
+# "no update lifecycle was started" failure.
+awk '/^RECORD_INTENTIONAL_SKIP\(\) \{/{copy=1} copy{print} copy && /^}/{exit}' \
+  "$ROOT_DIR/update.sh" > "$WORK_DIR/intentional-skip.sh"
+awk '/^VM_UPDATE_START \(\) \{/{copy=1} copy{print} copy && /^# Detect the Proxmox guest OS/{exit}' \
+  "$ROOT_DIR/update.sh" > "$WORK_DIR/vm-update-start.sh"
+cat > "$WORK_DIR/vm-skip-harness.sh" <<'HARNESS'
+#!/usr/bin/env bash
+set -euo pipefail
+LOCAL_FILES="$PWD"
+STATUS_MODEL_FILE="$PWD/status-vm.json"
+SINGLE_UPDATE=true ONLY=fixture-vm EXCLUDED="" USE_INTERNAL_TARGET_SELECTION=false
+STOPPED_VM=false RUNNING_VM=true UPDATE_WARNING_RC=10
+UPDATE_FAILURE=false UPDATE_WARNING=false UPDATE_RESULT_RECORDED=false
+SINGLE_TARGET_EXECUTED=false
+declare -A UPDATE_PENDING_BEFORE=([fixture-vm]=5)
+qm() {
+  case "$1" in
+    list) printf 'VMID NAME STATUS\nfixture-vm fixture running\n' ;;
+    config) printf 'name: fixture\nostype: l26\n' ;;
+    start|resume|shutdown|stop) printf 'unexpected lifecycle: %s\n' "$*" >&2; return 1 ;;
+  esac
+}
+QGA_CONFIG_ENABLED() { return 1; }
+INTERNAL_SSH_TARGET_STATE() { return 1; }
+guest_id_matches() { return 1; }
+source "$PWD/status-model.sh"
+source "$PWD/intentional-skip.sh"
+source "$PWD/vm-update-start.sh"
+VM_UPDATE_START
+[[ "$SINGLE_TARGET_EXECUTED" == true ]]
+[[ "$UPDATE_FAILURE" == false ]]
+HARNESS
+chmod 750 "$WORK_DIR/vm-skip-harness.sh"
+cat > "$WORK_DIR/status-vm.json" <<'JSON'
+{"schema_version":1,"targets":[{"id":"fixture-vm","type":"vm","node":"node1","check_status":"ok","last_update":{"status":"unknown"}}]}
+JSON
+cp "$ROOT_DIR/status-model.sh" "$WORK_DIR/status-model.sh"
+(cd "$WORK_DIR" && bash vm-skip-harness.sh)
+python3 - "$WORK_DIR/status-vm.json" <<'PY'
+import json
+import sys
+
+result = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]["last_update"]
+assert result["status"] == "skipped"
+assert result["exit_code"] == 10
+assert result["skip_reason"]["code"] == "NO_SUPPORTED_TRANSPORT"
+PY
+
 # The global update aggregate uses the same neutral terminal state.
 cat > "$WORK_DIR/jobs/ultimate-updater-update-all-systems-skipped.state" <<'STATE'
 schema_version=1

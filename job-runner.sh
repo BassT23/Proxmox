@@ -887,7 +887,7 @@ start_job() {
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for $target" \
     "${systemd_env[@]}" \
     "${SYSTEMD_LOG_FILTER_ARGS[@]}" \
-    --property=Type=oneshot --property=StandardOutput=journal \
+    --property=Type=oneshot --property=SuccessExitStatus=10 --property=StandardOutput=journal \
     --property=StandardError=journal "${job_command[@]}"; then
     write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
     cleanup_interactive_runtime "$unit" || true
@@ -942,6 +942,13 @@ pending = result.get("pending_before")
 valid_pending = isinstance(pending, int) and not isinstance(pending, bool)
 if status == "unsupported":
     print("unsupported")
+elif status == "skipped" and isinstance(result.get("skip_reason"), dict) and \
+        isinstance(result["skip_reason"].get("code"), str) and \
+        result["skip_reason"].get("code"):
+    # An explicit current policy/transport skip is neutral even when it has
+    # no package baseline.  Without this provenance check, a deliberate
+    # single-target skip would fall through to the incomplete/failure path.
+    print("noop")
 elif status == "skipped" and valid_pending and pending == 0:
     print("noop")
 elif status in {"success", "completed", "completed_with_warnings"} and valid_pending and pending > 0:
@@ -1003,6 +1010,10 @@ for record in payload["targets"]:
     valid_pending = isinstance(pending, int) and not isinstance(pending, bool)
     if status == "unsupported":
         results.append("unsupported")
+    elif status == "skipped" and isinstance(result.get("skip_reason"), dict) and \
+            isinstance(result["skip_reason"].get("code"), str) and \
+            result["skip_reason"].get("code"):
+        results.append("noop")
     elif status == "skipped" and valid_pending and pending == 0:
         results.append("noop")
     elif status in {"success", "completed", "completed_with_warnings"} and valid_pending and pending > 0:
@@ -1074,7 +1085,7 @@ start_global_job() {
   if ! systemd-run --no-block --unit="$unit" --description="Ultimate Updater update for all systems" \
     "${systemd_env[@]}" \
     "${SYSTEMD_LOG_FILTER_ARGS[@]}" \
-    --property=Type=oneshot --property=StandardOutput=journal \
+    --property=Type=oneshot --property=SuccessExitStatus=10 --property=StandardOutput=journal \
     --property=StandardError=journal "${job_command[@]}"; then
     write_state "$unit" "$target" failed "$(state_value "$(state_file "$unit")" started_at)" "$(now)" 1 "systemd-run failed" || true
     cleanup_interactive_runtime "$unit" || true

@@ -1726,9 +1726,10 @@ STATUS_MODEL_UPDATE_RESULT() {
   local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
   local target_id="$1" update_status="$2" exit_code="$3"
   local result_code="${4:-}" reboot_required="${5:-}" processed="${6:-}"
-  local pending_before_override="${7:-}"
+  local pending_before_override="${7:-}" skip_reason_code="${8:-}" skip_reason_message="${9:-}"
   local status_lock_file="${status_file}.lock" status_lock_fd
-  if [[ -z "$pending_before_override" ]] && declare -p UPDATE_PENDING_BEFORE >/dev/null 2>&1; then
+  if [[ -z "$pending_before_override" && -z "$skip_reason_code" ]] &&
+    declare -p UPDATE_PENDING_BEFORE >/dev/null 2>&1; then
     pending_before_override="${UPDATE_PENDING_BEFORE[$target_id]-}"
   fi
   exec {status_lock_fd}>"$status_lock_file" || return 1
@@ -1737,14 +1738,20 @@ STATUS_MODEL_UPDATE_RESULT() {
     return 1
   fi
   python3 - "$status_file" "$target_id" "$update_status" "$exit_code" \
-    "$result_code" "$reboot_required" "$processed" "$pending_before_override" <<'PY'
+    "$result_code" "$reboot_required" "$processed" "$pending_before_override" \
+    "$skip_reason_code" "$skip_reason_message" <<'PY'
 import json
 import os
+import re
 import sys
 import tempfile
 from datetime import datetime, timezone
 
-status_file, target_id, update_status, exit_code, result_code, reboot_required, processed, pending_override = sys.argv[1:]
+(
+    status_file, target_id, update_status, exit_code, result_code,
+    reboot_required, processed, pending_override, skip_reason_code,
+    skip_reason_message,
+) = sys.argv[1:]
 try:
     with open(status_file, encoding="utf-8") as source:
         payload = json.load(source)
@@ -1807,9 +1814,35 @@ else:
 # not mistake a completed wrapper for a completed package mutation.
 if not baseline_error and pending_override and effective_status in ("success", "completed") and pending_before == 0:
     effective_status = "skipped"
+if not baseline_error and effective_status in ("skipped", "unsupported"):
+    # Intentional skips are terminal update results, not technical failures.
+    # Normalize their persisted code so CLI, API and systemd consumers see
+    # the same neutral result even when a legacy caller passed 0 or 21.
+    effective_exit_code = 10
+    if not skip_reason_code:
+        if effective_status == "unsupported":
+            skip_reason_code = "UNSUPPORTED_GUEST_OS"
+            skip_reason_message = "Target is unsupported for updates."
+        elif pending_before == 0:
+            skip_reason_code = "NO_UPDATES_AVAILABLE"
+            skip_reason_message = "No package updates were available."
+        else:
+            skip_reason_code = "UPDATE_SKIPPED"
+            skip_reason_message = "Update was intentionally skipped."
+    if not re.fullmatch(r"[A-Z0-9_]{1,64}", skip_reason_code):
+        print("STATUS_MODEL_UPDATE_REJECTED_SKIP_REASON", file=sys.stderr)
+        raise SystemExit(95)
+    if len(skip_reason_message) > 512 or "\n" in skip_reason_message or "\r" in skip_reason_message:
+        print("STATUS_MODEL_UPDATE_REJECTED_SKIP_MESSAGE", file=sys.stderr)
+        raise SystemExit(95)
 last_update = {"status": effective_status, "timestamp": timestamp, "exit_code": effective_exit_code}
 if pending_before is not None:
     last_update["pending_before"] = pending_before
+if not baseline_error and effective_status in ("skipped", "unsupported"):
+    last_update["skip_reason"] = {
+        "code": skip_reason_code,
+        "message": skip_reason_message or None,
+    }
 if baseline_error:
     last_update["message"] = f"{error_code}: {error_message}"
 elif result_code not in ("", "null"):

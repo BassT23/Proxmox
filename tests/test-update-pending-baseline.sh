@@ -34,8 +34,7 @@ LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
   bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT "$2" success 0 "" "" 2 2' \
   _ "$ROOT_DIR/status-model.sh" 903
 
-# A valid no-op remains skipped and retains exit code 0 at target level; the
-# job runner maps the corresponding warning return to terminal state skipped.
+# A valid no-op remains skipped with the neutral exit code 10 at target level.
 LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
   bash -c 'source "$1"; STATUS_MODEL_UPDATE_RESULT "$2" success 0 "" "" "" 0' \
   _ "$ROOT_DIR/status-model.sh" 904
@@ -68,7 +67,9 @@ assert "PENDING_BEFORE_INVALID" in targets["902"]["last_update"]["message"]
 assert targets["903"]["last_update"]["status"] == "success"
 assert targets["903"]["last_update"]["pending_before"] == 2
 assert targets["904"]["last_update"]["status"] == "skipped"
+assert targets["904"]["last_update"]["exit_code"] == 10
 assert targets["904"]["last_update"]["pending_before"] == 0
+assert targets["904"]["last_update"]["skip_reason"]["code"] == "NO_UPDATES_AVAILABLE"
 assert targets["905"]["last_update"]["status"] == "completed_with_warnings"
 assert targets["905"]["last_update"]["pending_before"] == 3
 assert targets["906"]["last_update"]["status"] == "failed"

@@ -18,6 +18,7 @@ SAFETY_FAILURE=false
 # must still produce a non-zero final update result.
 UPDATE_FAILURE=false
 UPDATE_WARNING=false
+UPDATE_WARNING_REAL=false
 UPDATE_WARNING_RC=10
 UPDATE_RESULT_RECORDED=false
 UPDATE_RESULT_TARGET=""
@@ -202,16 +203,35 @@ RESTORE_STOPPED_VM() {
 
 # All update result writes go through this wrapper.  It keeps the old
 # STATUS_MODEL_UPDATE_RESULT contract while making writer failures visible and
-# marking no-op/capability paths as warnings instead of successes.
+# mapping neutral no-op/capability paths to the dedicated exit-10 result.
 RECORD_UPDATE_RESULT() {
   local target="$1" status="$2" rc="${3:-0}" result_code="${4:-}" reboot="${5:-}" processed="${6:-}"
+  local skip_reason="${7:-}" skip_message="${8:-}"
   local pending="${UPDATE_PENDING_BEFORE[$target]-}"
-  CAPTURE_UPDATE_PENDING_BEFORE "$target"
-  pending="${UPDATE_PENDING_BEFORE[$target]-}"
+  if [[ "$status" != skipped && "$status" != unsupported ]]; then
+    CAPTURE_UPDATE_PENDING_BEFORE "$target"
+    pending="${UPDATE_PENDING_BEFORE[$target]-}"
+  else
+    # Neutral results must not carry an old package observation as if it were
+    # a current update baseline.
+    pending=""
+    if [[ -z "$skip_reason" ]]; then
+      if [[ "$status" == unsupported ]]; then
+        skip_reason=UNSUPPORTED_GUEST_OS
+        skip_message="Target is unsupported for updates."
+      else
+        skip_reason=UPDATE_SKIPPED
+        skip_message="Update was intentionally skipped."
+      fi
+    fi
+  fi
   if [[ "$status" == success && "$pending" == 0 ]]; then
     UPDATE_WARNING=true
   elif [[ "$status" == skipped || "$status" == unsupported ]]; then
     UPDATE_WARNING=true
+  elif [[ "$status" == completed_with_warnings ]]; then
+    UPDATE_WARNING=true
+    UPDATE_WARNING_REAL=true
   fi
   if ! declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
     UPDATE_FAILURE=true
@@ -219,9 +239,9 @@ RECORD_UPDATE_RESULT() {
     return 1
   fi
   if [[ -n "$pending" ]]; then
-    STATUS_MODEL_UPDATE_RESULT "$target" "$status" "$rc" "$result_code" "$reboot" "$processed" "$pending"
+    STATUS_MODEL_UPDATE_RESULT "$target" "$status" "$rc" "$result_code" "$reboot" "$processed" "$pending" "$skip_reason" "$skip_message"
   else
-    STATUS_MODEL_UPDATE_RESULT "$target" "$status" "$rc" "$result_code" "$reboot" "$processed"
+    STATUS_MODEL_UPDATE_RESULT "$target" "$status" "$rc" "$result_code" "$reboot" "$processed" "" "$skip_reason" "$skip_message"
   fi
   local result_rc=$?
   if [[ "$result_rc" -ne 0 ]]; then
@@ -229,6 +249,35 @@ RECORD_UPDATE_RESULT() {
     printf 'Could not record update result for %s.\n' "$target" >&2
     return "$result_rc"
   fi
+  UPDATE_RESULT_RECORDED=true
+  UPDATE_RESULT_TARGET="$target"
+  return 0
+}
+
+# Record a deliberate, current skip without reading a historical package
+# count.  This is used for explicit targets that have no usable transport or
+# are disabled by policy; it must never manufacture a pending_before value.
+RECORD_INTENTIONAL_SKIP() {
+  local target="$1" status="${2:-skipped}" reason="${3:-UPDATE_SKIPPED}"
+  local message="${4:-Update was intentionally skipped.}" result_rc
+  if [[ "$status" != skipped && "$status" != unsupported ]]; then
+    UPDATE_FAILURE=true
+    printf 'Invalid intentional update status for %s: %s\n' "$target" "$status" >&2
+    return 1
+  fi
+  if ! declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
+    UPDATE_FAILURE=true
+    printf 'Update result writer is unavailable for %s; refusing a successful result.\n' "$target" >&2
+    return 1
+  fi
+  STATUS_MODEL_UPDATE_RESULT "$target" "$status" "$UPDATE_WARNING_RC" "" "" "" "" "$reason" "$message"
+  result_rc=$?
+  if [[ "$result_rc" -ne 0 ]]; then
+    UPDATE_FAILURE=true
+    printf 'Could not record update result for %s.\n' "$target" >&2
+    return "$result_rc"
+  fi
+  UPDATE_WARNING=true
   UPDATE_RESULT_RECORDED=true
   UPDATE_RESULT_TARGET="$target"
   return 0
@@ -290,7 +339,7 @@ UPDATE_TARGET_CAPABILITY_GUARD() {
   capability_rc=$?
   case "$capability_rc" in
     0) return 0 ;;
-    21) RECORD_UPDATE_RESULT "$target" unsupported 21 || true; return 21 ;;
+    21) RECORD_INTENTIONAL_SKIP "$target" unsupported UNSUPPORTED_GUEST_OS "Target is unsupported for updates." || true; return 21 ;;
     *) RECORD_UPDATE_RESULT "$target" failed "$capability_rc" || true; return 1 ;;
   esac
 }
@@ -2477,6 +2526,8 @@ CONTAINER_UPDATE_START () {
       echo -e "⏩${BL:-} Skipped LXC $CONTAINER by update filter (not selected)${CL:-}\n\n"
     elif (pct config "$CONTAINER" | grep template >/dev/null 2>&1); then
       echo -e "⏩ ${OR:-}LXC $CONTAINER is a template - skip update${CL:-}\n\n"
+      RECORD_INTENTIONAL_SKIP "$CONTAINER" skipped TEMPLATE_TARGET "LXC templates are not update targets." || true
+      [[ "$SINGLE_UPDATE" == true ]] && SINGLE_TARGET_EXECUTED=true
       continue
     else
       if [[ "${UU_API_ACTION:-}" == update ]] &&
@@ -2490,7 +2541,11 @@ CONTAINER_UPDATE_START () {
         if declare -f UPDATE_TARGET_CAPABILITY_GUARD >/dev/null 2>&1; then
           UPDATE_TARGET_CAPABILITY_GUARD "$CONTAINER" lxc
           capability_rc=$?
-          [[ "$capability_rc" -eq 0 ]] || { [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true; continue; }
+          if [[ "$capability_rc" -ne 0 ]]; then
+            [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true
+            [[ "$SINGLE_UPDATE" == true && "$capability_rc" -eq 21 ]] && SINGLE_TARGET_EXECUTED=true
+            continue
+          fi
         fi
         if [[ "${UU_API_ACTION:-}" == update ]]; then
           OS=$(pct config "$CONTAINER" 2>/dev/null | awk '/^ostype/ {print $2; exit}')
@@ -2551,11 +2606,17 @@ CONTAINER_UPDATE_START () {
         WILL_STOP="false"
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" != true ]]; then
         echo -e "⏩${BL:-} Skipped LXC $CONTAINER because stopped containers are disabled${CL:-}\n\n"
+        RECORD_INTENTIONAL_SKIP "$CONTAINER" skipped STOPPED_UPDATE_DISABLED "Updates for stopped containers are disabled." || true
+        [[ "$SINGLE_UPDATE" == true ]] && SINGLE_TARGET_EXECUTED=true
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" == true ]]; then
         if declare -f UPDATE_TARGET_CAPABILITY_GUARD >/dev/null 2>&1; then
           UPDATE_TARGET_CAPABILITY_GUARD "$CONTAINER" lxc
           capability_rc=$?
-          [[ "$capability_rc" -eq 0 ]] || { [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true; continue; }
+          if [[ "$capability_rc" -ne 0 ]]; then
+            [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true
+            [[ "$SINGLE_UPDATE" == true && "$capability_rc" -eq 21 ]] && SINGLE_TARGET_EXECUTED=true
+            continue
+          fi
         fi
         SINGLE_TARGET_EXECUTED=true
         UPDATE_CONTAINER "$CONTAINER"
@@ -2565,6 +2626,8 @@ CONTAINER_UPDATE_START () {
         CCONTAINER=""
       elif [[ "$STATUS" == "status: running" && "$RUNNING_CONTAINER" != true ]]; then
         echo -e "⏩${BL:-} Skipped LXC $CONTAINER because running containers are disabled${CL:-}\n\n"
+        RECORD_INTENTIONAL_SKIP "$CONTAINER" skipped RUNNING_UPDATE_DISABLED "Updates for running containers are disabled." || true
+        [[ "$SINGLE_UPDATE" == true ]] && SINGLE_TARGET_EXECUTED=true
       else
         echo -e "⚠ Can't find status, please report this issue${CL:-}\n\n"
         UPDATE_FAILURE=true
@@ -2804,10 +2867,20 @@ VM_UPDATE_START () {
       echo -e "⏩${BL:-} Skipped VM $VM by update filter (not selected)${CL:-}\n\n"
     elif (qm config "$VM" | grep template >/dev/null 2>&1); then
       echo -e "⏩${BL:-} ${OR:-}VM $VM is a template - skip update${CL:-}\n\n"
+      RECORD_INTENTIONAL_SKIP "$VM" skipped TEMPLATE_TARGET "VM templates are not update targets." || true
+      [[ "$SINGLE_UPDATE" == true ]] && SINGLE_TARGET_EXECUTED=true
       continue
     elif ! QGA_CONFIG_ENABLED "$VM" &&
       ! { [[ "$vm_internal_ssh_state" -ne 1 ]] && [[ -f $LOCAL_FILES/VMs/$VM || "$vm_internal_ssh_state" -eq 0 || "$vm_internal_ssh_state" -eq 2 ]]; }; then
       echo -e "⏩${BL:-} Skipped VM $VM because, QEMU or enabled Internal SSH hasn't initialized${CL:-}\n\n"
+      if [[ "${UU_API_ACTION:-}" == update ]] &&
+        declare -f API_UPDATE_TARGET_IDENTITY_GUARD >/dev/null 2>&1 &&
+        ! API_UPDATE_TARGET_IDENTITY_GUARD "$VM" vm; then
+        UPDATE_FAILURE=true
+        continue
+      fi
+      RECORD_INTENTIONAL_SKIP "$VM" skipped NO_SUPPORTED_TRANSPORT "No usable QGA or SSH transport is configured." || true
+      [[ "$SINGLE_UPDATE" == true ]] && SINGLE_TARGET_EXECUTED=true
       continue
     else
       if [[ "${UU_API_ACTION:-}" == update ]] &&
@@ -2824,7 +2897,11 @@ VM_UPDATE_START () {
           if declare -f UPDATE_TARGET_CAPABILITY_GUARD >/dev/null 2>&1; then
             UPDATE_TARGET_CAPABILITY_GUARD "$VM" vm
             capability_rc=$?
-            [[ "$capability_rc" -eq 0 ]] || { [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true; continue; }
+            if [[ "$capability_rc" -ne 0 ]]; then
+              [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true
+              [[ "$SINGLE_UPDATE" == true && "$capability_rc" -eq 21 ]] && SINGLE_TARGET_EXECUTED=true
+              continue
+            fi
           fi
           if [[ "${UU_API_ACTION:-}" == update ]]; then
             local api_os_hint
@@ -2881,11 +2958,17 @@ VM_UPDATE_START () {
         fi
       elif [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" != true ]]; then
         echo -e "⏩${BL:-} Skipped VM $VM because stopped VMs are disabled${CL:-}\n\n"
+        RECORD_INTENTIONAL_SKIP "$VM" skipped STOPPED_UPDATE_DISABLED "Updates for stopped VMs are disabled." || true
+        [[ "$SINGLE_UPDATE" == true ]] && SINGLE_TARGET_EXECUTED=true
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" == true ]]; then
         if declare -f UPDATE_TARGET_CAPABILITY_GUARD >/dev/null 2>&1; then
           UPDATE_TARGET_CAPABILITY_GUARD "$VM" vm
           capability_rc=$?
-          [[ "$capability_rc" -eq 0 ]] || { [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true; continue; }
+          if [[ "$capability_rc" -ne 0 ]]; then
+            [[ "$capability_rc" -eq 21 ]] || UPDATE_FAILURE=true
+            [[ "$SINGLE_UPDATE" == true && "$capability_rc" -eq 21 ]] && SINGLE_TARGET_EXECUTED=true
+            continue
+          fi
         fi
         SINGLE_TARGET_EXECUTED=true
         UPDATE_VM "$VM"
@@ -2895,6 +2978,8 @@ VM_UPDATE_START () {
         CVM=""
       elif [[ "$STATUS" == "status: running" && "$RUNNING_VM" != true ]]; then
         echo -e "⏩${BL:-} Skipped VM $VM because running VMs are disabled${CL:-}\n\n"
+        RECORD_INTENTIONAL_SKIP "$VM" skipped RUNNING_UPDATE_DISABLED "Updates for running VMs are disabled." || true
+        [[ "$SINGLE_UPDATE" == true ]] && SINGLE_TARGET_EXECUTED=true
       else
         echo -e "⚠ Can't find status, please report this issue${CL:-}\n\n"
         UPDATE_FAILURE=true
@@ -2936,12 +3021,7 @@ UPDATE_VM () {
   fi
   if VM_IS_WINDOWS "$VM" && [[ "$WINDOWS_UPDATE_ENABLED" != true ]]; then
     echo -e "⏩${YL:-} Windows update installation skipped for VM $VM: WINDOWS_UPDATE_ENABLED=false${CL:-}\n"
-    if declare -f STATUS_MODEL_UPDATE_RESULT >/dev/null 2>&1; then
-      STATUS_MODEL_UPDATE_RESULT "$VM" skipped 0 || true
-    fi
-    UPDATE_WARNING=true
-    UPDATE_RESULT_RECORDED=true
-    UPDATE_RESULT_TARGET="$VM"
+    RECORD_INTENTIONAL_SKIP "$VM" skipped WINDOWS_UPDATES_DISABLED "Windows update installation is disabled." || true
     CVM=""
     return 0
   fi
@@ -3589,8 +3669,12 @@ UPDATE_MAIL_BODY() {
     printf '✅ Update successful\n'
     [[ -n "$package_count" ]] && printf '⬆️ %s\n' "$package_count"
   elif [[ "${EXIT_CODE:-1}" -eq "$warning_rc" && ! -s "$ERROR_LOG_FILE" ]]; then
-    printf '⚠️ Update completed with warnings\n'
-    printf 'No confirmed package mutation was recorded for every selected target.\n'
+    if [[ "${UPDATE_WARNING_REAL:-false}" == true ]]; then
+      printf '⚠️ Update completed with warnings\n'
+      printf 'No confirmed package mutation was recorded for every selected target.\n'
+    else
+      printf '⏭️ Update skipped; no package mutation was required.\n'
+    fi
   else
     printf '⚠️ Update failed\n'
     printf 'Exitcode: %s\n' "${EXIT_CODE:-1}"
@@ -3647,9 +3731,11 @@ EXIT () {
       STATUS_MODEL_SEND_APPRISE_UPDATE_NOTIFICATION "$LOCAL_FILES/status.json" \
         "${UPDATE_RUN_STARTED_AT:-}" || true
     fi
-    if [[ "$RICM" != true ]]; then
+    if [[ "${UPDATE_WARNING_REAL:-false}" == true && "$RICM" != true ]]; then
       echo -e "${OR:-}⚠ Finished with warnings; no confirmed package mutation was recorded.${CL:-}\n"
       CLEAN_LOGFILE
+    elif [[ "$RICM" != true ]]; then
+      echo -e "${OR:-}⏭ Update skipped; no package mutation was required.${CL:-}\n"
     fi
   elif [[ "$EXIT_CODE" == 0 ]]; then
     if [[ "${SELF_UPDATE_RUN:-false}" != true &&

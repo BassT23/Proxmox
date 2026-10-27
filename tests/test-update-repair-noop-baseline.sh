@@ -92,6 +92,7 @@ assert result["status"] == expected_status, result
 assert str(result["exit_code"]) == expected_exit, result
 if expected_status == "skipped":
     assert result["pending_before"] == 0
+    assert result["skip_reason"]["code"] == "NO_UPDATES_AVAILABLE"
     assert record["package_mutation_in_progress"] is False
 PY
   [[ "$result" -eq 0 ]]
@@ -99,7 +100,7 @@ PY
 
 # The remote worker starts with an empty status model.  A controller-provided
 # zero baseline survives the repair and produces the required no-op result.
-run_worker_result 928 0 skipped 0 10
+run_worker_result 928 0 skipped 10 10
 
 # Positive baselines still prove a real update path; they must not be changed
 # into a no-op merely because the repair ran first.
