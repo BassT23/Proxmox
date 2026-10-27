@@ -54,6 +54,7 @@ shell_tests=(
   tests/test-apt-check-refresh.sh
   tests/test-update-apt-baseline-refresh.sh
   tests/test-remote-positive-mutation.sh
+  tests/test-remote-target-identity-handoff.sh
   tests/test-update-noop-capability.sh
   tests/test-node-update-scope.sh
   tests/test-update-summary-pending-before.sh

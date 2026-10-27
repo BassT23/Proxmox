@@ -86,13 +86,13 @@ run_status() {
 make_remote_job ultimate-updater-update-986-auto completed 0
 run_status
 grep -Fxq 'status_refresh=done' "$WORK_DIR/jobs/remote/ultimate-updater-update-986-auto.ref"
-grep -Fq '"package_data_invalidated":false' "$WORK_DIR/status-output"
-grep -Fq '"package_mutation_in_progress":false' "$WORK_DIR/status-output"
 python3 - "$WORK_DIR/status-output" <<'PY'
 import json
 import sys
 
 record = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]
+assert record["package_data_invalidated"] is False
+assert record["package_mutation_in_progress"] is False
 assert record["last_update"]["pending_before"] == 6
 PY
 [[ $(wc -l < "$WORK_DIR/import.log") -eq 1 ]]

@@ -345,17 +345,47 @@ refresh_remote_target_status() {
     local_status_file=$(mktemp)
     remote_status_file="$workspace/status.json"
     expected_status_target="$target"
+    if [[ "$target" =~ ^[0-9]+$ || "$target" == node-* ]]; then
+      # A guest handback is scoped to exactly one target. Do not import a
+      # worker artifact containing an unrelated target: a stale or contaminated
+      # record could otherwise reach STATUS_MODEL_FINISH and collide with a
+      # different controller identity (for example 922 during an update of
+      # 928). Node handbacks remain multi-target because they intentionally
+      # represent the owning node's inventory.
+      filtered_status_file="${local_status_file}.filtered"
+    fi
     if [[ "$target" == node-* ]]; then
       expected_node="${target#node-}"
       expected_status_target="host:$expected_node"
-      filtered_status_file="${local_status_file}.filtered"
     fi
     if remote_node_ssh "$(state_value "$ref_file" owner_node)" \
       "$(state_value "$ref_file" owner_host)" "$(state_value "$ref_file" port)" \
       "cat $(printf '%q' "$remote_status_file")" > "$local_status_file" 2>/dev/null &&
       [[ -s "$local_status_file" ]]; then
-      if [[ "$target" == node-* ]]; then
-        python3 - "$local_status_file" "$filtered_status_file" "$expected_node" <<'PY'
+      if [[ "$target" =~ ^[0-9]+$ ]]; then
+        if python3 - "$local_status_file" "$filtered_status_file" "$target" <<'PY'
+import json
+import sys
+
+source, destination, wanted = sys.argv[1:]
+with open(source, encoding="utf-8") as handle:
+    payload = json.load(handle)
+targets = payload.get("targets")
+if not isinstance(targets, list) or len(targets) != 1:
+    raise SystemExit(1)
+target = targets[0]
+if not isinstance(target, dict) or str(target.get("id")) != wanted:
+    raise SystemExit(1)
+with open(destination, "w", encoding="utf-8") as handle:
+    json.dump({"schema_version": payload.get("schema_version", 1), "targets": [target]}, handle)
+PY
+        then
+          mv -- "$filtered_status_file" "$local_status_file"
+        else
+          refresh_rc=1
+        fi
+      elif [[ "$target" == node-* ]]; then
+        if python3 - "$local_status_file" "$filtered_status_file" "$expected_node" <<'PY'
 import json
 import sys
 
@@ -370,9 +400,13 @@ if not any(str(item.get("id")) == f"host:{node}" for item in targets):
 with open(destination, "w", encoding="utf-8") as handle:
     json.dump({"schema_version": payload.get("schema_version", 1), "targets": targets}, handle)
 PY
-        mv -- "$filtered_status_file" "$local_status_file"
+        then
+          mv -- "$filtered_status_file" "$local_status_file"
+        else
+          refresh_rc=1
+        fi
       fi
-      if validate_status_target "$local_status_file" "$expected_status_target" &&
+      if [[ "$refresh_rc" -eq 0 ]] && validate_status_target "$local_status_file" "$expected_status_target" &&
         "$CHECK_CLI" status-import "$local_status_file" </dev/null &&
         validate_status_target "$STATUS_MODEL_FILE" "$expected_status_target"; then
         # The status artifact is the authoritative reconciliation result.  In
