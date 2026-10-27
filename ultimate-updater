@@ -135,7 +135,7 @@ Commands:
   external settings-set TARGET KEY=VALUE...
                           Explicitly update allowlisted target-local settings
   status                  Show the latest machine-readable status summary
-  status --json           Print the existing status JSON unchanged
+  status --json [TARGET]  Print status JSON after optional target-scoped refresh
   config set web-port PORT
                           Set the local Web UI port without using the Web UI
   hardcore-test start    Start a persistent Hardcore-Test run
@@ -368,7 +368,12 @@ external_target_selected_for_update() {
 }
 
 status_json() {
-  refresh_remote_jobs
+  local target="${1:-}"
+  if [[ -n "$target" && ! "$target" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+    printf 'ultimate-updater: invalid status target: %s\n' "$target" >&2
+    return 2
+  fi
+  refresh_remote_jobs "$target"
   require_file "$STATUS_FILE" "status file" || return 4
   if ! python3 - "$STATUS_FILE" <<'PY'
 import json
@@ -390,7 +395,11 @@ refresh_remote_jobs() {
   # to import that artifact, otherwise a completed remote job can leave the
   # central status at its pre-update values indefinitely.
   if [[ -x "$JOB_RUNNER" ]]; then
-    "$JOB_RUNNER" list >/dev/null 2>&1 || true
+    if [[ -n "${1:-}" ]]; then
+      "$JOB_RUNNER" list --target "$1" >/dev/null 2>&1 || true
+    else
+      "$JOB_RUNNER" list >/dev/null 2>&1 || true
+    fi
   fi
 }
 
@@ -1627,7 +1636,10 @@ case "$command" in
   status)
     case "${2:-}" in
       "") [[ $# -eq 1 ]] || { usage >&2; exit 2; }; status_human ;;
-      --json) [[ $# -eq 2 ]] || { usage >&2; exit 2; }; status_json ;;
+      --json)
+        [[ $# -eq 2 || $# -eq 3 ]] || { usage >&2; exit 2; }
+        status_json "${3:-}"
+        ;;
       *) usage >&2; exit 2 ;;
     esac
     ;;

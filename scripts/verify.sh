@@ -51,6 +51,7 @@ shell_tests=(
   tests/test-scheduled-success-heartbeat.sh
   tests/test-check-only-finalization.sh
   tests/test-post-update-refresh.sh
+  tests/test-target-scoped-status-refresh.sh
   tests/test-apt-check-refresh.sh
   tests/test-update-apt-baseline-refresh.sh
   tests/test-remote-positive-mutation.sh

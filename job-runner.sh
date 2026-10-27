@@ -72,7 +72,7 @@ remote_node_ssh() {
 }
 
 usage() {
-  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | recover UNIT | recover-local UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list [--cached] | show UNIT | reconcile-remote UNIT | reconcile-remote-all\n' "$0"
+  printf 'Usage: %s start UPDATE_SCRIPT TARGET | start-global UPDATE_SCRIPT | start-check TARGET CLI MODE | start-selfupdate UPDATE_SCRIPT BRANCH | start-reboot TARGET KIND HOST USER PORT IDENTITY LOCAL | run UNIT TARGET UPDATE_SCRIPT | recover UNIT | recover-local UNIT TARGET UPDATE_SCRIPT | run-global UNIT UPDATE_SCRIPT | run-check UNIT TARGET CLI MODE | run-selfupdate UNIT BRANCH UPDATE_SCRIPT | run-reboot UNIT TARGET KIND HOST USER PORT IDENTITY LOCAL | attach UNIT | cancel UNIT | list [--cached|--target TARGET] | show UNIT | reconcile-remote UNIT | reconcile-remote-all\n' "$0"
 }
 
 valid_target() {
@@ -1931,14 +1931,18 @@ refresh_running_jobs() {
 }
 
 list_jobs() {
+  local target_filter="${1:-}" newest_pending_file="" newest_pending_registered=""
   [[ -d "$JOB_STATE_DIR" ]] || return 0
-  refresh_running_jobs
-  cleanup_completed_jobs || true
-  local file unit target state started finished exit_code owner_node owner_host port interactive socket_available socket_path refresh_ref refresh_state cached_file remote_state
+  if [[ -z "$target_filter" ]]; then
+    refresh_running_jobs
+    cleanup_completed_jobs || true
+  fi
+  local file unit target state started finished exit_code owner_node owner_host port interactive socket_available socket_path refresh_ref refresh_state cached_file remote_state registered_at
   shopt -s nullglob
   for file in "$JOB_STATE_DIR"/*.state; do
     unit=$(state_value "$file" unit)
     target=$(state_value "$file" target)
+    [[ -z "$target_filter" || "$target" == "$target_filter" ]] || continue
     state=$(state_value "$file" state)
     started=$(state_value "$file" started_at)
     finished=$(state_value "$file" finished_at)
@@ -1953,15 +1957,35 @@ list_jobs() {
       "$unit" "$target" "$state" "$started" "$finished" "$exit_code" \
       "$(state_value "$file" type)" "$(state_value "$file" source)" "$interactive" "$socket_available"
   done
+  if [[ -n "$target_filter" ]]; then
+    for file in "$REMOTE_REF_DIR"/*.ref; do
+      target=$(state_value "$file" target 2>/dev/null || printf '')
+      [[ "$target" == "$target_filter" ]] || continue
+      refresh_state=$(state_value "$file" status_refresh 2>/dev/null || printf '')
+      [[ "$refresh_state" == pending ]] || continue
+      registered_at=$(state_value "$file" registered_at 2>/dev/null || printf '')
+      if [[ -z "$newest_pending_registered" || "$registered_at" > "$newest_pending_registered" ]]; then
+        newest_pending_file="$file"
+        newest_pending_registered="$registered_at"
+      fi
+    done
+  fi
   shopt -s nullglob
   for file in "$REMOTE_REF_DIR"/*.ref; do
     unit=$(state_value "$file" unit)
     target=$(state_value "$file" target)
+    [[ -z "$target_filter" || "$target" == "$target_filter" ]] || continue
     owner_node=$(state_value "$file" owner_node)
     owner_host=$(state_value "$file" owner_host)
     port=$(state_value "$file" port)
     [[ -n "$unit" && -n "$target" && -n "$owner_node" && -n "$owner_host" && -n "$port" ]] || continue
     refresh_state=$(state_value "$file" status_refresh 2>/dev/null || printf '')
+    if [[ -n "$target_filter" && "$refresh_state" == pending && "$file" != "$newest_pending_file" ]]; then
+      # A scoped status read may see stale pending references for the same
+      # target. Only the newest reference can represent the current
+      # single-flight operation; leave older references untouched.
+      continue
+    fi
     if [[ "$refresh_state" == "done" ]]; then
       # A completed handback is already authoritative. Do not reconnect to
       # the worker merely to rediscover a terminal state; the cached line is
@@ -2197,6 +2221,8 @@ case "${1:-}" in
       list_jobs
     elif [[ $# -eq 2 && "$2" == --cached ]]; then
       list_jobs_cached
+    elif [[ $# -eq 3 && "$2" == --target && "$3" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+      list_jobs "$3"
     else
       usage >&2
       exit 2
