@@ -88,6 +88,10 @@ Improved:
   explicitly.
 
 Fixed:
+- Issue #386: global cluster checks now stage target-bound SSH context for
+  matching remote VMs without QGA; foreign profiles and unrelated node
+  configuration are excluded, while inventory or staging failures are reported
+  explicitly instead of silently omitting the affected VM.
 - Issue #379: update results now fail closed when `pending_before` is missing
   or invalid. Missing baselines produce `failed`,
   `PENDING_BEFORE_UNAVAILABLE`, and exit code 96; invalid baselines produce
