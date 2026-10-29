@@ -685,6 +685,9 @@ remote_node_check_via_cluster_transport() {
   local remote_api_action="${UU_API_ACTION:-}" remote_expected_kind="${UU_API_EXPECTED_TARGET_KIND:-}"
   local remote_expected_node="${UU_API_EXPECTED_TARGET_NODE:-}"
   local remote_config remote_tag_filter remote_cluster_target remote_runtime remote_status_model
+  local remote_internal_ssh remote_internal_conf remote_vm_ssh_config internal_ssh_config_source
+  local vm_inventory vm_id vm_name profile vm_stage_message index failure_index
+  local -a remote_vm_ids=() remote_vm_names=()
   local remote_status_file tag_filter_script target_runtime_file target_selection_script
   local -a ssh_args=("${REMOTE_NODE_ARGS[@]}")
   remote_check_dir="/tmp/ultimate-updater-check-node-$$-$RANDOM-$RANDOM"
@@ -692,6 +695,9 @@ remote_node_check_via_cluster_transport() {
   remote_tag_filter="$remote_check_dir/tag-filter.sh"
   remote_cluster_target="$remote_check_dir/cluster-target.sh"
   remote_runtime="$remote_check_dir/target-runtime.sh"
+  remote_internal_ssh="$remote_check_dir/internal-ssh.sh"
+  remote_internal_conf="$remote_check_dir/internal-ssh.conf"
+  remote_vm_ssh_config=$(mktemp) || return 1
   local remote_apt_count="$remote_check_dir/apt-count.py"
   local remote_apt_count_shell="$remote_check_dir/apt-count.sh"
   local remote_rpm_count="$remote_check_dir/rpm-count.py"
@@ -712,14 +718,9 @@ remote_node_check_via_cluster_transport() {
   [[ -f "$apt_count_shell_file" ]] || apt_count_shell_file="$SCRIPT_DIR/apt-count.sh"
   [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
   [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
-  [[ -f "$product_metadata_file" ]] || product_metadata_file="$SCRIPT_DIR/product-metadata.sh"
-  if [[ ! -f "$product_metadata_file" ]]; then
-    printf 'Could not stage product metadata for remote update on %s.\n' "$node" >&2
-    return 6
-  fi
   local_file=$(mktemp)
   if ! STATUS_MODEL_INIT; then
-    rm -f -- "$local_file"
+    rm -f -- "$local_file" "$remote_vm_ssh_config"
     printf 'Could not initialize status model for node %s.\n' "$node" >&2
     return 1
   fi
@@ -748,10 +749,123 @@ remote_node_check_via_cluster_transport() {
       "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
     STATUS_MODEL_RECORD "host:$node" host ssh false "" "" "null" "null" offline SSH_UNREACHABLE "Node $node is unreachable" "$node" "$node"
     STATUS_MODEL_FINISH >/dev/null 2>&1 || true
-    rm -f -- "$local_file"
+    rm -f -- "$local_file" "$remote_vm_ssh_config"
     printf 'Node %s is unreachable.\n' "$node" >&2
     return 1
   fi
+  if ! vm_inventory=$(cluster_target_vm_inventory_for_node "$node"); then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_INVENTORY_UNAVAILABLE \
+      "Could not determine virtual machines owned by node $node for the remote check" "$node" "$node"
+    STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+    rm -f -- "$local_file" "$remote_vm_ssh_config"
+    printf 'Could not determine virtual machines owned by node %s for the remote check.\n' "$node" >&2
+    return 1
+  fi
+  while IFS=$'\t' read -r vm_id vm_name; do
+    [[ -n "$vm_id" ]] || continue
+    remote_vm_ids+=("$vm_id")
+    remote_vm_names+=("${vm_name:-$vm_id}")
+  done <<< "$vm_inventory"
+  internal_ssh_config_source="${INTERNAL_SSH_CONFIG_FILE:-$LOCAL_FILES/internal-ssh.conf}"
+  vm_stage_message="Could not stage VM SSH context for node $node"
+  if ! cluster_target_stageable_helper "$INTERNAL_SSH_FILE" ||
+    ! cluster_target_write_vm_ssh_config "$internal_ssh_config_source" "$remote_vm_ssh_config" "${remote_vm_ids[@]}"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$vm_stage_message" "$node" "$node"
+    for index in "${!remote_vm_ids[@]}"; do
+      vm_id="${remote_vm_ids[$index]}"
+      STATUS_MODEL_RECORD "$vm_id" vm ssh false "" "" "null" "null" error VM_SSH_STAGING_FAILED \
+        "$vm_stage_message for VM $vm_id" "$node" "${remote_vm_names[$index]:-$vm_id}"
+    done
+    STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+    rm -f -- "$local_file" "$remote_vm_ssh_config"
+    printf '%s.\n' "$vm_stage_message" >&2
+    return 1
+  fi
+  if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$INTERNAL_SSH_FILE" "$user@$host:$remote_internal_ssh" ||
+    ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+      "$remote_vm_ssh_config" "$user@$host:$remote_internal_conf"; then
+    timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+      "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$vm_stage_message" "$node" "$node"
+    for index in "${!remote_vm_ids[@]}"; do
+      vm_id="${remote_vm_ids[$index]}"
+      STATUS_MODEL_RECORD "$vm_id" vm ssh false "" "" "null" "null" error VM_SSH_STAGING_FAILED \
+        "$vm_stage_message for VM $vm_id" "$node" "${remote_vm_names[$index]:-$vm_id}"
+    done
+    STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+    rm -f -- "$local_file" "$remote_vm_ssh_config"
+    printf '%s.\n' "$vm_stage_message" >&2
+    return 1
+  fi
+  for index in "${!remote_vm_ids[@]}"; do
+    vm_id="${remote_vm_ids[$index]}"
+    profile="$LOCAL_FILES/VMs/$vm_id"
+    [[ -e "$profile" || -L "$profile" ]] || continue
+    if ! cluster_target_secure_stage_file "$profile"; then
+      timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+        "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$vm_stage_message" "$node" "$node"
+      for failure_index in "${!remote_vm_ids[@]}"; do
+        STATUS_MODEL_RECORD "${remote_vm_ids[$failure_index]}" vm ssh false "" "" "null" "null" error VM_SSH_STAGING_FAILED \
+          "$vm_stage_message for VM ${remote_vm_ids[$failure_index]}" "$node" "${remote_vm_names[$failure_index]:-${remote_vm_ids[$failure_index]}}"
+      done
+      STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+      rm -f -- "$local_file" "$remote_vm_ssh_config"
+      printf '%s for VM %s.\n' "$vm_stage_message" "$vm_id" >&2
+      return 1
+    fi
+    if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+        "mkdir -p -- '$remote_check_dir/VMs'" ||
+      ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
+        "$profile" "$user@$host:$remote_check_dir/VMs/$vm_id"; then
+      timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+        "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$vm_stage_message" "$node" "$node"
+      for failure_index in "${!remote_vm_ids[@]}"; do
+        STATUS_MODEL_RECORD "${remote_vm_ids[$failure_index]}" vm ssh false "" "" "null" "null" error VM_SSH_STAGING_FAILED \
+          "$vm_stage_message for VM ${remote_vm_ids[$failure_index]}" "$node" "${remote_vm_names[$failure_index]:-${remote_vm_ids[$failure_index]}}"
+      done
+      STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+      rm -f -- "$local_file" "$remote_vm_ssh_config"
+      printf '%s for VM %s.\n' "$vm_stage_message" "$vm_id" >&2
+      return 1
+    fi
+  done
+  timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+    "chmod 600 '$remote_internal_ssh' '$remote_internal_conf'" >/dev/null 2>&1 || {
+      timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+        "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$vm_stage_message" "$node" "$node"
+      STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+      rm -f -- "$local_file" "$remote_vm_ssh_config"
+      printf '%s.\n' "$vm_stage_message" >&2
+      return 1
+    }
+  for index in "${!remote_vm_ids[@]}"; do
+    vm_id="${remote_vm_ids[$index]}"
+    profile="$LOCAL_FILES/VMs/$vm_id"
+    [[ -e "$profile" || -L "$profile" ]] || continue
+    if ! timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+        "chmod 600 '$remote_check_dir/VMs/$vm_id'"; then
+      timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
+        "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+      STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$vm_stage_message" "$node" "$node"
+      for failure_index in "${!remote_vm_ids[@]}"; do
+        STATUS_MODEL_RECORD "${remote_vm_ids[$failure_index]}" vm ssh false "" "" "null" "null" error VM_SSH_STAGING_FAILED \
+          "$vm_stage_message for VM ${remote_vm_ids[$failure_index]}" "$node" "${remote_vm_names[$failure_index]:-${remote_vm_ids[$failure_index]}}"
+      done
+      STATUS_MODEL_FINISH >/dev/null 2>&1 || true
+      rm -f -- "$local_file" "$remote_vm_ssh_config"
+      printf '%s.\n' "$vm_stage_message" >&2
+      return 1
+    fi
+  done
+  rm -f -- "$remote_vm_ssh_config"
   if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true && -f "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" ]]; then
     timeout "${UU_CHECK_SSH_COMMAND_TIMEOUT:-15}" scp -q "${ssh_args[@]}" -P "$port" \
       "${UU_TARGET_SELECTION_FILE:-$LOCAL_FILES/target-selection.json}" "$user@$host:$remote_check_dir/target-selection.json" || {
@@ -759,10 +873,10 @@ remote_node_check_via_cluster_transport() {
         return 1
       }
   fi
-  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_TARGET_SELECTION_FILE=%q UU_API_ACTION=%q UU_API_EXPECTED_TARGET_KIND=%q UU_API_EXPECTED_TARGET_NODE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true bash -s -- node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; exit 0' \
+  printf -v remote_command 'LOCAL_FILES=%q CONFIG_FILE=%q TAG_FILTER_FILE=%q CLUSTER_TARGET_FILE=%q TARGET_RUNTIME_FILE=%q STATUS_MODEL_NODE=%q STATUS_MODEL_SCRIPT=%q STATUS_MODEL_FILE=%q STATUS_MODEL_RECORD_FILE=%q UU_TARGET_SELECTION_FILE=%q UU_API_ACTION=%q UU_API_EXPECTED_TARGET_KIND=%q UU_API_EXPECTED_TARGET_NODE=%q INTERNAL_SSH_FILE=%q INTERNAL_SSH_CONFIG_FILE=%q UU_DEFER_NOTIFICATION=true UU_REMOTE_DEFER_STATUS_FINISH=true UU_CHECK_SCOPE=host STATUS_MODEL_PARTIAL=true bash -s -- node-host >/dev/null 2>&1; remote_rc=$?; finish_rc=0; if [[ -f %q ]]; then STATUS_MODEL_NODE=%q; STATUS_MODEL_FILE=%q; STATUS_MODEL_RECORD_FILE=%q; . %q; STATUS_MODEL_FINISH >/dev/null 2>&1 || finish_rc=$?; fi; if [[ ! -s %q ]]; then printf "Remote node status was not produced for %%s.\n" %q >&2; rm -rf -- %q; exit 86; fi; cat %q; rm -rf -- %q; exit 0' \
     "$remote_check_dir" "$remote_config" "$remote_tag_filter" "$remote_cluster_target" \
     "$remote_runtime" "$node" "$remote_status_model" "$remote_status_file" "$remote_status_file.records" \
-    "$remote_check_dir/target-selection.json" "$remote_api_action" "$remote_expected_kind" "$remote_expected_node" "$remote_status_model" "$node" "$remote_status_file" \
+    "$remote_check_dir/target-selection.json" "$remote_api_action" "$remote_expected_kind" "$remote_expected_node" "$remote_internal_ssh" "$remote_internal_conf" "$remote_status_model" "$node" "$remote_status_file" \
     "$remote_status_file.records" "$remote_status_model" "$remote_status_file" "$node" \
     "$remote_check_dir" "$remote_status_file" "$remote_check_dir"
   if ! timeout "${UU_CHECK_REMOTE_NODE_TIMEOUT:-300}" ssh "${ssh_args[@]}" -p "$port" "$user@$host" \
@@ -916,6 +1030,10 @@ remote_update_job() {
   [[ -f "$apt_count_shell_file" ]] || apt_count_shell_file="$SCRIPT_DIR/apt-count.sh"
   [[ -f "$rpm_count_file" ]] || rpm_count_file="$SCRIPT_DIR/rpm-count.py"
   [[ -f "$package_count_file" ]] || package_count_file="$SCRIPT_DIR/package-count.sh"
+  if [[ ! -f "$product_metadata_file" ]]; then
+    printf 'Could not stage product metadata for remote update on %s.\n' "$node" >&2
+    return 6
+  fi
   if ! timeout 15 ssh "${ssh_args[@]}" -p "$port" "$user@$host" "mkdir -p -- '$remote_update_dir'"; then
     printf 'Could not prepare remote update workspace on %s.\n' "$node" >&2
     return 6

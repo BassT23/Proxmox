@@ -168,6 +168,109 @@ raise SystemExit(1)
 ' "$target" <<< "$json"
 }
 
+# Return the VMs owned by one cluster node as "VMID<TAB>name" records.  The
+# caller uses this inventory to stage only the profiles that can be consumed
+# by that node's run-scoped check workspace.
+cluster_target_vm_inventory_for_node() {
+  local wanted_node="${1:-}" json
+  [[ "$wanted_node" =~ ^[A-Za-z0-9_.:-]+$ ]] || return 2
+  json=$(cluster_target_resources_json) || return 1
+  python3 -c '
+import json
+import re
+import sys
+
+wanted = sys.argv[1]
+try:
+    resources = json.load(sys.stdin)
+except (ValueError, OSError, TypeError):
+    raise SystemExit(1)
+
+seen = set()
+for item in resources if isinstance(resources, list) else []:
+    if not isinstance(item, dict) or item.get("type") != "qemu":
+        continue
+    if str(item.get("node") or "") != wanted:
+        continue
+    raw_id = item.get("vmid", item.get("id"))
+    if isinstance(raw_id, str) and "/" in raw_id:
+        raw_id = raw_id.rsplit("/", 1)[-1]
+    vmid = str(raw_id or "")
+    if not re.fullmatch(r"[0-9]+", vmid) or vmid in seen:
+        continue
+    seen.add(vmid)
+    name = str(item.get("name") or vmid).replace("\t", " ").replace("\r", " ").replace("\n", " ")
+    print(f"{vmid}\t{name}")
+' "$wanted_node" <<< "$json"
+}
+
+# Sources copied into a remote check workspace must be ordinary, readable
+# files owned by root or by the invoking user, and must not be writable by the
+# group or others.  In particular, a dangling or ordinary symlink is never
+# accepted as a profile/configuration source.
+cluster_target_secure_stage_file() {
+  local file="${1:-}" permissions owner current_owner
+  [[ -f "$file" && ! -L "$file" ]] || return 1
+  permissions=$(stat -c '%A' -- "$file" 2>/dev/null) || return 1
+  [[ "${permissions:5:1}" != w && "${permissions:8:1}" != w ]] || return 1
+  owner=$(stat -c '%u' -- "$file" 2>/dev/null) || return 1
+  current_owner=$(id -u 2>/dev/null) || return 1
+  [[ "$owner" == 0 || "$owner" == "$current_owner" ]]
+}
+
+# Code helpers are not credential material, but they still must be regular
+# files owned by root or the invoking user.  Repository checkouts may carry a
+# group-writable mode from the worker's shared workspace; the remote copy is
+# still placed in the private run-scoped workspace and never followed through
+# a symlink.
+cluster_target_stageable_helper() {
+  local file="${1:-}" owner current_owner
+  [[ -f "$file" && ! -L "$file" ]] || return 1
+  owner=$(stat -c '%u' -- "$file" 2>/dev/null) || return 1
+  current_owner=$(id -u 2>/dev/null) || return 1
+  [[ "$owner" == 0 || "$owner" == "$current_owner" ]]
+}
+
+# Validate the complete data-only Internal SSH file with the existing parser,
+# then write only VM sections for the selected node.  Node/LXC/foreign-VM
+# sections never cross the remote-check boundary.
+cluster_target_write_vm_ssh_config() {
+  local source="${1:-}" output="${2:-}" vm_id section key found
+  shift 2 || return 2
+  [[ -n "$output" && -f "$output" && ! -L "$output" ]] || return 1
+  if [[ -L "$source" || ( -e "$source" && ! -f "$source" ) ]]; then
+    return 1
+  fi
+  if [[ -e "$source" ]]; then
+    cluster_target_secure_stage_file "$source" || return 1
+    declare -F INTERNAL_SSH_LOAD >/dev/null 2>&1 || return 1
+    INTERNAL_SSH_LOAD "$source" || return 1
+  else
+    INTERNAL_SSH_VALUES=()
+  fi
+  {
+    printf 'schema_version=1\n'
+    for vm_id in "$@"; do
+      section="vm:$vm_id"
+      found=false
+      for key in host user port identity_file enabled; do
+        if [[ -n "${INTERNAL_SSH_VALUES[$section|$key]+x}" ]]; then
+          found=true
+          break
+        fi
+      done
+      [[ "$found" == true ]] || continue
+      printf '[%s]\n' "$section"
+      for key in host user port identity_file enabled; do
+        if [[ -n "${INTERNAL_SSH_VALUES[$section|$key]+x}" ]]; then
+          printf '%s=%s\n' "$key" "${INTERNAL_SSH_VALUES[$section|$key]}"
+        fi
+      done
+    done
+  } > "$output" || return 1
+  chmod 600 -- "$output" || return 1
+}
+
 cluster_target_resolve_cli() {
   local target="${1:-}"
   cluster_target_resolve "$target" || {

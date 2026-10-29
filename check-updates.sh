@@ -710,6 +710,114 @@ CHECK_REMOTE_JOB_SSH () {
   timeout "$wrapper_timeout" ssh "${INTERNAL_SSH_ARGS[@]}" "$@"
 }
 
+# Stage only the VM SSH context belonging to one remote cluster node.  Global
+# checks run from a streamed check script, so relying on the worker's
+# persistent /etc/ultimate-updater/VMs or internal-ssh.conf silently loses
+# controller-side SSH configuration.  Every failure is recorded for the
+# affected VM(s) before the remote check is allowed to start.
+CHECK_HOST_STAGE_VM_SSH_CONTEXT() {
+  local node="$1" host="$2" port="$3" remote_dir="$4"
+  local inventory vm_id vm_name profile filtered_config stage_message
+  local index failure_index need_profiles=false
+  local -a vm_ids=() vm_names=()
+  inventory=$(cluster_target_vm_inventory_for_node "$node") || {
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error \
+      REMOTE_VM_INVENTORY_UNAVAILABLE "Could not determine virtual machines owned by node $node for the remote check" "$node" "$node"
+    return 1
+  }
+  while IFS=$'\t' read -r vm_id vm_name; do
+    [[ -n "$vm_id" ]] || continue
+    vm_ids+=("$vm_id")
+    vm_names+=("${vm_name:-$vm_id}")
+  done <<< "$inventory"
+  stage_message="Could not stage VM SSH context for node $node"
+  filtered_config=$(mktemp) || {
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$stage_message" "$node" "$node"
+    return 1
+  }
+  if ! cluster_target_stageable_helper "$INTERNAL_SSH_FILE" ||
+    ! cluster_target_write_vm_ssh_config "${INTERNAL_SSH_CONFIG_FILE:-$LOCAL_FILES/internal-ssh.conf}" \
+      "$filtered_config" "${vm_ids[@]}"; then
+    rm -f -- "$filtered_config"
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$stage_message" "$node" "$node"
+    for index in "${!vm_ids[@]}"; do
+      STATUS_MODEL_RECORD "${vm_ids[$index]}" vm ssh false "" "" "null" "null" error VM_SSH_STAGING_FAILED \
+        "$stage_message for VM ${vm_ids[$index]}" "$node" "${vm_names[$index]}"
+    done
+    return 1
+  fi
+  if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$port" \
+      "$INTERNAL_SSH_FILE" "$host:$remote_dir/internal-ssh.sh" >/dev/null 2>&1 ||
+    ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$port" \
+      "$filtered_config" "$host:$remote_dir/internal-ssh.conf" >/dev/null 2>&1; then
+    rm -f -- "$filtered_config"
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$stage_message" "$node" "$node"
+    for index in "${!vm_ids[@]}"; do
+      STATUS_MODEL_RECORD "${vm_ids[$index]}" vm ssh false "" "" "null" "null" error VM_SSH_STAGING_FAILED \
+        "$stage_message for VM ${vm_ids[$index]}" "$node" "${vm_names[$index]}"
+    done
+    return 1
+  fi
+  for index in "${!vm_ids[@]}"; do
+    vm_id="${vm_ids[$index]}"
+    profile="$LOCAL_FILES/VMs/$vm_id"
+    [[ -e "$profile" || -L "$profile" ]] || continue
+    if ! cluster_target_secure_stage_file "$profile"; then
+      rm -f -- "$filtered_config"
+      STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$stage_message" "$node" "$node"
+      for failure_index in "${!vm_ids[@]}"; do
+        STATUS_MODEL_RECORD "${vm_ids[$failure_index]}" vm ssh false "" "" "null" "null" error VM_SSH_STAGING_FAILED \
+          "$stage_message for VM ${vm_ids[$failure_index]}" "$node" "${vm_names[$failure_index]}"
+      done
+      return 1
+    fi
+    need_profiles=true
+  done
+  if [[ "$need_profiles" == true ]] &&
+    ! CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$host" -p "$port" \
+      "mkdir -p -- '$remote_dir/VMs'" >/dev/null 2>&1; then
+    rm -f -- "$filtered_config"
+    STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$stage_message" "$node" "$node"
+    return 1
+  fi
+  for index in "${!vm_ids[@]}"; do
+    vm_id="${vm_ids[$index]}"
+    profile="$LOCAL_FILES/VMs/$vm_id"
+    [[ -e "$profile" || -L "$profile" ]] || continue
+    if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$port" \
+        "$profile" "$host:$remote_dir/VMs/$vm_id" >/dev/null 2>&1; then
+      rm -f -- "$filtered_config"
+      STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$stage_message" "$node" "$node"
+    for failure_index in "${!vm_ids[@]}"; do
+      STATUS_MODEL_RECORD "${vm_ids[$failure_index]}" vm ssh false "" "" "null" "null" error VM_SSH_STAGING_FAILED \
+        "$stage_message for VM ${vm_ids[$failure_index]}" "$node" "${vm_names[$failure_index]}"
+      done
+      return 1
+    fi
+  done
+  rm -f -- "$filtered_config"
+  CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$host" -p "$port" \
+    "chmod 600 '$remote_dir/internal-ssh.sh' '$remote_dir/internal-ssh.conf'" >/dev/null 2>&1 || {
+      STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$stage_message" "$node" "$node"
+      return 1
+    }
+  for index in "${!vm_ids[@]}"; do
+    vm_id="${vm_ids[$index]}"
+    profile="$LOCAL_FILES/VMs/$vm_id"
+    [[ -e "$profile" || -L "$profile" ]] || continue
+    CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$host" -p "$port" \
+      "chmod 600 '$remote_dir/VMs/$vm_id'" >/dev/null 2>&1 || {
+        STATUS_MODEL_RECORD "host:$node" host ssh true "" "" "null" "null" error REMOTE_VM_SSH_STAGING_FAILED "$stage_message" "$node" "$node"
+        for failure_index in "${!vm_ids[@]}"; do
+          STATUS_MODEL_RECORD "${vm_ids[$failure_index]}" vm ssh false "" "" "null" "null" error VM_SSH_STAGING_FAILED \
+            "$stage_message for VM ${vm_ids[$failure_index]}" "$node" "${vm_names[$failure_index]}"
+        done
+        return 1
+      }
+  done
+  return 0
+}
+
 # Keep remote artifact diagnostics in the job log without exposing command
 # output, credentials, or SSH material.  Normal successful runs stay quiet;
 # DEBUG or a retrieval failure includes the complete correlation data.
@@ -813,7 +921,7 @@ HOST_CHECK_START () {
 # Host Check
 CHECK_HOST () {
   local HOST=$1 remote_check_dir remote_status remote_status_file remote_done_file
-  local remote_apt_count remote_apt_count_shell remote_rpm_count
+  local remote_apt_count remote_apt_count_shell remote_rpm_count remote_cluster_target
   local remote_done_value remote_status_attempt HOST_NODE HOST_ID remote_done_error_file remote_status_error_file remote_diagnostics_error_file
   local remote_diagnostics_file remote_diagnostics_local_file remote_diagnostics_attempt
   local remote_done_found=false remote_done_transport_rc=0 remote_status_transport_rc=0
@@ -822,6 +930,7 @@ CHECK_HOST () {
   local remote_node_status_ok=false
   local remote_job_timeout="${UU_CHECK_REMOTE_JOB_TIMEOUT:-300}"
   local remote_cleanup_state=pending remote_diag_level=success remote_failure_class=none
+  local remote_guest_helper_env=""
   HOST_NODE=$(CLUSTER_HOST_NODE "$HOST")
   REMOTE_TRACE "host=host:$HOST_NODE step=check_host_enter"
   CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_START node=$HOST_NODE host=$HOST"
@@ -843,6 +952,7 @@ CHECK_HOST () {
   remote_apt_count="$remote_check_dir/apt-count.py"
   remote_apt_count_shell="$remote_check_dir/apt-count.sh"
   remote_rpm_count="$remote_check_dir/rpm-count.py"
+  remote_cluster_target="$remote_check_dir/cluster-target.sh"
   remote_done_file="$remote_check_dir/completed"
   remote_runtime_env=""
   remote_status_env=""
@@ -854,8 +964,8 @@ CHECK_HOST () {
   remote_done_error_file="${remote_status_file}.completion.err"
   remote_status_error_file="${remote_status_file}.status.err"
   remote_diagnostics_error_file="${remote_status_file}.diagnostics.err"
-  if ! CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "mkdir -p '$LOCAL_FILES' '$remote_check_dir'" ||
-    ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$LOCAL_FILES/update.conf" "$HOST:$LOCAL_FILES/update.conf" >/dev/null 2>&1 ||
+  if ! CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "mkdir -p '$remote_check_dir'" ||
+    ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$LOCAL_FILES/update.conf" "$HOST:$remote_check_dir/update.conf" >/dev/null 2>&1 ||
     ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$TAG_FILTER_FILE" "$HOST:$remote_check_dir/tag-filter.sh" >/dev/null 2>&1; then
     CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
     echo -e "${RD}Could not prepare matching check helper on remote host $HOST${CL}"
@@ -898,6 +1008,7 @@ CHECK_HOST () {
     fi
     remote_runtime_env=" TARGET_RUNTIME_FILE='$remote_check_dir/target-runtime.sh' APT_COUNT_SCRIPT='$remote_apt_count' APT_COUNT_SHELL_SCRIPT='$remote_apt_count_shell' RPM_COUNT_SCRIPT='$remote_rpm_count'"
   fi
+  remote_status_env=" LOCAL_FILES='$remote_check_dir' CONFIG_FILE='$remote_check_dir/update.conf' CLUSTER_TARGET_FILE='$remote_cluster_target' TAG_OUTPUT=false"
   if [[ -f "$STATUS_MODEL_SCRIPT" ]]; then
     if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" "$STATUS_MODEL_SCRIPT" "$HOST:$remote_check_dir/status-model.sh" >/dev/null 2>&1; then
       CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
@@ -909,7 +1020,7 @@ CHECK_HOST () {
     # Remote workers contribute records to the central summary.  Their local
     # filter banner is an execution detail and must not be repeated once per
     # worker in the user's job output.
-    remote_status_env=" TAG_OUTPUT=false STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records' STATUS_MODEL_DIAGNOSTICS_FILE='$remote_diagnostics_file'"
+    remote_status_env+=" STATUS_MODEL_NODE='$HOST_NODE' STATUS_MODEL_SCRIPT='$remote_check_dir/status-model.sh' STATUS_MODEL_FILE='$remote_check_dir/status.json' STATUS_MODEL_RECORD_FILE='$remote_check_dir/status.records' STATUS_MODEL_DIAGNOSTICS_FILE='$remote_diagnostics_file'"
     if [[ "${USE_INTERNAL_TARGET_SELECTION:-false}" == true && -f "${TARGET_SELECTION_SCRIPT:-}" ]]; then
       remote_status_env=" UU_TARGET_SELECTION_SCRIPT='$remote_check_dir/target-selection.sh' UU_TARGET_SELECTION_FILE='$remote_check_dir/target-selection.json'$remote_status_env"
     fi
@@ -917,6 +1028,20 @@ CHECK_HOST () {
     [[ "${UU_INTERNAL_SKIP_GUEST_TARGETS:-false}" == true ]] && remote_status_env=" UU_CHECK_SCOPE=host$remote_status_env"
     remote_status_validation=" if [[ \"\$remote_rc\" -eq 0 && ! -s '$remote_check_dir/status.json' ]]; then remote_rc=86; elif [[ \"\$remote_rc\" -eq 0 ]] && ! python3 -c 'import json,sys; payload=json.load(open(sys.argv[1], encoding=\"utf-8\")); assert isinstance(payload, dict) and isinstance(payload.get(\"targets\"), list)' '$remote_check_dir/status.json'; then remote_rc=87; fi;"
   fi
+  if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
+      "$CLUSTER_TARGET_FILE" "$HOST:$remote_cluster_target" >/dev/null 2>&1; then
+    CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    STATUS_MODEL_RECORD "$HOST_ID" host ssh true "" "" "null" "null" error REMOTE_HELPER_TRANSFER_FAILED \
+      "Could not transfer cluster target helper to $HOST_NODE" "$HOST_NODE"
+    CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=prepare-cluster-target"
+    return 1
+  fi
+  if ! CHECK_HOST_STAGE_VM_SSH_CONTEXT "$HOST_NODE" "$HOST" "$SSH_PORT" "$remote_check_dir"; then
+    CHECK_REMOTE_SSH -q -o BatchMode=yes -o ConnectTimeout=5 "$HOST" -p "$SSH_PORT" "rm -rf -- '$remote_check_dir'" >/dev/null 2>&1 || true
+    CENTRAL_REMOTE_PHASE "CENTRAL_REMOTE_END node=$HOST_NODE rc=1 phase=prepare-vm-ssh"
+    return 1
+  fi
+  remote_guest_helper_env=" INTERNAL_SSH_FILE='$remote_check_dir/internal-ssh.sh' INTERNAL_SSH_CONFIG_FILE='$remote_check_dir/internal-ssh.conf'"
   [[ "${UU_REMOTE_TRACE:-false}" == true ]] && remote_status_env=" UU_REMOTE_TRACE=true$remote_status_env"
   [[ "${UU_WINDOWS_HISTORY_ONLY:-false}" == true ]] && remote_status_env=" UU_WINDOWS_HISTORY_ONLY=true$remote_status_env"
   REMOTE_TRACE "host=host:$HOST_NODE step=helper_copy rc=0"
@@ -940,8 +1065,6 @@ CHECK_HOST () {
   # Stage guest-specific helpers with the remote worker. The check script
   # itself is streamed via stdin, so using helpers already installed on the
   # remote node could mix versions during a cluster-wide check.
-  local remote_guest_helper_env=""
-
   if [[ -f "$QGA_EXEC_SCRIPT" ]]; then
     if ! CHECK_REMOTE_SCP -q -o BatchMode=yes -o ConnectTimeout=5 -P "$SSH_PORT" \
       "$QGA_EXEC_SCRIPT" "$HOST:$remote_check_dir/qga-guest-exec.sh" >/dev/null 2>&1; then
