@@ -3568,11 +3568,14 @@ if [[ "$DEBUG" == true ]]; then
 fi
 
 # Logging
+LOG_TEE_PID=""
 OUTPUT_TO_FILE () {
   echo 'EXEC_HOST="'"$HOSTNAME"'"' > "$TEMP_STATE_DIR/exec_host"
   if [[ "$RICM" != true ]]; then
     touch "$LOG_FILE"
-    exec &> >(tee "$LOG_FILE")
+    exec 3>&1 4>&2
+    exec > >(tee "$LOG_FILE") 2>&1
+    LOG_TEE_PID=$!
   fi
   # Welcome-Screen
   if [[ -f "/etc/update-motd.d/01-welcome-screen" && -x "/etc/update-motd.d/01-welcome-screen" ]]; then
@@ -3583,14 +3586,50 @@ OUTPUT_TO_FILE () {
   fi
 }
 # shellcheck disable=SC2329
+STOP_LOGGING () {
+  local tee_pid="${LOG_TEE_PID:-}"
+  [[ -n "$tee_pid" ]] || return 0
+  exec 1>&3 2>&4
+  exec 3>&- 4>&-
+  wait "$tee_pid" 2>/dev/null || true
+  LOG_TEE_PID=""
+}
+
+# shellcheck disable=SC2329
 CLEAN_LOGFILE () {
   if [[ "$RICM" != true ]]; then
-    tail -n +2 "$LOG_FILE" > tmp.log && mv tmp.log "$LOG_FILE"
-        cat "$LOG_FILE" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" | tee "$LOG_FILE" >/dev/null 2>&1
-    chmod 640 "$LOG_FILE"
-    if [[ -f ./tmp.log ]]; then
-      rm -rf ./tmp.log
+    local raw_file clean_file log_uid log_gid log_mode clean_uid clean_gid
+    STOP_LOGGING
+    [[ -f "$LOG_FILE" ]] || return 0
+    raw_file=$(mktemp -- "${LOG_FILE}.raw.XXXXXX") || return 0
+    clean_file=$(mktemp -- "${LOG_FILE}.clean.XXXXXX") || {
+      rm -f -- "$raw_file"
+      return 0
+    }
+    if ! tail -n +2 -- "$LOG_FILE" > "$raw_file"; then
+      rm -f -- "$raw_file" "$clean_file"
+      return 0
     fi
+    if ! sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" \
+      "$raw_file" > "$clean_file"; then
+      rm -f -- "$raw_file" "$clean_file"
+      return 0
+    fi
+    if ! IFS=' ' read -r log_uid log_gid log_mode < <(stat -c '%u %g %a' -- "$LOG_FILE") ||
+      ! IFS=' ' read -r clean_uid clean_gid < <(stat -c '%u %g' -- "$clean_file"); then
+      rm -f -- "$raw_file" "$clean_file"
+      return 0
+    fi
+    if [[ "$clean_uid:$clean_gid" != "$log_uid:$log_gid" ]] &&
+      ! chown "$log_uid:$log_gid" "$clean_file"; then
+      rm -f -- "$raw_file" "$clean_file"
+      return 0
+    fi
+    if ! chmod "$log_mode" "$clean_file" || ! mv -f -- "$clean_file" "$LOG_FILE"; then
+      rm -f -- "$raw_file" "$clean_file"
+      return 0
+    fi
+    rm -f -- "$raw_file"
   fi
 }
 

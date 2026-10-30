@@ -55,6 +55,7 @@ shell_tests=(
   tests/test-global-remote-vm-ssh-staging.sh
   tests/test-apt-check-refresh.sh
   tests/test-update-apt-baseline-refresh.sh
+  tests/test-update-log-cleanup.sh
   tests/test-remote-positive-mutation.sh
   tests/test-remote-target-identity-handoff.sh
   tests/test-update-noop-capability.sh
