@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091,SC2329 # Runtime fixture and intentionally inert mutator mocks.
+# shellcheck disable=SC1091,SC2034,SC2329 # Runtime fixture and intentionally inert mutator mocks.
 # Verify that every local mutation path has a mandatory invalidation gate.
 set -euo pipefail
 
@@ -31,11 +31,20 @@ fi
 
 # A present helper that rejects the target is equally fail-closed: the host
 # mutation command must not be reached.
-awk '/^UPDATE_HOST_ITSELF \(\) \{/{capture=1} capture{print} capture && /^}/ {exit}' \
+awk '/^HOST_UPDATE_TARGET_ID\(\) \{/{capture=1} /^# A stopped guest/{if(capture) exit} capture{print}' \
   "$ROOT_DIR/update.sh" > "$WORK_DIR/host-update.sh"
+awk '/^UPDATE_HOST_ITSELF \(\) \{/{capture=1} capture{print} capture && /^}/ {exit}' \
+  "$ROOT_DIR/update.sh" >> "$WORK_DIR/host-update.sh"
 source "$WORK_DIR/host-update.sh"
 UPDATE_FAILURE=false
 MUTATION_CALLS=0
+declare -A UPDATE_PENDING_BEFORE=()
+HOST_UPDATE_BASELINE_PREFLIGHT() {
+  local target
+  target=$(HOST_UPDATE_TARGET_ID)
+  UPDATE_PENDING_BEFORE["$target"]=1
+  return 0
+}
 MARK_PACKAGE_DATA_INVALIDATED() { return 1; }
 pveupdate() { MUTATION_CALLS=$((MUTATION_CALLS + 1)); }
 RUN_UPDATE_COMMAND() { MUTATION_CALLS=$((MUTATION_CALLS + 1)); }

@@ -109,6 +109,137 @@ CAPTURE_UPDATE_PENDING_BEFORE() {
   UPDATE_PENDING_BEFORE["$target"]="$count"
 }
 
+HOST_UPDATE_TARGET_ID() {
+  printf 'host:%s\n' "$(hostname -s 2>/dev/null || hostname)"
+}
+
+# A direct host update is allowed to recover from a missing preceding check,
+# but only through the same target-scoped, read-only check that produces the
+# authoritative package observation.  Do not let the generic baseline helper
+# turn a missing or stale host record into permission to mutate packages.
+HOST_UPDATE_BASELINE_FAILURE() {
+  local target="$1" code="$2" message="$3"
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  UPDATE_PENDING_BEFORE["$target"]=""
+  UPDATE_FAILURE=true
+
+  # Preserve the existing fail-closed status-model error contract when the
+  # check produced a correctly identified host record.  If even that record
+  # is unavailable, the stable stderr code remains the authoritative result.
+  local pending_override=""
+  [[ "$code" == PENDING_BEFORE_INVALID ]] && pending_override=invalid
+  if [[ -f "$status_file" ]] && python3 - "$status_file" "$target" <<'PY'
+import json
+import sys
+
+status_file, target_id = sys.argv[1:]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+targets = payload.get("targets") if isinstance(payload, dict) else None
+matches = [item for item in targets or []
+           if isinstance(item, dict) and str(item.get("id")) == target_id
+           and item.get("type") == "host"]
+raise SystemExit(0 if len(matches) == 1 else 1)
+PY
+  then
+    STATUS_MODEL_UPDATE_RESULT "$target" success 0 "" "" "" "$pending_override" || true
+  fi
+  printf '%s: %s\n' "$code" "$message" >&2
+  return 1
+}
+
+HOST_UPDATE_BASELINE_PREFLIGHT() {
+  local target="${1:-}"
+  [[ -n "$target" ]] || target="$(HOST_UPDATE_TARGET_ID)"
+  local host_node="${target#host:}"
+  local status_file="${STATUS_MODEL_FILE:-$LOCAL_FILES/status.json}"
+  local check_rc=0 baseline preflight_records preflight_generations preflight_diagnostics
+
+  [[ -x "$CHECK_SCRIPT" ]] || {
+    HOST_UPDATE_BASELINE_FAILURE "$target" PENDING_BEFORE_UNAVAILABLE \
+      "host package baseline check is unavailable"
+    return 1
+  }
+
+  mkdir -p -- "$TEMP_STATE_DIR" || {
+    HOST_UPDATE_BASELINE_FAILURE "$target" PENDING_BEFORE_UNAVAILABLE \
+      "host package baseline workspace is unavailable"
+    return 1
+  }
+  preflight_records="$TEMP_STATE_DIR/host-update-preflight.${BASHPID:-$$}.records"
+  preflight_generations="$preflight_records.generations"
+  preflight_diagnostics="$preflight_records.diagnostics"
+  rm -f -- "$preflight_records" "$preflight_generations" "$preflight_diagnostics"
+
+  printf '%s\n' '--- Host package baseline preflight (read-only) ---'
+  if STATUS_MODEL_NODE="$host_node" STATUS_MODEL_FILE="$status_file" \
+    STATUS_MODEL_SCRIPT="$STATUS_MODEL_SCRIPT" \
+    STATUS_MODEL_RECORD_FILE="$preflight_records" \
+    STATUS_MODEL_GENERATION_FILE="$preflight_generations" \
+    STATUS_MODEL_DIAGNOSTICS_FILE="$preflight_diagnostics" \
+    STATUS_MODEL_PARTIAL=true UU_EXPLICIT_TARGET_CHECK=true \
+    UU_SINGLE_TARGET_CHECK=true UU_CHECK_JOB_EXECUTION=true \
+    UU_JOB_SOURCE=update-preflight UU_DEFER_NOTIFICATION=true TAG_OUTPUT=false \
+    "$CHECK_SCRIPT" -u chost; then
+    check_rc=0
+  else
+    check_rc=$?
+  fi
+  rm -f -- "$preflight_records" "$preflight_generations" "$preflight_diagnostics" \
+    "$preflight_records.lock"
+  if [[ "$check_rc" -ne 0 ]]; then
+    HOST_UPDATE_BASELINE_FAILURE "$target" PENDING_BEFORE_UNAVAILABLE \
+      "read-only host package baseline check failed"
+    return 1
+  fi
+
+  if ! baseline=$(STATUS_MODEL_CAPTURE_PACKAGE_BASELINE \
+    "$status_file" "$target" host "$host_node") ||
+    ! [[ "$baseline" =~ ^[0-9]+$ ]]; then
+    local baseline_failure_code=PENDING_BEFORE_UNAVAILABLE
+    # A target record with a non-null package count exists but failed the
+    # freshness/validity contract: classify that as invalid.  A missing
+    # target or missing count remains unavailable.
+    if [[ -f "$status_file" ]] && python3 - "$status_file" "$target" "$host_node" <<'PY'
+import json
+import sys
+
+status_file, target_id, target_node = sys.argv[1:]
+try:
+    with open(status_file, encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+targets = payload.get("targets") if isinstance(payload, dict) else None
+matches = [item for item in targets or []
+           if isinstance(item, dict) and str(item.get("id")) == target_id
+           and item.get("type") == "host" and item.get("node") == target_node]
+if len(matches) != 1:
+    raise SystemExit(1)
+updates = matches[0].get("updates")
+available = updates.get("available") if isinstance(updates, dict) else None
+if available is None:
+    raise SystemExit(1)
+raise SystemExit(0)
+PY
+    then
+      baseline_failure_code=PENDING_BEFORE_INVALID
+    fi
+    HOST_UPDATE_BASELINE_FAILURE "$target" "$baseline_failure_code" \
+      "host package baseline is missing, invalid, or stale"
+    return 1
+  fi
+  UPDATE_PENDING_BEFORE["$target"]="$baseline"
+  # Keep the validated, current observation available to all later result
+  # writers.  It must not be replaced by a post-update count.
+  UU_UPDATE_PENDING_BEFORE_TARGET="$target"
+  UU_UPDATE_PENDING_BEFORE="$baseline"
+  return 0
+}
+
 # A stopped guest has deliberately not been package-checked by the normal
 # read-only inventory.  Once the update lifecycle has passed its safety gates,
 # the guest is running and reachable, so obtain a fresh package observation
@@ -2032,7 +2163,7 @@ DIST_UPGRADE () {
 UPDATE_CHECK () {
   local status_target="" check_rc=0
   if [[ "$CHOST" == true ]]; then
-    status_target="host:${HOSTNAME}"
+    status_target="$(HOST_UPDATE_TARGET_ID)"
   elif [[ "$CCONTAINER" == true ]]; then
     status_target="$CONTAINER"
   elif [[ "$CVM" == true ]]; then
@@ -2459,11 +2590,17 @@ UPDATE_HOST () {
 
 # shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
-  if declare -f CAPTURE_UPDATE_PENDING_BEFORE >/dev/null 2>&1; then
-    CAPTURE_UPDATE_PENDING_BEFORE "host:$(hostname -s 2>/dev/null || hostname)"
+  local host_target
+  host_target="$(HOST_UPDATE_TARGET_ID)"
+  HOST_UPDATE_BASELINE_PREFLIGHT "$host_target" || return 1
+  if [[ "${UPDATE_PENDING_BEFORE[$host_target]-}" == 0 ]]; then
+    # Keep the validated zero baseline in the terminal result.  The shared
+    # writer converts this explicit success/no-op to skipped with exit 10.
+    RECORD_UPDATE_RESULT "$host_target" success 0 || return 1
+    return 0
   fi
   REQUIRE_PACKAGE_DATA_INVALIDATION || return 1
-  MARK_PACKAGE_DATA_INVALIDATED "host:$(hostname -s 2>/dev/null || hostname)" host "$(hostname -s 2>/dev/null || hostname)" || {
+  MARK_PACKAGE_DATA_INVALIDATED "$host_target" host "${host_target#host:}" || {
     UPDATE_FAILURE=true
     return 1
   }
