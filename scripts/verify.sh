@@ -60,6 +60,7 @@ shell_tests=(
   tests/test-update-log-cleanup.sh
   tests/test-remote-positive-mutation.sh
   tests/test-remote-target-identity-handoff.sh
+  tests/test-remote-vm-result-identity.sh
   tests/test-update-noop-capability.sh
   tests/test-node-update-scope.sh
   tests/test-update-summary-pending-before.sh

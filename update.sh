@@ -979,10 +979,18 @@ ARGUMENTS () {
               return 46
             fi
             if [[ "$CLUSTER_TARGET_LOCAL" == false ]]; then
-              local remote_command remote_operation_id
+              local remote_command remote_operation_id remote_expected_kind remote_identity_env
               remote_operation_id=$(STATUS_MODEL_NEW_OPERATION_ID) || return 1
+              case "$CLUSTER_TARGET_KIND" in
+                container) remote_expected_kind=lxc ;;
+                vm) remote_expected_kind=vm ;;
+                *)
+                  printf 'Remote target identity has an unsupported type: %s\n' "$CLUSTER_TARGET_KIND" >&2
+                  return 46
+                  ;;
+              esac
               if ! MARK_PACKAGE_DATA_INVALIDATED "$ARGUMENT" \
-                "$([[ "$CLUSTER_TARGET_KIND" == container ]] && printf lxc || printf vm)" \
+                "$remote_expected_kind" \
                 "$CLUSTER_TARGET_NODE" "$remote_operation_id"; then
                 printf 'Package freshness for remote target %s could not be invalidated; update aborted.\n' "$ARGUMENT" >&2
                 return 1
@@ -991,8 +999,11 @@ ARGUMENTS () {
               local remote_pending_env
               printf -v remote_pending_env 'UU_UPDATE_PENDING_BEFORE_TARGET=%q UU_UPDATE_PENDING_BEFORE=%q ' \
                 "$ARGUMENT" "${UPDATE_PENDING_BEFORE[$ARGUMENT]-}"
-              printf -v remote_command 'exec /usr/bin/env %sUU_PACKAGE_MUTATION_OPERATION_ID=%q %q start %q %q' \
-                "$remote_pending_env" "$remote_operation_id" "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" "$ARGUMENT"
+              printf -v remote_identity_env \
+                'UU_API_ACTION=update UU_NONINTERACTIVE=true UU_API_REBOOT_ALLOWED=false UU_API_EXPECTED_TARGET_ID=%q UU_API_EXPECTED_TARGET_KIND=%q UU_API_EXPECTED_TARGET_NODE=%q UU_API_EXPECTED_TARGET_LOCAL=remote ' \
+                "$ARGUMENT" "$remote_expected_kind" "$CLUSTER_TARGET_NODE"
+              printf -v remote_command 'exec /usr/bin/env %s%sUU_PACKAGE_MUTATION_OPERATION_ID=%q %q start %q %q' \
+                "$remote_pending_env" "$remote_identity_env" "$remote_operation_id" "/etc/ultimate-updater/job-runner.sh" "/etc/ultimate-updater/update.sh" "$ARGUMENT"
               echo -e "ℹ ${OR:-} Target $ARGUMENT resolved to $CLUSTER_TARGET_NODE; starting remote update job${CL:-}\n"
               local remote_output remote_job_unit
               if ! remote_output=$(ssh -q -o BatchMode=yes -o ConnectTimeout=5 -p "${SSH_PORT:-22}" \

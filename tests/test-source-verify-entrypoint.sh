@@ -27,6 +27,7 @@ done
 grep -Fq 'tests/test-scheduled-success-heartbeat.sh' "$ENTRYPOINT"
 grep -Fq 'tests/test-remote-positive-mutation.sh' "$ENTRYPOINT"
 grep -Fq 'tests/test-remote-target-identity-handoff.sh' "$ENTRYPOINT"
+grep -Fq 'tests/test-remote-vm-result-identity.sh' "$ENTRYPOINT"
 
 # The verifier itself must not dispatch host, guest, package, or network tools.
 # Child fixtures may define local command mocks; that is why the check targets

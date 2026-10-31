@@ -1764,9 +1764,61 @@ if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list)
     print(f"STATUS_MODEL_UPDATE_REJECTED_EXISTING_STATE: {status_file}: missing target list", file=sys.stderr)
     raise SystemExit(94)
 targets = payload.setdefault("targets", [])
+expected_id = os.environ.get("UU_API_EXPECTED_TARGET_ID", "")
+expected_type = os.environ.get("UU_API_EXPECTED_TARGET_KIND", "")
+expected_node = os.environ.get("UU_API_EXPECTED_TARGET_NODE", "")
+if expected_type == "container":
+    expected_type = "lxc"
+if expected_type:
+    if expected_type not in {"host", "lxc", "vm", "external"}:
+        print("STATUS_MODEL_UPDATE_REJECTED_TARGET_IDENTITY: invalid expected target type", file=sys.stderr)
+        raise SystemExit(46)
+    if not expected_id:
+        print("STATUS_MODEL_UPDATE_REJECTED_TARGET_IDENTITY: expected target ID is missing", file=sys.stderr)
+        raise SystemExit(46)
+    expected_ids = {
+        expected_id,
+        expected_id.removeprefix("guest:"),
+        expected_id.removeprefix("host:"),
+    }
+    if target_id not in expected_ids:
+        print("STATUS_MODEL_UPDATE_REJECTED_TARGET_IDENTITY: target ID mismatch", file=sys.stderr)
+        raise SystemExit(46)
+    if expected_type != "external" and not expected_node:
+        print("STATUS_MODEL_UPDATE_REJECTED_TARGET_IDENTITY: target node is missing", file=sys.stderr)
+        raise SystemExit(46)
+    if expected_type == "external" and expected_node:
+        print("STATUS_MODEL_UPDATE_REJECTED_TARGET_IDENTITY: external target has a node", file=sys.stderr)
+        raise SystemExit(46)
 record = next((item for item in targets if isinstance(item, dict) and item.get("id") == target_id), None)
+if record is not None and expected_type:
+    if record.get("type") not in (None, expected_type):
+        print("STATUS_MODEL_UPDATE_REJECTED_TARGET_IDENTITY: target type mismatch", file=sys.stderr)
+        raise SystemExit(46)
+    if expected_type == "external":
+        if record.get("node") not in (None, ""):
+            print("STATUS_MODEL_UPDATE_REJECTED_TARGET_IDENTITY: external target node mismatch", file=sys.stderr)
+            raise SystemExit(46)
+    elif record.get("node") not in (None, "", expected_node):
+        print("STATUS_MODEL_UPDATE_REJECTED_TARGET_IDENTITY: target node mismatch", file=sys.stderr)
+        raise SystemExit(46)
 if record is None:
-    record = {"id": target_id, "type": "external", "transport": "ssh"}
+    if expected_type:
+        record = {
+            "id": target_id,
+            "type": expected_type,
+            "node": expected_node or None,
+            "transport": "ssh",
+        }
+    elif target_id.isdigit():
+        # A numeric guest ID without an authoritative type is ambiguous.  Do
+        # not manufacture an External record that a later VM/LXC capture can
+        # no longer correlate with.  Explicit external callers must provide
+        # the external identity through the normal target context.
+        print("STATUS_MODEL_UPDATE_REJECTED_TARGET_IDENTITY: numeric target type is missing", file=sys.stderr)
+        raise SystemExit(46)
+    else:
+        record = {"id": target_id, "type": "external", "transport": "ssh"}
     targets.append(record)
 timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 pending_before = None
