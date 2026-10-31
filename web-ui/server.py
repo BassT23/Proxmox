@@ -2255,6 +2255,105 @@ PAGE = PAGE.replace('</head>', '''<style>
 @media(max-width:620px) { .action-guide { grid-template-columns:1fr; } .target-selection-header { display:flex; margin-inline:8px; } .target-selection-header .selection-legend { width:100%; margin-left:0; } .target-selection-controls { margin-right:0; padding-right:0; border-right:0; padding-bottom:7px; border-bottom:1px solid #159cf055; } .group-actions-label { width:100%; } }
 </style></head>''', 1)
 
+# Keep the persistent target-selection model visible in the normal Systems
+# view. The existing selection payload and API remain the source of truth.
+PAGE = PAGE.replace(
+    '<div id="targets" class="targets"></div>',
+    '<section id="system-bulk-selection" class="system-bulk-selection" aria-labelledby="system-bulk-selection-title"><div class="bulk-selection-copy"><strong id="system-bulk-selection-title">Include in global actions</strong><span>Choose which targets are included in Check all and Update all.</span><span class="selection-legend">Default = no explicit rule · Only = explicitly include · Exclude = explicitly omit</span></div></section><div id="targets" class="targets"></div>',
+    1,
+)
+PAGE = PAGE.replace('✓ Only · ✕ Exclude · empty = no explicit rule', 'Default = no explicit rule · Only = explicitly include · Exclude = explicitly omit')
+PAGE = PAGE.replace('Only, Exclude and empty states control the targets used by these actions.', 'Default, Only and Exclude states control the targets used by these actions.')
+PAGE = PAGE.replace('</head>', '''<style>
+.node-scope-help { margin-bottom:4px; line-height:1.35; }
+.system-bulk-selection { margin-top:18px; padding:12px 14px 13px; border:1px solid #159cf055; border-radius:12px; background:#06142666; }
+.bulk-selection-copy { display:grid; gap:4px; min-width:0; }
+.bulk-selection-copy strong { display:block; color:#dceeff; font-size:.78rem; }
+.bulk-selection-copy span { display:block; margin-top:0; color:var(--muted); font-size:.7rem; line-height:1.35; }
+.bulk-selection-copy .selection-legend { margin-top:1px; }
+.selection-legend { color:#8fd2ff; }
+.global-selection-controls { display:flex; align-items:flex-end; gap:7px; padding:0; border:0; }
+.global-selection-controls .target-selection-column { min-width:72px; }
+.global-selection-controls .target-selection-label { color:#8fd2ff; font-size:.62rem; font-weight:700; white-space:nowrap; }
+.global-selection-controls .target-selection-state { width:auto; min-width:72px; padding:0 8px; font-size:.68rem; font-weight:750; }
+.global-selection-controls select.target-selection-state { display:block; min-height:30px; cursor:pointer; appearance:auto; background:#081426; }
+.global-selection-controls .target-selection-state.default { color:var(--muted); border-color:var(--line); }
+.global-selection-controls .target-selection-state.only { color:#8fd2ff; border-color:#8fd2ff; background:#159cf01a; }
+.global-selection-controls .target-selection-state.exclude { color:#ffb0b0; border-color:#ff8b8b; background:#ed6b7a18; }
+.global-selection-controls .target-selection-state:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.guest-panel .guest-list { overflow-x:auto; }
+.guest-table-header,.target-row,.target-row.split-row,.target-row.total-only-row,.target-row.lxc-row,.target-row.lxc-row.split-row,.target-row.lxc-row.total-only-row { grid-template-columns:minmax(170px,1.25fr) minmax(110px,.8fr) minmax(170px,1.15fr) minmax(120px,.9fr) minmax(145px,1fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(175px,max-content); min-width:1200px; }
+.guest-table-header { display:grid; grid-column:1/-1; align-items:end; gap:10px; padding:9px 12px 7px; border-top:1px solid #94a3a815; color:var(--muted); background:#0b172acc; font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+.guest-table-header > span { min-width:0; overflow-wrap:anywhere; }
+.guest-table-header .header-global-actions { display:grid; grid-column:6 / span 2; gap:4px; text-align:center; justify-items:center; }
+.guest-table-header > [role="columnheader"]:last-child { grid-column:8; justify-self:stretch; text-align:center; }
+.guest-table-header .header-global-actions small { display:grid; grid-template-columns:1fr 1fr; gap:7px; width:100%; justify-items:center; color:#8fd2ff; font-size:.59rem; font-weight:700; text-transform:none; letter-spacing:0; text-align:center; }
+.target-updates { display:grid; grid-template-columns:repeat(auto-fit,minmax(68px,1fr)); align-items:center; gap:6px; }
+.target-updates > .target-field { min-width:0; padding:0; border:0; }
+.target-updates > .target-field .target-label { font-size:.6rem; }
+.target-updates > .target-field strong { font-size:.74rem; }
+.target-row.total-only-row:not(.lxc-row)>:nth-child(3) { grid-column:auto; }
+.node-global-actions { display:grid; grid-template-columns:max-content minmax(0,1fr); grid-template-rows:auto; align-items:center; gap:8px 18px; margin-top:10px; padding:10px 14px 12px 56px; border-top:1px solid #94a3b815; overflow:visible; white-space:normal; }
+.node-global-actions::before { content:'Global actions'; grid-column:1; grid-row:1; width:auto; align-self:center; color:#8fb1d4; font-size:.62rem; font-weight:700; letter-spacing:.04em; text-align:left; text-transform:uppercase; }
+.node-global-actions .global-selection-controls { display:grid; grid-column:2; grid-row:1; grid-template-columns:repeat(2,max-content); align-items:start; justify-self:end; gap:8px 14px; width:max-content; max-width:100%; min-width:0; }
+.node-global-actions .global-selection-controls .target-selection-column,.row-global-actions .global-selection-controls .target-selection-column { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:4px; min-width:0; }
+.node-global-actions .global-selection-controls .target-selection-column { flex:0 0 auto; width:72px; }
+.node-global-actions .global-selection-controls .target-selection-label { width:100%; text-align:center; }
+.node-global-actions .global-selection-controls .target-selection-label,.row-global-actions .global-selection-controls .target-selection-label { font-size:.58rem; white-space:nowrap; }
+.node-global-actions .global-selection-controls .target-selection-state { box-sizing:border-box; display:block; width:72px !important; min-width:72px !important; max-width:72px !important; height:34px !important; min-height:34px !important; max-height:34px !important; flex:0 0 72px !important; padding:0 4px; font-size:.6rem; }
+.guest-selection-state { box-sizing:border-box; display:block; width:92px !important; min-width:92px !important; max-width:92px !important; height:34px !important; min-height:34px !important; max-height:34px !important; flex:0 0 92px !important; padding:0 5px; font-size:.64rem; }
+.row-global-actions { display:flex; align-items:center; justify-content:center; min-width:0; margin:0; padding:0 4px; border-right:0; overflow:visible; white-space:nowrap; }
+.target-row > :first-child { grid-column:1; grid-row:1; }
+.target-row > .target-status { grid-column:2; grid-row:1; }
+.target-row > .target-updates { grid-column:3; grid-row:1; }
+.target-row > .row-os { grid-column:4; grid-row:1; }
+.target-row > .row-last-check { grid-column:5; grid-row:1; }
+.target-row .row-global-selection-check { grid-column:6; }
+.target-row .row-global-selection-update { grid-column:7; border-right:0; }
+.row-global-selection .target-selection-state { flex:0 0 auto; }
+.row-global-actions .global-selection-controls { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; padding:0; border:0; }
+.target-row .row-actions { display:flex; grid-column:8; grid-row:1; align-items:center; justify-content:center; width:100%; min-width:max-content; padding:0 8px; border:0; gap:6px; white-space:nowrap; }
+.node-group .group-actions .group-actions-label { flex:0 0 auto; margin-right:auto; }
+#system-bulk-selection + #targets { margin-top:18px; }
+@media(max-width:900px) { .guest-table-header,.target-row,.target-row.split-row,.target-row.total-only-row,.target-row.lxc-row,.target-row.lxc-row.split-row,.target-row.lxc-row.total-only-row { min-width:1200px; } }
+@media(max-width:760px) { .global-selection-controls { border-right:0; padding-right:0; } .row-global-actions { padding-inline:2px; border-right:0; } .guest-table-header,.target-row,.target-row.split-row,.target-row.total-only-row,.target-row.lxc-row,.target-row.lxc-row.split-row,.target-row.lxc-row.total-only-row { min-width:1200px; } }
+</style></head>''', 1)
+
+# Present the existing persistent selection model with explicit labels. The
+# backend selection payload, Only/Exclude cycling, and direct target actions
+# remain unchanged.
+PAGE = PAGE.replace(
+    "function saveTargetSelection(scope,id,current){const next=current==='only'?'exclude':current==='exclude'?'':'only';",
+    "function saveTargetSelection(scope,id,current,desired=null){const next=desired===null?(current==='only'?'exclude':current==='exclude'?'':'only'):desired;",
+    1,
+)
+PAGE = PAGE.replace(
+    '    decorateOverviewIcons();\n    bootstrap();',
+    '''    decorateOverviewIcons();
+    const legacyTargetRow=targetRowWithSelection;
+    const legacyNodeGroup=nodeGroup;
+    const legacyExternalGroup=externalGroup;
+    const legacySelectionControls=selectionControls,legacyPaintTargetSelection=paintTargetSelection;
+    const selectionFieldState=new Map();
+    const selectionStateLabel=state=>state==='only'?'Only':state==='exclude'?'Exclude':'Default';
+    const selectionFieldKey=(scope,id)=>`${scope}:${id}`;
+    const setSelectionState=(selection,scope,id,state)=>{if(state)selection[scope][id]=state;else delete selection[scope][id]};
+    const ensureSelectionOptions=select=>{if(select.options.length===3)return;const state=select.value;select.replaceChildren();for(const [value,text] of [['','Default'],['only','Only'],['exclude','Exclude']]){const option=document.createElement('option');option.value=value;option.textContent=text;select.appendChild(option)}select.value=state};
+    const selectionVariantClass=select=>select.dataset.selectionVariant==='guest'?' guest-selection-state':select.dataset.selectionVariant==='node'?' node-selection-state':'';
+    const refreshSelectionFields=()=>document.querySelectorAll('select.target-selection-state').forEach(select=>{ensureSelectionOptions(select);const state=targetSelection[select.dataset.selectionScope]?.[select.dataset.selectionId]||'',unavailable=targetSelectionLoadState!=='ready',pending=selectionFieldState.get(selectionFieldKey(select.dataset.selectionScope,select.dataset.selectionId));select.className=`target-selection-state ${state||'default'}${unavailable?' unavailable':''}${pending?' pending':''}${selectionVariantClass(select)}`;select.value=state;select.disabled=unavailable;select.dataset.pending=String(Boolean(pending));select.setAttribute('aria-busy',String(Boolean(pending)));select.title=pending?'Saving selection…':unavailable?(targetSelectionLoadState==='loading'?'Target selection is loading.':'Target selection is unavailable.'):`${select.dataset.selectionScope==='check'?'Check all':'Update all'}: ${selectionStateLabel(state)}`;select.setAttribute('aria-label',pending?`${select.dataset.selectionScope==='check'?'Check all':'Update all'}: ${selectionStateLabel(state)} (saving)`:unavailable?`${select.dataset.selectionScope} selection unavailable`:`${select.dataset.selectionScope==='check'?'Check all':'Update all'}: ${selectionStateLabel(state)}`)});
+    paintTargetSelection=()=>{legacyPaintTargetSelection();refreshSelectionFields()};
+    selectionControls=function(t,nodeActions=false){const controls=legacySelectionControls(t,nodeActions);controls.classList.remove('node-selection-controls');controls.classList.add('global-selection-controls');controls.setAttribute('aria-label',nodeActions?'Global actions for this node':'Global actions for this target');controls.querySelectorAll('.target-selection-column').forEach(column=>{const label=column.querySelector('.target-selection-label'),button=column.querySelector('.target-selection-state'),scope=button?.dataset.selectionScope;if(!button||!scope)return;const id=button.dataset.selectionId,title=scope==='check'?'Check all':'Update all',state=targetSelection[scope]?.[id]||'',inputId=`target-selection-${scope}-${encodeURIComponent(id)}`,select=document.createElement('select');if(label)label.textContent=title;label?.setAttribute('for',inputId);select.id=inputId;select.dataset.selectionVariant=nodeActions?'node':'target';select.className='target-selection-state '+(state||'default')+(targetSelectionLoadState!=='ready'?' unavailable':'')+selectionVariantClass(select);select.dataset.selectionScope=scope;select.dataset.selectionId=id;for(const [value,text] of [['','Default'],['only','Only'],['exclude','Exclude']]){const option=document.createElement('option');option.value=value;option.textContent=text;select.appendChild(option)}select.value=state;select.disabled=targetSelectionLoadState!=='ready';select.setAttribute('aria-label',`${title}: ${selectionStateLabel(state)}`);select.title=`${title}: ${selectionStateLabel(state)}`;select.onchange=event=>{const desired=event.target.value,current=targetSelection[scope]?.[id]||'';if(desired===current){paintTargetSelection();return}const previous=selectionFieldState.get(selectionFieldKey(scope,id))?.previous??current;saveTargetSelection(scope,id,current,desired);const applied=targetSelection[scope]?.[id]||'';if(applied!==desired){paintTargetSelection();return}const record=selectionFieldState.get(selectionFieldKey(scope,id));selectionFieldState.set(selectionFieldKey(scope,id),{scope,id,previous,revision:targetSelectionRevision,sequence:(record?.sequence||0)+1});paintTargetSelection()};column.replaceChildren(label,select)});return controls};
+    flushTargetSelectionSave=async function(){if(targetSelectionSaveInFlight||!targetSelectionSaveQueued)return;targetSelectionSaveQueued=false;const revision=targetSelectionRevision,payload=copyTargetSelection(targetSelection),batch=[...selectionFieldState.values()].filter(record=>record.revision<=revision);targetSelectionSaveInFlight=true;try{if(targetSelectionEnablePromise)await targetSelectionEnablePromise;const data=await api('/api/target-selection',{method:'POST',body:JSON.stringify({selection:payload})}),saved=copyTargetSelection(data.selection||payload);for(const record of batch){setSelectionState(targetSelectionConfirmed,record.scope,record.id,saved[record.scope]?.[record.id]||'');const current=selectionFieldState.get(selectionFieldKey(record.scope,record.id));if(!current)continue;if(current.revision<=revision)selectionFieldState.delete(selectionFieldKey(record.scope,record.id));else current.previous=saved[record.scope]?.[record.id]||''}targetSelectionConfirmed.enabled=true;paintTargetSelection()}catch(error){let reverted=false;for(const record of batch){const current=selectionFieldState.get(selectionFieldKey(record.scope,record.id));if(!current||current.revision>revision)continue;setSelectionState(targetSelection,record.scope,record.id,record.previous);selectionFieldState.delete(selectionFieldKey(record.scope,record.id));reverted=true}if(reverted){paintTargetSelection();notice('Could not save target selection.',true)}}finally{targetSelectionSaveInFlight=false;if(targetSelectionSaveQueued)flushTargetSelectionSave()}};
+    selectionHeader=()=>'';
+    const guestTableHeader=()=>'<div class="guest-table-header" role="row"><span role="columnheader">Target</span><span role="columnheader">Status</span><span role="columnheader">Updates</span><span role="columnheader">OS</span><span role="columnheader">Last check</span><span class="header-global-actions" role="columnheader">Global actions<small><span>Check all</span><span>Update all</span></small></span><span role="columnheader">Actions</span></div>';
+    const insertGuestTableHeader=container=>{const list=container?.querySelector('.guest-list');if(list&&!list.querySelector('.guest-table-header'))list.insertAdjacentHTML('afterbegin',guestTableHeader())};
+    targetRow=function(t){const row=legacyTargetRow(t),actions=row.querySelector('.row-actions');if(!actions)return row;const updateFields=[...row.children].filter(item=>['Normal','Security','Updates','Reboot'].includes(item.querySelector('.target-label')?.textContent));if(updateFields.length){const updates=document.createElement('div');updates.className='target-field target-updates';row.insertBefore(updates,updateFields[0]);updateFields.forEach(field=>{field.remove();updates.appendChild(field)})}const selection=selectionControls(t),selectionFields=[...selection.querySelectorAll('select.target-selection-state')],selectionCells=selectionFields.map((select,index)=>{select.dataset.selectionVariant='guest';select.classList.add('guest-selection-state');const cell=document.createElement('div');cell.className=`row-global-actions row-global-selection ${index===0?'row-global-selection-check':'row-global-selection-update'}`;cell.setAttribute('aria-label',index===0?'Check all selection':'Update all selection');cell.appendChild(select);return cell});const directActions=document.createElement('div');directActions.className='row-actions';directActions.append(...actions.querySelectorAll('button'));row.replaceChild(selectionCells[0],actions);row.append(selectionCells[1],directActions);row.addEventListener('click',event=>{if(event.target.closest('select'))event.stopPropagation()},true);return row};
+    nodeGroup=function(node,guests,host){const parts=legacyNodeGroup(node,guests,host),actions=parts.card.querySelector('.group-actions'),controls=actions?.querySelector('.global-selection-controls');if(parts.panel)insertGuestTableHeader(parts.panel);if(actions&&controls){const group=document.createElement('section');group.className='node-global-actions';group.setAttribute('aria-label','Global actions for this node');group.appendChild(controls);parts.card.insertBefore(group,actions)}return parts};
+    externalGroup=function(targets){const group=legacyExternalGroup(targets);insertGuestTableHeader(group);return group};
+    bootstrap();''',
+    1,
+)
+
 
 def error_payload(code, message):
     return {"error": {"code": code, "message": message}}

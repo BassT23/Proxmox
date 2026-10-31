@@ -225,7 +225,7 @@ assert "target-selection-label" in page
 assert "node-selection-controls" in page
 assert "target-selection-controls::before" not in page
 assert ".node-group .group-actions { flex-wrap:nowrap; overflow-x:auto;" in page
-assert "✓ Only · ✕ Exclude · empty = no explicit rule" in page
+assert "Default = no explicit rule · Only = explicitly include · Exclude = explicitly omit" in page
 assert "targetSelectionConfirmed=copyTargetSelection(targetSelection)" in page
 assert "targetSelectionRevision" in page
 assert "Enable Ultimate Updater target selection?" in page
