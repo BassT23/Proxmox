@@ -2784,7 +2784,14 @@ EXIT () {
         {
           echo -e "Available Updates:"
           echo -e "S = Security / N = Normal\n"
-          sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g" "$LOCAL_FILES/check-output"
+          if declare -f STATUS_MODEL_STRIP_ANSI >/dev/null 2>&1; then
+            STATUS_MODEL_STRIP_ANSI < "$LOCAL_FILES/check-output"
+          else
+            sed -r \
+              -e "s/\x1B\[[0-?]*[ -/]*[@-~]//g" \
+              -e "s/\x1B\][^\x07]*(\x07|\x1B\\\\)//g" \
+              "$LOCAL_FILES/check-output"
+          fi
         } > "$LOCAL_FILES/mail-output"
         chmod 640 "$LOCAL_FILES/mail-output"
         if [[ $(stat -c%s "$LOCAL_FILES/mail-output") -gt 46 ]]; then
@@ -2792,12 +2799,16 @@ EXIT () {
           if [[ "$EMAIL_ONLY_SECURITY" == true && "$SECURITY_UPDATES_AVALABLE" == true ]]; then
             if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
               STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+            elif declare -f STATUS_MODEL_SEND_TEXT_MAIL >/dev/null 2>&1; then
+              STATUS_MODEL_SEND_TEXT_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
             else
               mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
             fi
           else
             if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
               STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
+            elif declare -f STATUS_MODEL_SEND_TEXT_MAIL >/dev/null 2>&1; then
+              STATUS_MODEL_SEND_TEXT_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
             else
               mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" < "$LOCAL_FILES"/mail-output
             fi
@@ -2806,6 +2817,9 @@ EXIT () {
           if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
             printf '%s\n' "No updates found during search" |
               STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater" "$EMAIL_SENDER" "$EMAIL_USER"
+          elif declare -f STATUS_MODEL_SEND_TEXT_MAIL >/dev/null 2>&1; then
+            printf '%s\n' "No updates found during search" |
+              STATUS_MODEL_SEND_TEXT_MAIL "Ultimate Updater" "$EMAIL_SENDER" "$EMAIL_USER"
           else
             echo "No updates found during search" |
               mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER"

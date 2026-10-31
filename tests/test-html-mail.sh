@@ -29,10 +29,14 @@ source "$ROOT_DIR/status-model.sh"
 
 long_line=$(printf 'x%.0s' {1..400})
 quoted_line=$(printf '%s %s' '"VM Name"' "'quoted'")
+ansi_line=$(printf '\033[1;92mANSI-MARKER\033[0m')
+osc_line=$(printf 'before\033]0;ignored-title\007after')
 body=$(printf '%s\n' \
   '<node>' \
   'A&B' \
   "$quoted_line" \
+  "$ansi_line" \
+  "$osc_line" \
   '' \
   '  indented line' \
   'Umlaute: äöü 😀' \
@@ -60,6 +64,16 @@ if grep -Fq '<node>' "$WORK_DIR/captures/1.body"; then
   echo 'unescaped HTML markup found in mail body' >&2
   exit 1
 fi
+python3 - "$WORK_DIR/captures/1.body" <<'PY'
+import sys
+
+body = open(sys.argv[1], encoding="utf-8").read()
+assert "\x1b" not in body, "ANSI escape remained in HTML mail"
+assert "[1;92m" not in body and "[0m" not in body, "ANSI parameters remained in HTML mail"
+assert "ANSI-MARKER" in body, "normal text was lost during ANSI cleanup"
+assert "beforeafter" in body, "OSC sequence was not removed"
+assert "ignored-title" not in body, "OSC payload leaked into HTML mail"
+PY
 
 # Header values are configuration-derived mail headers and must not accept
 # embedded line breaks.
@@ -108,5 +122,54 @@ sed -i 's/EMAIL_NO_UPDATES="false"/EMAIL_NO_UPDATES="true"/' "$WORK_DIR/update.c
 HOSTNAME=mail-test STATUS_MODEL_SEND_NOTIFICATION "$WORK_DIR/current-status.json" "$WORK_DIR/update.conf"
 [[ $(<"$WORK_DIR/count") == 5 ]]
 grep -Fq 'No updates found during search' "$WORK_DIR/captures/5.body"
+
+plain_line=$(printf '\033[1;33mPLAIN-ANSI-MARKER\033[0m')
+printf '%s\n' "$plain_line" |
+  STATUS_MODEL_SEND_TEXT_MAIL 'Plain subject' 'sender@example.test' 'recipient@example.test'
+[[ $(<"$WORK_DIR/count") == 6 ]]
+python3 - "$WORK_DIR/captures/6.body" <<'PY'
+import sys
+
+body = open(sys.argv[1], encoding="utf-8").read()
+assert "\x1b" not in body, "ANSI escape remained in plaintext mail"
+assert "[1;33m" not in body and "[0m" not in body, "ANSI parameters remained in plaintext mail"
+assert "PLAIN-ANSI-MARKER" in body
+PY
+if printf '%s\n' 'body' |
+  STATUS_MODEL_SEND_TEXT_MAIL $'bad\nX-Injected: yes' sender@example.test recipient@example.test; then
+  echo 'plaintext header injection was accepted' >&2
+  exit 1
+fi
+[[ $(<"$WORK_DIR/count") == 6 ]]
+
+python3 - "$WORK_DIR/ansi-status.json" <<'PY'
+import json
+import sys
+
+payload = {"targets": [{
+    "id": "guest:987",
+    "type": "lxc",
+    "name": "ansi-status",
+    "check_status": "error",
+    "reachable": True,
+    "updates": {"available": None},
+    "error": {
+        "code": "CHECK_FAILED",
+        "message": "before\x1b]0;ignored-title\x07\x1b[1;91mSTATUS-ANSI-MARKER\x1b[0mafter",
+    },
+}]}
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(payload, output)
+PY
+HOSTNAME=mail-test STATUS_MODEL_SEND_NOTIFICATION "$WORK_DIR/ansi-status.json" "$WORK_DIR/update.conf"
+[[ $(<"$WORK_DIR/count") == 7 ]]
+python3 - "$WORK_DIR/captures/7.body" <<'PY'
+import sys
+
+body = open(sys.argv[1], encoding="utf-8").read()
+assert "\x1b" not in body, "ANSI escape remained in status notification"
+assert "STATUS-ANSI-MARKER" in body
+assert "ignored-title" not in body
+PY
 
 echo 'html mail tests: PASS'

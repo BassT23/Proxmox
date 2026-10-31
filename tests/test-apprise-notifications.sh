@@ -28,6 +28,11 @@ class Apprise:
         if log:
             with open(log, "a", encoding="utf-8") as output:
                 output.write(self.url + "\n")
+        body_log = os.environ.get("FAKE_APPRISE_BODY_LOG")
+        if body_log:
+            with open(body_log, "a", encoding="utf-8") as output:
+                output.write(body)
+                output.write("\n---BODY-END---\n")
         if self.url in os.environ.get("FAKE_APPRISE_FAIL", "").split("\n"):
             return False
         if self.url in os.environ.get("FAKE_APPRISE_SLEEP", "").split("\n"):
@@ -65,6 +70,22 @@ STATUS_MODEL_SEND_APPRISE "$WORK_DIR/status.json" check updates 'disabled' || ex
 [[ ! -s "$WORK_DIR/delivery.log" ]]
 
 export UU_APPRISE_URLS_FILE="$WORK_DIR/config/providers"
+export FAKE_APPRISE_BODY_LOG="$WORK_DIR/ansi-body.log"
+export FAKE_APPRISE_LOG="$WORK_DIR/ansi-delivery.log"
+export UU_APPRISE_STATE_FILE="$WORK_DIR/ansi-state.json"
+ansi_body=$(printf 'before\033]0;ignored-title\007\033[1;92mAPPRISE-ANSI-MARKER\033[0mafter')
+STATUS_MODEL_SEND_APPRISE "$WORK_DIR/status.json" check updates "$ansi_body"
+python3 - "$WORK_DIR/ansi-body.log" <<'PY'
+import sys
+
+body = open(sys.argv[1], encoding="utf-8").read()
+assert "\x1b" not in body, "ANSI escape remained in Apprise body"
+assert "[1;92m" not in body and "[0m" not in body, "ANSI parameters remained in Apprise body"
+assert "ignored-title" not in body, "OSC payload leaked into Apprise body"
+assert "beforeAPPRISE-ANSI-MARKERafter" in body
+PY
+export UU_APPRISE_STATE_FILE="$WORK_DIR/state.json"
+export FAKE_APPRISE_LOG="$WORK_DIR/delivery.log"
 run_delivery() {
   set +e
   printf '%s\n' 'synthetic notification with <safe> content' |

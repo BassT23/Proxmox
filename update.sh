@@ -3941,8 +3941,13 @@ EXIT () {
           if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
             UPDATE_MAIL_BODY |
               STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" 2>/dev/null || true
+          elif declare -f STATUS_MODEL_SEND_TEXT_MAIL >/dev/null 2>&1; then
+            UPDATE_MAIL_BODY |
+              STATUS_MODEL_SEND_TEXT_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" 2>/dev/null || true
           else
-            UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null || true
+            UPDATE_MAIL_BODY |
+              sed -r -e "s/\x1B\[[0-?]*[ -/]*[@-~]//g" -e "s/\x1B\][^\x07]*(\x07|\x1B\\\\)//g" |
+              mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null || true
           fi
         fi
       else
@@ -3954,8 +3959,13 @@ EXIT () {
             if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
               UPDATE_MAIL_BODY |
                 STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater" "$EMAIL_SENDER" "$EMAIL_USER" 2>/dev/null || true
+            elif declare -f STATUS_MODEL_SEND_TEXT_MAIL >/dev/null 2>&1; then
+              UPDATE_MAIL_BODY |
+                STATUS_MODEL_SEND_TEXT_MAIL "Ultimate Updater" "$EMAIL_SENDER" "$EMAIL_USER" 2>/dev/null || true
             else
-              UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
+              UPDATE_MAIL_BODY |
+                sed -r -e "s/\x1B\[[0-?]*[ -/]*[@-~]//g" -e "s/\x1B\][^\x07]*(\x07|\x1B\\\\)//g" |
+                mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
             fi
           fi
         fi
@@ -3977,8 +3987,13 @@ EXIT () {
         if declare -f STATUS_MODEL_SEND_HTML_MAIL >/dev/null 2>&1; then
           UPDATE_MAIL_BODY |
             STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" 2>/dev/null
+        elif declare -f STATUS_MODEL_SEND_TEXT_MAIL >/dev/null 2>&1; then
+          UPDATE_MAIL_BODY |
+            STATUS_MODEL_SEND_TEXT_MAIL "Ultimate Updater summary - $HOSTNAME" "$EMAIL_SENDER" "$EMAIL_USER" 2>/dev/null
         else
-          UPDATE_MAIL_BODY | mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
+          UPDATE_MAIL_BODY |
+            sed -r -e "s/\x1B\[[0-?]*[ -/]*[@-~]//g" -e "s/\x1B\][^\x07]*(\x07|\x1B\\\\)//g" |
+            mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
         fi
       fi
     fi

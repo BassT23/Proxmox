@@ -2334,6 +2334,39 @@ if external_targets:
 PY
 }
 
+# Remove terminal control sequences at the notification boundary. Terminal
+# output and persisted logs intentionally retain their ANSI formatting; only
+# text that is about to leave through a notification provider is normalized.
+STATUS_MODEL_STRIP_ANSI() {
+  python3 -c '
+import re
+import sys
+
+ansi = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
+sys.stdout.write(ansi.sub("", sys.stdin.read()))
+'
+}
+
+# Deliver sanitized UTF-8 plaintext while retaining the existing mail headers
+# and rejecting configuration-derived header injection.
+STATUS_MODEL_SEND_TEXT_MAIL() {
+  local subject="${1:-}" sender="${2:-}" recipient="${3:-}"
+
+  if [[ "$subject" == *$'\r'* || "$subject" == *$'\n'* ||
+    "$sender" == *$'\r'* || "$sender" == *$'\n'* ||
+    "$recipient" == *$'\r'* || "$recipient" == *$'\n'* ]]; then
+    return 2
+  fi
+
+  STATUS_MODEL_STRIP_ANSI |
+    mail \
+      -a 'Content-Type: text/plain; charset=UTF-8' \
+      -a 'Content-Transfer-Encoding: 8bit' \
+      -r "$sender" \
+      -s "$subject" \
+      "$recipient"
+}
+
 # Convert the existing plain-text notification body into a small, safe HTML
 # document immediately before delivery.  The text renderer remains the source
 # of truth for notification content and selection; this helper only changes
@@ -2351,7 +2384,7 @@ STATUS_MODEL_SEND_HTML_MAIL() {
     return 2
   fi
 
-  python3 -c '
+  STATUS_MODEL_STRIP_ANSI | python3 -c '
 import html
 import sys
 
@@ -2403,6 +2436,7 @@ STATUS_MODEL_SEND_APPRISE() {
     }
   fi
   printf '%s\n' "$body" |
+    STATUS_MODEL_STRIP_ANSI |
     "$python_bin" "$helper" "$kind" "$status_file" "$state" "$run_started_at"
 }
 

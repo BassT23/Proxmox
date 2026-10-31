@@ -177,6 +177,21 @@ if grep -Eiq 'Erfolgreich|fehlgeschlagen|Neustart erforderlich|Alles aktuell|Pak
   exit 1
 fi
 
+printf 'Error output: \033[1;91mLEGACY-ERROR-MARKER\033[0m\n' > "$WORK_DIR/errors"
+export MAIL_CAPTURE="$WORK_DIR/legacy-error-mail"
+LOCAL_FILES="$WORK_DIR" HOSTNAME=Proxmox-Test-1 ID=984 NAME=unifi CCONTAINER=true \
+  LOG_FILE="$WORK_DIR/log" ERROR_LOG_FILE="$WORK_DIR/errors" EXIT_CODE=1 \
+  bash -c 'mail() { cat > "$MAIL_CAPTURE"; }; export -f mail; source "$1"; source "$2"; UPDATE_MAIL_BODY | STATUS_MODEL_SEND_TEXT_MAIL "Legacy error" sender@example.test recipient@example.test' _ \
+  "$ROOT_DIR/status-model.sh" "$WORK_DIR/update-mail.sh"
+python3 - "$WORK_DIR/legacy-error-mail" <<'PY'
+import sys
+
+body = open(sys.argv[1], encoding="utf-8").read()
+assert "\x1b" not in body, "ANSI escape remained in legacy update mail"
+assert "[1;91m" not in body and "[0m" not in body
+assert "LEGACY-ERROR-MARKER" in body
+PY
+
 LOCAL_FILES="$WORK_DIR" SINGLE_UPDATE=true HOSTNAME=Proxmox-Test-1 ID=984 NAME=unifi \
   CCONTAINER=true LOG_FILE="$WORK_DIR/log" ERROR_LOG_FILE="$WORK_DIR/errors" EXIT_CODE=0 \
   bash -c 'source "$1"; source "$2"; UPDATE_MAIL_BODY' _ \
