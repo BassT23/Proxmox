@@ -442,7 +442,7 @@ GUEST_INTERNET_PREFLIGHT_COMMAND() {
   [[ -n "$url" ]] || return 1
   printf -v executable_q '%q' "$executable"
   printf -v url_q '%q' "$url"
-  printf '%s -q -c1 %s >/dev/null 2>&1' "$executable_q" "$url_q"
+  printf '%s -q -c1 %s >/dev/null 2>&1; rc=$?; exit "$rc"' "$executable_q" "$url_q"
 }
 
 GUEST_INTERNET_PREFLIGHT_PCT() {
