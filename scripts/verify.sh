@@ -45,6 +45,7 @@ shell_tests=(
   tests/test-config-merge.sh
   tests/test-initial-inventory-readonly.sh
   tests/test-initial-inventory-guest-preflight.sh
+  tests/test-pct-preflight-shell.sh
   tests/test-product-version-identity.sh
   tests/test-mail-renderer.sh
   tests/test-html-mail.sh

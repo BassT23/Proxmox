@@ -545,7 +545,10 @@ GUEST_INTERNET_PREFLIGHT_COMMAND() {
   [[ -n "$url" ]] || return 1
   printf -v executable_q '%q' "$executable"
   printf -v url_q '%q' "$url"
-  printf '%s -q -c1 %s >/dev/null 2>&1' "$executable_q" "$url_q"
+  # Keep the guest probe alive while pct tears down its PTY.  BusyBox ash may
+  # otherwise inherit a SIGHUP and report 129 even when connectivity is fine.
+  # shellcheck disable=SC2016
+  printf 'trap "" HUP; %s -q -c1 %s >/dev/null 2>&1; rc=$?; exit "$rc"' "$executable_q" "$url_q"
 }
 
 # shellcheck disable=SC2329  # invoked by GUEST_INTERNET_PREFLIGHT_RETRY
