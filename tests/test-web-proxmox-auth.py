@@ -82,8 +82,15 @@ assert auth.authenticate("admin", "secret", "pam") == {"ok": True, "user": "admi
 # Authentication diagnostics expose only safe operation metadata.  They must
 # never include response bodies, credentials, tickets, or command output.
 old_run = server.subprocess.run
-server.subprocess.run = lambda *args, **kwargs: SimpleNamespace(
-    returncode=17, stdout="command output containing secret-ticket")
+run_kwargs = {}
+
+
+def failing_pvesh(*args, **kwargs):
+    run_kwargs.update(kwargs)
+    return SimpleNamespace(returncode=17, stdout="command output containing secret-ticket")
+
+
+server.subprocess.run = failing_pvesh
 try:
     auth = server.ProxmoxAuth()
     try:
@@ -97,6 +104,7 @@ finally:
 diagnostic = assert_diagnostic("authorization permissions", "pvesh failure", returncode=17)
 assert "secret-ticket" not in diagnostic
 assert "command output" not in diagnostic
+assert run_kwargs["timeout"] == 15
 
 
 class TimeoutOpener:
@@ -347,6 +355,8 @@ revoked_store.sessions[revoked_token] = {
 assert revoked_store.session(revoked_token) is None
 assert revoked_token not in revoked_store.sessions
 assert server.ProxmoxAuth.AUTHORIZATION_TTL == 300
+assert server.ProxmoxAuth.TIMEOUT == 5
+assert server.ProxmoxAuth.PVESH_TIMEOUT == 15
 
 # Challenges are client-bound and cannot be replayed after completion.
 assert store.complete_tfa(pending["challenge_id"], "totp", "123456", pending["_tfa_binding"])["code"] == "TFA_EXPIRED"

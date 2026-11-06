@@ -3648,6 +3648,9 @@ class ProxmoxAuth:
     # than it does completing a valid one. Keep a bounded timeout without
     # misclassifying that authentication result as service unavailability.
     TIMEOUT = 5
+    # Local pvesh authorization lookups can take slightly longer on newer PVE
+    # releases while remaining a bounded, read-only authentication step.
+    PVESH_TIMEOUT = 15
     AUTHORIZATION_TTL = 5 * 60
 
     def __init__(self):
@@ -3784,7 +3787,7 @@ class ProxmoxAuth:
         }.get(args[1] if len(args) > 1 else "", "authorization")
         try:
             result = subprocess.run(command, capture_output=True, text=True,
-                                    timeout=self.TIMEOUT, check=False)
+                                    timeout=self.PVESH_TIMEOUT, check=False)
         except (OSError, subprocess.TimeoutExpired) as error:
             log_proxmox_auth_diagnostic(operation, "pvesh failure",
                                         exception=type(error).__name__)
