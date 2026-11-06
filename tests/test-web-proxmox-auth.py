@@ -2,9 +2,12 @@
 """Regression tests for Proxmox-native Web UI authentication."""
 
 import importlib.util
+from io import BytesIO
 import json
+import logging
 import threading
 import time
+from types import SimpleNamespace
 from pathlib import Path
 from urllib.parse import quote
 
@@ -21,6 +24,30 @@ REALMS = [
 ]
 ROLE = [{"roleid": "Administrator", "privs": "Sys.Audit,VM.Audit"}]
 FULL_PERMISSIONS = {"/": {"Sys.Audit": 1, "VM.Audit": 1}}
+
+
+class DiagnosticCapture(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.messages = []
+
+    def emit(self, record):
+        self.messages.append(record.getMessage())
+
+
+diagnostic_capture = DiagnosticCapture()
+server.PROXMOX_AUTH_LOGGER.addHandler(diagnostic_capture)
+server.PROXMOX_AUTH_LOGGER.setLevel(logging.WARNING)
+
+
+def assert_diagnostic(operation, classification, **expected):
+    matching = [message for message in diagnostic_capture.messages
+                if f"operation={operation}" in message and f"class={classification}" in message]
+    assert matching, f"missing diagnostic for {operation}/{classification}"
+    message = matching[-1]
+    for key, value in expected.items():
+        assert f"{key}={value}" in message, message
+    return message
 
 
 def make_auth(permission=FULL_PERMISSIONS):
@@ -51,6 +78,132 @@ realms = auth.realms()
 assert [item["realm"] for item in realms["realms"]] == ["pam", "pve"]
 assert realms["default_realm"] == "pam"
 assert auth.authenticate("admin", "secret", "pam") == {"ok": True, "user": "admin@pam"}
+
+# Authentication diagnostics expose only safe operation metadata.  They must
+# never include response bodies, credentials, tickets, or command output.
+old_run = server.subprocess.run
+server.subprocess.run = lambda *args, **kwargs: SimpleNamespace(
+    returncode=17, stdout="command output containing secret-ticket")
+try:
+    auth = server.ProxmoxAuth()
+    try:
+        auth._pvesh_json(["get", "/access/permissions"])
+    except server.ProxmoxAuthError:
+        pass
+    else:
+        raise AssertionError("pvesh failure did not raise")
+finally:
+    server.subprocess.run = old_run
+diagnostic = assert_diagnostic("authorization permissions", "pvesh failure", returncode=17)
+assert "secret-ticket" not in diagnostic
+assert "command output" not in diagnostic
+
+
+class TimeoutOpener:
+    def open(self, *args, **kwargs):
+        raise TimeoutError("secret timeout detail")
+
+
+auth = server.ProxmoxAuth()
+auth._opener = TimeoutOpener()
+try:
+    auth._request("/access/domains")
+except server.ProxmoxAuthError:
+    pass
+else:
+    raise AssertionError("transport timeout did not raise")
+diagnostic = assert_diagnostic("realm discovery", "transport/timeout", exception="TimeoutError")
+assert "secret timeout detail" not in diagnostic
+
+
+class MalformedResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self, _limit):
+        return b"not-json"
+
+
+class MalformedOpener:
+    def open(self, *args, **kwargs):
+        return MalformedResponse()
+
+
+auth = server.ProxmoxAuth()
+auth._opener = MalformedOpener()
+try:
+    auth._request("/access/ticket")
+except server.ProxmoxAuthError:
+    pass
+else:
+    raise AssertionError("malformed API response did not raise")
+assert_diagnostic("ticket request", "malformed response", exception="JSONDecodeError")
+
+
+class HttpErrorOpener:
+    def __init__(self, status, body):
+        self.status = status
+        self.body = body
+
+    def open(self, request, timeout):
+        raise server.HTTPError(request.full_url, self.status, "test", {}, BytesIO(self.body))
+
+
+auth = server.ProxmoxAuth()
+auth._opener = HttpErrorOpener(401, b'{"data":{"errors":"invalid secret"}}')
+try:
+    auth._request("/access/ticket", {"password": "secret-password"})
+except server.ProxmoxAuthError as error:
+    assert error.authentication_failure is True
+else:
+    raise AssertionError("HTTP authentication failure did not raise")
+diagnostic = assert_diagnostic("ticket request", "http authentication failure", http_status=401)
+assert "secret-password" not in diagnostic
+assert "invalid secret" not in diagnostic
+
+auth = server.ProxmoxAuth()
+auth._opener = HttpErrorOpener(503, b'{"data":{"error":"backend secret"}}')
+try:
+    auth._request("/access/domains")
+except server.ProxmoxAuthError as error:
+    assert error.authentication_failure is False
+else:
+    raise AssertionError("HTTP service failure did not raise")
+diagnostic = assert_diagnostic("realm discovery", "http error", http_status=503)
+assert "backend secret" not in diagnostic
+
+auth = server.ProxmoxAuth()
+auth._request = lambda path, fields=None: []
+try:
+    auth.realms()
+except server.ProxmoxAuthError:
+    pass
+else:
+    raise AssertionError("empty realm configuration did not raise")
+assert_diagnostic("realm discovery", "configuration")
+
+auth = server.ProxmoxAuth()
+auth._pvesh_json = lambda args: {"unexpected": True}
+try:
+    auth.authorized("admin@pam")
+except server.ProxmoxAuthError:
+    pass
+else:
+    raise AssertionError("malformed permission response did not raise")
+assert_diagnostic("authorization permissions", "malformed response")
+
+auth = server.ProxmoxAuth()
+auth._pvesh_json = lambda args: {}
+try:
+    auth._administrator_privileges(time.monotonic())
+except server.ProxmoxAuthError:
+    pass
+else:
+    raise AssertionError("malformed role response did not raise")
+assert_diagnostic("authorization roles", "malformed response")
 
 # Proxmox's partial ticket is a TFA challenge even without a separate flag.
 auth._request = lambda path, fields=None: (

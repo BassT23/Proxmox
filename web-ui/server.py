@@ -10,6 +10,7 @@ import hmac
 import importlib.util
 import ipaddress
 import json
+import logging
 import os
 import re
 import secrets
@@ -31,6 +32,19 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, parse_qsl, urlencode, unquote, urlsplit
 from urllib.request import Request, build_opener, ProxyHandler
+
+
+PROXMOX_AUTH_LOGGER = logging.getLogger("ultimate-updater-web.proxmox-auth")
+
+
+def log_proxmox_auth_diagnostic(operation, classification, **metadata):
+    """Write safe, structured diagnostics for failed Proxmox auth operations."""
+    fields = [f"operation={operation}", f"class={classification}"]
+    for key in ("http_status", "returncode", "exception"):
+        value = metadata.get(key)
+        if value is not None:
+            fields.append(f"{key}={value}")
+    PROXMOX_AUTH_LOGGER.warning("Proxmox authentication diagnostic: %s", " ".join(fields))
 
 try:
     from pam_auth import authenticate as pam_authenticate
@@ -3644,6 +3658,10 @@ class ProxmoxAuth:
         self._authorization_lock = threading.Lock()
 
     def _request(self, path, fields=None, request_host=None, request_origin=None):
+        operation = {
+            "/access/domains": "realm discovery",
+            "/access/ticket": "ticket request",
+        }.get(path, "api request")
         data = urlencode(fields).encode("utf-8") if fields is not None else None
         request = Request(self.API_URL + path, data=data, method="POST" if data else "GET")
         if data:
@@ -3654,17 +3672,34 @@ class ProxmoxAuth:
             request.add_header("Origin", request_origin)
         try:
             with self._opener.open(request, timeout=self.TIMEOUT) as response:
-                payload = json.loads(response.read(1024 * 1024).decode("utf-8"))
+                response_body = response.read(1024 * 1024)
         except HTTPError as error:
             try:
                 payload = json.loads(error.read(1024 * 1024).decode("utf-8"))
-            except (OSError, UnicodeError, ValueError):
+            except (OSError, UnicodeError, ValueError) as parse_error:
+                log_proxmox_auth_diagnostic(operation, "malformed response",
+                                            http_status=error.code,
+                                            exception=type(parse_error).__name__)
                 raise ProxmoxAuthError() from error
+            classification = ("http authentication failure"
+                              if error.code in {401, 403} else "http error")
+            log_proxmox_auth_diagnostic(operation, classification, http_status=error.code)
             raise ProxmoxAuthError("Proxmox authentication failed.", self._has_tfa(payload),
                                    error.code in {401, 403}) from error
         except (OSError, UnicodeError, ValueError, URLError) as error:
+            reason = getattr(error, "reason", None)
+            is_timeout = isinstance(error, (TimeoutError, socket.timeout)) or isinstance(reason, TimeoutError)
+            log_proxmox_auth_diagnostic(operation, "transport/timeout" if is_timeout else "transport",
+                                        exception=type(error).__name__)
             raise ProxmoxAuthError() from error
+        try:
+            payload = json.loads(response_body.decode("utf-8"))
+        except (UnicodeError, ValueError) as error:
+            log_proxmox_auth_diagnostic(operation, "malformed response",
+                                        exception=type(error).__name__)
+            raise ProxmoxAuthError("Malformed Proxmox API response.") from error
         if not isinstance(payload, dict) or "data" not in payload:
+            log_proxmox_auth_diagnostic(operation, "malformed response")
             raise ProxmoxAuthError("Malformed Proxmox API response.")
         return payload["data"]
 
@@ -3716,20 +3751,25 @@ class ProxmoxAuth:
             return self._realm_cache[1]
         data = self._request("/access/domains")
         if not isinstance(data, list):
+            log_proxmox_auth_diagnostic("realm discovery", "malformed response")
             raise ProxmoxAuthError("Malformed Proxmox realm response.")
         realms = []
         for item in data:
             if not isinstance(item, dict):
+                log_proxmox_auth_diagnostic("realm discovery", "malformed response")
                 raise ProxmoxAuthError("Malformed Proxmox realm response.")
             realm = item.get("realm")
             if not isinstance(realm, str) or not REALM_RE.fullmatch(realm):
+                log_proxmox_auth_diagnostic("realm discovery", "malformed response")
                 raise ProxmoxAuthError("Malformed Proxmox realm response.")
             comment = item.get("comment", "")
             if not isinstance(comment, str):
+                log_proxmox_auth_diagnostic("realm discovery", "malformed response")
                 raise ProxmoxAuthError("Malformed Proxmox realm response.")
             realms.append({"realm": realm, "comment": comment, "type": str(item.get("type", "")),
                            "tfa": str(item.get("tfa", ""))})
         if not realms:
+            log_proxmox_auth_diagnostic("realm discovery", "configuration")
             raise ProxmoxAuthError("No Proxmox authentication realms are configured.")
         default_realm = next((item["realm"] for item in realms if item["realm"] == "pam"), realms[0]["realm"])
         result = {"realms": realms, "default_realm": default_realm}
@@ -3738,16 +3778,25 @@ class ProxmoxAuth:
 
     def _pvesh_json(self, args):
         command = ["pvesh", *args, "--output-format", "json"]
+        operation = {
+            "/access/permissions": "authorization permissions",
+            "/access/roles": "authorization roles",
+        }.get(args[1] if len(args) > 1 else "", "authorization")
         try:
             result = subprocess.run(command, capture_output=True, text=True,
                                     timeout=self.TIMEOUT, check=False)
         except (OSError, subprocess.TimeoutExpired) as error:
+            log_proxmox_auth_diagnostic(operation, "pvesh failure",
+                                        exception=type(error).__name__)
             raise ProxmoxAuthError("Proxmox authorization is unavailable.") from error
         if result.returncode:
+            log_proxmox_auth_diagnostic(operation, "pvesh failure", returncode=result.returncode)
             raise ProxmoxAuthError("Proxmox authorization is unavailable.")
         try:
             return json.loads(result.stdout)
         except (TypeError, ValueError) as error:
+            log_proxmox_auth_diagnostic(operation, "malformed response",
+                                        exception=type(error).__name__)
             raise ProxmoxAuthError("Malformed Proxmox authorization response.") from error
 
     def _administrator_privileges(self, now):
@@ -3756,11 +3805,13 @@ class ProxmoxAuth:
             return cached[1]
         roles = self._pvesh_json(["get", "/access/roles"])
         if not isinstance(roles, list):
+            log_proxmox_auth_diagnostic("authorization roles", "malformed response")
             raise ProxmoxAuthError("Malformed Proxmox role response.")
         administrator = next((item for item in roles
                               if isinstance(item, dict) and item.get("roleid") == "Administrator"), None)
         privileges = administrator.get("privs") if administrator else None
         if not isinstance(privileges, str) or not privileges:
+            log_proxmox_auth_diagnostic("authorization roles", "configuration")
             raise ProxmoxAuthError("Proxmox Administrator role is unavailable.")
         result = {privilege for privilege in privileges.split(",") if privilege}
         self._administrator_privileges_cache = (now + self.AUTHORIZATION_TTL, result)
@@ -3781,6 +3832,7 @@ class ProxmoxAuth:
             permissions = self._pvesh_json(["get", "/access/permissions", "--path", "/",
                                             "--userid", userid])
             if not isinstance(permissions, dict) or not isinstance(permissions.get("/"), dict):
+                log_proxmox_auth_diagnostic("authorization permissions", "malformed response")
                 raise ProxmoxAuthError("Malformed Proxmox permission response.")
             effective = {key for key, value in permissions["/"].items() if value}
             result = self._administrator_privileges(now).issubset(effective)
