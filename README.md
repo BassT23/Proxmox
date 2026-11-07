@@ -161,7 +161,7 @@ and limitations in [Supported systems](docs/supported-systems.md) and
 - [Advanced operation](docs/advanced.md)
 - [Acknowledgments](docs/acknowledgments.md)
 
-Additional project documents: [Testing](TESTING.md), [5.1 release notes](RELEASE_NOTES_5.1.md), [5.1 upgrade notes](UPGRADE_NOTES_5.1.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
+Additional project documents: [Testing](TESTING.md), [5.2 release notes](RELEASE_NOTES_5.2.md), [5.2 upgrade notes](UPGRADE_NOTES_5.2.md), [5.1 release notes](RELEASE_NOTES_5.1.md), [5.1 upgrade notes](UPGRADE_NOTES_5.1.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Q&A
 

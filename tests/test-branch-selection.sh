@@ -27,7 +27,7 @@ grep -Fq "BRANCH=\"\${UU_TARGET_BRANCH:-master}\"" "$ROOT_DIR/install.sh"
 if grep -Fq 'beta branch is no longer active' "$ROOT_DIR/update.sh" "$ROOT_DIR/welcome-screen.sh"; then
   exit 1
 fi
-if grep -Fq 'beta-outdated' "$ROOT_DIR/README.md" "$ROOT_DIR/RELEASE_NOTES_5.1_BETA.md" "$ROOT_DIR/UPGRADE_NOTES_5.1.md"; then
+if grep -Fq 'beta-outdated' "$ROOT_DIR/README.md" "$ROOT_DIR/RELEASE_NOTES_5.1.md" "$ROOT_DIR/UPGRADE_NOTES_5.1.md" "$ROOT_DIR/RELEASE_NOTES_5.2.md" "$ROOT_DIR/UPGRADE_NOTES_5.2.md"; then
   exit 1
 fi
 
