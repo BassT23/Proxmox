@@ -218,9 +218,10 @@ assert "new Intl.Collator(undefined,{numeric:true,sensitivity:'base'})" in page
 assert "const sortNodes=items=>[...items].sort" in page
 assert "nodes=sortNodes(ts.filter(isProxmoxNode))" in page
 assert "externalGroup(external)" in page
-assert "target-selection-header" in page
-assert "Bulk action selection" in page
-assert "Choose which targets are used by Check all and Update all." in page
+assert "target-selection-indicator" in page
+assert "selectionHeader=()=>''" in page
+assert "Bulk action selection" not in page
+assert "Choose which targets are used by Check all and Update all." not in page
 assert "target-selection-label" in page
 assert "node-selection-controls" in page
 assert "target-selection-controls::before" not in page

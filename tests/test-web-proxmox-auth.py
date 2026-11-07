@@ -5,6 +5,7 @@ import importlib.util
 from io import BytesIO
 import json
 import logging
+from urllib.error import HTTPError
 import threading
 import time
 from types import SimpleNamespace
@@ -79,7 +80,7 @@ assert [item["realm"] for item in realms["realms"]] == ["pam", "pve"]
 assert realms["default_realm"] == "pam"
 assert auth.authenticate("admin", "secret", "pam") == {"ok": True, "user": "admin@pam"}
 
-# Authentication diagnostics expose only safe operation metadata.  They must
+# Authentication diagnostics expose only safe operation metadata. They must
 # never include response bodies, credentials, tickets, or command output.
 old_run = server.subprocess.run
 run_kwargs = {}
@@ -125,6 +126,9 @@ assert "secret timeout detail" not in diagnostic
 
 
 class MalformedResponse:
+    def __init__(self, payload=b"not-json"):
+        self.payload = payload
+
     def __enter__(self):
         return self
 
@@ -231,13 +235,17 @@ auth._request = lambda path, fields=None: (
 )
 assert auth.authenticate("admin", "secret", "pam")["code"] == "LOGIN_UNAUTHORIZED"
 
-auth._request = lambda path, fields=None: (_ for _ in ()).throw(server.ProxmoxAuthError())
-assert auth.authenticate("admin", "secret", "pam")["code"] == "LOGIN_FAILED"
+auth._request = lambda path, fields=None: (_ for _ in ()).throw(
+    server.ProxmoxAuthError(operation="ticket request", failure_class="transport"))
+unavailable = auth.authenticate("admin", "secret", "pam")
+assert unavailable == {"ok": False, "code": "LOGIN_FAILED",
+                       "message": "Proxmox authentication is unavailable."}
 
 # Proxmox rejects invalid first-factor credentials with HTTP 401/403. Those
 # responses are authentication failures, not an unavailable Proxmox service.
 auth._request = lambda path, fields=None: (_ for _ in ()).throw(
-    server.ProxmoxAuthError(authentication_failure=True))
+    server.ProxmoxAuthError(authentication_failure=True, operation="ticket request",
+                            failure_class="http authentication failure", http_status=401))
 assert auth.authenticate("admin", "secret", "pam")["code"] == "LOGIN_FAILED"
 
 auth._request = lambda path, fields=None: REALMS
@@ -267,7 +275,8 @@ assert complete_calls[-1]["password"] == "totp:123456"
 assert complete_calls[-1]["tfa-challenge"] == partial
 
 auth._request = lambda path, fields=None: (_ for _ in ()).throw(
-    server.ProxmoxAuthError(authentication_failure=True))
+    server.ProxmoxAuthError(authentication_failure=True, operation="ticket request",
+                            failure_class="http authentication failure", http_status=401))
 assert auth.complete_tfa("admin", "pam", partial, "totp", "123456")["code"] == "TFA_FAILED"
 
 # WebAuthn uses the same Proxmox partial-ticket flow. The browser receives only
@@ -330,7 +339,8 @@ assert store.session(session["token"])["user"] == "admin@pam"
 # an unavailable-authorizer result to the HTTP layer instead of becoming 401.
 transient_store = server.AuthStore(Path("/tmp/unused-proxmox-transient-auth-test.json"))
 transient_store.backend = "proxmox"
-transient_store.proxmox.authorized = lambda userid: (_ for _ in ()).throw(server.ProxmoxAuthError())
+transient_store.proxmox.authorized = lambda userid: (_ for _ in ()).throw(
+    server.ProxmoxAuthError(operation="authorization permissions", failure_class="transport"))
 transient_token = "transient-token"
 transient_store.sessions[transient_token] = {
     "user": "admin@pam", "csrf": "csrf-token", "expires": time.time() + 60,
@@ -455,7 +465,8 @@ finally:
 auth, _ = make_auth()
 assert auth.authorized("admin@pam") is True
 auth._authorization_cache["admin@pam"] = (0, True)
-auth._pvesh_json = lambda args: (_ for _ in ()).throw(server.ProxmoxAuthError())
+auth._pvesh_json = lambda args: (_ for _ in ()).throw(
+    server.ProxmoxAuthError(operation="authorization permissions", failure_class="pvesh failure"))
 try:
     auth.authorized("admin@pam")
 except server.ProxmoxAuthError:

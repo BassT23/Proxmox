@@ -59,6 +59,18 @@ assert 'html[data-theme="classic"] .filter-preview-toggle:focus-visible' in page
 assert 'html[data-theme="classic"] .help-trigger:focus-visible' in page
 assert 'html[data-theme="classic"] .filter-preview-toggle:hover' in page
 assert 'html[data-theme="classic"] .help-control.open .help-trigger' in page
+for selector in (
+    'html[data-theme="classic"] .target-selection-header',
+    'html[data-theme="classic"] .guest-table-header .header-global-actions small',
+    'html[data-theme="classic"] .node-global-actions',
+    'html[data-theme="classic"] .global-selection-controls .target-selection-state.only',
+    'html[data-theme="classic"] .global-selection-controls .target-selection-state.exclude',
+    'html[data-theme="classic"] .global-selection-controls .target-selection-state:focus-visible',
+):
+    assert selector in page
+assert 'html[data-theme="classic"] .guest-table-header { border-top-color:#69737b; background:#30373d; }' in page
+assert 'html[data-theme="classic"] .global-selection-controls .target-selection-state.only' in page
+assert 'html[data-theme="classic"] .global-selection-controls .target-selection-state.exclude' in page
 assert 'html[data-theme="classic"] .help-trigger {\n    border-radius:0;\n    border-color:#69737b;' in page
 assert 'html[data-theme="classic"] #settings-page #config-form .settings-group' in page
 assert 'html[data-theme="classic"] #settings-page .internal-ssh-view .settings-group' in page

@@ -81,6 +81,30 @@ def strip_ansi(text):
     return ANSI_ESCAPE_RE.sub("", text)
 
 
+PROXMOX_AUTH_LOGGER = logging.getLogger("ultimate-updater.proxmox-auth")
+
+
+def log_proxmox_auth_failure(error):
+    """Log only a bounded classification of a Proxmox auth failure."""
+    if getattr(error, "_diagnostic_logged", False):
+        return
+    error._diagnostic_logged = True
+    fields = [
+        f"operation={getattr(error, 'operation', 'unknown')}",
+        f"class={getattr(error, 'failure_class', 'unknown')}",
+    ]
+    status = getattr(error, "http_status", None)
+    if isinstance(status, int):
+        fields.append(f"http_status={status}")
+    returncode = getattr(error, "returncode", None)
+    if isinstance(returncode, int):
+        fields.append(f"returncode={returncode}")
+    exception_type = getattr(error, "exception_type", None)
+    if isinstance(exception_type, str) and exception_type:
+        fields.append(f"exception={exception_type}")
+    PROXMOX_AUTH_LOGGER.warning("Proxmox authentication diagnostic: %s", " ".join(fields))
+
+
 def normalize_os_display(os_name, os_version=None):
     """Return the compact OS label used by the overview without losing raw data."""
     raw = " ".join(str(os_name or "").split()).strip()
@@ -1459,7 +1483,7 @@ body:has(#login-screen.open) .nav-scrim { display:none !important; }
     function enableTargetSelection(){if(targetSelection.enabled)return Promise.resolve();targetSelection.enabled=true;paintTargetSelection();targetSelectionEnablePromise=api('/api/config',{method:'POST',body:JSON.stringify({values:{USE_INTERNAL_TARGET_SELECTION:true}})}).then(()=>{targetSelectionConfirmed.enabled=true}).catch(error=>{targetSelection.enabled=false;rollbackTargetSelection();targetSelectionEnablePromise=null;throw error});return targetSelectionEnablePromise}
     async function loadTargetSelection(generation=authGeneration){clearTimeout(targetSelectionSaveTimer);targetSelectionSaveQueued=false;targetSelectionRevision+=1;targetSelectionEnablePromise=null;const request=++targetSelectionLoadRevision;targetSelectionLoadState='loading';targetSelectionLoadError='';paintTargetSelection();try{const data=await api('/api/target-selection');if(request!==targetSelectionLoadRevision||generation!==authGeneration||!window.__uu_authenticated)return;if(!data||!data.selection||typeof data.selection!=='object')throw new Error('Target selection data is unavailable.');targetSelection={...data.selection,enabled:data.enabled===true};targetSelectionConfirmed=copyTargetSelection(targetSelection);targetSelectionLoadState='ready';targetSelectionLoadError='';paintTargetSelection()}catch(error){if(request!==targetSelectionLoadRevision||generation!==authGeneration||!window.__uu_authenticated)return;targetSelectionLoadState='error';targetSelectionLoadError=error.message||'Target selection is unavailable.';paintTargetSelection();managementMessage('config-message',targetSelectionLoadError,true)}}
     function retryTargetSelection(){if(targetSelectionLoadState==='loading')return;loadTargetSelection()}
-    function selectionHeader(){return '<div class="target-selection-header"><strong>Bulk action selection</strong><span>Choose which targets are used by Check all and Update all.</span><span class="selection-legend">✓ Only · ✕ Exclude · empty = no explicit rule</span></div>'}
+    function selectionHeader(){return ''}
     function selectionControls(t,nodeActions=false){const id=selectionKey(t),controls=document.createElement('div');controls.className=`target-selection-controls${nodeActions?' node-selection-controls':''}`;controls.setAttribute('aria-label',nodeActions?'Bulk selection for this node':'Bulk action target selection');for(const scope of ['check','update']){const state=targetSelection[scope]?.[id]||'',column=document.createElement('span');column.className='target-selection-column';const label=document.createElement('span');label.className='target-selection-label';label.textContent=scope==='check'?'Check':'Update';const button=document.createElement('button');button.type='button';button.className=`target-selection-state ${state}${targetSelectionLoadState!=='ready'?' unavailable':''}`;button.textContent=state==='only'?'✓':state==='exclude'?'✕':'';button.disabled=targetSelectionLoadState!=='ready';button.title=targetSelectionLoadState==='loading'?'Target selection is loading.':targetSelectionLoadState==='error'?'Target selection is unavailable.':selectionLabel(state);button.setAttribute('aria-label',targetSelectionLoadState==='ready'?`${scope} selection: ${selectionLabel(state)}`:`${scope} selection unavailable`);button.dataset.selectionScope=scope;button.dataset.selectionId=id;button.onclick=event=>{event.stopPropagation();saveTargetSelection(scope,id,targetSelection[scope]?.[id]||'')};column.append(label,button);controls.appendChild(column)}return controls}
     function saveTargetSelection(scope,id,current){const next=current==='only'?'exclude':current==='exclude'?'':'only';if(!targetSelection.enabled&&next){if(!confirm('Enable Ultimate Updater target selection?\n\nThis will ignore existing Proxmox Only/Exclude tags. Existing tags will not be changed or removed.'))return;enableTargetSelection().catch(()=>notice('Could not enable target selection.',true))}const before=targetSelection[scope]?.[id]||'';if(next)targetSelection[scope][id]=next;else delete targetSelection[scope][id];paintTargetSelection();if(before!==next)queueTargetSelectionSave()}
     const targetRowWithSelection=targetRow;targetRow=function(t){const row=targetRowWithSelection(t),id=selectionKey(t);if(!id)return row;row.querySelector('.row-actions')?.prepend(selectionControls(t));return row};
@@ -2269,22 +2293,28 @@ PAGE = PAGE.replace('</head>', '''<style>
 @media(max-width:620px) { .action-guide { grid-template-columns:1fr; } .target-selection-header { display:flex; margin-inline:8px; } .target-selection-header .selection-legend { width:100%; margin-left:0; } .target-selection-controls { margin-right:0; padding-right:0; border-right:0; padding-bottom:7px; border-bottom:1px solid #159cf055; } .group-actions-label { width:100%; } }
 </style></head>''', 1)
 
-# Keep the persistent target-selection model visible in the normal Systems
-# view. The existing selection payload and API remain the source of truth.
-PAGE = PAGE.replace(
-    '<div id="targets" class="targets"></div>',
-    '<section id="system-bulk-selection" class="system-bulk-selection" aria-labelledby="system-bulk-selection-title"><div class="bulk-selection-copy"><strong id="system-bulk-selection-title">Include in global actions</strong><span>Choose which targets are included in Check all and Update all.</span><span class="selection-legend">Default = no explicit rule · Only = explicitly include · Exclude = explicitly omit</span></div></section><div id="targets" class="targets"></div>',
-    1,
-)
+# The persistent target-selection model remains on the node and guest
+# controls; the normal Systems layout does not add a separate explanation
+# panel between the Systems help and the target cards.
 PAGE = PAGE.replace('✓ Only · ✕ Exclude · empty = no explicit rule', 'Default = no explicit rule · Only = explicitly include · Exclude = explicitly omit')
 PAGE = PAGE.replace('Only, Exclude and empty states control the targets used by these actions.', 'Default, Only and Exclude states control the targets used by these actions.')
+PAGE = PAGE.replace(
+    '<p id="page-subtitle" class="subtitle">A clear overview of updates across your systems.</p>',
+    '<p id="page-subtitle" class="subtitle" hidden></p>',
+    1,
+)
+PAGE = PAGE.replace(
+    "const subtitles={overview:'A clear overview of updates across your systems.',",
+    "const subtitles={overview:'',",
+    1,
+)
+PAGE = PAGE.replace(
+    "document.getElementById('page-subtitle').textContent=subtitles[page];",
+    "const pageSubtitle=document.getElementById('page-subtitle');pageSubtitle.textContent=subtitles[page]||'';pageSubtitle.hidden=!subtitles[page];",
+    1,
+)
 PAGE = PAGE.replace('</head>', '''<style>
 .node-scope-help { margin-bottom:4px; line-height:1.35; }
-.system-bulk-selection { margin-top:18px; padding:12px 14px 13px; border:1px solid #159cf055; border-radius:12px; background:#06142666; }
-.bulk-selection-copy { display:grid; gap:4px; min-width:0; }
-.bulk-selection-copy strong { display:block; color:#dceeff; font-size:.78rem; }
-.bulk-selection-copy span { display:block; margin-top:0; color:var(--muted); font-size:.7rem; line-height:1.35; }
-.bulk-selection-copy .selection-legend { margin-top:1px; }
 .selection-legend { color:#8fd2ff; }
 .global-selection-controls { display:flex; align-items:flex-end; gap:7px; padding:0; border:0; }
 .global-selection-controls .target-selection-column { min-width:72px; }
@@ -2328,9 +2358,52 @@ PAGE = PAGE.replace('</head>', '''<style>
 .row-global-actions .global-selection-controls { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; padding:0; border:0; }
 .target-row .row-actions { display:flex; grid-column:8; grid-row:1; align-items:center; justify-content:center; width:100%; min-width:max-content; padding:0 8px; border:0; gap:6px; white-space:nowrap; }
 .node-group .group-actions .group-actions-label { flex:0 0 auto; margin-right:auto; }
-#system-bulk-selection + #targets { margin-top:18px; }
 @media(max-width:900px) { .guest-table-header,.target-row,.target-row.split-row,.target-row.total-only-row,.target-row.lxc-row,.target-row.lxc-row.split-row,.target-row.lxc-row.total-only-row { min-width:1200px; } }
 @media(max-width:760px) { .global-selection-controls { border-right:0; padding-right:0; } .row-global-actions { padding-inline:2px; border-right:0; } .guest-table-header,.target-row,.target-row.split-row,.target-row.total-only-row,.target-row.lxc-row,.target-row.lxc-row.split-row,.target-row.lxc-row.total-only-row { min-width:1200px; } }
+</style></head>''', 1)
+
+# The shared target-selection layout is injected after the original theme
+# block. Re-apply the Classic palette at the end of the cascade so these
+# controls do not retain Modern blue accents when Classic is selected.
+PAGE = PAGE.replace('</head>', '''<style>
+html[data-theme="classic"] .action-guide > div { border-color:#69737b; background:#30373d; }
+html[data-theme="classic"] .action-guide strong { color:#c2ccd1; }
+html[data-theme="classic"] .action-guide span { color:#aeb8c1; }
+html[data-theme="classic"] .target-selection-header { border-color:#69737b; background:#30373d; }
+html[data-theme="classic"] .target-selection-header strong,
+html[data-theme="classic"] .target-selection-header .selection-legend,
+html[data-theme="classic"] .selection-legend,
+html[data-theme="classic"] .global-selection-controls .target-selection-label,
+html[data-theme="classic"] .node-global-actions::before,
+html[data-theme="classic"] .node-selection-controls::before,
+html[data-theme="classic"] .group-actions-label { color:#c2ccd1; }
+html[data-theme="classic"] .target-selection-controls { border-color:#69737b; }
+html[data-theme="classic"] .guest-table-header { border-top-color:#69737b; background:#30373d; }
+html[data-theme="classic"] .guest-table-header .header-global-actions small { color:#c2ccd1; }
+html[data-theme="classic"] .node-global-actions { border-top-color:#69737b; }
+html[data-theme="classic"] .global-selection-controls select.target-selection-state,
+html[data-theme="classic"] .global-selection-controls .target-selection-state {
+    background:#3a4248;
+    border-color:#69737b;
+    color:#c2ccd1;
+}
+html[data-theme="classic"] .global-selection-controls .target-selection-state.only,
+html[data-theme="classic"] .node-global-actions .global-selection-controls .target-selection-state.only {
+    background:#345746;
+    border-color:#77c99b;
+    color:#b9f2cf;
+}
+html[data-theme="classic"] .global-selection-controls .target-selection-state.exclude,
+html[data-theme="classic"] .node-global-actions .global-selection-controls .target-selection-state.exclude {
+    background:#5a3b40;
+    border-color:#ed8d98;
+    color:#ffc0c7;
+}
+html[data-theme="classic"] .global-selection-controls .target-selection-state:focus-visible,
+html[data-theme="classic"] .guest-selection-state:focus-visible {
+    outline:2px solid #a9bbc5;
+    outline-offset:2px;
+}
 </style></head>''', 1)
 
 # Present the existing persistent selection model with explicit labels. The
@@ -3632,10 +3705,18 @@ def locked_atomic_update(path, updater):
 
 
 class ProxmoxAuthError(Exception):
-    def __init__(self, message="Proxmox authentication failed.", tfa=False, authentication_failure=False):
+    def __init__(self, message="Proxmox authentication failed.", tfa=False,
+                 authentication_failure=False, operation="unknown",
+                 failure_class="unknown", http_status=None, returncode=None,
+                 exception_type=None):
         super().__init__(message)
         self.tfa = tfa
         self.authentication_failure = authentication_failure
+        self.operation = operation
+        self.failure_class = failure_class
+        self.http_status = http_status
+        self.returncode = returncode
+        self.exception_type = exception_type
 
 
 class AuthorizationUnavailableError(Exception):
@@ -3660,6 +3741,32 @@ class ProxmoxAuth:
         self._administrator_privileges_cache = None
         self._authorization_lock = threading.Lock()
 
+    @staticmethod
+    def _operation_for_path(path):
+        return {
+            "/access/domains": "realm discovery",
+            "/access/ticket": "ticket request",
+        }.get(path, "authentication request")
+
+    @staticmethod
+    def _pvesh_operation(args):
+        if "/access/permissions" in args:
+            return "authorization permissions"
+        if "/access/roles" in args:
+            return "authorization roles"
+        return "authorization pvesh"
+
+    @staticmethod
+    def _is_timeout(error):
+        reason = getattr(error, "reason", None)
+        return isinstance(error, (TimeoutError, socket.timeout)) or isinstance(reason, (TimeoutError, socket.timeout))
+
+    @staticmethod
+    def _raise_error(message="Proxmox authentication failed.", **details):
+        error = ProxmoxAuthError(message, **details)
+        log_proxmox_auth_failure(error)
+        raise error
+
     def _request(self, path, fields=None, request_host=None, request_origin=None):
         operation = {
             "/access/domains": "realm discovery",
@@ -3673,37 +3780,52 @@ class ProxmoxAuth:
             request.add_header("Host", request_host)
         if request_origin:
             request.add_header("Origin", request_origin)
+        operation = self._operation_for_path(path)
         try:
             with self._opener.open(request, timeout=self.TIMEOUT) as response:
                 response_body = response.read(1024 * 1024)
         except HTTPError as error:
+            http_status = error.code if isinstance(error.code, int) else None
             try:
                 payload = json.loads(error.read(1024 * 1024).decode("utf-8"))
-            except (OSError, UnicodeError, ValueError) as parse_error:
-                log_proxmox_auth_diagnostic(operation, "malformed response",
-                                            http_status=error.code,
-                                            exception=type(parse_error).__name__)
-                raise ProxmoxAuthError() from error
-            classification = ("http authentication failure"
-                              if error.code in {401, 403} else "http error")
-            log_proxmox_auth_diagnostic(operation, classification, http_status=error.code)
-            raise ProxmoxAuthError("Proxmox authentication failed.", self._has_tfa(payload),
-                                   error.code in {401, 403}) from error
-        except (OSError, UnicodeError, ValueError, URLError) as error:
-            reason = getattr(error, "reason", None)
-            is_timeout = isinstance(error, (TimeoutError, socket.timeout)) or isinstance(reason, TimeoutError)
-            log_proxmox_auth_diagnostic(operation, "transport/timeout" if is_timeout else "transport",
-                                        exception=type(error).__name__)
-            raise ProxmoxAuthError() from error
+            except (OSError, UnicodeError, ValueError):
+                self._raise_error(
+                    operation=operation,
+                    failure_class=("http authentication failure" if http_status in {401, 403}
+                                   else "malformed response"),
+                    http_status=http_status,
+                    exception_type=type(error).__name__,
+                    authentication_failure=http_status in {401, 403},
+                )
+            self._raise_error(
+                "Proxmox authentication failed.", tfa=self._has_tfa(payload),
+                authentication_failure=http_status in {401, 403}, operation=operation,
+                failure_class=("http authentication failure" if http_status in {401, 403}
+                               else "http error"),
+                http_status=http_status, exception_type=type(error).__name__,
+            )
+        except (TimeoutError, socket.timeout) as error:
+            self._raise_error(operation=operation, failure_class="transport/timeout",
+                              exception_type=type(error).__name__)
+        except URLError as error:
+            self._raise_error(operation=operation,
+                              failure_class=("transport/timeout" if self._is_timeout(error)
+                                             else "transport"),
+                              exception_type=type(error).__name__)
+        except OSError as error:
+            self._raise_error(operation=operation, failure_class="transport",
+                              exception_type=type(error).__name__)
+        except (UnicodeError, ValueError) as error:
+            self._raise_error(operation=operation, failure_class="malformed response",
+                              exception_type=type(error).__name__)
         try:
             payload = json.loads(response_body.decode("utf-8"))
         except (UnicodeError, ValueError) as error:
-            log_proxmox_auth_diagnostic(operation, "malformed response",
-                                        exception=type(error).__name__)
-            raise ProxmoxAuthError("Malformed Proxmox API response.") from error
+            self._raise_error(operation=operation, failure_class="malformed response",
+                              exception_type=type(error).__name__)
         if not isinstance(payload, dict) or "data" not in payload:
-            log_proxmox_auth_diagnostic(operation, "malformed response")
-            raise ProxmoxAuthError("Malformed Proxmox API response.")
+            self._raise_error("Malformed Proxmox API response.", operation=operation,
+                              failure_class="malformed response")
         return payload["data"]
 
     @staticmethod
@@ -3752,28 +3874,32 @@ class ProxmoxAuth:
         now = time.monotonic()
         if self._realm_cache and now - self._realm_cache[0] < 30:
             return self._realm_cache[1]
-        data = self._request("/access/domains")
+        try:
+            data = self._request("/access/domains")
+        except ProxmoxAuthError as error:
+            log_proxmox_auth_failure(error)
+            raise
         if not isinstance(data, list):
-            log_proxmox_auth_diagnostic("realm discovery", "malformed response")
-            raise ProxmoxAuthError("Malformed Proxmox realm response.")
+            self._raise_error("Malformed Proxmox realm response.", operation="realm discovery",
+                              failure_class="malformed response")
         realms = []
         for item in data:
             if not isinstance(item, dict):
-                log_proxmox_auth_diagnostic("realm discovery", "malformed response")
-                raise ProxmoxAuthError("Malformed Proxmox realm response.")
+                self._raise_error("Malformed Proxmox realm response.", operation="realm discovery",
+                                  failure_class="malformed response")
             realm = item.get("realm")
             if not isinstance(realm, str) or not REALM_RE.fullmatch(realm):
-                log_proxmox_auth_diagnostic("realm discovery", "malformed response")
-                raise ProxmoxAuthError("Malformed Proxmox realm response.")
+                self._raise_error("Malformed Proxmox realm response.", operation="realm discovery",
+                                  failure_class="malformed response")
             comment = item.get("comment", "")
             if not isinstance(comment, str):
-                log_proxmox_auth_diagnostic("realm discovery", "malformed response")
-                raise ProxmoxAuthError("Malformed Proxmox realm response.")
+                self._raise_error("Malformed Proxmox realm response.", operation="realm discovery",
+                                  failure_class="malformed response")
             realms.append({"realm": realm, "comment": comment, "type": str(item.get("type", "")),
                            "tfa": str(item.get("tfa", ""))})
         if not realms:
-            log_proxmox_auth_diagnostic("realm discovery", "configuration")
-            raise ProxmoxAuthError("No Proxmox authentication realms are configured.")
+            self._raise_error("No Proxmox authentication realms are configured.",
+                              operation="realm discovery", failure_class="configuration")
         default_realm = next((item["realm"] for item in realms if item["realm"] == "pam"), realms[0]["realm"])
         result = {"realms": realms, "default_realm": default_realm}
         self._realm_cache = (now, result)
@@ -3781,41 +3907,43 @@ class ProxmoxAuth:
 
     def _pvesh_json(self, args):
         command = ["pvesh", *args, "--output-format", "json"]
-        operation = {
-            "/access/permissions": "authorization permissions",
-            "/access/roles": "authorization roles",
-        }.get(args[1] if len(args) > 1 else "", "authorization")
+        operation = self._pvesh_operation(args)
         try:
             result = subprocess.run(command, capture_output=True, text=True,
                                     timeout=self.PVESH_TIMEOUT, check=False)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            log_proxmox_auth_diagnostic(operation, "pvesh failure",
-                                        exception=type(error).__name__)
-            raise ProxmoxAuthError("Proxmox authorization is unavailable.") from error
+        except subprocess.TimeoutExpired as error:
+            self._raise_error("Proxmox authorization is unavailable.", operation=operation,
+                              failure_class="transport/timeout", exception_type=type(error).__name__)
+        except OSError as error:
+            self._raise_error("Proxmox authorization is unavailable.", operation=operation,
+                              failure_class="pvesh failure", exception_type=type(error).__name__)
         if result.returncode:
-            log_proxmox_auth_diagnostic(operation, "pvesh failure", returncode=result.returncode)
-            raise ProxmoxAuthError("Proxmox authorization is unavailable.")
+            self._raise_error("Proxmox authorization is unavailable.", operation=operation,
+                              failure_class="pvesh failure", returncode=result.returncode)
         try:
             return json.loads(result.stdout)
         except (TypeError, ValueError) as error:
-            log_proxmox_auth_diagnostic(operation, "malformed response",
-                                        exception=type(error).__name__)
-            raise ProxmoxAuthError("Malformed Proxmox authorization response.") from error
+            self._raise_error("Malformed Proxmox authorization response.", operation=operation,
+                              failure_class="malformed response", exception_type=type(error).__name__)
 
     def _administrator_privileges(self, now):
         cached = self._administrator_privileges_cache
         if cached and cached[0] > now:
             return cached[1]
-        roles = self._pvesh_json(["get", "/access/roles"])
+        try:
+            roles = self._pvesh_json(["get", "/access/roles"])
+        except ProxmoxAuthError as error:
+            log_proxmox_auth_failure(error)
+            raise
         if not isinstance(roles, list):
-            log_proxmox_auth_diagnostic("authorization roles", "malformed response")
-            raise ProxmoxAuthError("Malformed Proxmox role response.")
+            self._raise_error("Malformed Proxmox role response.", operation="authorization roles",
+                              failure_class="malformed response")
         administrator = next((item for item in roles
                               if isinstance(item, dict) and item.get("roleid") == "Administrator"), None)
         privileges = administrator.get("privs") if administrator else None
         if not isinstance(privileges, str) or not privileges:
-            log_proxmox_auth_diagnostic("authorization roles", "configuration")
-            raise ProxmoxAuthError("Proxmox Administrator role is unavailable.")
+            self._raise_error("Proxmox Administrator role is unavailable.",
+                              operation="authorization roles", failure_class="malformed response")
         result = {privilege for privilege in privileges.split(",") if privilege}
         self._administrator_privileges_cache = (now + self.AUTHORIZATION_TTL, result)
         return result
@@ -3832,11 +3960,15 @@ class ProxmoxAuth:
             cached = self._authorization_cache.get(userid)
             if cached and cached[0] > now:
                 return cached[1]
-            permissions = self._pvesh_json(["get", "/access/permissions", "--path", "/",
-                                            "--userid", userid])
+            try:
+                permissions = self._pvesh_json(["get", "/access/permissions", "--path", "/",
+                                                "--userid", userid])
+            except ProxmoxAuthError as error:
+                log_proxmox_auth_failure(error)
+                raise
             if not isinstance(permissions, dict) or not isinstance(permissions.get("/"), dict):
-                log_proxmox_auth_diagnostic("authorization permissions", "malformed response")
-                raise ProxmoxAuthError("Malformed Proxmox permission response.")
+                self._raise_error("Malformed Proxmox permission response.",
+                                  operation="authorization permissions", failure_class="malformed response")
             effective = {key for key, value in permissions["/"].items() if value}
             result = self._administrator_privileges(now).issubset(effective)
             self._authorization_cache[userid] = (now + self.AUTHORIZATION_TTL, result)
@@ -3886,6 +4018,7 @@ class ProxmoxAuth:
                 return {"ok": False, "code": "LOGIN_UNAUTHORIZED", "message": "This Proxmox account is not authorized for Ultimate Updater."}
             return {"ok": True, "user": userid}
         except ProxmoxAuthError as error:
+            log_proxmox_auth_failure(error)
             if error.tfa:
                 return {"ok": False, "code": "TFA_REQUIRED",
                         "message": "Two-factor authentication is required.", "challenge": None}
@@ -3935,6 +4068,7 @@ class ProxmoxAuth:
                 return {"ok": False, "code": "LOGIN_UNAUTHORIZED", "message": "This Proxmox account is not authorized for Ultimate Updater."}
             return {"ok": True, "user": userid}
         except ProxmoxAuthError as error:
+            log_proxmox_auth_failure(error)
             if error.tfa:
                 return {"ok": False, "code": "TFA_FAILED", "message": "The two-factor response was rejected."}
             if error.authentication_failure:
@@ -3979,7 +4113,8 @@ class AuthStore:
             try:
                 self.proxmox.realms()
                 return True
-            except ProxmoxAuthError:
+            except ProxmoxAuthError as error:
+                log_proxmox_auth_failure(error)
                 return False
         if self.backend == "pam":
             return (self.pam_user is not None and pam_authenticate is not None
@@ -4203,6 +4338,7 @@ class AuthStore:
                     self.sessions.pop(token, None)
                     return None
             except ProxmoxAuthError as error:
+                log_proxmox_auth_failure(error)
                 raise AuthorizationUnavailableError from error
         item["expires"] = time.time() + self.SESSION_SECONDS
         return item
@@ -7171,7 +7307,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         if path == "/api/auth/realms":
             try:
                 self.send_json(self.server.auth.realms())
-            except ProxmoxAuthError:
+            except ProxmoxAuthError as error:
+                log_proxmox_auth_failure(error)
                 self.send_json(error_payload("AUTH_REALMS_UNAVAILABLE", "Proxmox authentication realms are unavailable."),
                                HTTPStatus.SERVICE_UNAVAILABLE)
             return

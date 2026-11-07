@@ -22,11 +22,12 @@ assert "await loadStatus()" not in page[page.index("function saveTargetSelection
 assert ".target-selection-state{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;min-width:26px;height:26px;min-height:26px;padding:0" in page
 assert ".target-selection-state{width:30px;min-width:30px;height:30px;min-height:30px" in page
 assert "selectionLabel(state)" in page
-assert 'id="system-bulk-selection"' in page
-assert 'class="system-bulk-selection"' in page
-assert page.index('id="system-bulk-selection"') < page.index('id="targets"')
+assert 'id="system-bulk-selection"' not in page
+assert 'class="system-bulk-selection"' not in page
+assert "Include in global actions" not in page
+assert "target-selection-indicator" in page
 assert "Global actions" in page
-assert "Choose which targets are included in Check all and Update all." in page
+assert "Target selection: Loading…" in page
 assert "Default = no explicit rule · Only = explicitly include · Exclude = explicitly omit" in page
 assert "Check all" in page
 assert "Update all" in page
@@ -48,7 +49,7 @@ assert ".target-row .row-global-selection-check { grid-column:6; }" in page
 assert ".target-row .row-global-selection-update { grid-column:7; border-right:0; }" in page
 assert ".guest-table-header > [role=\"columnheader\"]:last-child { grid-column:8; justify-self:stretch; text-align:center; }" in page
 assert ".row-global-selection .target-selection-state { flex:0 0 auto; }" in page
-assert "#system-bulk-selection + #targets { margin-top:18px; }" in page
+assert "#system-bulk-selection + #targets { margin-top:18px; }" not in page
 assert "target-updates" in page
 assert "row-global-actions::before" not in page
 assert "selectionFieldState=new Map()" in page
@@ -84,8 +85,8 @@ assert ".target-row > .row-last-check { grid-column:5; grid-row:1; }" in page
 assert ".target-row .row-actions { display:flex; grid-column:8; grid-row:1; align-items:center; justify-content:center; width:100%; min-width:max-content; padding:0 8px; border:0; gap:6px; white-space:nowrap; }" in page
 assert ".row-global-actions .global-selection-controls { display:flex; align-items:center; gap:8px; flex-wrap:nowrap;" in page
 assert ".node-scope-help { margin-bottom:4px; line-height:1.35; }" in page
-assert ".system-bulk-selection { margin-top:18px; padding:12px 14px 13px;" in page
-assert ".bulk-selection-copy { display:grid; gap:4px; min-width:0; }" in page
+assert ".system-bulk-selection { margin-top:18px; padding:12px 14px 13px;" not in page
+assert ".bulk-selection-copy { display:grid; gap:4px; min-width:0; }" not in page
 assert "minmax(110px,.8fr) minmax(110px,.8fr) minmax(175px,max-content); min-width:1200px" in page
 assert ".guest-table-header .header-global-actions { display:grid; grid-column:6 / span 2; gap:4px; text-align:center; justify-items:center; }" in page
 assert ".guest-table-header .header-global-actions small { display:grid; grid-template-columns:1fr 1fr; gap:7px; width:100%; justify-items:center; color:#8fd2ff; font-size:.59rem; font-weight:700; text-transform:none; letter-spacing:0; text-align:center; }" in page
