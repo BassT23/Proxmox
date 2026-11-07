@@ -57,6 +57,9 @@ Added:
   `/api/config` persistence path.
 
 Improved:
+- Classic theme target-selection controls now retain the graphite palette
+  for shared action groups, table headers, borders, backgrounds, and focus states
+  instead of inheriting Modern blue styling.
 - Issue #379: normal `/api/v1/status`, `/api/v1/status-summary`, and
   `/api/status-summary` requests now trigger asynchronous remote
   reconciliation without adding update, guest, snapshot, or lifecycle actions.
