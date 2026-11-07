@@ -55,11 +55,29 @@ Added:
 - Issue #379: the Web UI exposes the setting as a Boolean field with explicit
   maintainer-script and host-protection help, using the existing secure
   `/api/config` persistence path.
+- Optional provider-neutral Apprise notifications can be enabled independently
+  of email with protected provider configuration, bounded delivery, and
+  deduplication.
+- Optional scheduled success heartbeats are available for fully successful
+  scheduled inventory checks through protected file configuration.
 
 Improved:
 - Classic theme target-selection controls now retain the graphite palette
   for shared action groups, table headers, borders, backgrounds, and focus states
   instead of inheriting Modern blue styling.
+- Global Check-all and Update-all target selection is presented consistently in
+  node cards and guest tables with labelled Default, Only, and Exclude states.
+- Target-selection changes update immediately while pending, recover visibly on
+  errors, and ignore stale responses from earlier changes.
+- Issue #312: Windows VM inventory and update paths now retain transport- and
+  agent-aware results while unsupported or unverifiable paths remain fail-closed.
+- HTML status notifications preserve an Outlook-compatible layout while
+  retaining the existing plaintext notification output.
+- Issue #382: configured VM SSH is preferred with QEMU Guest Agent fallback,
+  including the required target-bound context for remote and global checks.
+- Issue #390: Proxmox authentication diagnostics classify realm, ticket, RBAC,
+  transport, HTTP, and malformed-response failures in the service journal
+  without exposing credentials; RBAC lookups remain bounded.
 - Issue #379: normal `/api/v1/status`, `/api/v1/status-summary`, and
   `/api/status-summary` requests now trigger asynchronous remote
   reconciliation without adding update, guest, snapshot, or lifecycle actions.
@@ -91,6 +109,22 @@ Improved:
   explicitly.
 
 Fixed:
+- Issue #383: APT checks refresh package metadata before structured counts;
+  unsafe or failed refreshes fail closed instead of reporting stale zeroes.
+- Issue #384: the Web UI now explains the verified-backup requirement when a
+  full update is blocked, without exposing untrusted target diagnostics.
+- Intentional transport, unsupported, and no-op cases remain neutral skipped
+  results, while technical transport and update failures remain failed.
+- Issue #387: update-log cleanup now waits for active capture and atomically
+  processes a separate copy, preventing truncated logs during cleanup.
+- Issue #388: host updates establish a valid read-only baseline before any
+  package mutation.
+- Issue #389: remote VM result identity remains correlated as a VM across
+  worker handback and summary rendering.
+- Issue #391: ANSI terminal sequences are removed from plaintext, HTML, Apprise,
+  and legacy notifications while CLI and persistent logs retain their output.
+- Issue #392: LXC internet preflight preserves the actual ping result through
+  SIGHUP-safe `pct exec` cleanup.
 - Issue #386: global cluster checks now stage target-bound SSH context for
   matching remote VMs without QGA; foreign profiles and unrelated node
   configuration are excluded, while inventory or staging failures are reported
@@ -125,6 +159,10 @@ Fixed:
   unchanged by the optional dpkg repair.
 
 Security/Safety:
+- Trusted reverse-proxy authentication and origin handling now use bounded,
+  allowlisted validation for authenticated Web UI requests.
+- Externally pinned source updates and trusted staged sources validate branch,
+  identity, ownership, permissions, and complete payloads before installation.
 - Issue #379: remote status reconciliation remains fail-closed across target
   identity, generation, operations-ID, provenance, and active-mutation gates;
   no status query can clear a mutation invalidation without a validated
