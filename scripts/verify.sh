@@ -48,6 +48,7 @@ shell_tests=(
   tests/test-pct-preflight-shell.sh
   tests/test-product-version-identity.sh
   tests/test-mail-renderer.sh
+  tests/test-notification-ansi-boundary.sh
   tests/test-html-mail.sh
   tests/test-apprise-notifications.sh
   tests/test-scheduled-success-heartbeat.sh

@@ -3947,6 +3947,7 @@ EXIT () {
           else
             UPDATE_MAIL_BODY |
               sed -r -e "s/\x1B\[[0-?]*[ -/]*[@-~]//g" -e "s/\x1B\][^\x07]*(\x07|\x1B\\\\)//g" |
+              -e "s/\[[0-9]{1,3}(;[0-9]{1,3})*m//g" \
               mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null || true
           fi
         fi
@@ -3965,6 +3966,7 @@ EXIT () {
             else
               UPDATE_MAIL_BODY |
                 sed -r -e "s/\x1B\[[0-?]*[ -/]*[@-~]//g" -e "s/\x1B\][^\x07]*(\x07|\x1B\\\\)//g" |
+              -e "s/\[[0-9]{1,3}(;[0-9]{1,3})*m//g" \
                 mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater" "$EMAIL_USER" 2>/dev/null || true
             fi
           fi
@@ -3993,6 +3995,7 @@ EXIT () {
         else
           UPDATE_MAIL_BODY |
             sed -r -e "s/\x1B\[[0-?]*[ -/]*[@-~]//g" -e "s/\x1B\][^\x07]*(\x07|\x1B\\\\)//g" |
+              -e "s/\[[0-9]{1,3}(;[0-9]{1,3})*m//g" \
             mail -a 'Content-Type: text/plain; charset=UTF-8' -a 'Content-Transfer-Encoding: 8bit' -r "$EMAIL_SENDER" -s "Ultimate Updater summary - $HOSTNAME" "$EMAIL_USER" 2>/dev/null
         fi
       fi

@@ -2793,6 +2793,7 @@ EXIT () {
             sed -r \
               -e "s/\x1B\[[0-?]*[ -/]*[@-~]//g" \
               -e "s/\x1B\][^\x07]*(\x07|\x1B\\\\)//g" \
+              -e "s/\[[0-9]{1,3}(;[0-9]{1,3})*m//g" \
               "$LOCAL_FILES/check-output"
           fi
         } > "$LOCAL_FILES/mail-output"

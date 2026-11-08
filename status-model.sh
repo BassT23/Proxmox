@@ -2342,7 +2342,10 @@ STATUS_MODEL_STRIP_ANSI() {
 import re
 import sys
 
-ansi = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
+ansi = re.compile(
+    r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))"
+    r"|\[(?:[0-9]{1,3}(?:;[0-9]{1,3})*)?m"
+)
 sys.stdout.write(ansi.sub("", sys.stdin.read()))
 '
 }
