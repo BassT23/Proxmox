@@ -19,3 +19,4 @@ jobs:
           uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # v2.0.0
           with:
             version: v0.11.0
+            shellcheck_options: --format=gcc --severity=warning
