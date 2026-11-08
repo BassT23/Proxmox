@@ -108,6 +108,19 @@ assert '[str(runner), "list", "--cached"]' in (root / 'web-ui' / 'server.py').re
 assert 'class="overview-actions-card"' in overview
 assert 'id="check-all"' in overview
 assert 'id="update-all"' in overview
+assert 'id="check-all-selection-summary"' in overview
+assert 'id="update-all-selection-summary"' in overview
+assert 'class="global-selection-summary"' in overview
+assert 'class="global-selection-summary-label">Targets in scope' in overview
+assert overview.count('class="global-action-group"') == 2
+assert 'role="status" aria-live="polite"' in overview
+assert 'loadGlobalActionSelectionPreviews()' in page
+assert 'previewIncludedItems' in page
+assert 'previewEffectiveCount' in page
+assert 'effective_count' in page
+assert 'targets in scope' in page
+assert 'updateGlobalActionSelectionSummary(data,scope)' in page
+assert 'loadGlobalActionSelectionPreviews();scheduleUpdaterVersionCheck()' in page
 settings = page.split('id="settings-page"', 1)[1].split('id="api-page"', 1)[0]
 api = page.split('id="api-page"', 1)[1].split('id="scheduler-page"', 1)[0]
 api_banner = 'API under development — endpoint names and semantics may change before release.'

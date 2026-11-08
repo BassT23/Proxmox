@@ -66,11 +66,30 @@ for selector in (
     'html[data-theme="classic"] .global-selection-controls .target-selection-state.only',
     'html[data-theme="classic"] .global-selection-controls .target-selection-state.exclude',
     'html[data-theme="classic"] .global-selection-controls .target-selection-state:focus-visible',
+    'html[data-theme="classic"] .target-selection-menu',
+    'html[data-theme="classic"] .target-selection-trigger.default',
+    'html[data-theme="classic"] .target-selection-trigger.only',
+    'html[data-theme="classic"] .target-selection-trigger.exclude',
+    'html[data-theme="classic"] .global-selection-controls .target-selection-trigger.default',
+    'html[data-theme="classic"] .global-selection-controls .target-selection-trigger.only',
+    'html[data-theme="classic"] .global-selection-controls .target-selection-trigger.exclude',
+    'html[data-theme="classic"] .target-selection-option.only',
+    'html[data-theme="classic"] .target-selection-option.exclude',
 ):
     assert selector in page
 assert 'html[data-theme="classic"] .guest-table-header { border-top-color:#69737b; background:#30373d; }' in page
 assert 'html[data-theme="classic"] .global-selection-controls .target-selection-state.only' in page
 assert 'html[data-theme="classic"] .global-selection-controls .target-selection-state.exclude' in page
+assert 'html[data-theme="classic"] .target-selection-trigger.default { border-color:#718ea1; background:#334b5b; color:#e3eff4; }' in page
+assert 'html[data-theme="classic"] .target-selection-trigger.default[aria-expanded="true"]' in page
+assert 'html[data-theme="classic"] .target-selection-option.default[aria-selected="true"]' in page
+assert 'html[data-theme="classic"] .target-selection-option.only[aria-selected="true"]' in page
+assert 'html[data-theme="classic"] .target-selection-option.exclude[aria-selected="true"]' in page
+assert 'html[data-theme="classic"] body *:not(img):not(svg):not(.job-running-dot):not(.login-spinner):not(.system-data-loading-spinner)' in page
+assert 'html[data-theme="classic"] .global-selection-summary' in page
+assert 'background:#3a4248;' in page
+classic_square_tail = page.split('/* Keep the Classic skin consistently square', 1)[1].split('</style>', 1)[0]
+assert '!important' not in classic_square_tail
 assert 'html[data-theme="classic"] .help-trigger {\n    border-radius:0;\n    border-color:#69737b;' in page
 assert 'html[data-theme="classic"] #settings-page #config-form .settings-group' in page
 assert 'html[data-theme="classic"] #settings-page .internal-ssh-view .settings-group' in page

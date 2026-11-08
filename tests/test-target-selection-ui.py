@@ -18,6 +18,7 @@ assert "targetSelectionRevision" in page
 assert "if(revision===targetSelectionRevision)" in page
 assert "rollbackTargetSelection()" in page
 assert "Could not save target selection." in page
+assert "paintTargetSelection();loadGlobalActionSelectionPreviews()" in page
 assert "await loadStatus()" not in page[page.index("function saveTargetSelection"):page.index("const targetRowWithSelection")]
 assert ".target-selection-state{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;min-width:26px;height:26px;min-height:26px;padding:0" in page
 assert ".target-selection-state{width:30px;min-width:30px;height:30px;min-height:30px" in page
@@ -34,14 +35,24 @@ assert "Update all" in page
 assert "[['','Default'],['only','Only'],['exclude','Exclude']]" in page
 assert "selectionStateLabel" in page
 assert "select.target-selection-state" in page
-assert "label?.setAttribute('for',inputId)" in page
+assert "target-selection-trigger" in page
+assert "target-selection-menu" in page
+assert "target-selection-option" in page
+assert "trigger.setAttribute('aria-haspopup','listbox')" in page
+assert "menu.setAttribute('role','listbox')" in page
+assert "option.setAttribute('role','option')" in page
+assert 'aria-selected' in page
+assert "selectionMenuOptions" in page
+assert "ArrowDown" in page and "ArrowUp" in page
+assert "closeSelectionMenus" in page
+assert "selectionControls=function(t,nodeActions=false){const id=selectionKey(t),variant=nodeActions?'node':'guest'" in page
 assert "saveTargetSelection(scope,id,current,desired)" in page
 assert "guest-table-header" in page
 assert "Target</span><span role=\"columnheader\">Status" in page
 assert "Global actions<small><span>Check all</span><span>Update all</span>" in page
 assert "role=\"columnheader\">Actions" in page
 assert "grid-column:6 / span 2" in page
-assert "selectionFields=[...selection.querySelectorAll('select.target-selection-state')]" in page
+assert "selectionFields=[...selection.querySelectorAll('.target-selection-field')]" in page
 assert "cell.className=`row-global-actions row-global-selection ${index===0?'row-global-selection-check':'row-global-selection-update'}`" in page
 assert "row-global-selection-check" in page
 assert "row-global-selection-update" in page
@@ -70,13 +81,50 @@ assert ".node-global-actions .global-selection-controls .target-selection-column
 assert ".node-global-actions .global-selection-controls { display:grid; grid-column:2; grid-row:1; grid-template-columns:repeat(2,max-content); align-items:start; justify-self:end;" in page
 assert ".node-global-actions .global-selection-controls .target-selection-label { width:100%; text-align:center; }" in page
 assert ".node-global-actions .global-selection-controls .target-selection-state { box-sizing:border-box; display:block; width:72px !important; min-width:72px !important; max-width:72px !important; height:34px !important; min-height:34px !important; max-height:34px !important; flex:0 0 72px !important;" in page
+assert ".row-global-selection .target-selection-field { box-sizing:border-box; display:inline-flex; width:92px !important; min-width:92px !important; max-width:92px !important; height:34px !important; min-height:34px !important; max-height:34px !important; flex:0 0 92px !important; }" in page
+assert ".row-global-selection .target-selection-trigger { width:92px !important; min-width:92px !important; max-width:92px !important; height:34px !important; min-height:34px !important; max-height:34px !important; flex:0 0 92px !important; }" in page
 assert ".guest-selection-state { box-sizing:border-box; display:block; width:92px !important; min-width:92px !important; max-width:92px !important; height:34px !important; min-height:34px !important; max-height:34px !important; flex:0 0 92px !important;" in page
-assert "select.classList.add('guest-selection-state')" in page
+assert "buildNodeSelectionField(scope,id,state,title,variant)" in page
+assert "menu.hidden=true" in page
+assert "row.addEventListener('click',event=>{if(event.target.closest('.target-selection-field'))event.stopPropagation()})" in page
+assert "row.addEventListener('click',event=>{if(event.target.closest('.target-selection-field'))event.stopPropagation()},true)" not in page
 assert "const selectionVariantClass=select=>select.dataset.selectionVariant==='guest'?' guest-selection-state':select.dataset.selectionVariant==='node'?' node-selection-state':'';" in page
-assert "select.className='target-selection-state '+(state||'default')+(targetSelectionLoadState!=='ready'?' unavailable':'')+selectionVariantClass(select);" in page
-assert "select.dataset.selectionVariant=nodeActions?'node':'target'" in page
-assert "select.dataset.selectionVariant='guest'" in page
+assert "field.dataset.selectionVariant=variant" in page
+assert "trigger.dataset.selectionVariant=variant" in page
 assert "node-selection-state" in page
+assert ".node-group.selection-menu-open { overflow:visible; }" in page
+assert ".target-selection-menu[hidden] { display:none; }" in page
+assert ".target-selection-option.only" in page
+assert ".target-selection-option.exclude" in page
+assert ".target-selection-field.open { z-index:130; }" in page
+assert ".target-selection-trigger.default" in page
+assert ".target-selection-trigger.only" in page
+assert ".target-selection-trigger.exclude" in page
+assert ".global-selection-controls .target-selection-trigger.default" in page
+assert ".global-selection-controls .target-selection-trigger.only" in page
+assert ".global-selection-controls .target-selection-trigger.exclude" in page
+assert ".target-selection-trigger { position:relative; box-sizing:border-box; display:flex; align-items:center; justify-content:flex-start; gap:0;" in page
+assert ".target-selection-trigger .target-selection-value { display:block; min-width:0; max-width:100%; overflow:hidden; text-align:left;" in page
+assert ".target-selection-trigger .target-selection-chevron { position:absolute; top:50%; right:7px;" in page
+assert ".target-selection-trigger[aria-expanded=\"true\"] .target-selection-chevron { top:50%; transform:translateY(-65%); border-top:0; border-bottom:5px solid currentColor; }" in page
+assert ".target-selection-menu { position:fixed;" in page
+assert "max-height:calc(100vh - 16px)" in page
+assert "positionSelectionMenu" in page
+assert "data-menu-placement" in page
+assert "const openSelectionMenu=(field,index)=>{closeSelectionMenus();" in page
+assert "field.removeAttribute('data-menu-placement')" in page
+assert "field.isConnected" in page
+assert "menu.isConnected" in page
+assert "trigger.isConnected" in page
+assert "rect.width||!rect.height" in page
+assert "Number.isFinite" in page
+assert "menu.style.visibility='hidden'" in page
+assert "if(!positionSelectionMenu(field)){closeSelectionMenu(field);return}" in page
+assert "const cleanupSelectionMenus=mutations=>" in page
+assert "new MutationObserver(cleanupSelectionMenus).observe(document.body" in page
+assert "window.addEventListener('resize',repositionOpenSelectionMenus)" in page
+assert "window.addEventListener('scroll',repositionOpenSelectionMenus,true)" in page
+assert "resetSelectionMenuPosition" in page
 assert ".target-row > :first-child { grid-column:1; grid-row:1; }" in page
 assert ".target-row > .target-status { grid-column:2; grid-row:1; }" in page
 assert ".target-row > .target-updates { grid-column:3; grid-row:1; }" in page

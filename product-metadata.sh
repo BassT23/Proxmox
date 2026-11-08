@@ -5,7 +5,7 @@
 # installers and runtime components source it instead of maintaining their own
 # product or beta version constants.
 PRODUCT_VERSION="5.2"
-BETA_VERSION="1"
+BETA_VERSION="2"
 
 UU_SHORT_COMMIT() {
   local commit="${1:-}"

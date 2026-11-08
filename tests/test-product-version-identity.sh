@@ -17,18 +17,18 @@ if grep -Fq 'Version :   2.1' "$ROOT_DIR/install.sh"; then
 fi
 grep -Fq 'INSTALLER_VERSION="2.1"' "$ROOT_DIR/install.sh"
 grep -Fq 'PRODUCT_VERSION="5.2"' "$ROOT_DIR/product-metadata.sh"
-grep -Fq 'BETA_VERSION="1"' "$ROOT_DIR/product-metadata.sh"
+grep -Fq 'BETA_VERSION="2"' "$ROOT_DIR/product-metadata.sh"
 grep -Fq 'schema_version=2' "$ROOT_DIR/install.sh"
 
 work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT
 eval "$(sed -n '/^WRITE_BUILD_METADATA()/,/^}/p' "$ROOT_DIR/install.sh")"
 BUILD_METADATA_FILE="$work_dir/build-metadata" PRODUCT_VERSION=5.2 \
-  WRITE_BUILD_METADATA beta "$sha" '' 5.2 1
+  WRITE_BUILD_METADATA beta "$sha" '' 5.2 2
 grep -Fqx 'schema_version=2' "$work_dir/build-metadata"
 grep -Fqx 'version="5.2"' "$work_dir/build-metadata"
 grep -Fqx 'branch="beta"' "$work_dir/build-metadata"
-grep -Fqx 'beta="1"' "$work_dir/build-metadata"
+grep -Fqx 'beta="2"' "$work_dir/build-metadata"
 grep -Fqx "commit=\"$sha\"" "$work_dir/build-metadata"
 
 echo 'product version identity tests: PASS'

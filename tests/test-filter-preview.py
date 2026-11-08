@@ -41,6 +41,7 @@ apply_only_exclude_tags() {
 
     base = {"ONLY_UPDATE_CHECK": "", "EXCLUDE_UPDATE_CHECK": ""}
     no_filter = server.target_preview(payload, base, resolver, inventory)
+    assert no_filter["effective_count"] == len(no_filter["included"])
     assert [item["label"] for item in no_filter["included"]] == [
         "Proxmox-Test-1", "910 · debian", "917 · cent · offline", "Mediacenter", "legacy-971"
     ], no_filter
@@ -51,11 +52,13 @@ apply_only_exclude_tags() {
 
     only = server.target_preview(payload, {**base, "ONLY_UPDATE_CHECK": "selected"}, resolver, inventory)
     assert only["mode"] == "only"
+    assert only["effective_count"] == len(only["included"])
     assert [item["label"] for item in only["included"]] == ["Proxmox-Test-1", "910 · debian"]
     assert [item["label"] for item in only["excluded"]] == ["917 · cent · offline", "Mediacenter", "legacy-971"]
 
     both = server.target_preview(payload, {"ONLY_UPDATE_CHECK": "selected", "EXCLUDE_UPDATE_CHECK": "910"}, resolver, inventory)
     assert both["mode"] == "only"
+    assert both["effective_count"] == len(both["included"])
     assert [item["label"] for item in both["included"]] == ["Proxmox-Test-1"]
 
     zero = server.target_preview(payload, {**base, "ONLY_UPDATE_CHECK": "missing"}, resolver, inventory)
@@ -91,6 +94,7 @@ apply_only_exclude_tags() {
     update_only = server.target_preview(payload, {**update_base, "ONLY": "selected"}, resolver, inventory,
                                          filter_keys=("ONLY", "EXCLUDE"))
     assert update_only["mode"] == "only"
+    assert update_only["effective_count"] == len(update_only["included"])
     assert [item["label"] for item in update_only["included"]] == [
         "Proxmox-Test-1", "910 · debian"
     ]
@@ -102,10 +106,65 @@ apply_only_exclude_tags() {
     update_exclude = server.target_preview(payload, {**update_base, "EXCLUDE": "917"}, resolver, inventory,
                                             filter_keys=("ONLY", "EXCLUDE"))
     assert update_exclude["mode"] == "exclude"
+    assert update_exclude["effective_count"] == len(update_exclude["included"])
     assert [item["label"] for item in update_exclude["excluded"]] == ["917 · cent · offline"]
 
     update_missing = server.target_preview(payload, {}, resolver, inventory,
                                            filter_keys=("ONLY", "EXCLUDE"))
     assert update_missing["mode"] == "none"
+
+    internal_base = {
+        "USE_INTERNAL_TARGET_SELECTION": True,
+        "CHECK_WITH_HOST": "true", "CHECK_WITH_LXC": "true", "CHECK_WITH_VM": "true",
+        "CHECK_RUNNING_CONTAINER": "true", "CHECK_STOPPED_CONTAINER": "true",
+        "CHECK_RUNNING_VM": "true", "CHECK_STOPPED_VM": "true", "CHECK_PAUSED_VM": "true",
+        "WITH_HOST": "true", "WITH_LXC": "true", "WITH_VM": "true",
+        "RUNNING_CONTAINER": "true", "STOPPED_CONTAINER": "true",
+        "RUNNING_VM": "true", "STOPPED_VM": "true",
+    }
+    internal_default = server.target_preview(
+        payload, internal_base, resolver, inventory,
+        internal_selection={"check": {}, "update": {}},
+    )
+    assert internal_default["effective_selection"] == "all-eligible"
+    assert internal_default["effective_count"] == len(internal_default["included"])
+
+    stale_internal = server.target_preview(
+        payload, internal_base, resolver, inventory,
+        internal_selection={"check": {"999": "only"}, "update": {}},
+    )
+    assert stale_internal["mode"] == "internal-all"
+    assert stale_internal["effective_selection"] == "all-eligible"
+    assert stale_internal["only_matches"] == 0
+    assert stale_internal["effective_count"] == internal_default["effective_count"]
+
+    internal_only = server.target_preview(
+        payload, internal_base, resolver, inventory,
+        internal_selection={"check": {"910": "only"}, "update": {}},
+    )
+    assert internal_only["mode"] == "internal-only"
+    assert internal_only["effective_selection"] == "only-matches"
+    assert internal_only["only_matches"] == 1
+    assert internal_only["effective_count"] == 1
+
+    internal_exclude = server.target_preview(
+        payload, internal_base, resolver, inventory,
+        internal_selection={"check": {"917": "exclude"}, "update": {}},
+    )
+    assert internal_exclude["mode"] == "internal-exclude"
+    assert internal_exclude["effective_count"] == internal_default["effective_count"] - 1
+
+    scoped_payload = {**payload, "targets": [*payload["targets"],
+        {"id": "918", "type": "lxc", "name": "stopped", "status": "stopped", "reachable": True}]}
+    check_scoped = server.target_preview(
+        scoped_payload, {**internal_base, "CHECK_STOPPED_CONTAINER": "false"}, resolver, inventory,
+        internal_selection={"check": {}, "update": {}},
+    )
+    update_scoped = server.target_preview(
+        scoped_payload, internal_base, resolver, inventory,
+        filter_keys=("ONLY", "EXCLUDE"),
+        internal_selection={"check": {}, "update": {}},
+    )
+    assert check_scoped["effective_count"] + 1 == update_scoped["effective_count"]
 
 print("filter preview tests: PASS")
