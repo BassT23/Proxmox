@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091 # Dynamic test fixture source path is intentional.
+# shellcheck disable=SC1091,SC2034 # Dynamic fixture inputs are consumed by sourced test code.
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
