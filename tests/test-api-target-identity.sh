@@ -1,4 +1,6 @@
 #!/bin/bash
+# shellcheck disable=SC2034
+# Fixture variables are consumed by the sourced resolver.
 set -euo pipefail
 
 ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
