@@ -2,7 +2,8 @@
 # shellcheck disable=SC1091
 set -euo pipefail
 
-ROOT_DIR=$(cd -- "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)
+ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+export LOCAL_FILES="$ROOT_DIR"
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf -- "$WORK_DIR"' EXIT
 

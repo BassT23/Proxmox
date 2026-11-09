@@ -2350,6 +2350,38 @@ sys.stdout.write(ansi.sub("", sys.stdin.read()))
 '
 }
 
+# Configure the legacy CLI colour variables once for both update/check entry
+# points.  Automatic colours require an interactive stdout and stderr; direct
+# cron pipes therefore stay readable without changing interactive output.
+# UU_COLOR=always / UU_FORCE_COLOR=true are explicit opt-ins for callers that
+# intentionally need colour in a non-interactive stream.  UU_COLOR=never and
+# NO_COLOR remain explicit suppression mechanisms.
+# shellcheck disable=SC2034 # These variables are consumed by sourced callers.
+STATUS_MODEL_CONFIGURE_CLI_COLORS() {
+  local mode="${UU_COLOR:-auto}" use_color=false
+  if [[ "$mode" == never || -n "${NO_COLOR+x}" ]]; then
+    use_color=false
+  elif [[ "${UU_FORCE_COLOR:-false}" == true || "$mode" == always ]]; then
+    use_color=true
+  elif [[ "$mode" == auto &&
+    -t 1 && -t 2 && "${TERM:-}" != dumb ]]; then
+    use_color=true
+  fi
+  if [[ "$use_color" == true ]]; then
+    BL="\e[36m"
+    OR="\e[1;33m"
+    RD="\e[1;91m"
+    GN="\e[1;92m"
+    CL="\e[0m"
+  else
+    BL=""
+    OR=""
+    RD=""
+    GN=""
+    CL=""
+  fi
+}
+
 # Deliver sanitized UTF-8 plaintext while retaining the existing mail headers
 # and rejecting configuration-derived header injection.
 STATUS_MODEL_SEND_TEXT_MAIL() {

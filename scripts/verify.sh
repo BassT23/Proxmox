@@ -51,6 +51,7 @@ shell_tests=(
   tests/test-notification-ansi-boundary.sh
   tests/test-html-mail.sh
   tests/test-apprise-notifications.sh
+  tests/test-cli-color-mode.sh
   tests/test-scheduled-success-heartbeat.sh
   tests/test-check-only-finalization.sh
   tests/test-post-update-refresh.sh

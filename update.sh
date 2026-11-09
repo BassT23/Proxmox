@@ -804,11 +804,25 @@ DPKG_REPAIR_PREPARE() {
 USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
 
 # Colors
-BL="\e[36m"
-OR="\e[1;33m"
-RD="\e[1;91m"
-GN="\e[1;92m"
-CL="\e[0m"
+if ! declare -f STATUS_MODEL_CONFIGURE_CLI_COLORS >/dev/null 2>&1; then
+  STATUS_MODEL_CONFIGURE_CLI_COLORS() {
+    local mode="${UU_COLOR:-auto}" use_color=false
+    if [[ "$mode" == never || -n "${NO_COLOR+x}" ]]; then
+      use_color=false
+    elif [[ "${UU_FORCE_COLOR:-false}" == true || "$mode" == always ]]; then
+      use_color=true
+    elif [[ "$mode" == auto &&
+      -t 1 && -t 2 && "${TERM:-}" != dumb ]]; then
+      use_color=true
+    fi
+    if [[ "$use_color" == true ]]; then
+      BL="\e[36m"; OR="\e[1;33m"; RD="\e[1;91m"; GN="\e[1;92m"; CL="\e[0m"
+    else
+      BL=""; OR=""; RD=""; GN=""; CL=""
+    fi
+  }
+fi
+STATUS_MODEL_CONFIGURE_CLI_COLORS
 
 DOWNLOAD_SHELL_FILE() {
   local url="$1" temporary headers http_code retry_after
