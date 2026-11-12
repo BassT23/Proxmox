@@ -25,12 +25,15 @@ JSON
     exit 23
     ;;
   invalid) status=ok; available='"not-a-number"'; checked_at="$now" ;;
+  active-mutation) status=updates_available; available=4; checked_at="$now"; invalidated=true; mutation=true ;;
   stale) status=ok; available=2; checked_at=2020-01-01T00:00:00Z ;;
   missing) printf '%s\n' '{"schema_version":1,"targets":[]}' > "$STATUS_MODEL_FILE"; exit 0 ;;
   *) exit 24 ;;
 esac
+invalidated=${invalidated:-false}
+mutation=${mutation:-false}
 cat > "$STATUS_MODEL_FILE" <<JSON
-{"schema_version":1,"targets":[{"id":"host:${STATUS_MODEL_NODE}","type":"host","node":"${STATUS_MODEL_NODE}","reachable":true,"check_status":"$status","updates":{"available":$available},"last_check":"$checked_at","package_checked_at":"$checked_at","package_data_invalidated":false,"package_mutation_in_progress":false}]}
+{"schema_version":1,"targets":[{"id":"host:${STATUS_MODEL_NODE}","type":"host","node":"${STATUS_MODEL_NODE}","reachable":true,"check_status":"$status","updates":{"available":$available},"last_check":"$checked_at","package_checked_at":"$checked_at","package_data_invalidated":$invalidated,"package_mutation_in_progress":$mutation}]}
 JSON
 CHECK
 chmod 750 "$WORK_DIR/check.sh"
@@ -84,11 +87,39 @@ APT_COMMAND=apt-get
 
 EFFECTIVE_HEADLESS() { return 0; }
 REQUIRE_PACKAGE_DATA_INVALIDATION() { printf '%s\n' invalidate-gate >> "$WORK_DIR/events"; return 0; }
-MARK_PACKAGE_DATA_INVALIDATED() { printf 'invalidate %s\n' "$*" >> "$WORK_DIR/events"; return 0; }
+MARK_PACKAGE_DATA_INVALIDATED() {
+  local target=$1 type=$2 node=$3 operation
+  operation=$(STATUS_MODEL_NEW_OPERATION_ID)
+  printf 'invalidate %s\n' "$*" >> "$WORK_DIR/events"
+  STATUS_MODEL_INVALIDATE_PACKAGE_DATA "$target" "$type" "$node" "$operation"
+}
+MARK_PACKAGE_DATA_MUTATION_COMPLETE() {
+  local target=$1 type=$2 node=$3 operation
+  operation=$(python3 - "$STATUS_MODEL_FILE" "$target" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+target = next(item for item in payload["targets"] if str(item.get("id")) == sys.argv[2])
+print(target["package_mutation_operation_id"])
+PY
+  )
+  printf 'complete %s\n' "$*" >> "$WORK_DIR/events"
+  STATUS_MODEL_COMPLETE_PACKAGE_MUTATION "$target" "$type" "$node" "$operation"
+}
 DPKG_REPAIR_PREPARE() { printf '%s\n' repair >> "$WORK_DIR/events"; return 0; }
 pveupdate() { printf '%s\n' pveupdate >> "$WORK_DIR/events"; return 0; }
 RUN_UPDATE_COMMAND() { printf 'mutate %s\n' "$*" >> "$WORK_DIR/events"; return 0; }
 UPDATE_CHECK() {
+  printf '%s\n' post-check >> "$WORK_DIR/events"
+  python3 - "$STATUS_MODEL_FILE" <<'PY'
+import json
+import sys
+
+record = json.load(open(sys.argv[1], encoding="utf-8"))["targets"][0]
+assert record["package_data_invalidated"] is False, record
+assert record["package_mutation_in_progress"] is False, record
+PY
   RECORD_UPDATE_RESULT "$(HOST_UPDATE_TARGET_ID)" success 0
 }
 RECORD_UPDATE_RESULT() {
@@ -167,6 +198,10 @@ assert "PENDING_BEFORE_INVALID" in last_update["message"]
 PY
 assert_no_mutation "$WORK_DIR/case-invalid/events"
 
+run_case active-mutation
+grep -Fq 'PENDING_BEFORE_INVALID' "$WORK_DIR/case-active-mutation/output"
+assert_no_mutation "$WORK_DIR/case-active-mutation/events"
+
 run_case stale
 grep -Fq 'PENDING_BEFORE_INVALID' "$WORK_DIR/case-stale/output"
 python3 - "$WORK_DIR/case-stale/status.json" <<'PY'
@@ -184,6 +219,16 @@ run_case positive
 grep -Fq -- "-u chost|$HOST_NODE" "$WORK_DIR/case-positive/check.log"
 grep -Fq pveupdate "$WORK_DIR/case-positive/events"
 grep -Fq 'mutate APT_COMMAND' "$WORK_DIR/case-positive/events"
+python3 - "$WORK_DIR/case-positive/events" "$HOST_NODE" <<'PY'
+import sys
+
+events = [line.strip() for line in open(sys.argv[1], encoding="utf-8")]
+expected = f"complete host:{sys.argv[2]} host {sys.argv[2]}"
+assert expected in events, events
+complete = next(index for index, line in enumerate(events) if line.startswith("complete "))
+post_check = events.index("post-check")
+assert complete < post_check, events
+PY
 python3 - "$WORK_DIR/case-positive/status.json" <<'PY'
 import json
 import sys

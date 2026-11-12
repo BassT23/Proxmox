@@ -109,6 +109,9 @@ Improved:
   explicitly.
 
 Fixed:
+- Issue #393: local host updates now close their mutation reservation before
+  the post-update check, preventing a stale active-mutation state from
+  invalidating the next direct host update baseline.
 - Issue #383: APT checks refresh package metadata before structured counts;
   unsafe or failed refreshes fail closed instead of reporting stale zeroes.
 - Issue #384: the Web UI now explains the verified-backup requirement when a

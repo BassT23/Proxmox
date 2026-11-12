@@ -2658,6 +2658,14 @@ UPDATE_HOST_ITSELF () {
   RUN_UPDATE_COMMAND APT_COMMAND --purge autoremove -y || { ERROR_CODE=$?; ID=$HOSTNAME; NAME=$HOSTNAME; ERROR_MSG="$UPDATE_STEP_OUTPUT"; ERROR; }
   if [[ $ERROR_CODE != "" ]]; then return; fi
   echo
+  # Complete the local mutation reservation before the post-update check.
+  # Without this transition, the status model correctly treats the next
+  # observation as having started during an active mutation and rejects the
+  # next direct host update with PENDING_BEFORE_INVALID.
+  MARK_PACKAGE_DATA_MUTATION_COMPLETE "$host_target" host "${host_target#host:}" || {
+    UPDATE_FAILURE=true
+    return 1
+  }
   CHOST="true"
   UPDATE_CHECK
   CHOST=""
