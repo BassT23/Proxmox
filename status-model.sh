@@ -2441,6 +2441,85 @@ print("</body></html>")
     "$recipient"
 }
 
+# Deliver a UTF-8 multipart/alternative message.  Plain text comes first for
+# clients that do not support HTML; HTML follows for clients that do.
+# Both parts are generated from the same sanitized notification body.
+STATUS_MODEL_SEND_MULTIPART_MAIL() {
+  local subject="${1:-}" sender="${2:-}" recipient="${3:-}"
+
+  # Reject header injection from configuration-derived values.
+  if [[ "$subject" == *$'\r'* || "$subject" == *$'\n'* ||
+    "$sender" == *$'\r'* || "$sender" == *$'\n'* ||
+    "$recipient" == *$'\r'* || "$recipient" == *$'\n'* ]]; then
+    return 2
+  fi
+
+  python3 -c '
+import email.policy
+import html
+import re
+import shutil
+import subprocess
+import sys
+from email.message import EmailMessage
+
+subject, sender, recipient = sys.argv[1:4]
+
+# Remove ANSI CSI and OSC sequences, including legacy literal sequences.
+ansi = re.compile(
+    r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))"
+    r"|\[(?:[0-9]{1,3}(?:;[0-9]{1,3})*)?m"
+)
+body = ansi.sub("", sys.stdin.read())
+
+lines = body.splitlines()
+if not lines:
+    lines = [""]
+
+html_body = [
+    "<!doctype html><html><body style=\"font-family:Arial,sans-serif;"
+    "font-size:11pt;white-space:pre-wrap;overflow-wrap:anywhere\">"
+]
+for line in lines:
+    content = html.escape(line) if line else "&nbsp;"
+    html_body.append(
+        f"<div style=\"margin:0;line-height:1.35;"
+        f"white-space:pre-wrap;overflow-wrap:anywhere\">{content}</div>"
+    )
+html_body.append("</body></html>")
+
+message = EmailMessage(policy=email.policy.SMTP)
+message["From"] = sender
+message["To"] = recipient
+message["Subject"] = subject
+
+message.set_content(body, subtype="plain", charset="utf-8", cte="8bit")
+message.add_alternative(
+    "\n".join(html_body),
+    subtype="html",
+    charset="utf-8",
+    cte="8bit",
+)
+
+sendmail = shutil.which("sendmail")
+if not sendmail:
+    print("sendmail executable not found", file=sys.stderr)
+    sys.exit(127)
+
+try:
+    result = subprocess.run(
+        [sendmail, "-t", "-i", "-f", sender],
+        input=message.as_bytes(),
+        check=False,
+    )
+except OSError as exc:
+    print(f"Unable to execute sendmail: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+sys.exit(result.returncode)
+' "$subject" "$sender" "$recipient"
+}
+
 # Deliver the already-rendered notification through the optional provider-
 # neutral Apprise helper.  A configured remote handoff is authoritative on the
 # controller; suppress worker delivery so one event cannot be sent twice.
@@ -2789,14 +2868,14 @@ STATUS_MODEL_SEND_NOTIFICATION() {
       if [[ "$email_security_allowed" == true ]]; then
         email_required=true
         printf '%s\n' "$body" |
-          STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || email_rc=$?
+          STATUS_MODEL_SEND_MULTIPART_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || email_rc=$?
       fi
       ;;
     current)
       if [[ "$email_no_updates" == true ]]; then
         email_required=true
         printf '%s\n' "No updates found during search" |
-          STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater" "$email_sender" "$email_user" || email_rc=$?
+          STATUS_MODEL_SEND_MULTIPART_MAIL "Ultimate Updater" "$email_sender" "$email_user" || email_rc=$?
       fi
       ;;
     empty)
@@ -2855,7 +2934,7 @@ STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
 
   if [[ "$email_allowed" == true && ( "$email_only_error" != true || "$state" == issues ) ]]; then
     printf '%s\n' "$body" |
-      STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || true
+      STATUS_MODEL_SEND_MULTIPART_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || true
   fi
   STATUS_MODEL_SEND_APPRISE "$status_file" update "$state" "$body" "$run_started_at" || true
 }
