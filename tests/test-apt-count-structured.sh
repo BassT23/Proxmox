@@ -25,9 +25,17 @@ class Candidate:
 
 
 class Package:
-    def __init__(self, upgrade, origin):
+    def __init__(self, upgrade, origin, phased=False):
         self.is_upgradable = upgrade
         self.candidate = Candidate(origin)
+        self.phased = phased
+        self._pkg = self
+
+
+class DepCache:
+    @staticmethod
+    def phasing_applied(package):
+        return package.phased
 
 
 class Cache:
@@ -41,8 +49,12 @@ class Cache:
                      [Package(True, "stable") for _ in range(5)],
             "third-party": [Package(True, "vendor")],
             "unknown": [Package(True, "")],
+            "phased": [Package(True, "stable", phased=True) for _ in range(3)] +
+                      [Package(True, "stable") for _ in range(2)],
         }
         self.packages = values[scenario]
+        if scenario == "phased":
+            self._depcache = DepCache()
 
     def __iter__(self):
         return iter(self.packages)
@@ -59,6 +71,15 @@ for scenario in zero normal security mixed third-party; do
   actual=$(APT_FIXTURE="$scenario" PYTHONPATH="$WORK_DIR" python3 "$ROOT_DIR/apt-count.py")
   [[ "$actual" == "$expected" ]]
 done
+
+# Updates that apt defers because of phasing are not counted, since an upgrade
+# run never installs them, unless the updater is configured to include them.
+phased=$(APT_FIXTURE=phased PYTHONPATH="$WORK_DIR" python3 "$ROOT_DIR/apt-count.py")
+[[ "$phased" == 'APT_COUNTS|2|2|0|true' ]]
+phased=$(UU_INCLUDE_PHASED_UPDATES=true APT_FIXTURE=phased PYTHONPATH="$WORK_DIR" python3 "$ROOT_DIR/apt-count.py")
+[[ "$phased" == 'APT_COUNTS|5|5|0|true' ]]
+phased=$(UU_INCLUDE_PHASED_UPDATES=false APT_FIXTURE=phased PYTHONPATH="$WORK_DIR" python3 "$ROOT_DIR/apt-count.py")
+[[ "$phased" == 'APT_COUNTS|2|2|0|true' ]]
 
 # The structured helper does not consume command output, so localized raw
 # package-manager chatter cannot affect its result.

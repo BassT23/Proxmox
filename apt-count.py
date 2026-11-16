@@ -16,11 +16,17 @@ def main():
 
     try:
         cache = apt.Cache()
+        # apt-get upgrade defers phased updates, so counting them would report
+        # packages that an upgrade run never installs.
+        include_phased = os.environ.get("UU_INCLUDE_PHASED_UPDATES") == "true"
+        phasing_applied = getattr(getattr(cache, "_depcache", None), "phasing_applied", None)
         total = normal = security = 0
         packages = []
         package_details_valid = True
         for package in cache:
             if not package.is_upgradable:
+                continue
+            if not include_phased and phasing_applied is not None and phasing_applied(package._pkg):
                 continue
             candidate = package.candidate
             installed = getattr(package, "installed", None)

@@ -52,11 +52,11 @@ else
     local result
     REFRESH_APT_PACKAGE_LISTS || return 1
     if [[ ! -f "$script" ]]; then
-      result=$(UU_PACKAGE_DETAILS=1 python3 "$python_script") || {
+      result=$(UU_PACKAGE_DETAILS=1 UU_INCLUDE_PHASED_UPDATES="${INCLUDE_PHASED_UPDATES:-false}" python3 "$python_script") || {
         SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
       }
     else
-      result=$(UU_PACKAGE_DETAILS=1 APT_COUNT_PYTHON_SCRIPT="$python_script" sh "$script") || {
+      result=$(UU_PACKAGE_DETAILS=1 UU_INCLUDE_PHASED_UPDATES="${INCLUDE_PHASED_UPDATES:-false}" APT_COUNT_PYTHON_SCRIPT="$python_script" sh "$script") || {
         SECURITY_APT_UPDATES=null; NORMAL_APT_UPDATES=null; APT_COUNTS_TOTAL=null; return 1
       }
     fi
@@ -108,7 +108,8 @@ except Exception:
   APT_COUNT_REMOTE_COMMAND() {
     local shell_script="${APT_COUNT_SHELL_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.sh}"
     local python_script="${APT_COUNT_SCRIPT:-${LOCAL_FILES:-/etc/ultimate-updater}/apt-count.py}"
-    local shell_encoded python_encoded refresh_command
+    local shell_encoded python_encoded refresh_command phased_flag=false
+    [[ "${INCLUDE_PHASED_UPDATES:-}" == true ]] && phased_flag=true
     if [[ "${UU_APT_COUNT_SKIP_REFRESH:-false}" == true ]]; then
       refresh_command=':'
     else
@@ -120,13 +121,13 @@ except Exception:
     fi
     if [[ ! -f "$shell_script" ]]; then
       python_encoded=$(base64 -w0 "$python_script") || return 1
-      printf '%s && UU_PACKAGE_DETAILS=1 python3 -c %q' \
+      printf '%s && UU_PACKAGE_DETAILS=1 UU_INCLUDE_PHASED_UPDATES='"$phased_flag"' python3 -c %q' \
         "$refresh_command" "import base64;exec(base64.b64decode('$python_encoded'))"
       return 0
     fi
     shell_encoded=$(base64 -w0 "$shell_script") || return 1
     python_encoded=$(base64 -w0 "$python_script") || return 1
-    printf '%s && printf %%s %q | base64 -d | UU_PACKAGE_DETAILS=1 APT_COUNT_PYTHON_B64=%q sh -s' \
+    printf '%s && printf %%s %q | base64 -d | UU_PACKAGE_DETAILS=1 UU_INCLUDE_PHASED_UPDATES='"$phased_flag"' APT_COUNT_PYTHON_B64=%q sh -s' \
       "$refresh_command" "$shell_encoded" "$python_encoded"
   }
   PARSE_RPM_UPDATE_COUNTS() {
@@ -507,6 +508,7 @@ USAGE () {
 
 READ_WRITE_CONFIG () {
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' $CONFIG_FILE)
+  INCLUDE_PHASED_UPDATES=$(awk -F'"' '/^INCLUDE_PHASED_UPDATES=/ {print $2}' "$CONFIG_FILE")
   EMAIL_USER=$(awk -F'"' '/^EMAIL_USER=/ {print $2}' $CONFIG_FILE)
   EMAIL_SENDER=$(awk -F'"' '/^EMAIL_SENDER=/ {print $2}' $CONFIG_FILE)
   EMAIL_DAILY_CHECK=$(awk -F'"' '/^EMAIL_DAILY_CHECK=/ {print $2}' $CONFIG_FILE)
