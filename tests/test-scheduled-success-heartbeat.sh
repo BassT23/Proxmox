@@ -98,6 +98,23 @@ cat >/dev/null
 exit 7
 EOF
 chmod 750 "$WORK_DIR/bin/mail"
+
+cat > "$WORK_DIR/bin/sendmail" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+exit 75
+EOF
+
+chmod 750 "$WORK_DIR/bin/sendmail"
+
+# Isolated PATH without sendmail, but with the commands needed for the
+# multipart builder and the legacy mail(1) fallback.
+mkdir -p "$WORK_DIR/no-sendmail"
+for command_name in awk bash cat chmod env id mail mktemp python3 rm; do
+  command_path=$(command -v "$command_name")
+  ln -s "$command_path" "$WORK_DIR/no-sendmail/$command_name"
+done
+
 rm -f "$WORK_DIR/calls" "$WORK_DIR/auth" "$WORK_DIR/state/cli" "$WORK_DIR/state/cli.lock"
 : > "$WORK_DIR/calls"
 : > "$WORK_DIR/auth"
@@ -265,7 +282,8 @@ EOF
 chmod 750 "$WORK_DIR/bin/mail"
 export UU_HEARTBEAT_TOKEN_FILE="$WORK_DIR/config/token"
 export PATH="$WORK_DIR/bin:$PATH"
-if STATUS_MODEL_SEND_NOTIFICATION "$WORK_DIR/status.json" "$WORK_DIR/scheduled-update.conf" \
+if PATH="$WORK_DIR/no-sendmail" STATUS_MODEL_SEND_NOTIFICATION \
+  "$WORK_DIR/status.json" "$WORK_DIR/scheduled-update.conf" \
   >/dev/null 2>"$WORK_DIR/notification-email-error"; then exit 1; fi
 
 # Successful email and Apprise delivery share one final heartbeat decision.
@@ -281,7 +299,8 @@ exit 0
 EOF
 chmod 750 "$WORK_DIR/successful-apprise"
 export UU_APPRISE_HELPER="$WORK_DIR/successful-apprise"
-if ! STATUS_MODEL_SEND_NOTIFICATION "$WORK_DIR/status.json" "$WORK_DIR/scheduled-update.conf" \
+if ! PATH="$WORK_DIR/no-sendmail" STATUS_MODEL_SEND_NOTIFICATION \
+  "$WORK_DIR/status.json" "$WORK_DIR/scheduled-update.conf" \
   >/dev/null 2>"$WORK_DIR/notification-combined-error"; then exit 1; fi
 rm -f "$WORK_DIR/calls" "$WORK_DIR/state/combined" "$WORK_DIR/state/combined.lock"
 : > "$WORK_DIR/calls"

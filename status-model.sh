@@ -2441,6 +2441,119 @@ print("</body></html>")
     "$recipient"
 }
 
+# Deliver a UTF-8 multipart/alternative message through the local sendmail
+# interface. Python's standard email package builds the MIME message so both
+# plain-text and HTML clients receive an appropriate representation. The
+# sendmail interface is preferred for predictable MIME handling; if it is
+# missing or cannot deliver, retain compatibility with the existing mail(1)
+# HTML path and its plaintext fallback.
+STATUS_MODEL_SEND_MULTIPART_MAIL() {
+  local subject="${1:-}" sender="${2:-}" recipient="${3:-}"
+  local temp_dir raw_body clean_body sendmail_path
+
+  # Reject header injection from configuration-derived values.
+  if [[ "$subject" == *$'\r'* || "$subject" == *$'\n'* ||
+    "$sender" == *$'\r'* || "$sender" == *$'\n'* ||
+    "$recipient" == *$'\r'* || "$recipient" == *$'\n'* ]]; then
+    return 2
+  fi
+
+  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/uu-mail.XXXXXX") || return 1
+  chmod 700 "$temp_dir" 2>/dev/null || {
+    rm -rf "$temp_dir"
+    return 1
+  }
+  raw_body="$temp_dir/body.raw"
+  clean_body="$temp_dir/body.clean"
+
+  # Save stdin once so the same notification can be retried through mail(1)
+  # after a missing or unsuccessful sendmail transport.
+  cat > "$raw_body" || {
+    rm -rf "$temp_dir"
+    return 1
+  }
+
+  # Reuse the central sanitizer so every notification transport applies the
+  # same ANSI policy. The Python MIME builder receives already-clean text.
+  if ! STATUS_MODEL_STRIP_ANSI < "$raw_body" > "$clean_body"; then
+    rm -rf "$temp_dir"
+    return 1
+  fi
+
+  sendmail_path=$(command -v sendmail 2>/dev/null || true)
+  if [[ -n "$sendmail_path" ]] &&
+    python3 -c '
+import email.policy
+import html
+import subprocess
+import sys
+from email.message import EmailMessage
+
+subject, sender, recipient, sendmail = sys.argv[1:5]
+body = sys.stdin.read()
+
+lines = body.splitlines()
+if not lines:
+    lines = [""]
+
+html_body = [
+    "<!doctype html><html><body style=\"font-family:Arial,sans-serif;"
+    "font-size:11pt;white-space:pre-wrap;overflow-wrap:anywhere\">"
+]
+for line in lines:
+    content = html.escape(line) if line else "&nbsp;"
+    html_body.append(
+        f"<div style=\"margin:0;line-height:1.35;"
+        f"white-space:pre-wrap;overflow-wrap:anywhere\">{content}</div>"
+    )
+html_body.append("</body></html>")
+
+message = EmailMessage(policy=email.policy.SMTP)
+message["From"] = sender
+message["To"] = recipient
+message["Subject"] = subject
+
+message.set_content(body, subtype="plain", charset="utf-8", cte="8bit")
+message.add_alternative(
+    "\n".join(html_body),
+    subtype="html",
+    charset="utf-8",
+    cte="8bit",
+)
+
+try:
+    result = subprocess.run(
+        [sendmail, "-t", "-i", "-f", sender],
+        input=message.as_bytes(),
+        check=False,
+    )
+except OSError as exc:
+    print(f"Unable to execute sendmail: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+sys.exit(result.returncode)
+' "$subject" "$sender" "$recipient" "$sendmail_path" < "$clean_body"; then
+    rm -rf "$temp_dir"
+    return 0
+  fi
+
+  # Preserve the pre-multipart mail(1) transport for systems without a
+  # working sendmail executable. Prefer the existing HTML rendering and fall
+  # back to plain text if the installed mail implementation rejects HTML.
+  if STATUS_MODEL_SEND_HTML_MAIL "$subject" "$sender" "$recipient" < "$clean_body"; then
+    rm -rf "$temp_dir"
+    return 0
+  fi
+
+  if STATUS_MODEL_SEND_TEXT_MAIL "$subject" "$sender" "$recipient" < "$clean_body"; then
+    rm -rf "$temp_dir"
+    return 0
+  fi
+
+  rm -rf "$temp_dir"
+  return 1
+}
+
 # Deliver the already-rendered notification through the optional provider-
 # neutral Apprise helper.  A configured remote handoff is authoritative on the
 # controller; suppress worker delivery so one event cannot be sent twice.
@@ -2789,14 +2902,14 @@ STATUS_MODEL_SEND_NOTIFICATION() {
       if [[ "$email_security_allowed" == true ]]; then
         email_required=true
         printf '%s\n' "$body" |
-          STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || email_rc=$?
+          STATUS_MODEL_SEND_MULTIPART_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || email_rc=$?
       fi
       ;;
     current)
       if [[ "$email_no_updates" == true ]]; then
         email_required=true
         printf '%s\n' "No updates found during search" |
-          STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater" "$email_sender" "$email_user" || email_rc=$?
+          STATUS_MODEL_SEND_MULTIPART_MAIL "Ultimate Updater" "$email_sender" "$email_user" || email_rc=$?
       fi
       ;;
     empty)
@@ -2855,7 +2968,7 @@ STATUS_MODEL_SEND_UPDATE_NOTIFICATION() {
 
   if [[ "$email_allowed" == true && ( "$email_only_error" != true || "$state" == issues ) ]]; then
     printf '%s\n' "$body" |
-      STATUS_MODEL_SEND_HTML_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || true
+      STATUS_MODEL_SEND_MULTIPART_MAIL "Ultimate Updater summary - $HOSTNAME" "$email_sender" "$email_user" || true
   fi
   STATUS_MODEL_SEND_APPRISE "$status_file" update "$state" "$body" "$run_started_at" || true
 }

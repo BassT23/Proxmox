@@ -41,10 +41,20 @@ read-only `initial-inventory` check, and is sent once by the authoritative
 controller path after the combined email/Apprise decision. A heartbeat
 delivery failure never changes the underlying check result.
 
-Notification bodies are rendered from the existing plain-text status model and
-converted to escaped HTML immediately before delivery. This preserves line
-breaks and indentation in clients such as Outlook while keeping notification
-selection, scoping, and filtering unchanged. The HTML formatting is based on
-the contribution by [Negalein](https://forum.iobroker.net/topic/62489/proxmox-updater-host-lxc-vm-auch-iobroker-pihole-etc).
+Notification bodies are rendered from the existing plain-text status model
+and sent as UTF-8 `multipart/alternative` email: a `text/plain` part for clients
+that do not render HTML and an escaped `text/html` part for HTML-capable clients.
+Both parts are generated from the same sanitized notification body, preserving
+line breaks and indentation while keeping notification selection, scoping, and
+filtering unchanged.
+
+The MIME message is built with Python's standard `email` library and handed to
+the local mail system through its `sendmail`-compatible interface. This provides
+explicit control over the MIME structure and encoding without requiring
+Ultimate Updater to run its own mail server. If `sendmail` is unavailable or
+cannot deliver the message, Ultimate Updater retains the existing `mail(1)`
+HTML path and falls back to plaintext if HTML delivery is not accepted. The
+HTML formatting is based on the contribution by
+[Negalein](https://forum.iobroker.net/topic/62489/proxmox-updater-host-lxc-vm-auch-iobroker-pihole-etc).
 
 Related: [Configuration](configuration.md), [Troubleshooting](troubleshooting.md).
