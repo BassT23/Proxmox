@@ -46,8 +46,10 @@ notification paths.
 
 ### Notifications and update results
 
-- HTML status mail preserves an Outlook-compatible layout alongside the
-  existing plaintext path.
+- Status email uses UTF-8 multipart/alternative messages with plain-text and
+  escaped HTML parts. The existing `mail(1)` HTML/plaintext transport remains
+  available as a fallback when the sendmail-compatible interface is unavailable
+  or cannot deliver.
 - Notification delivery remains bounded and deduplicated across email and
   Apprise providers.
 - Update results distinguish success, no-op, skipped, unsupported, failed,

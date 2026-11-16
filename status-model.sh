@@ -2441,11 +2441,15 @@ print("</body></html>")
     "$recipient"
 }
 
-# Deliver a UTF-8 multipart/alternative message.  Plain text comes first for
-# clients that do not support HTML; HTML follows for clients that do.
-# Both parts are generated from the same sanitized notification body.
+# Deliver a UTF-8 multipart/alternative message through the local sendmail
+# interface. Python's standard email package builds the MIME message so both
+# plain-text and HTML clients receive an appropriate representation. The
+# sendmail interface is preferred for predictable MIME handling; if it is
+# missing or cannot deliver, retain compatibility with the existing mail(1)
+# HTML path and its plaintext fallback.
 STATUS_MODEL_SEND_MULTIPART_MAIL() {
   local subject="${1:-}" sender="${2:-}" recipient="${3:-}"
+  local temp_dir raw_body clean_body sendmail_path
 
   # Reject header injection from configuration-derived values.
   if [[ "$subject" == *$'\r'* || "$subject" == *$'\n'* ||
@@ -2454,23 +2458,39 @@ STATUS_MODEL_SEND_MULTIPART_MAIL() {
     return 2
   fi
 
-  python3 -c '
+  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/uu-mail.XXXXXX") || return 1
+  chmod 700 "$temp_dir" 2>/dev/null || {
+    rm -rf "$temp_dir"
+    return 1
+  }
+  raw_body="$temp_dir/body.raw"
+  clean_body="$temp_dir/body.clean"
+
+  # Save stdin once so the same notification can be retried through mail(1)
+  # after a missing or unsuccessful sendmail transport.
+  cat > "$raw_body" || {
+    rm -rf "$temp_dir"
+    return 1
+  }
+
+  # Reuse the central sanitizer so every notification transport applies the
+  # same ANSI policy. The Python MIME builder receives already-clean text.
+  if ! STATUS_MODEL_STRIP_ANSI < "$raw_body" > "$clean_body"; then
+    rm -rf "$temp_dir"
+    return 1
+  fi
+
+  sendmail_path=$(command -v sendmail 2>/dev/null || true)
+  if [[ -n "$sendmail_path" ]] &&
+    python3 -c '
 import email.policy
 import html
-import re
-import shutil
 import subprocess
 import sys
 from email.message import EmailMessage
 
-subject, sender, recipient = sys.argv[1:4]
-
-# Remove ANSI CSI and OSC sequences, including legacy literal sequences.
-ansi = re.compile(
-    r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))"
-    r"|\[(?:[0-9]{1,3}(?:;[0-9]{1,3})*)?m"
-)
-body = ansi.sub("", sys.stdin.read())
+subject, sender, recipient, sendmail = sys.argv[1:5]
+body = sys.stdin.read()
 
 lines = body.splitlines()
 if not lines:
@@ -2501,11 +2521,6 @@ message.add_alternative(
     cte="8bit",
 )
 
-sendmail = shutil.which("sendmail")
-if not sendmail:
-    print("sendmail executable not found", file=sys.stderr)
-    sys.exit(127)
-
 try:
     result = subprocess.run(
         [sendmail, "-t", "-i", "-f", sender],
@@ -2517,7 +2532,26 @@ except OSError as exc:
     sys.exit(1)
 
 sys.exit(result.returncode)
-' "$subject" "$sender" "$recipient"
+' "$subject" "$sender" "$recipient" "$sendmail_path" < "$clean_body"; then
+    rm -rf "$temp_dir"
+    return 0
+  fi
+
+  # Preserve the pre-multipart mail(1) transport for systems without a
+  # working sendmail executable. Prefer the existing HTML rendering and fall
+  # back to plain text if the installed mail implementation rejects HTML.
+  if STATUS_MODEL_SEND_HTML_MAIL "$subject" "$sender" "$recipient" < "$clean_body"; then
+    rm -rf "$temp_dir"
+    return 0
+  fi
+
+  if STATUS_MODEL_SEND_TEXT_MAIL "$subject" "$sender" "$recipient" < "$clean_body"; then
+    rm -rf "$temp_dir"
+    return 0
+  fi
+
+  rm -rf "$temp_dir"
+  return 1
 }
 
 # Deliver the already-rendered notification through the optional provider-

@@ -71,8 +71,10 @@ Improved:
   errors, and ignore stale responses from earlier changes.
 - Issue #312: Windows VM inventory and update paths now retain transport- and
   agent-aware results while unsupported or unverifiable paths remain fail-closed.
-- HTML status notifications preserve an Outlook-compatible layout while
-  retaining the existing plaintext notification output.
+- Email notifications use UTF-8 multipart/alternative messages with plain-text
+  and escaped HTML parts; the existing mail(1) HTML/plaintext transport remains
+  available as a fallback when the sendmail-compatible interface is unavailable
+  or cannot deliver.
 - Issue #382: configured VM SSH is preferred with QEMU Guest Agent fallback,
   including the required target-bound context for remote and global checks.
 - Issue #390: Proxmox authentication diagnostics classify realm, ticket, RBAC,

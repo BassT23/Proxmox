@@ -14,7 +14,7 @@ mkdir -p "$WORK_DIR/captures"
 printf '0\n' > "$WORK_DIR/count"
 
 cat > "$WORK_DIR/mail" <<'EOF'
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 count=$(<"$MAIL_COUNTER")
@@ -23,6 +23,12 @@ count=$((count + 1))
 printf '%s\n' "$count" > "$MAIL_COUNTER"
 printf '%s\n' "$*" > "$MAIL_CAPTURE_DIR/$count.args"
 cat > "$MAIL_CAPTURE_DIR/$count.body"
+if [[ "${MAIL_FAIL_HTML:-false}" == true && "$*" == *"text/html"* ]]; then
+  exit 7
+fi
+if [[ "${MAIL_FAIL:-false}" == true ]]; then
+  exit 7
+fi
 EOF
 
 chmod +x "$WORK_DIR/mail"
@@ -64,6 +70,14 @@ export MAIL_CAPTURE_DIR="$WORK_DIR/captures"
 
 export SENDMAIL_COUNTER="$WORK_DIR/sendmail-count"
 export SENDMAIL_CAPTURE_DIR="$WORK_DIR/captures"
+
+# Isolated PATH for testing a host without sendmail, while retaining the
+# commands needed by the multipart builder and the legacy mail(1) fallback.
+mkdir -p "$WORK_DIR/no-sendmail"
+for command_name in mail python3 mktemp chmod cat rm; do
+  command_path=$(command -v "$command_name")
+  ln -s "$command_path" "$WORK_DIR/no-sendmail/$command_name"
+done
 
 # shellcheck disable=SC1091
 source "$ROOT_DIR/status-model.sh"
@@ -178,6 +192,7 @@ printf '%s\n' "$multipart_body" |
     'recipient@example.test'
 
 [[ $(<"$WORK_DIR/sendmail-count") == 1 ]]
+[[ $(<"$WORK_DIR/count") == 2 ]]
 
 grep -Fq -- '-t -i -f sender@example.test' "$WORK_DIR/captures/1.args"
 
@@ -305,17 +320,42 @@ assert html["Content-Transfer-Encoding"] == "8bit"
 assert "&nbsp;" in html.get_content()
 PY
 
-# A sendmail delivery error must be propagated.
-if printf '%s\n' 'failure test' |
+# If sendmail is unavailable, the existing mail(1) HTML path is used.
+printf '%s\n' 'missing sendmail fallback' |
+  PATH="$WORK_DIR/no-sendmail" STATUS_MODEL_SEND_MULTIPART_MAIL \
+    'Missing Sendmail' \
+    sender@example.test \
+    recipient@example.test
+
+[[ $(<"$WORK_DIR/sendmail-count") == 2 ]]
+[[ $(<"$WORK_DIR/count") == 3 ]]
+grep -Fq 'Content-Type: text/html; charset=UTF-8' "$WORK_DIR/captures/3.args"
+grep -Fq 'missing sendmail fallback' "$WORK_DIR/captures/3.body"
+
+# If mail(1) rejects HTML, retry through its existing plaintext path.
+printf '%s\n' 'plaintext fallback' |
+  MAIL_FAIL_HTML=true PATH="$WORK_DIR/no-sendmail" STATUS_MODEL_SEND_MULTIPART_MAIL \
+    'Plaintext Fallback' \
+    sender@example.test \
+    recipient@example.test
+
+[[ $(<"$WORK_DIR/sendmail-count") == 2 ]]
+[[ $(<"$WORK_DIR/count") == 5 ]]
+grep -Fq 'Content-Type: text/html; charset=UTF-8' "$WORK_DIR/captures/4.args"
+grep -Fq 'Content-Type: text/plain; charset=UTF-8' "$WORK_DIR/captures/5.args"
+grep -Fq 'plaintext fallback' "$WORK_DIR/captures/5.body"
+
+# A sendmail delivery error also falls back to the existing mail(1) path.
+printf '%s\n' 'failed sendmail fallback' |
   SENDMAIL_FAIL=true STATUS_MODEL_SEND_MULTIPART_MAIL \
     'Failure Test' \
     sender@example.test \
-    recipient@example.test; then
-  echo 'sendmail failure was not propagated' >&2
-  exit 1
-fi
+    recipient@example.test
 
 [[ $(<"$WORK_DIR/sendmail-count") == 3 ]]
+[[ $(<"$WORK_DIR/count") == 6 ]]
+grep -Fq 'Content-Type: text/html; charset=UTF-8' "$WORK_DIR/captures/6.args"
+grep -Fq 'failed sendmail fallback' "$WORK_DIR/captures/6.body"
 
 # ---------------------------------------------------------------------------
 # Notification tests
@@ -418,9 +458,9 @@ printf '%s\n' "$plain_line" |
     'sender@example.test' \
     'recipient@example.test'
 
-[[ $(<"$WORK_DIR/count") == 3 ]]
+[[ $(<"$WORK_DIR/count") == 7 ]]
 
-python3 - "$WORK_DIR/captures/3.body" <<'PY'
+python3 - "$WORK_DIR/captures/7.body" <<'PY'
 import sys
 
 body = open(sys.argv[1], encoding="utf-8").read()
@@ -439,7 +479,7 @@ if printf '%s\n' 'body' |
   exit 1
 fi
 
-[[ $(<"$WORK_DIR/count") == 3 ]]
+[[ $(<"$WORK_DIR/count") == 7 ]]
 
 # ---------------------------------------------------------------------------
 # ANSI status notification test
