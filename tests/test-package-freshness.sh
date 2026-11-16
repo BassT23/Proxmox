@@ -271,12 +271,13 @@ assert target["package_checked_at"] != "2026-10-17T10:00:00Z"
 assert target["updates"] == {"available": 0}
 PY
 
-# A failed invalidation must not create a new, unverified target record.
+# A missing External identity has no authoritative local inventory context and
+# must not create a new target record in an existing status model.
 if STATUS_MODEL_FILE="$WORK_DIR/invalidation.json" LOCAL_FILES="$WORK_DIR" bash -c '
   source "$1"
-  STATUS_MODEL_INVALIDATE_PACKAGE_DATA missing-target lxc node1
+  STATUS_MODEL_INVALIDATE_PACKAGE_DATA missing-target external
 ' _ "$ROOT_DIR/status-model.sh"; then
-  echo 'unexpected invalidation of unknown target' >&2
+  echo 'unexpected invalidation of unknown external target' >&2
   exit 1
 fi
 python3 - "$WORK_DIR/invalidation.json" <<'PY'

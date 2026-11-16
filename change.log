@@ -111,6 +111,9 @@ Improved:
   explicitly.
 
 Fixed:
+- Issue #395: upgrades now repair unambiguous legacy guest identities and
+  establish missing current LXC/VM status records before reserving updates;
+  incompatible or ambiguous identities remain fail-closed.
 - Issue #393: local host updates now close their mutation reservation before
   the post-update check, preventing a stale active-mutation state from
   invalidating the next direct host update baseline.

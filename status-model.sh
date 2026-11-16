@@ -1558,10 +1558,9 @@ matches = [item for item in id_matches
            if item.get("type") == target_type and
            ((target_type == "external" and item.get("node") in (None, "")) or
             (target_type != "external" and item.get("node") == target_node))]
-if not status_exists:
-    if targets:
-        raise SystemExit(46)
-    record = {
+
+def new_record():
+    return {
         "id": requested,
         "type": target_type,
         "node": target_node or None,
@@ -1572,7 +1571,52 @@ if not status_exists:
         "skip_reason": None,
         "last_update": {"status": "unknown", "timestamp": None},
     }
+
+def is_legacy_external_alias(item):
+    # 5.1 persisted numeric guest records as External targets without a
+    # check_status.  Only this unambiguous legacy shape may be re-identified;
+    # a modern External record remains protected by the identity gate.
+    return (
+        isinstance(item, dict) and
+        item.get("type") == "external" and
+        item.get("node") in (None, "") and
+        "check_status" not in item and
+        "package_mutation_generation" not in item and
+        "package_mutation_in_progress" not in item and
+        "package_data_invalidated" not in item and
+        "package_mutation_operation_id" not in item
+    )
+
+if not status_exists:
+    if targets:
+        raise SystemExit(46)
+    record = new_record()
     targets.append(record)
+elif not id_matches:
+    # The current update caller has already resolved non-External identities
+    # against the live inventory.  Establishing a fresh reservation record is
+    # therefore safe even when an older status file does not contain it.
+    # External targets have no equivalent authoritative local identity and
+    # remain fail-closed when absent.
+    if target_type == "external":
+        raise SystemExit(1)
+    record = new_record()
+    targets.append(record)
+elif len(id_matches) == 1 and not matches and is_legacy_external_alias(id_matches[0]):
+    # Upgrade the precise 5.1 guest alias in place so its history survives,
+    # while the reservation below still invalidates the old package data.
+    record = id_matches[0]
+    # Canonicalize the numeric 5.1 ID to the current string representation so
+    # later exact-ID upserts cannot append a duplicate record.
+    record["id"] = requested
+    record["type"] = target_type
+    record["node"] = target_node
+    record.setdefault("reachable", None)
+    record.setdefault("updates", {"available": None})
+    record.setdefault("check_status", "not_checked")
+    record.setdefault("error", None)
+    record.setdefault("skip_reason", None)
+    record.setdefault("last_update", {"status": "unknown", "timestamp": None})
 elif len(id_matches) != len(matches) or len(matches) != 1:
     # Do not let an ID-only alias select an External, VM, LXC, or other node.
     raise SystemExit(1)

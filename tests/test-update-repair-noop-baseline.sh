@@ -110,6 +110,8 @@ run_worker_result 928 2 success 0 0
 cp "$WORK_DIR/status-model-input.json" "$WORK_DIR/status.json"
 set +e
 LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
+  UU_API_EXPECTED_TARGET_ID=928 UU_API_EXPECTED_TARGET_KIND=lxc \
+  UU_API_EXPECTED_TARGET_NODE=node2 \
   bash -c 'declare -A UPDATE_PENDING_BEFORE=(); source "$1"; source "$2"; source "$3"; UPDATE_FAILURE=false; RECORD_UPDATE_RESULT 928 success 0' \
   _ "$ROOT_DIR/status-model.sh" "$WORK_DIR/capture.sh" "$WORK_DIR/result.sh" >/dev/null 2>&1
 missing_rc=$?
@@ -124,6 +126,8 @@ cp "$WORK_DIR/status-model-input.json" "$WORK_DIR/status.json"
 set +e
 LOCAL_FILES="$WORK_DIR" STATUS_MODEL_FILE="$WORK_DIR/status.json" \
   UU_UPDATE_PENDING_BEFORE_TARGET=928 UU_UPDATE_PENDING_BEFORE=invalid \
+  UU_API_EXPECTED_TARGET_ID=928 UU_API_EXPECTED_TARGET_KIND=lxc \
+  UU_API_EXPECTED_TARGET_NODE=node2 \
   bash -c 'declare -A UPDATE_PENDING_BEFORE=(); source "$1"; source "$2"; source "$3"; UPDATE_FAILURE=false; RECORD_UPDATE_RESULT 928 success 0' \
   _ "$ROOT_DIR/status-model.sh" "$WORK_DIR/capture.sh" "$WORK_DIR/result.sh" >/dev/null 2>&1
 invalid_rc=$?
