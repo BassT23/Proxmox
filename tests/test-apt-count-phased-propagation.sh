@@ -47,7 +47,11 @@ check_paths() {
     # Local count: the result line keeps the helper's trailing field.
     output=$(
       export APT_COUNT_SHELL_SCRIPT="$shell_script" TARGET_RUNTIME_FILE="$WORK_DIR/missing-target-runtime.sh"
-      [[ "$setting" == unset ]] && unset INCLUDE_PHASED_UPDATES || INCLUDE_PHASED_UPDATES="$setting"
+      if [[ "$setting" == unset ]]; then
+        unset INCLUDE_PHASED_UPDATES
+      else
+        export INCLUDE_PHASED_UPDATES="$setting"
+      fi
       # shellcheck disable=SC1090
       source "$runtime"
       PARSE_APT_UPDATE_COUNTS() { printf '%s\n' "$1"; }
@@ -62,7 +66,11 @@ check_paths() {
     # where the updater's configuration is not in the environment.
     command=$(
       export APT_COUNT_SHELL_SCRIPT="$shell_script" TARGET_RUNTIME_FILE="$WORK_DIR/missing-target-runtime.sh"
-      [[ "$setting" == unset ]] && unset INCLUDE_PHASED_UPDATES || INCLUDE_PHASED_UPDATES="$setting"
+      if [[ "$setting" == unset ]]; then
+        unset INCLUDE_PHASED_UPDATES
+      else
+        export INCLUDE_PHASED_UPDATES="$setting"
+      fi
       # shellcheck disable=SC1090
       source "$runtime"
       APT_COUNT_REMOTE_COMMAND
