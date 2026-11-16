@@ -111,6 +111,10 @@ Improved:
   explicitly.
 
 Fixed:
+- APT checks no longer count phased updates that the update run defers, so a
+  successful update no longer leaves them reported as pending. With
+  `INCLUDE_PHASED_UPDATES="true"` they are counted, in both the python-apt
+  helper and the POSIX `apt-count.sh` fallback, locally and remotely.
 - Issue #395: upgrades now repair unambiguous legacy guest identities and
   establish missing current LXC/VM status records before reserving updates;
   incompatible or ambiguous identities remain fail-closed.

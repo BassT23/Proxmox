@@ -7,7 +7,25 @@ trap 'rm -rf -- "$WORK_DIR"' EXIT
 
 cat > "$WORK_DIR/apt-get" <<'SH'
 #!/bin/sh
+printf '%s\n' "$*" > "$APT_ARGS_LOG"
 case "${APT_FIXTURE:-mixed}" in
+  phased)
+    # apt lists phased candidates as Inst lines only when asked to include them.
+    case " $* " in
+      *' APT::Get::Always-Include-Phased-Updates=true '*)
+        printf '%s\n' \
+          'Inst distro-info [old] (new Ubuntu:26.04/resolute-updates [amd64])' \
+          'Inst software-properties-common [old] (new Ubuntu:26.04/resolute-updates [all])' \
+          'Inst curl [old] (new Ubuntu:26.04/resolute-updates [amd64])'
+        ;;
+      *)
+        printf '%s\n' \
+          'The following upgrades have been deferred due to phasing:' \
+          '  distro-info software-properties-common' \
+          'Inst curl [old] (new Ubuntu:26.04/resolute-updates [amd64])'
+        ;;
+    esac
+    ;;
   mixed)
     printf '%s\n' \
       'Reading package lists...' \
@@ -43,6 +61,7 @@ case "${APT_FIXTURE:-mixed}" in
 esac
 SH
 chmod 750 "$WORK_DIR/apt-get"
+export APT_ARGS_LOG="$WORK_DIR/apt-get.args"
 
 cat > "$WORK_DIR/python3" <<'SH'
 #!/bin/sh
@@ -84,6 +103,27 @@ zero=$(env PATH="$WORK_DIR:/usr/bin:/bin" APT_FIXTURE=zero \
 locale_stable=$(env PATH="$WORK_DIR:/usr/bin:/bin" APT_FIXTURE=mixed \
   PYTHON_APT_FIXTURE=missing LC_ALL=de_DE.UTF-8 LANG=de_DE.UTF-8 "$ROOT_DIR/apt-count.sh")
 [[ "$locale_stable" == 'APT_COUNTS|2|1|1|true' ]]
+
+# Phased updates follow INCLUDE_PHASED_UPDATES in the fallback as well: the
+# default and an explicit false leave them deferred, true includes them.
+phased_default=$(env -u UU_INCLUDE_PHASED_UPDATES PATH="$WORK_DIR:/usr/bin:/bin" \
+  APT_FIXTURE=phased PYTHON_APT_FIXTURE=missing "$ROOT_DIR/apt-count.sh")
+[[ "$phased_default" == 'APT_COUNTS|1|1|0|true' ]]
+if grep -Fq 'Always-Include-Phased-Updates' "$APT_ARGS_LOG"; then
+  echo 'fallback included phased updates without INCLUDE_PHASED_UPDATES=true' >&2
+  exit 1
+fi
+phased_false=$(env PATH="$WORK_DIR:/usr/bin:/bin" UU_INCLUDE_PHASED_UPDATES=false \
+  APT_FIXTURE=phased PYTHON_APT_FIXTURE=missing "$ROOT_DIR/apt-count.sh")
+[[ "$phased_false" == 'APT_COUNTS|1|1|0|true' ]]
+if grep -Fq 'Always-Include-Phased-Updates' "$APT_ARGS_LOG"; then
+  echo 'fallback included phased updates without INCLUDE_PHASED_UPDATES=true' >&2
+  exit 1
+fi
+phased_true=$(env PATH="$WORK_DIR:/usr/bin:/bin" UU_INCLUDE_PHASED_UPDATES=true \
+  APT_FIXTURE=phased PYTHON_APT_FIXTURE=missing "$ROOT_DIR/apt-count.sh")
+[[ "$phased_true" == 'APT_COUNTS|3|3|0|true' ]]
+[[ "$(cat "$APT_ARGS_LOG")" == '-s -o Debug::NoLocking=true -o APT::Get::Always-Include-Phased-Updates=true upgrade' ]]
 
 if env PATH="$WORK_DIR:/usr/bin:/bin" APT_FIXTURE=malformed \
   PYTHON_APT_FIXTURE=missing "$ROOT_DIR/apt-count.sh" >/dev/null 2>&1; then
