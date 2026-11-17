@@ -58,6 +58,9 @@ shell_tests=(
   tests/test-target-scoped-status-refresh.sh
   tests/test-global-remote-vm-ssh-staging.sh
   tests/test-apt-check-refresh.sh
+  tests/test-apt-count-structured.sh
+  tests/test-apt-count-zero-install.sh
+  tests/test-apt-count-phased-propagation.sh
   tests/test-update-apt-baseline-refresh.sh
   tests/test-update-host-pending-baseline.sh
   tests/test-update-invalidation-fail-closed.sh

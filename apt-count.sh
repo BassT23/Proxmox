@@ -29,7 +29,14 @@ command -v apt-get >/dev/null 2>&1 || {
   exit 2
 }
 
-simulation=$(LC_ALL=C LANG=C apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/null) || {
+# apt-get defers phased updates by default, as the update run does; count them
+# only when the update run is configured to install them.
+set -- -s -o Debug::NoLocking=true
+if [ "${UU_INCLUDE_PHASED_UPDATES:-false}" = true ]; then
+  set -- "$@" -o APT::Get::Always-Include-Phased-Updates=true
+fi
+
+simulation=$(LC_ALL=C LANG=C apt-get "$@" upgrade 2>/dev/null) || {
   printf 'APT_COUNTS|unknown|unknown|unknown|false\n'
   exit 2
 }
