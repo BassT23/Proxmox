@@ -2455,8 +2455,13 @@ HOST_UPDATE_START () {
       local host_update_rc=$?
       if [[ "$host_update_rc" -eq "${UPDATE_WARNING_RC:-10}" ]]; then
         UPDATE_WARNING=true
+        UPDATE_RESULT_RECORDED=true
       elif [[ "$host_update_rc" -ne 0 ]]; then
         UPDATE_FAILURE=true
+      else
+        # The per-node run records its own result and fails closed when it
+        # cannot (UPDATE_FINAL_RC), so exit 0 or 10 means a result exists.
+        UPDATE_RESULT_RECORDED=true
       fi
       unset UU_INTERNAL_SKIP_HOST_TARGET
     fi
@@ -2478,10 +2483,14 @@ UPDATE_HOST () {
     API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH "$HOST" host proxmox || return $?
   fi
   START_HOST=$(hostname -i | cut -d ' ' -f1)
+  # The controller's own node is updated by a child process that shares this
+  # status file.  Its baseline preflight (UPDATE_HOST_ITSELF) rejects a host
+  # record with an active mutation, so the child reserves the host after the
+  # preflight and the controller must not reserve it first.
   if [[ "$HOST" != "$START_HOST" ]]; then
     remote_operation_id=$(STATUS_MODEL_NEW_OPERATION_ID) || return 1
+    MARK_PACKAGE_DATA_INVALIDATED "host:${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" host "${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" "$remote_operation_id" || return $?
   fi
-  MARK_PACKAGE_DATA_INVALIDATED "host:${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" host "${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" "$remote_operation_id" || return $?
   if [[ "$HOST" != "$START_HOST" ]]; then
     remote_workspace="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
     remote_job_unit="ultimate-updater-update-node-${HOST_NODE:-remote}-$$-$RANDOM"
@@ -2570,7 +2579,13 @@ UPDATE_HOST () {
   if [[ "$HOST" != "$START_HOST" ]]; then
     if [[ -n "$remote_workspace" ]]; then
       remote_finished_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-      [[ "$REMOTE_UPDATE_STATUS" -eq 0 ]] && remote_state=completed || remote_state=failed
+      if [[ "$REMOTE_UPDATE_STATUS" -eq 0 ]]; then
+        remote_state=completed
+      elif [[ "$REMOTE_UPDATE_STATUS" -eq "${UPDATE_WARNING_RC:-10}" ]]; then
+        remote_state=completed_with_warnings
+      else
+        remote_state=failed
+      fi
       printf -v remote_finalize_command \
         'set -e; [[ -s %q/status.json ]] || exit 86; cp -- %q/status.json %q/status.json; printf %q %q > %q/post-update-status.rc; { printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; printf %q %q; } > %q/%q.state' \
         "$LOCAL_FILES" "$LOCAL_FILES" "$remote_workspace" \
@@ -2609,7 +2624,9 @@ UPDATE_HOST () {
     fi
     ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf.uu-backup ]]; then mv -f $LOCAL_FILES/update.conf.uu-backup $LOCAL_FILES/update.conf; else rm -f $LOCAL_FILES/update.conf; fi"
   fi
-  MARK_PACKAGE_DATA_MUTATION_COMPLETE "host:${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" host "${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" "$remote_operation_id" || UPDATE_FAILURE=true
+  if [[ "$HOST" != "$START_HOST" ]]; then
+    MARK_PACKAGE_DATA_MUTATION_COMPLETE "host:${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" host "${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" "$remote_operation_id" || UPDATE_FAILURE=true
+  fi
   return "${REMOTE_UPDATE_STATUS:-0}"
 }
 
@@ -2621,6 +2638,34 @@ UPDATE_HOST_ITSELF () {
   if [[ "${UPDATE_PENDING_BEFORE[$host_target]-}" == 0 ]]; then
     # Keep the validated zero baseline in the terminal result.  The shared
     # writer converts this explicit success/no-op to skipped with exit 10.
+    if [[ -n "${UU_PACKAGE_MUTATION_OPERATION_ID:-}" ]]; then
+      # Started by a controller that reserved this node under that operation.
+      # The controller can only clear its invalidation from a result that
+      # carries the same operation, so run the reservation lifecycle of a
+      # real update without the package mutation.
+      REQUIRE_PACKAGE_DATA_INVALIDATION || return 1
+      MARK_PACKAGE_DATA_INVALIDATED "$host_target" host "${host_target#host:}" || {
+        UPDATE_FAILURE=true
+        return 1
+      }
+      MARK_PACKAGE_DATA_MUTATION_COMPLETE "$host_target" host "${host_target#host:}" || {
+        UPDATE_FAILURE=true
+        return 1
+      }
+      CHOST="true"
+      if [[ "$WELCOME_SCREEN" == true ]]; then
+        UPDATE_CHECK || { CHOST=""; return 1; }
+      else
+        # UPDATE_CHECK only refreshes the package data when the welcome
+        # screen is installed.  Without it, refresh through the same
+        # read-only host check as the preflight so the record is not left
+        # invalidated by the reservation above.
+        HOST_UPDATE_BASELINE_PREFLIGHT "$host_target" || { CHOST=""; return 1; }
+        RECORD_UPDATE_RESULT "$host_target" success 0 || { CHOST=""; return 1; }
+      fi
+      CHOST=""
+      return 0
+    fi
     RECORD_UPDATE_RESULT "$host_target" success 0 || return 1
     return 0
   fi

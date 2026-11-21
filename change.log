@@ -111,6 +111,14 @@ Improved:
   explicitly.
 
 Fixed:
+- Issues #388 and #393: cluster updates no longer reserve the controller's
+  own node before its local host run, so the host baseline preflight no longer
+  fails with `PENDING_BEFORE_INVALID` and skips the host packages. A remote
+  node with nothing to update now carries the controller's operation ID, so
+  the controller can clear its invalidation of that node. A node run that
+  exits 0 or 10 no longer ends the cluster run with "Update result was not
+  recorded", and exit 10 (nothing to update) is stored as
+  `completed_with_warnings` instead of `failed`.
 - APT checks no longer count phased updates that the update run defers, so a
   successful update no longer leaves them reported as pending. With
   `INCLUDE_PHASED_UPDATES="true"` they are counted, in both the python-apt
