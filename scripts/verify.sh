@@ -63,6 +63,9 @@ shell_tests=(
   tests/test-apt-count-phased-propagation.sh
   tests/test-update-apt-baseline-refresh.sh
   tests/test-update-host-pending-baseline.sh
+  tests/test-update-host-noop-adopts-operation.sh
+  tests/test-cluster-host-reservation.sh
+  tests/test-cluster-final-result.sh
   tests/test-update-invalidation-fail-closed.sh
   tests/test-legacy-status-invalidation.sh
   tests/test-update-log-cleanup.sh
