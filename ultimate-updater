@@ -639,9 +639,9 @@ resolve_remote_node_transport() {
 }
 
 cluster_node_resolve() {
-  local wanted="$1" config="${UU_COROSYNC_CONFIG_FILE:-/etc/pve/corosync.conf}" result local_node local_ips
+  local wanted="$1" config="${UU_COROSYNC_CONFIG_FILE:-/etc/pve/corosync.conf}" result local_node
   [[ "$wanted" =~ ^[A-Za-z0-9_.-]+$ ]] || return 2
-  local_node=$(cluster_target_local_node)
+  local_node=$(cluster_target_local_node) || return 5
   if [[ ! -f "$config" ]]; then
     if [[ "$wanted" == local-host || "${wanted,,}" == "${local_node,,}" ]]; then
       RESOLVED_NODE="$local_node"
@@ -672,9 +672,8 @@ raise SystemExit(1)
 PY
   ) || return 1
   IFS=$'\t' read -r RESOLVED_NODE RESOLVED_NODE_HOST <<< "$result"
-  local_ips=$(hostname -I 2>/dev/null || true)
   RESOLVED_NODE_LOCAL=false
-  if [[ "${RESOLVED_NODE,,}" == "${local_node,,}" || " $local_ips " == *" $RESOLVED_NODE_HOST "* ]]; then
+  if [[ "${RESOLVED_NODE,,}" == "${local_node,,}" ]]; then
     RESOLVED_NODE_LOCAL=true
   fi
 }

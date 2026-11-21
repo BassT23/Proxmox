@@ -61,6 +61,49 @@ cluster_target_local_node() {
   hostname -s 2>/dev/null || hostname
 }
 
+# Map a Corosync ring address to the canonical Proxmox node name.  The
+# address is a transport detail; it must never become the target identity.
+cluster_target_node_for_host() {
+  local host="${1:-}" config="${UU_COROSYNC_CONFIG_FILE:-/etc/pve/corosync.conf}"
+  [[ -n "$host" ]] || return 2
+  if [[ -f "$config" ]]; then
+    awk -v address="$host" '
+      /^[[:space:]]*node[[:space:]]*\{/ { in_node=1; name=""; ring0=""; next }
+      in_node && /^[[:space:]]*name[[:space:]]*:/ { name=$2; next }
+      in_node && /^[[:space:]]*ring0_addr[[:space:]]*:/ { ring0=$2; next }
+      in_node && /^[[:space:]]*\}/ {
+        if (ring0 == address && name != "") {
+          matches++
+          if (matches == 1) result=name
+        }
+        in_node=0
+      }
+      END {
+        if (matches == 1) print result
+        else exit 1
+      }
+    ' "$config"
+    return $?
+  fi
+  # Without a Corosync mapping, an address cannot be promoted to a node
+  # identity.  The only safe exception is an already canonical local name.
+  local local_node
+  local_node=$(cluster_target_local_node) || return 2
+  if [[ "${host,,}" == "${local_node,,}" ]]; then
+    printf '%s\n' "$local_node"
+    return 0
+  fi
+  return 5
+}
+
+cluster_target_node_is_local() {
+  local wanted="${1:-}" local_node
+  [[ -n "$wanted" ]] || return 2
+  local_node=$(cluster_target_local_node) || return 2
+  [[ -n "$local_node" ]] || return 2
+  [[ "${wanted,,}" == "${local_node,,}" ]]
+}
+
 # Sets CLUSTER_TARGET_ID, CLUSTER_TARGET_KIND, CLUSTER_TARGET_NODE,
 # CLUSTER_TARGET_NAME, CLUSTER_TARGET_HOST and CLUSTER_TARGET_LOCAL. Return values:
 #   0 resolved, 1 not found/unsupported inventory, 2 invalid ID,
@@ -113,11 +156,9 @@ print("\t".join((target, kind, node, name)))
   IFS=$'\t' read -r CLUSTER_TARGET_ID CLUSTER_TARGET_KIND CLUSTER_TARGET_NODE CLUSTER_TARGET_NAME <<< "$result"
   [[ -n "$CLUSTER_TARGET_NODE" ]] || return 5
   CLUSTER_TARGET_HOST=$(cluster_target_node_host "$CLUSTER_TARGET_NODE")
-  local local_node local_ips
-  local_node=$(cluster_target_local_node)
-  local_ips=$(hostname -I 2>/dev/null || true)
-  if [[ "${CLUSTER_TARGET_NODE,,}" == "${local_node,,}" ||
-        " $local_ips " == *" $CLUSTER_TARGET_HOST "* ]]; then
+  local local_node
+  local_node=$(cluster_target_local_node) || return 5
+  if [[ "${CLUSTER_TARGET_NODE,,}" == "${local_node,,}" ]]; then
     CLUSTER_TARGET_LOCAL=true
   else
     CLUSTER_TARGET_LOCAL=false

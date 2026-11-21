@@ -682,26 +682,40 @@ WAIT_FOR_QGA () {
 # transport path, but status identity must not change when a node is offline.
 CLUSTER_HOST_NODE () {
   local host="$1"
-  if [[ -f /etc/pve/corosync.conf ]]; then
-    awk -v address="$host" '
-      /name[[:space:]]*:/ { name=$2 }
-      /ring0_addr[[:space:]]*:/ && $2 == address { print name; found=1; exit }
-      END { if (!found) print address }
-    ' /etc/pve/corosync.conf
-  else
-    printf '%s\n' "$host"
+  if declare -f cluster_target_node_for_host >/dev/null 2>&1; then
+    cluster_target_node_for_host "$host"
+    return $?
   fi
+  [[ -f /etc/pve/corosync.conf ]] || return 5
+  awk -v address="$host" '
+    /^[[:space:]]*node[[:space:]]*\{/ { in_node=1; name=""; ring0=""; next }
+    in_node && /^[[:space:]]*name[[:space:]]*:/ { name=$2; next }
+    in_node && /^[[:space:]]*ring0_addr[[:space:]]*:/ { ring0=$2; next }
+    in_node && /^[[:space:]]*\}/ {
+      if (ring0 == address && name != "") {
+        matches++
+        if (matches == 1) result=name
+      }
+      in_node=0
+    }
+    END {
+      if (matches == 1) print result
+      else exit 1
+    }
+  ' /etc/pve/corosync.conf
 }
 
 # Host Check Start
 HOST_IS_LOCAL () {
-  local candidate="$1" local_address
-  [[ "$candidate" == "$HOSTNAME" || "$candidate" == "$(hostname -s 2>/dev/null)" ||
-    "$candidate" == "$(hostname -f 2>/dev/null)" ]] && return 0
-  for local_address in $(hostname -I 2>/dev/null); do
-    [[ "$candidate" == "$local_address" ]] && return 0
-  done
-  return 1
+  local candidate="$1"
+  if declare -f cluster_target_node_is_local >/dev/null 2>&1; then
+    cluster_target_node_is_local "$candidate"
+    return $?
+  fi
+  local local_node
+  local_node=$(hostname -s 2>/dev/null || hostname) || return 2
+  [[ -n "$local_node" ]] || return 2
+  [[ "${candidate,,}" == "${local_node,,}" ]]
 }
 
 # Bound only the remote setup/transfer operations used while preparing a
@@ -887,7 +901,7 @@ PY
 
 HOST_CHECK_START () {
   USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
-  local host_selected=true host_id host_only_scope=false host_count=0 host_eligible_ids=""
+  local host_selected=true host_id host_node host_only_scope=false host_count=0 host_eligible_ids=""
   for host in $HOSTS; do host_count=$((host_count + 1)); done
   REMOTE_TRACE "step=host_candidates count=$host_count"
   for host in $HOSTS; do
@@ -900,7 +914,12 @@ HOST_CHECK_START () {
   for HOST in $HOSTS; do
     host_selected=true
     host_only_scope=false
-    host_id="host:$(CLUSTER_HOST_NODE "$HOST")"
+    host_node=$(CLUSTER_HOST_NODE "$HOST") || {
+      CHECK_FAILURE=1
+      echo -e "${RD:-}❌ Could not determine the canonical node identity for $HOST${CL:-}" >&2
+      continue
+    }
+    host_id="host:$host_node"
     REMOTE_TRACE "host=$host_id step=host_loop_enter"
     if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
       # Guest checks below intentionally reuse UU_FILTER_ELIGIBLE_IDS for
@@ -916,7 +935,7 @@ HOST_CHECK_START () {
         host_only_scope=true
       fi
     fi
-    if HOST_IS_LOCAL "$HOST"; then
+    if HOST_IS_LOCAL "$host_node"; then
       REMOTE_TRACE "host=$host_id step=host_local_or_remote mode=local"
       [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
       [[ "$host_selected" == true ]] && CHECK_HOST_ITSELF
@@ -924,6 +943,12 @@ HOST_CHECK_START () {
       if [[ "$host_only_scope" != true && "$WITH_VM" == true ]]; then VM_CHECK_START; fi
       unset UU_INTERNAL_SKIP_HOST_TARGET
     else
+      local host_local_rc=$?
+      if [[ "$host_local_rc" -eq 2 ]]; then
+        CHECK_FAILURE=1
+        echo -e "${RD:-}❌ Could not determine the local node identity; refusing remote host dispatch for $host_node${CL:-}" >&2
+        continue
+      fi
       REMOTE_TRACE "host=$host_id step=host_local_or_remote mode=remote"
       [[ "$host_selected" == true ]] || export UU_INTERNAL_SKIP_HOST_TARGET=true
       [[ "$host_only_scope" == true ]] && export UU_INTERNAL_SKIP_GUEST_TARGETS=true

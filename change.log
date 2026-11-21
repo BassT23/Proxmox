@@ -111,6 +111,9 @@ Improved:
   explicitly.
 
 Fixed:
+- Local and remote Proxmox host routing now uses the canonical Corosync node
+  identity; multiple interfaces and SSH transport overrides no longer change
+  the classification.
 - Issues #388 and #393: cluster updates no longer reserve the controller's
   own node before its local host run, so the host baseline preflight no longer
   fails with `PENDING_BEFORE_INVALID` and skips the host packages. A remote

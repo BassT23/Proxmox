@@ -1755,13 +1755,32 @@ if [ "$unsafe" = true ]; then printf unsafe; else printf safe; fi'
       rc=$?
       ;;
     host|node)
-      if [[ "$target" == "$(hostname -i 2>/dev/null | cut -d' ' -f1)" || "$target" == "$(hostname -I 2>/dev/null | awk '{print $1}')" ]]; then
-        output=$(env "${assignments[@]}" "$shell_name" -c "$script") 2>/dev/null
-        rc=$?
-      else
-        output=$(RUN_SSH_COMMAND "$target" "${INTERNAL_SSH_PORT:-${SSH_PORT:-22}}" "${INTERNAL_SSH_USER:-root}" "$shell_name" -c "${output#* }") 2>/dev/null
-        rc=$?
+      local host_node="${UU_API_EXPECTED_TARGET_NODE:-${HOST_NODE:-}}"
+      if [[ -z "$host_node" ]]; then
+        local local_node
+        local_node=$(cluster_target_local_node) || return 2
+        if [[ "${target,,}" == "${local_node,,}" ]]; then
+          host_node="$local_node"
+        elif declare -f cluster_target_node_for_host >/dev/null 2>&1; then
+          host_node=$(cluster_target_node_for_host "$target") || return 2
+        else
+          return 2
+        fi
       fi
+      declare -f cluster_target_node_is_local >/dev/null 2>&1 || return 2
+      cluster_target_node_is_local "$host_node"
+      local host_local_rc=$?
+      case "$host_local_rc" in
+        0)
+          output=$(env "${assignments[@]}" "$shell_name" -c "$script") 2>/dev/null
+          rc=$?
+          ;;
+        1)
+          output=$(RUN_SSH_COMMAND "$target" "${INTERNAL_SSH_PORT:-${SSH_PORT:-22}}" "${INTERNAL_SSH_USER:-root}" "$shell_name" -c "${output#* }") 2>/dev/null
+          rc=$?
+          ;;
+        *) return 2 ;;
+      esac
       ;;
     vm)
       output=$(RUN_QEMU_COMMAND "$target" -- "$shell_name" -c "${output#* }") 2>/dev/null
@@ -2428,13 +2447,53 @@ CHECK_QGA_EXEC () {
 # Host Update Start
 HOST_UPDATE_START () {
   USE_INTERNAL_TARGET_SELECTION="${USE_INTERNAL_TARGET_SELECTION:-false}"
-  local host_selected=true host_required=true
+  local host_selected=true host_required=true host_node
   if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
-    UU_FILTER_SCOPE=update UU_FILTER_ELIGIBLE_IDS="$(for host in $HOSTS; do printf 'host:%s ' "$(awk -v address="$host" '/name[[:space:]]*:/ { name=$2 } /ring0_addr[[:space:]]*:/ && $2 == address { print name; found=1; exit } END { if (!found) print address }' /etc/pve/corosync.conf 2>/dev/null)"; done)" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
+    UU_FILTER_SCOPE=update UU_FILTER_ELIGIBLE_IDS="$(for host in $HOSTS; do
+      if declare -f cluster_target_node_for_host >/dev/null 2>&1; then
+        host_node=$(cluster_target_node_for_host "$host") || continue
+      else
+        host_node=$(awk -v address="$host" '
+          /^[[:space:]]*node[[:space:]]*\{/ { in_node=1; name=""; ring0=""; next }
+          in_node && /^[[:space:]]*name[[:space:]]*:/ { name=$2; next }
+          in_node && /^[[:space:]]*ring0_addr[[:space:]]*:/ { ring0=$2; next }
+          in_node && /^[[:space:]]*\}/ {
+            if (ring0 == address && name != "") {
+              matches++
+              if (matches == 1) result=name
+            }
+            in_node=0
+          }
+          END { if (matches == 1) print result; else exit 1 }
+        ' /etc/corosync/corosync.conf 2>/dev/null) || continue
+      fi
+      printf 'host:%s ' "$host_node"
+    done)" export UU_FILTER_SCOPE UU_FILTER_ELIGIBLE_IDS
   fi
   if [[ "$RICM" != true ]]; then true > $LOCAL_FILES/check-output; fi
   for HOST in $HOSTS; do
-    HOST_NODE=$(awk -v address="$HOST" '/name[[:space:]]*:/ { name=$2 } /ring0_addr[[:space:]]*:/ && $2 == address { print name; found=1; exit } END { if (!found) print address }' /etc/pve/corosync.conf 2>/dev/null)
+    if declare -f cluster_target_node_for_host >/dev/null 2>&1; then
+      HOST_NODE=$(cluster_target_node_for_host "$HOST")
+    else
+      HOST_NODE=$(awk -v address="$HOST" '
+        /^[[:space:]]*node[[:space:]]*\{/ { in_node=1; name=""; ring0=""; next }
+        in_node && /^[[:space:]]*name[[:space:]]*:/ { name=$2; next }
+        in_node && /^[[:space:]]*ring0_addr[[:space:]]*:/ { ring0=$2; next }
+        in_node && /^[[:space:]]*\}/ {
+          if (ring0 == address && name != "") {
+            matches++
+            if (matches == 1) result=name
+          }
+          in_node=0
+        }
+        END { if (matches == 1) print result; else exit 1 }
+      ' /etc/corosync/corosync.conf 2>/dev/null)
+    fi
+    [[ -n "$HOST_NODE" && "$HOST_NODE" != "$HOST" ]] || {
+      echo -e "${RD:-}❌ Could not determine the canonical node identity for $HOST; skipping host update${CL:-}" >&2
+      UPDATE_FAILURE=true
+      continue
+    }
     host_selected=true
     host_required=true
     if [[ "$USE_INTERNAL_TARGET_SELECTION" == true ]] && declare -f TARGET_SELECTION_ALLOWS >/dev/null 2>&1; then
@@ -2471,6 +2530,7 @@ HOST_UPDATE_START () {
 # Host Update
 UPDATE_HOST () {
   HOST=$1
+  local host_node="${HOST_NODE:-}" local_node
   local remote_update_env="" remote_handoff_env=""
   local remote_operation_id=""
   local remote_workspace="" remote_job_unit="" remote_state_dir=""
@@ -2482,16 +2542,31 @@ UPDATE_HOST () {
   if [[ "${UU_API_ACTION:-}" == update ]]; then
     API_UPDATE_REJECT_UNSAFE_SCRIPT_PATH "$HOST" host proxmox || return $?
   fi
-  START_HOST=$(hostname -i | cut -d ' ' -f1)
+  if [[ -z "$host_node" ]]; then
+    host_node=$(cluster_target_node_for_host "$HOST") || {
+      printf 'Could not determine the canonical node identity for host %s; update aborted.\n' "$HOST" >&2
+      return 46
+    }
+    HOST_NODE="$host_node"
+  fi
+  if declare -f cluster_target_local_node >/dev/null 2>&1; then
+    local_node=$(cluster_target_local_node)
+  else
+    local_node=$(hostname -s 2>/dev/null || hostname)
+  fi
+  [[ -n "$local_node" ]] || {
+    printf 'Could not determine the local node identity; update aborted.\n' >&2
+    return 46
+  }
   # The controller's own node is updated by a child process that shares this
   # status file.  Its baseline preflight (UPDATE_HOST_ITSELF) rejects a host
   # record with an active mutation, so the child reserves the host after the
   # preflight and the controller must not reserve it first.
-  if [[ "$HOST" != "$START_HOST" ]]; then
+  if [[ "${host_node,,}" != "${local_node,,}" ]]; then
     remote_operation_id=$(STATUS_MODEL_NEW_OPERATION_ID) || return 1
-    MARK_PACKAGE_DATA_INVALIDATED "host:${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" host "${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" "$remote_operation_id" || return $?
+    MARK_PACKAGE_DATA_INVALIDATED "host:$host_node" host "$host_node" "$remote_operation_id" || return $?
   fi
-  if [[ "$HOST" != "$START_HOST" ]]; then
+  if [[ "${host_node,,}" != "${local_node,,}" ]]; then
     remote_workspace="/tmp/ultimate-updater-update-node-$$-$RANDOM-$RANDOM"
     remote_job_unit="ultimate-updater-update-node-${HOST_NODE:-remote}-$$-$RANDOM"
     remote_state_dir="${UU_REMOTE_JOB_STATE_DIR:-/var/lib/ultimate-updater/jobs}"
@@ -2576,7 +2651,7 @@ UPDATE_HOST () {
     ssh -q -p "$SSH_PORT" "$HOST" "${remote_update_env}${remote_handoff_env}bash -s" < "$0" -- "-c host"
     REMOTE_UPDATE_STATUS=$?
   fi
-  if [[ "$HOST" != "$START_HOST" ]]; then
+  if [[ "${host_node,,}" != "${local_node,,}" ]]; then
     if [[ -n "$remote_workspace" ]]; then
       remote_finished_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
       if [[ "$REMOTE_UPDATE_STATUS" -eq 0 ]]; then
@@ -2592,7 +2667,7 @@ UPDATE_HOST () {
         '%s\n' "$REMOTE_UPDATE_STATUS" "$remote_workspace" \
         '%s\n' schema_version=1 \
         '%s\n' "unit=$remote_job_unit" \
-        '%s\n' "target=node-${HOST_NODE:-remote}" \
+        '%s\n' "target=node-${host_node}" \
         '%s\n' "state=$remote_state" \
         '%s\n' "started_at=$remote_started_at" \
         '%s\n' "finished_at=$remote_finished_at" \
@@ -2605,7 +2680,7 @@ UPDATE_HOST () {
         remote_handoff_rc=1
       elif [[ -x "$LOCAL_FILES/job-runner.sh" ]] &&
         ! "$LOCAL_FILES/job-runner.sh" record-remote "$remote_job_unit" \
-          "node-${HOST_NODE:-remote}" "${HOST_NODE:-remote}" "$HOST" "$SSH_PORT" "$remote_workspace"; then
+          "node-${host_node}" "$host_node" "$HOST" "$SSH_PORT" "$remote_workspace"; then
         remote_handoff_rc=1
       fi
       if [[ "$remote_handoff_rc" -ne 0 ]]; then
@@ -2624,8 +2699,8 @@ UPDATE_HOST () {
     fi
     ssh -q -p "$SSH_PORT" "$HOST" "if [[ -f $LOCAL_FILES/update.conf.uu-backup ]]; then mv -f $LOCAL_FILES/update.conf.uu-backup $LOCAL_FILES/update.conf; else rm -f $LOCAL_FILES/update.conf; fi"
   fi
-  if [[ "$HOST" != "$START_HOST" ]]; then
-    MARK_PACKAGE_DATA_MUTATION_COMPLETE "host:${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" host "${HOST_NODE:-$(hostname -s 2>/dev/null || hostname)}" "$remote_operation_id" || UPDATE_FAILURE=true
+  if [[ "${host_node,,}" != "${local_node,,}" ]]; then
+    MARK_PACKAGE_DATA_MUTATION_COMPLETE "host:$host_node" host "$host_node" "$remote_operation_id" || UPDATE_FAILURE=true
   fi
   return "${REMOTE_UPDATE_STATUS:-0}"
 }
